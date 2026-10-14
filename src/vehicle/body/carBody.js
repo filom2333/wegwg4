@@ -182,7 +182,7 @@ export function buildCarBody({ res = 0.02, onProgress } = {}) {
         edgeR: kd.edgeR,
         innerMat: kd.inner,
         rimMat: kd.rim,
-        outerMats: (m) => (m === 2 ? SLOT.trim : SLOT.paint),
+        outerMats: (m) => (m === 2 ? SLOT.trim : m === 5 ? SLOT.under : SLOT.paint),
       });
     }
     if (data.index.length === 0) continue;

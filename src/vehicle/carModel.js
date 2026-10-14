@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { bodyField, SPEC } from './body/shape.js';
 import { buildWheel } from './parts/wheel.js';
 import * as EXT from './parts/exterior.js';
+import * as INT from './parts/interior.js';
+import * as BAY from './parts/engineBay.js';
+import * as CH from './parts/chassis.js';
 
 // Find the outer skin half-width at (y, z) by bisection.
 export function skinX(y, z) {
@@ -158,9 +161,68 @@ export class CarModel {
     attach('door_RR', EXT.buildDoorHandle(m, -1, -0.69, -0.86, 0.884));
     this.wipers = attach('body', EXT.buildWipers(m));
     attach('body', EXT.buildArchLiners(m));
-    attach('body', EXT.buildExhaustTip(m));
     attach('body', EXT.buildAntenna(m));
     attach('body', EXT.buildFuelCap(m));
+  }
+
+  // Adds a standalone part group (not built from skin panels).
+  addPart(id, object, { parent = null } = {}) {
+    const pivot = new THREE.Group();
+    pivot.name = id;
+    const inner = new THREE.Group();
+    pivot.add(inner);
+    inner.add(object);
+    (parent ? this.parts[parent].inner : this.root).add(pivot);
+    this.parts[id] = { id, pivot, inner, hinge: null, openT: 0, installed: true, object };
+    return this.parts[id];
+  }
+
+  addInterior() {
+    const M = INT.createInteriorMaterials();
+    this.interiorMats = M;
+    const body = this.parts.body.inner;
+    body.add(INT.buildDashboard(M));
+    this.cluster = INT.buildCluster(M);
+    body.add(this.cluster);
+    this.stack = INT.buildCenterStack(M);
+    body.add(this.stack);
+    const steer = INT.buildSteering(M);
+    body.add(steer.column);
+    this.steeringColumn = steer.column;
+    this.addPart('steeringWheel', steer.wheel);
+    this.steeringWheel = steer.wheel;
+    this.pedals = INT.buildPedals(M);
+    body.add(this.pedals);
+    this.roofInterior = INT.buildRoofInterior(M);
+    body.add(this.roofInterior);
+    body.add(INT.buildParcelShelf(M));
+    body.add(INT.buildFloorMats(M));
+    body.add(INT.buildBPillars(M));
+    this.addPart('seat_FL', INT.buildFrontSeat(M, 1));
+    this.addPart('seat_FR', INT.buildFrontSeat(M, -1));
+    this.addPart('seat_R', INT.buildRearBench(M));
+    for (const d of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) this.parts[d].inner.add(INT.buildDoorTrim(M, d));
+  }
+
+  addEngineBay() {
+    const M = BAY.createBayMaterials(this.mats);
+    this.bayMats = M;
+    this.parts.body.inner.add(BAY.buildStructure(M));
+    this.parts.body.inner.add(BAY.buildReservoirs(M));
+    this.addPart('engine', BAY.buildEngine(M));
+    this.addPart('battery', BAY.buildBattery(M));
+    this.addPart('radiator', BAY.buildRadiator(M));
+    this.addPart('airfilter', BAY.buildAirFilter(M));
+  }
+
+  addChassis() {
+    const M = CH.createChassisMaterials();
+    this.chassisMats = M;
+    this.addPart('chassis', CH.buildChassisFrame(M));
+    const ex = CH.buildExhaustLine(M);
+    ex.add(EXT.buildExhaustTip(this.mats));
+    this.addPart('exhaust', ex);
+    this.addPart('fueltank', CH.buildFuelTank(M));
   }
 
   setOpen(partId, t) {

@@ -271,3 +271,25 @@ export function meshFromParts(list, { castShadow = true, receiveShadow = true } 
   m.receiveShadow = receiveShadow;
   return m;
 }
+
+// Closed Catmull-Rom resampling of a 2D polygon (points [[a,b],...]) into n points.
+export function smoothClosed2(points, n = 32, tension = 0.5) {
+  const v = points.map((p) => new THREE.Vector3(p[0], p[1], 0));
+  const curve = new THREE.CatmullRomCurve3(v, true, 'catmullrom', tension);
+  return curve.getSpacedPoints(n).slice(0, n).map((p) => [p.x, p.y]);
+}
+
+// Open Catmull-Rom resampling of a 3D polyline.
+export function smoothOpen3(points, n = 24) {
+  const curve = new THREE.CatmullRomCurve3(points.map((p) => (p.isVector3 ? p : new THREE.Vector3(...p))), false, 'centripetal');
+  return curve.getSpacedPoints(n);
+}
+
+// Loft a 2D profile (in a local plane spanned by axes U, V) along a list of origins.
+// profileFn(i) -> [[u,v],...] closed; origins[i] Vector3; axes { u: Vector3, v: Vector3 }
+export function loftProfiles(origins, profileFn, axes, opts = {}) {
+  const sections = origins.map((o, i) =>
+    profileFn(i).map(([a, b]) => o.clone().addScaledVector(axes.u, a).addScaledVector(axes.v, b))
+  );
+  return loftSections(sections, { capStart: true, capEnd: true, ...opts });
+}

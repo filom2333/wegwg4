@@ -193,16 +193,16 @@ const frontDoorPoly = sideView(
     [pillarSeam(1.26), 1.26],
     [0.165, yRail(0.165)],
     ...sampleCurve(yRail, 0.1, -0.11, 6),
-    [-0.115, yRail(-0.115)],
-    [-0.115, 0.305],
+    [-0.1225, yRail(-0.1225)],
+    [-0.1225, 0.305],
   ],
   0.025
 );
 const cSeam = (y) => -1.0 + (y - 1.0) * 0.85; // z of C-pillar door seam at height y
 const rearDoorPoly = sideView(
   [
-    [-0.13, 0.305],
-    [-0.13, yRail(-0.13)],
+    [-0.1225, 0.305],
+    [-0.1225, yRail(-0.1225)],
     ...sampleCurve(yRail, -0.2, -0.66, 6),
     [cSeam(yRail(-0.72)), yRail(-0.72)],
     [cSeam(1.012), 1.012],
@@ -451,7 +451,10 @@ export function buildPanelDefs() {
     id: 'body',
     kind: 'body',
     complement: true,
-    subs: [{ id: 'cowl', mat: 2, shape: cowlShape }],
+    subs: [
+      { id: 'cowl', mat: 2, shape: cowlShape },
+      { id: 'underseal', mat: 5, shape: (x, y, z) => 0.255 - y },
+    ],
   });
   return defs;
 }

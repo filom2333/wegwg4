@@ -82,6 +82,23 @@ shadowCatcher.position.y = 0.001;
 shadowCatcher.receiveShadow = true;
 scene.add(shadowCatcher);
 
+// Inspection lights: a lamp in the cabin and two soft work lights at floor level for the underside.
+const cabinLamp = new THREE.PointLight(0xfff0dc, 1.6, 2.6, 1.6);
+cabinLamp.position.set(0, 1.25, -0.2);
+cabinLamp.visible = false;
+scene.add(cabinLamp);
+const workLights = new THREE.Group();
+for (const [x, z] of [
+  [2.5, 1.5],
+  [-2.5, -1.5],
+]) {
+  const l = new THREE.PointLight(0xffffff, 6, 8, 1.5);
+  l.position.set(x, 0.25, z);
+  workLights.add(l);
+}
+workLights.visible = false;
+scene.add(workLights);
+
 let car = null;
 let body = null;
 let mats = null;
@@ -430,6 +447,22 @@ function runSkinCheck() {
   return report;
 }
 
+const STAGES = {
+  frame: ['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'],
+  shell: ['body'],
+  panels: ['door_FL', 'door_FR', 'door_RL', 'door_RR', 'hood', 'trunk', 'fender_L', 'fender_R', 'bumper_F', 'bumper_R', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'fuelflap'],
+  mech: ['engine', 'battery', 'radiator', 'airfilter', 'exhaust', 'fueltank'],
+  interior: ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel'],
+};
+function setStage(stage) {
+  const order = ['frame', 'shell', 'panels', 'mech', 'interior'];
+  const upto = stage === 'full' ? order.length - 1 : order.indexOf(stage);
+  const on = new Set();
+  order.forEach((k, i) => i <= upto && STAGES[k].forEach((p) => on.add(p)));
+  for (const id of Object.keys(car.parts)) car.setInstalled(id, on.has(id));
+  markDirty();
+}
+
 let reportEl = null;
 function setReport(text) {
   if (reportEl) reportEl.textContent = text;
@@ -474,6 +507,23 @@ function buildUI() {
   );
   panelEl.append(orow);
 
+  panelEl.append(h('h2', { textContent: 'Lighting' }));
+  const lr = h('div', { className: 'row' });
+  const cab = h('button', { textContent: 'cabin lamp', className: cabinLamp.visible ? 'on' : '' });
+  cab.onclick = () => {
+    cabinLamp.visible = !cabinLamp.visible;
+    cab.classList.toggle('on', cabinLamp.visible);
+    markDirty();
+  };
+  const work = h('button', { textContent: 'work lights', className: workLights.visible ? 'on' : '' });
+  work.onclick = () => {
+    workLights.visible = !workLights.visible;
+    work.classList.toggle('on', workLights.visible);
+    markDirty();
+  };
+  lr.append(cab, work);
+  panelEl.append(lr);
+
   panelEl.append(h('h2', { textContent: 'Render mode' }));
   const sel = h('select');
   for (const m of ['shaded', 'clay', 'wire', 'normals', 'holes']) sel.append(h('option', { value: m, textContent: m, selected: state.mode === m }));
@@ -510,6 +560,23 @@ function buildUI() {
   panelEl.append(ar);
   reportEl = h('div', { className: 'report' });
   panelEl.append(reportEl);
+
+  panelEl.append(h('h2', { textContent: 'Assembly stage' }));
+  const st = h('select');
+  for (const [k, label] of [
+    ['full', 'complete vehicle'],
+    ['frame', '1 · rolling chassis'],
+    ['shell', '2 · + body shell'],
+    ['panels', '3 · + exterior panels'],
+    ['mech', '4 · + mechanicals'],
+    ['interior', '5 · + interior'],
+  ])
+    st.append(h('option', { value: k, textContent: label }));
+  st.onchange = () => {
+    setStage(st.value);
+    buildUI();
+  };
+  panelEl.append(st);
 
   panelEl.append(h('h2', { textContent: 'Parts' }));
   const pl = h('div', { className: 'parts' });
@@ -554,6 +621,9 @@ async function init() {
   car = new CarModel(body, mats);
   car.addWheels();
   car.addExteriorDetails();
+  car.addInterior();
+  car.addEngineBay();
+  car.addChassis();
   scene.add(car.root);
   let tris = 0;
   for (const m of meshesOf(car.root)) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
@@ -587,6 +657,11 @@ window.inspector = {
   },
   setSection,
   hide: (id, hidden = true) => car.setInstalled(id, !hidden),
+  stage: (s) => setStage(s),
+  lights: (cabin, work) => {
+    cabinLamp.visible = !!cabin;
+    workLights.visible = !!work;
+  },
   openEdges: runOpenEdges,
   skinCheck: runSkinCheck,
   intersections: runIntersections,

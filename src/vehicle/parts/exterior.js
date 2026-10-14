@@ -615,9 +615,9 @@ export function buildWipers(mats) {
 // ------------------------------------------------------------------ arch liners
 export function buildArchLiners(mats) {
   const g = new THREE.Group();
-  for (const [zc, R] of [
-    [SPEC.axleF, SPEC.archR],
-    [SPEC.axleR, SPEC.archRr],
+  for (const [zc, R, xIn] of [
+    [SPEC.axleF, SPEC.archR, 0.47],
+    [SPEC.axleR, SPEC.archRr, 0.59],
   ]) {
     for (const s of [1, -1]) {
       const sections = [];
@@ -646,7 +646,7 @@ export function buildArchLiners(mats) {
       const M = 6;
       rows.forEach(([z, y, xo]) => {
         for (let k = 0; k <= M; k++) {
-          const x = 0.47 + ((xo - 0.47) * k) / M;
+          const x = xIn + ((xo - xIn) * k) / M;
           pos.push(x * s, y, z);
         }
       });
@@ -661,8 +661,8 @@ export function buildArchLiners(mats) {
         }
       // Inner wall (half disc) at x = 0.47
       const base = pos.length / 3;
-      pos.push(0.47 * s, yc - 0.02, zc);
-      rows.forEach(([z, y]) => pos.push(0.47 * s, y, z));
+      pos.push(xIn * s, yc - 0.02, zc);
+      rows.forEach(([z, y]) => pos.push(xIn * s, y, z));
       for (let i = 0; i < N; i++) {
         if (s > 0) idx.push(base, base + 1 + i, base + 2 + i);
         else idx.push(base, base + 2 + i, base + 1 + i);

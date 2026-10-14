@@ -138,9 +138,9 @@ export function createCarMaterials(opts = {}) {
     strength: 0.7,
   });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xd8dadc, metalness: 1, roughness: 0.14 });
-  const interior = new THREE.MeshStandardMaterial({ color: 0x2c2c2e, roughness: 0.78, metalness: 0 });
-  const headliner = new THREE.MeshStandardMaterial({ color: 0x9b968c, roughness: 0.96 });
-  const carpet = new THREE.MeshStandardMaterial({ color: 0x262422, roughness: 1 });
+  const interior = new THREE.MeshStandardMaterial({ color: 0x45443f, roughness: 0.8, metalness: 0 });
+  const headliner = new THREE.MeshStandardMaterial({ color: 0xb3ada2, roughness: 0.96 });
+  const carpet = new THREE.MeshStandardMaterial({ color: 0x2c2a28, roughness: 1 });
   const trunk = new THREE.MeshStandardMaterial({ color: 0x1b1a19, roughness: 1 });
   const under = applyWeathering(new THREE.MeshStandardMaterial({ color: 0x1a1918, roughness: 0.92 }), weather, {
     rustColor: false,
@@ -222,5 +222,5 @@ export function createCarMaterials(opts = {}) {
     mirrorGlass: new THREE.MeshStandardMaterial({ color: 0xbfc6cc, metalness: 1, roughness: 0.02, envMapIntensity: 1.5 }),
     seal: rubber,
   };
-  return { slots, weather, paint, color, ...extra, lensRed, lensAmber, chrome, rubber, trim, interior, glass };
+  return { slots, weather, paint, color, ...extra, lensRed, lensAmber, chrome, rubber, trim, interior, glass, inner, under, carpet, headliner };
 }
