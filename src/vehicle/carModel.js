@@ -239,3 +239,29 @@ export class CarModel {
     p.pivot.visible = on;
   }
 }
+
+// Builds the complete visual model (all parts installed).
+export function buildFullCarModel(bodyResult, mats) {
+  const m = new CarModel(bodyResult, mats);
+  m.addWheels();
+  m.addExteriorDetails();
+  m.addInterior();
+  m.addEngineBay();
+  m.addChassis();
+  m.root.updateMatrixWorld(true);
+  // bounding boxes (car space) of every part at rest, used for mass properties and item colliders
+  const box = new THREE.Box3();
+  for (const p of Object.values(m.parts)) {
+    box.makeEmpty();
+    p.pivot.updateMatrixWorld(true);
+    p.inner.traverse((o) => {
+      if (o.isMesh && o.geometry) {
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+        box.union(b);
+      }
+    });
+    p.bbox = box.clone();
+  }
+  return m;
+}
