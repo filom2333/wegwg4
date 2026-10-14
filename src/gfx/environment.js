@@ -196,12 +196,12 @@ export class Environment {
     this.sun.castShadow = this.sun.intensity > 0.05;
 
     // ambient
-    const skyCol = new THREE.Color().setRGB(0.32, 0.45, 0.62).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);
+    const skyCol = new THREE.Color().setRGB(0.42, 0.5, 0.62).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);
     skyCol.lerp(new THREE.Color(0.7, 0.55, 0.4), this.w.dust * 0.8);
     const nightSky = new THREE.Color(0.035, 0.045, 0.075);
     this.hemi.color.copy(nightSky).lerp(skyCol, day);
     this.hemi.groundColor.copy(this.groundColor).multiplyScalar(0.35 + 0.65 * day);
-    this.hemi.intensity = 0.35 + 0.35 * day + this.flash * 2.5;
+    this.hemi.intensity = 0.3 + 0.25 * day + this.flash * 2.5;
 
     // fog color ~ horizon colour
     const horizon = new THREE.Color(0.72, 0.78, 0.84);

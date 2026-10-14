@@ -16,6 +16,7 @@ async function boot() {
     seed: +(params.get('seed') || 1234),
     time: +(params.get('time') || 9),
     weather: params.get('weather') || 'clear',
+    startZ: +(params.get('z') || 0),
     onProgress: (t, p) => console.log('load', t, p),
   });
   if (!params.get('manual')) game.start();

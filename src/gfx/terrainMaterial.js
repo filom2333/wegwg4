@@ -71,7 +71,7 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
         `#include <color_fragment>
 {
   vec2 uvN = vWuv * uScale;
-  vec2 uvF = vWuv * uScale * 0.13 + 0.37;
+  vec2 uvF = vWuv * uScale * 0.21 + 0.37;
   float farT = smoothstep(18.0, 70.0, vViewDist);
   vec4 s0 = layerSample(0.0, uvN, uvF, farT);
   vec4 s1 = layerSample(1.0, uvN * 0.8, uvF, farT);
@@ -93,11 +93,13 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   // wetness darkens porous ground
   alb *= mix(1.0, 0.62, uWet * (1.0 - w.w * 0.6));
   diffuseColor.rgb = alb;
+  float nFar = 1.0 - farT * 0.6;
   vec3 n0 = layerNormal(0.0, uvN, uvF, farT);
   vec3 n1 = layerNormal(1.0, uvN * 0.8, uvF, farT);
   vec3 n2 = layerNormal(2.0, uvN * 0.6, uvF * 0.8, farT);
   vec3 n3 = layerNormal(3.0, uvN * 0.5, uvF, farT);
   gNrmT = normalize(n0 * w.x + n1 * w.y + n2 * w.z + n3 * w.w);
+  gNrmT.xy *= nFar;
   gRough = 0.96 * w.x + 0.93 * w.y + 0.82 * w.z + 0.78 * w.w;
   gRough = mix(gRough, 0.35, uWet * 0.8);
 }`
@@ -216,7 +218,7 @@ float rFbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*rNoise(p); p*
   col = mix(col, white, edgeL * marks * fade * 0.9);
   // shoulders: gravel blending into the surrounding sand
   float sh = smoothstep(halfRoad, halfRoad + 0.3, abs(across));
-  vec3 shoulder = mix(grav.rgb, sand.rgb, smoothstep(halfRoad + 0.6, W * 0.5, abs(across)));
+  vec3 shoulder = mix(grav.rgb, grav.rgb * 0.8 + sand.rgb * 0.35, smoothstep(halfRoad + 0.5, W * 0.5, abs(across)));
   col = mix(col, shoulder, sh);
   col *= mix(1.0, 0.58, uWet);
   diffuseColor.rgb = col;

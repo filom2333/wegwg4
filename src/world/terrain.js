@@ -209,8 +209,8 @@ export class Terrain {
     const z0 = k * SEG;
     const step = 2;
     const nz = SEG / step;
-    const W = (ROAD.halfWidth + ROAD.shoulder) * 2 + 1.2;
-    const across = [-W / 2, -W / 2 + 0.6, -ROAD.halfWidth - 0.6, -ROAD.halfWidth, -2.4, -1.2, 0, 1.2, 2.4, ROAD.halfWidth, ROAD.halfWidth + 0.6, W / 2 - 0.6, W / 2];
+    const W = (ROAD.halfWidth + ROAD.shoulder) * 2;
+    const across = [-W / 2 - 0.5, -W / 2, -ROAD.halfWidth - 0.6, -ROAD.halfWidth, -2.4, -1.2, 0, 1.2, 2.4, ROAD.halfWidth, ROAD.halfWidth + 0.6, W / 2, W / 2 + 0.5];
     const na = across.length;
     const pos = new Float32Array((nz + 1) * na * 3);
     const uv = new Float32Array((nz + 1) * na * 2);
@@ -229,12 +229,12 @@ export class Terrain {
         const x = rx + px * a,
           zz = z + pz * a;
         let y = gen.height(x, zz) + 0.012;
-        if (Math.abs(a) > W / 2 - 0.01) y -= 0.18;
+        if (Math.abs(a) > W / 2 + 0.01) y -= 0.3;
         const k2 = j * na + i;
         pos[k2 * 3] = x - ox;
         pos[k2 * 3 + 1] = y;
         pos[k2 * 3 + 2] = zz - oz;
-        uv[k2 * 2] = (a + W / 2) / W;
+        uv[k2 * 2] = (Math.max(-W / 2, Math.min(W / 2, a)) + W / 2) / W;
         uv[k2 * 2 + 1] = z;
         road[k2 * 4] = info.wear;
         road[k2 * 4 + 1] = info.dirt ? 1 : 0;

@@ -9,6 +9,7 @@ import { createTerrainMaterial, createRoadMaterial } from './gfx/terrainMaterial
 import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
+import { Scatter } from './world/scatter.js';
 import { buildCarBody } from './vehicle/body/carBody.js';
 import { createCarMaterials } from './vehicle/carMaterials.js';
 import { buildFullCarModel } from './vehicle/carModel.js';
@@ -62,7 +63,8 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, onProgress = () => {} } = {}) {
+    this.startZ = startZ;
     this.seed = seed;
     this.difficultyName = difficulty;
     this.difficulty = DIFFICULTY[difficulty] || DIFFICULTY.normal;
@@ -93,6 +95,7 @@ export class Game {
       quality: settings.data.quality,
     });
     await this.terrain.workerReady;
+    this.scatter = new Scatter(this, this.groundTex);
     onProgress('Building the car', 0.35);
     await tick();
     this.carBody = buildCarBody({ res: settings.data.quality === 'low' ? 0.034 : 0.028 });
@@ -100,8 +103,13 @@ export class Game {
     this.carModel = buildFullCarModel(this.carBody, this.carMats);
     // spawn
     const spawn = this.spawnPoint();
+    if (this.startZ) {
+      this.origin.x = Math.round(spawn.x / 1024) * 1024;
+      this.origin.z = Math.round(spawn.z / 1024) * 1024;
+    }
     this.terrain.update(spawn.x, spawn.z);
     this.terrain.ensureCollidersAround(spawn.x, spawn.z, 30);
+    this.scatter.update(spawn.x, spawn.z);
     onProgress('Streaming terrain', 0.55);
     await this.waitForTerrain(spawn.x, spawn.z);
     const carPos = new THREE.Vector3(spawn.carX, this.gen.height(spawn.carX, spawn.carZ) + 0.05, spawn.carZ);
@@ -117,7 +125,7 @@ export class Game {
   }
 
   spawnPoint() {
-    const z = 6;
+    const z = 6 + (this.startZ || 0);
     const rx = this.gen.roadX(z);
     return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carYaw: 0 };
   }
@@ -169,6 +177,7 @@ export class Game {
       c.updateMatrixWorld(true);
     }
     this.terrain.rebase(dx, dz);
+    this.scatter.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     this.car && this.car.prevPos.set(this.car.prevPos.x - dx, this.car.prevPos.y, this.car.prevPos.z - dz);
   }
@@ -224,6 +233,8 @@ export class Game {
     const gx = f.x + this.origin.x,
       gz = f.z + this.origin.z;
     this.terrain.update(gx, gz);
+    this.scatter.update(gx, gz);
+    this.scatter.setTime(this.time, this.env.w.wind);
     this.env.focus.copy(f);
     this.env.biome = this.gen.dominantBiome(gx, gz);
     this.maybeRebase();

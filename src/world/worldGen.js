@@ -101,7 +101,7 @@ export class WorldGen {
 
   // ---------------------------------------------------------------- biomes
   biomeOfCell(k) {
-    if (k <= 0) return k === 0 ? 'scrub' : BIOMES[Math.floor(hash01(this.seed, k, 91) * BIOMES.length)];
+    if (k <= 0) return 'scrub';
     // avoid repeating the previous cell's biome
     const prev = this.biomeOfCell(k - 1);
     let b;
@@ -382,7 +382,8 @@ export class WorldGen {
     const n = this.nC.noise2(x * 0.02, z * 0.02) * 0.5 + 0.5;
     sand *= 0.7 + 0.6 * n;
     dirt *= 1.3 - 0.6 * n;
-    rock += smoothstep(0.18, 0.42, slope) * 2.5;
+    rock += smoothstep(0.05, 0.2, slope) * 3;
+    salt *= 1 - smoothstep(0.015, 0.06, slope);
     const s = sand + dirt + rock + salt + 1e-6;
     return [sand / s, dirt / s, rock / s, salt / s];
   }

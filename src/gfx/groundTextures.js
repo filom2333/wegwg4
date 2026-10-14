@@ -105,19 +105,35 @@ const GEN = {
     };
   },
   dirt(seed) {
+    // desert floor: mottled compact soil, fine grain, sparse small stones, faint crack network
     const L = lattices(seed, 8, 6);
-    const V = makeVoronoi(seed + 3, 9);
-    const P = makeVoronoi(seed + 5, 40);
+    const G = lattices(seed + 1, 64, 2);
+    const W = lattices(seed + 2, 4, 3);
+    const V = makeVoronoi(seed + 3, 13);
+    const P = makeVoronoi(seed + 5, 64);
     return (x, y) => {
-      const [f1, f2] = V(x, y);
-      const crack = 1 - clamp01((f2 - f1) * 6);
-      const [p1, , pid] = P(x, y);
-      const pebble = pid > 0.7 ? clamp01(1 - p1 * 2.2) : 0;
       const n = fbmT(L, x, y, 6, 8);
-      const h = 0.65 - 0.5 * Math.pow(crack, 3) + 0.25 * pebble + 0.2 * (n - 0.5);
-      const t = 0.78 + 0.25 * n - 0.25 * Math.pow(crack, 2);
-      const pc = pebble * (0.25 + 0.4 * pid);
-      return [0.6 * t + pc * 0.1, 0.5 * t + pc * 0.08, 0.38 * t + pc * 0.06, h];
+      const g = fbmT(G, x, y, 2, 64);
+      const wx = (fbmT(W, x, y, 3, 4) - 0.5) * 60,
+        wy = (fbmT(W, y, x, 3, 4) - 0.5) * 60;
+      const [f1, f2] = V((((x + wx) % S) + S) % S, (((y + wy) % S) + S) % S);
+      let crack = 1 - clamp01((f2 - f1) * 18);
+      crack *= clamp01((fbmT(W, x, y, 3, 4) - 0.42) * 4);
+      const [p1, , pid] = P(x, y);
+      const pebble = pid > 0.8 ? clamp01(1 - p1 * (2.2 + (1 - pid) * 10)) : 0;
+      const h = 0.5 + 0.3 * (n - 0.5) + 0.2 * (g - 0.5) - 0.3 * crack * crack + 0.5 * Math.sqrt(pebble);
+      const t = 0.84 + 0.28 * (n - 0.5) + 0.1 * (g - 0.5) - 0.12 * crack;
+      let r = 0.62 * t,
+        gg = 0.52 * t,
+        b = 0.4 * t;
+      if (pebble > 0) {
+        const pc = 0.45 + 0.35 * ((pid * 7.3) % 1);
+        const k = Math.min(1, pebble * 3);
+        r += (pc * 0.95 - r) * k;
+        gg += (pc * 0.88 - gg) * k;
+        b += (pc * 0.8 - b) * k;
+      }
+      return [r, gg, b, h];
     };
   },
   rock(seed) {
