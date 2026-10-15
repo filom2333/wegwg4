@@ -139,7 +139,21 @@ export function createCarMaterials(opts = {}) {
   });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xd8dadc, metalness: 1, roughness: 0.14 });
   const interior = new THREE.MeshStandardMaterial({ color: 0x45443f, roughness: 0.8, metalness: 0 });
-  const headliner = new THREE.MeshStandardMaterial({ color: 0xb3ada2, roughness: 0.96 });
+  const headliner = new THREE.MeshStandardMaterial({ color: 0xb8b4ac, roughness: 0.96 });
+  // the roof lining only sees light bounced around the cabin: keep it neutral rather than
+  // tinted by the sunlit sand the hemisphere light brings in from below
+  headliner.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace(
+      '#include <lights_fragment_end>',
+      `#include <lights_fragment_end>
+{
+  vec3 ind = reflectedLight.indirectDiffuse;
+  float l = dot(ind, vec3(0.3, 0.55, 0.15));
+  reflectedLight.indirectDiffuse = mix(vec3(l), ind, 0.25) * 0.85;
+}`
+    );
+  };
+  headliner.customProgramCacheKey = () => 'headlinerNeutral';
   const carpet = new THREE.MeshStandardMaterial({ color: 0x2c2a28, roughness: 1 });
   const trunk = new THREE.MeshStandardMaterial({ color: 0x1b1a19, roughness: 1 });
   const under = applyWeathering(new THREE.MeshStandardMaterial({ color: 0x1a1918, roughness: 0.92 }), weather, {

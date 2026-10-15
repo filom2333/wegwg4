@@ -203,7 +203,7 @@ export class Environment {
     const nightSky = new THREE.Color(0.04, 0.055, 0.095);
     this.hemi.color.copy(nightSky).lerp(skyCol, day);
     // sunlit sand bounces a lot of warm light back up
-    this.hemi.groundColor.copy(this.groundColor).multiplyScalar((0.35 + 0.9 * day) * (1 + 0.4 * (1 - this.w.overcast)));
+    this.hemi.groundColor.copy(this.groundColor).multiplyScalar((0.32 + 0.72 * day) * (1 + 0.25 * (1 - this.w.overcast)));
     // twilight: the whole sky still lights the land for a while after the sun has set
     const twilight = smoothstep(-0.16, 0.0, sunY) * (1 - smoothstep(0.0, 0.25, sunY));
     this.hemi.intensity = 0.32 + 0.3 * day + 0.55 * twilight + this.flash * 2.5;

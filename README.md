@@ -32,8 +32,9 @@ You need a desktop browser with WebGL2. Click the canvas to capture the mouse; E
 | L, H, K | Headlights (off / low / high), horn, wipers |
 | X / Z | Gear up / down (manual gearbox) |
 | C | Look back |
+| V | First / third person |
 | B | Sleep (seated in the car, engine off) |
-| J | Journal (stats) |
+| J | Journal (stats and notes) |
 
 ## What is in it
 
@@ -58,7 +59,15 @@ You need a desktop browser with WebGL2. Click the canvas to capture the mouse; E
 - **Effects and sound**: wheel dust, exhaust, engine smoke and fire, backfires, debris, muzzle
   flashes, tracers, casings, blood, rain splashes, lightning, dust devils, tumbleweeds, vultures,
   meteors, moths at lamps. All sound is synthesised at runtime with WebAudio.
-- **Menus**: title screen over a live scene, new game (difficulty, ready-to-drive or build-it-first,
+- **Story**: twelve notes left along Route 9 tell what happened and where everyone went; Haven
+  broadcasts on the car radio (98.1); distance signs every 5 km; reaching Haven (150 km) ends the
+  run, or you keep driving.
+- **Routine**: wash the dust off the car with a sponge, repaint it with spray cans, smoke, drink
+  canned coffee to stay awake, sleep in the car.
+- **Views**: first person with hands on the wheel (they turn with it and reach for the key, light
+  stalk and gear lever); a third-person view with the player's body for later co-op.
+- **Menus**: press-any-key splash and a title scene with the car driving at dusk under cinematic
+  camera cuts and a procedural theme, new game (difficulty, ready-to-drive or build-it-first,
   seed), settings, statistics, pause, journal, death screen, save/load with autosave. The
   Multiplayer button is a placeholder only: there is no networking.
 

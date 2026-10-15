@@ -27,6 +27,27 @@ export const DRIVER = {
 const smooth01 = (t) => t * t * (3 - 2 * t);
 const lerp = (a, b, t) => a + (b - a) * t;
 
+// Light reaching the roof lining has bounced around the cabin; keep it neutral instead of
+// taking the orange of the sunlit sand under the car. Chains onto an existing onBeforeCompile.
+function neutralIndirect(m) {
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev && prev(sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace(
+      '#include <lights_fragment_end>',
+      `#include <lights_fragment_end>
+{
+  vec3 ind = reflectedLight.indirectDiffuse;
+  float l = dot(ind, vec3(0.3, 0.55, 0.15));
+  reflectedLight.indirectDiffuse = mix(vec3(l), ind, 0.25);
+}`
+    );
+  };
+  const key = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+  m.customProgramCacheKey = () => key + '|neutralIndirect';
+  return m;
+}
+
 // Shift pattern engraved on the knob top (1-5, R).
 function shiftPatternMat() {
   return cached('shiftPat', () => {
@@ -68,7 +89,7 @@ export function createInteriorMaterials() {
       seatSide: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x3e3d3b, roughness: 0.9 }), 'weave', 0.22),
       seatInsert: null,
       carpet: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x2c2a28, roughness: 1 }), 'carpet', 0.45, { tint: 0.25 }),
-      headliner: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xb3ada2, roughness: 0.96 }), 'weave', 0.12),
+      headliner: neutralIndirect(addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xb8b4ac, roughness: 0.96 }), 'weave', 0.12)),
       belt: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: 0.8 }), 'weave', 0.2),
       gauge: null,
       needle: new THREE.MeshStandardMaterial({ color: 0xe0491d, emissive: 0xff5a20, emissiveIntensity: 0.0, roughness: 0.4 }),
