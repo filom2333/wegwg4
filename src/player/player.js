@@ -226,6 +226,8 @@ export class Player {
         const surf = g.surfaceUnder(p);
         this.lastSurface = surf;
         g.audio && g.audio.play('step', { surface: surf, volume: crouching ? 0.35 : hs > 4.5 ? 1 : 0.7 });
+        // loose ground kicks up a little dust, more when running
+        if (g.effects && (surf === 'sand' || surf === 'dirt' || surf === 'gravel') && !crouching) g.effects.footDust(V(p.x, p.y + 0.05, p.z), hs > 4.5 ? 1 : 0.45);
       }
     } else this.bobAmp = lerp(this.bobAmp, 0, dt * 6);
   }

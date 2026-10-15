@@ -32,6 +32,7 @@ export class Interaction {
     this.game = game;
     this.cam = game.renderer.camera;
     this.held = null;
+    this.dragging = false;
     this.holdRot = new THREE.Quaternion();
     this.holdDist = 1.0;
     this.rotating = false;
@@ -485,9 +486,12 @@ export class Interaction {
   // ------------------------------------------------------------------ pick / drop
   pick(it) {
     const g = this.game;
-    if (it.part && PARTS[it.part].mass > 60) {
-      g.hud && g.hud.toast(`${it.name} is too heavy to carry (${PARTS[it.part].mass} kg)`);
-      return;
+    // heavy parts (engine, body shell) are dragged along the ground rather than carried
+    this.dragging = !!(it.part && PARTS[it.part].mass > 60);
+    if (this.dragging) {
+      g.hud && g.hud.toast(`${it.name} · ${PARTS[it.part].mass} kg · too heavy to lift, dragging`);
+      this.dragYaw0 = g.player.yaw;
+      this.dragQ0 = it.mesh.quaternion.clone();
     }
     g.items.take(it);
     this.held = it;
@@ -520,6 +524,7 @@ export class Interaction {
     else vel.add(g.player.velocity);
     g.items.release(it, pos, q, vel);
     this.held = null;
+    this.dragging = false;
     g.player.carryMass = 0;
     this.stowWatch.set(it, 0);
     if (throwSpeed > 0) g.audio && g.audio.play('throw');
@@ -537,6 +542,7 @@ export class Interaction {
     it.mesh.parent && it.mesh.parent.remove(it.mesh);
     this.game.items.items.delete(it);
     this.held = null;
+    this.dragging = false;
     this.game.player.carryMass = 0;
     this.game.audio && this.game.audio.play('pocket');
   }
@@ -565,6 +571,7 @@ export class Interaction {
     }
     if (input.mouse.wheel && !weapon) this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, 0.5, it.part ? 3 : 1.6);
     this.aim = lerp(this.aim, weapon && input.mouseDown(2) ? 1 : 0, Math.min(1, dt * 10));
+    if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
     const big = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55;
@@ -635,6 +642,31 @@ export class Interaction {
     }
   }
 
+  // Dragging a heavy part: it slides on the ground in front of the player, turning with them;
+  // RMB + mouse turns it about the vertical axis.
+  updateDrag(it, dt) {
+    const g = this.game;
+    const p = g.player;
+    if (this.rotating) this.dragYaw0 -= input.mouse.dx * 0.006;
+    const yaw = p.yaw;
+    const reach = 0.6 + Math.max(it.size.x, it.size.z) * 0.5;
+    const tx = p.position.x + Math.sin(yaw) * reach,
+      tz = p.position.z + Math.cos(yaw) * reach;
+    const gy = g.groundHeightAt(tx, tz, p.position.y + 1.5);
+    const target = V(tx, gy + it.size.y * 0.5 + 0.03, tz);
+    const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), yaw - this.dragYaw0).multiply(this.dragQ0);
+    const k = Math.min(1, dt * 3.5);
+    it.mesh.position.lerp(target, k);
+    it.mesh.quaternion.slerp(q, k);
+    // scraping sound while moving
+    this.dragSnd = (this.dragSnd || 0) + it.mesh.position.distanceTo(this.lastDragPos || it.mesh.position);
+    this.lastDragPos = (this.lastDragPos || V()).copy(it.mesh.position);
+    if (this.dragSnd > 0.9) {
+      this.dragSnd = 0;
+      g.audio && g.audio.play('step', { surface: 'gravel', at: it.mesh.position, volume: 0.8 });
+    }
+  }
+
   // ------------------------------------------------------------------ using items
   useHeld() {
     const it = this.held;
@@ -701,6 +733,7 @@ export class Interaction {
   consumeHeld() {
     const it = this.held;
     this.held = null;
+    this.dragging = false;
     this.game.player.carryMass = 0;
     this.game.items.destroy(it);
     this.useAnim = 1;
@@ -909,6 +942,7 @@ export class Interaction {
     // a wheel from another slot keeps its tyre condition
     const cond = it.state.condition ?? 1;
     this.held = null;
+    this.dragging = false;
     g.player.carryMass = 0;
     g.items.destroy(it);
     car.setInstalled(slot, true);
@@ -1035,6 +1069,9 @@ export class Interaction {
         h.left.position.copy(hold.left.clone().add(V(0, 0, 0)).lerp(V(-0.02, -0.14, -0.58), this.aim));
         h.left.rotation.set(0, 0, Math.PI / 2);
       }
+    } else if (it && this.dragging) {
+      h.right.visible = false;
+      h.left.visible = false;
     } else if (it && big) {
       // carry from below: both hands under the lower edge, palms up, forearms toward the camera
       const inv = cam.quaternion.clone().invert();
