@@ -4,6 +4,7 @@
 import { settings, DEFAULT_BINDINGS } from '../core/settings.js';
 import { input } from '../core/input.js';
 import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
+import { NOTES, HAVEN_KM } from '../story/story.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -573,12 +574,81 @@ export class UI {
         ['Crashes', st.crashes],
       ];
       for (const [k, v] of rows) el('div', 'ui-stat', c, `<span>${esc(k)}</span><span>${esc(v)}</span>`);
+      // notes found so far, readable again
+      const story = g.story;
+      if (story) {
+        const nb = el('div', '', body);
+        el('div', 'ui-label', nb, `Notes · ${story.found.length} of ${NOTES.length} · Haven ${Math.max(0, HAVEN_KM - story.km()).toFixed(0)} km north`);
+        const list = el('div', 'ui-notes', nb);
+        if (!story.found.length) el('div', 'ui-sub', list, 'Nothing yet. People leave notes in houses, diners and wrecks.');
+        for (const id of story.found) {
+          const n = story.noteById(id);
+          const b = el('button', 'ui-note-item', list, `<b>${esc(n.title)}</b><span>${esc(n.text.split('\n')[0].slice(0, 90))}…</span>`);
+          b.onclick = () => this.showNote(n, () => this.showJournal(back));
+        }
+      }
       const act = el('div', 'ui-actions', pnl);
       this.item(act, back ? 'Back' : 'Close', () => (back ? back() : this.resume()));
       el('div', 'spacer', act);
       el('div', 'ui-loadtext', act, `${keyName(settings.data.bindings.journal)} to close`);
     });
     this.show('journal');
+  }
+
+  // ---------------------------------------------------------------- notes
+  showNote(n, back) {
+    const g = this.game;
+    if (!back) {
+      g.paused = true;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+    this.screen('note', (s) => {
+      s.classList.add('ui-shade-full');
+      const c = el('div', 'ui-center', s);
+      const paper = el('div', 'ui-paper', c);
+      el('div', 'ui-paper-title', paper, esc(n.title));
+      el('div', 'ui-paper-text', paper, esc(n.text).replace(/\n/g, '<br>'));
+      el('div', 'ui-paper-by', paper, '— ' + esc(n.by));
+      const idx = NOTES.findIndex((x) => x.id === n.id);
+      el('div', 'ui-loadtext', c, `Note ${idx + 1} of ${NOTES.length} · added to your journal`);
+      const a = el('div', 'ui-actions', c);
+      a.style.border = '0';
+      this.item(a, back ? 'Back' : 'Put it away', () => (back ? back() : this.resume()));
+    });
+    this.show('note');
+  }
+
+  // ---------------------------------------------------------------- ending
+  showEnding() {
+    const g = this.game;
+    g.paused = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const st = g.stats;
+    this.screen('ending', (s) => {
+      s.classList.add('ui-shade-full', 'ui-death');
+      const c = el('div', 'ui-center', s);
+      el('h2', '', c, 'Haven');
+      el('div', 'cause', c, `You reached the gate after ${st.daysSurvived} day${st.daysSurvived > 1 ? 's' : ''} on the road. ${g.story ? g.story.found.length : 0} of ${NOTES.length} notes found.`);
+      const cols = el('div', 'ui-cols', c);
+      this.statList(cols, 'Journey', [
+        ['Distance', (st.distance / 1000).toFixed(1) + ' km'],
+        ['Fuel burned', st.fuelUsed.toFixed(0) + ' l'],
+        ['Top speed', Math.round(st.maxSpeed) + ' km/h'],
+      ]);
+      this.statList(cols, 'Survival', [
+        ['Kills · headshots', `${st.kills} · ${st.headshots}`],
+        ['Places visited', st.placesVisited],
+        ['Parts installed', st.partsInstalled],
+      ]);
+      const a = el('div', 'ui-actions', c);
+      this.item(a, 'Keep driving north', () => this.resume()).classList.add('primary');
+      this.item(a, 'Main menu', () => {
+        recordRun(st, null);
+        deleteSave();
+        location.search = '';
+      });
+    });
+    this.show('ending');
   }
 
   // ---------------------------------------------------------------- sleep / death
@@ -668,6 +738,11 @@ export class UI {
     if (e.code === journalKey && !e.repeat) {
       if (this.current === 'journal') this.resume();
       else if (!this.current && !this.game.player.dead) this.showJournal();
+    }
+    if (e.code === 'Escape' && this.current === 'note') {
+      e.preventDefault();
+      this.resume();
+      return;
     }
     if (e.code === 'Escape' && this.current && ['journal', 'settings', 'career'].includes(this.current)) {
       e.preventDefault();

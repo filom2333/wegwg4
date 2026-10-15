@@ -249,6 +249,21 @@ export class ItemSystem {
     const lrnd = mulberry32(inst.poi.seed + 991);
     const lootMul = this.game.difficulty.loot;
     inst.root.updateMatrixWorld(true);
+    // a story note in most places that have somewhere to leave one
+    const story = this.game.story;
+    if (story && inst.loot.length && !inst.state.noteSpawned && (inst.poi.type === 'homestead' || lrnd() < 0.75)) {
+      const nid = story.nextNote();
+      const spots = inst.loot.map((sp, i) => [sp, i]).filter(([sp]) => ['table', 'desk', 'counter', 'small', 'office', 'kitchen', 'wreck', 'camp', 'tent', 'shelf'].includes(sp.kind));
+      if (nid && spots.length) {
+        const [sp] = spots[Math.floor(lrnd() * spots.length)];
+        const wp = sp.pos.clone().applyMatrix4(inst.root.matrixWorld);
+        const it = this.spawn('note', V(wp.x, wp.y + 0.05, wp.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), lrnd() * 6.28), { note: nid }, { sleep: true });
+        it.poiKey = null;
+        inst.state.noteSpawned = true;
+        story.pendingSpawn = story.pendingSpawn || new Set();
+        story.pendingSpawn.add(nid);
+      }
+    }
     inst.loot.forEach((spot, i) => {
       if (inst.state.taken.has(i)) return;
       const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul;

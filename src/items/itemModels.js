@@ -209,6 +209,57 @@ export function snackBag(kind = 'chips') {
   return centered(g);
 }
 
+// Folded sheet of paper with handwriting.
+export function note() {
+  const mat = cached('noteMat', () => {
+    const c = makeCanvas(256, 340);
+    const x = c.getContext('2d');
+    x.fillStyle = '#e9e1cf';
+    x.fillRect(0, 0, 256, 340);
+    x.strokeStyle = 'rgba(70,90,140,0.25)';
+    for (let y = 40; y < 340; y += 18) {
+      x.beginPath();
+      x.moveTo(0, y);
+      x.lineTo(256, y);
+      x.stroke();
+    }
+    x.strokeStyle = 'rgba(30,30,45,0.8)';
+    x.lineWidth = 1.6;
+    let seed = 7;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let y = 36; y < 320; y += 18) {
+      let px = 18;
+      const end = 230 - r() * 60;
+      x.beginPath();
+      x.moveTo(px, y);
+      while (px < end) {
+        px += 3 + r() * 5;
+        x.lineTo(px, y - 4 + r() * 6);
+      }
+      x.stroke();
+    }
+    x.fillStyle = 'rgba(120,90,40,0.12)';
+    for (let i = 0; i < 6; i++) {
+      x.beginPath();
+      x.arc(r() * 256, r() * 340, 10 + r() * 30, 0, Math.PI * 2);
+      x.fill();
+    }
+    return new THREE.MeshStandardMaterial({ map: canvasTexture(c, { wrap: false }), roughness: 0.9, side: THREE.DoubleSide });
+  });
+  const g = new THREE.Group();
+  // two panels with a soft fold in the middle
+  const geo = new THREE.PlaneGeometry(0.15, 0.2, 6, 1);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const xx = p.getX(i);
+    p.setZ(i, Math.abs(xx) * 0.12 + 0.004 * Math.sin(xx * 60));
+  }
+  geo.computeVertexNormals();
+  geo.rotateX(-Math.PI / 2);
+  g.add(mesh(geo, mat, false));
+  return centered(g);
+}
+
 export function chocolate() {
   const g = new THREE.Group();
   const m = labelMat('choc', 256, 64, (c, w, h) => {
@@ -459,6 +510,7 @@ export function ammoBox(kind = '38') {
 
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
+  note,
   jerryCan,
   waterBottle,
   sodaCan,

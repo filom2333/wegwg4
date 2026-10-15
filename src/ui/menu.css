@@ -551,3 +551,60 @@
 .ui-sleep .ui-loadtext {
   color: var(--ink-2);
 }
+
+/* ------------------------------------------------------------------ notes */
+.ui-paper {
+  width: min(520px, 88vw);
+  max-height: 68vh;
+  overflow-y: auto;
+  padding: 34px 38px 30px;
+  background: #e8e0cc linear-gradient(180deg, rgba(255, 255, 255, 0.25), rgba(0, 0, 0, 0.04));
+  color: #2a2620;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  transform: rotate(-0.6deg);
+  text-align: left;
+  margin-bottom: 18px;
+}
+.ui-paper-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #7a6a52;
+  margin-bottom: 16px;
+}
+.ui-paper-text {
+  font-family: 'Segoe Print', 'Bradley Hand', 'Comic Neue', 'Patrick Hand', cursive;
+  font-size: 19px;
+  line-height: 1.55;
+  white-space: normal;
+}
+.ui-paper-by {
+  margin-top: 18px;
+  text-align: right;
+  font-family: 'Segoe Print', 'Bradley Hand', cursive;
+  font-size: 18px;
+  color: #4a4234;
+}
+.ui-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.ui-note-item {
+  all: unset;
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.ui-note-item b {
+  display: block;
+  color: var(--ink);
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+.ui-note-item:hover {
+  border-color: var(--amber);
+}

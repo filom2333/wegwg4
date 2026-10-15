@@ -292,6 +292,7 @@ export class Interaction {
     if (def.melee) out.push(['LMB', 'Swing']);
     if (def.consume) out.push(['LMB', def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
+    if (def.readable) out.push(['LMB', 'Read']);
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.liquid) {
       const tgt = this.pourTarget(it, t);
@@ -333,6 +334,7 @@ export class Interaction {
         } else info = this.heldInfo(it);
         prompts.push(['E', 'Pick up']);
         if (it.def && it.def.consume) prompts.push(['F', 'Use now']);
+        if (it.def && it.def.readable) prompts.push(['F', 'Read']);
         break;
       }
       case 'part': {
@@ -431,6 +433,14 @@ export class Interaction {
       return;
     }
     if (!input.isDown('reload')) this.removing = null;
+    if (input.pressed.has('KeyF') && t.kind === 'item' && t.item.def && t.item.def.readable) {
+      const n = this.game.story && this.game.story.noteById(t.item.state.note);
+      if (n) {
+        this.game.story.collect(n.id);
+        this.game.ui && this.game.ui.showNote(n);
+      }
+      return;
+    }
     if (input.pressed.has('KeyF') && t.kind === 'item' && t.item.def && t.item.def.consume) {
       this.pick(t.item);
       this.useHeld();
@@ -702,6 +712,15 @@ export class Interaction {
       g.hud && g.hud.toast(`+${def.ammo.count} ${def.ammo.type === '38' ? '.38' : '12 ga'} in pouch`);
       g.audio && g.audio.play('pocket');
       this.consumeHeld();
+      return;
+    }
+    if (def.readable) {
+      const n = g.story && g.story.noteById(it.state.note);
+      if (n) {
+        g.story.collect(n.id);
+        g.ui && g.ui.showNote(n);
+      }
+      g.audio && g.audio.play('pocket');
       return;
     }
     if (def.light) {

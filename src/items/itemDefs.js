@@ -29,6 +29,7 @@ export const ITEMS = {
   shotgun: { name: 'Double-barrel shotgun', model: ['shotgun'], mass: 3.2, weapon: { ammo: '12', mag: 2, damage: 14, pellets: 9, spread: 0.05, rate: 0.3, reload: 2.6, range: 45 }, hold: 'rifle' },
   ammo38: { name: '.38 cartridges', model: ['ammoBox', '38'], mass: 0.15, ammo: { type: '38', count: 12 }, hold: 'hand', desc: 'Use to put them in your pouch.' },
   ammo12: { name: '12 ga shells', model: ['ammoBox', '12'], mass: 0.4, ammo: { type: '12', count: 8 }, hold: 'hand' },
+  note: { name: 'Note', model: ['note'], mass: 0.01, readable: true, hold: 'hand', desc: 'Someone left this for whoever came next.' },
   meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
 };
 

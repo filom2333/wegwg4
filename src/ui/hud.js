@@ -75,6 +75,8 @@ export class HUD {
     this.pocketEl = el('div', 'hud-pockets', this.root);
     // toasts
     this.toasts = el('div', 'hud-toasts', this.root);
+    // radio / speech subtitles
+    this.sub = el('div', 'hud-sub', this.root);
     // vignette for damage handled in post
     this.state = { prompts: '', info: null };
     this.hitTimer = 0;
@@ -132,6 +134,13 @@ export class HUD {
   hitmarker(head) {
     this.hit.className = 'hud-hit on' + (head ? ' head' : '');
     this.hitTimer = 0.18;
+  }
+
+  subtitle(who, text, seconds = 6) {
+    this.sub.innerHTML = `<b>${who}</b><span>${text}</span>`;
+    this.sub.classList.add('on');
+    clearTimeout(this._subT);
+    this._subT = setTimeout(() => this.sub.classList.remove('on'), seconds * 1000);
   }
 
   toast(text, kind = '') {

@@ -24,6 +24,8 @@ import { HUD } from './ui/hud.js';
 import { AudioSystem } from './audio/audio.js';
 import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
+import { Story } from './story/story.js';
+import { RoadSigns } from './story/roadSigns.js';
 import { PARTS } from './vehicle/carParts.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
@@ -120,6 +122,8 @@ export class Game {
     await this.terrain.workerReady;
     this.scatter = new Scatter(this, this.groundTex);
     this.pois = new POIManager(this);
+    this.story = new Story(this);
+    if (load && load.story) this.story.restore(load.story);
     this.npcs = new NPCManager(this);
     if (!attract) this.npcs.startBuilding();
     this.items = new ItemSystem(this);
@@ -241,6 +245,7 @@ export class Game {
     this.items.rebase(dx, dz);
     this.effects && this.effects.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
+    this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.car.syncVisual();
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
@@ -352,6 +357,11 @@ export class Game {
       }
     }
     this.updateSleep(dt);
+    if (!this.attract) {
+      this.story.update(dt);
+      this.roadSigns = this.roadSigns || new RoadSigns(this);
+      this.roadSigns.update();
+    }
   }
 
   // "Build it first": a rolling chassis in the garage, everything else laid out in the yard.

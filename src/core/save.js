@@ -106,6 +106,7 @@ export function serializeGame(g) {
     itemsSaved: [...g.items.saved.entries()],
     pois: [...g.pois.state.entries()].map(([k, st]) => [k, { ...st, taken: [...st.taken] }]),
     stats: { ...g.stats },
+    story: g.story ? g.story.serialize() : null,
   };
 }
 
