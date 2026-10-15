@@ -125,12 +125,44 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- title
+  // Route shield emblem used by the logo.
+  shield() {
+    return `<svg class="ui-shield" viewBox="0 0 100 110" aria-hidden="true"><path d="M50 4 C62 12 78 12 92 8 C96 40 92 74 50 106 C8 74 4 40 8 8 C22 12 38 12 50 4 Z" fill="none" stroke="currentColor" stroke-width="5"/><text x="50" y="40" text-anchor="middle" font-size="15" letter-spacing="2" fill="currentColor">ROUTE</text><text x="50" y="82" text-anchor="middle" font-size="44" font-weight="600" fill="currentColor">9</text></svg>`;
+  }
+
+  // First screen: wait for a key/click (also unlocks audio and starts the title theme).
+  showSplash() {
+    this.mode = 'menu';
+    this.screen('splash', (s) => {
+      s.classList.add('ui-shade-bottom');
+      const c = el('div', 'ui-splash', s);
+      el('div', 'ui-logo-wrap reveal', c, `${this.shield()}<h1 class="ui-logo">Dust Road<span>Route 9 · 150 km to Haven</span></h1>`);
+      el('div', 'ui-press', c, 'Press any key');
+      const go = () => {
+        window.removeEventListener('keydown', go, true);
+        s.removeEventListener('pointerdown', go);
+        this.unlockAudio();
+        this.showTitle();
+      };
+      window.addEventListener('keydown', go, true);
+      s.addEventListener('pointerdown', go);
+    });
+    this.show('splash');
+  }
+
+  async unlockAudio() {
+    const a = this.game && this.game.audio;
+    if (!a) return;
+    await a.start();
+    if (this.mode === 'menu') a.startMenuMusic();
+  }
+
   showTitle() {
     this.mode = 'menu';
     const sum = hasSave() ? saveSummary() : null;
     this.screen('title', (s) => {
       s.classList.add('ui-shade-left');
-      el('div', 'ui-title-block', s, `<h1 class="ui-logo">Dust Road<span>a long drive north</span></h1>`);
+      el('div', 'ui-title-block', s, `<div class="ui-logo-wrap">${this.shield()}<h1 class="ui-logo">Dust Road<span>Route 9 · 150 km to Haven</span></h1></div>`);
       const m = el('div', 'ui-menu', s);
       if (sum) {
         const b = this.item(m, 'Continue', () => this.go({ load: 1 }), `Day ${sum.day} · ${(Math.max(0, sum.distance) / 1000).toFixed(1)} km`);
@@ -138,20 +170,60 @@ export class UI {
       }
       const ng = this.item(m, 'New game', () => this.showNewGame());
       if (!sum) ng.classList.add('primary');
-      this.item(m, 'Multiplayer', () => this.showMultiplayer());
+      this.item(m, 'Multiplayer', () => this.showMultiplayer(), 'coming later');
       this.item(m, 'Settings', () => this.showSettings(() => this.showTitle()));
       this.item(m, 'Statistics', () => this.showCareer(() => this.showTitle()));
-      el('div', 'ui-foot', s, `v${VERSION} · built for keyboard and mouse`);
+      this.item(m, 'Credits', () => this.showCredits());
+      const news = el('div', 'ui-news', s);
+      news.innerHTML = `<div class="ui-news-k">Update 0.9 · The Haven update</div>
+        <div class="ui-news-t">Notes along the road, radio broadcasts from Haven, a third-person view, hands on the wheel, new clouds and light.</div>
+        <div class="ui-news-k dim">Next: co-op on Route 9</div>`;
+      el('div', 'ui-foot', s, `v${VERSION} · keyboard and mouse · ↑ ↓ Enter`);
+      this.menuNav(m);
     });
     this.show('title');
+  }
+
+  // Arrow keys / Enter move through a menu; hover sounds on every focus change.
+  menuNav(menu) {
+    const items = [...menu.querySelectorAll('.ui-item:not([disabled])')];
+    if (!items.length) return;
+    const focus = (i) => {
+      items.forEach((b) => b.classList.remove('kb'));
+      this.navIndex = (i + items.length) % items.length;
+      items[this.navIndex].classList.add('kb');
+      items[this.navIndex].focus({ preventScroll: true });
+    };
+    this.navIndex = 0;
+    this.nav = { items, focus };
+    setTimeout(() => this.current && focus(0), 50);
+  }
+
+  showCredits() {
+    this.screen('credits', (s) => {
+      s.classList.add('ui-shade-panel');
+      const p = el('div', 'ui-panel', s);
+      el('h2', 'ui-h', p, 'Credits');
+      const body = el('div', 'ui-body', p);
+      body.innerHTML = `<p class="ui-sub">Everything you see and hear is generated in code at load time: the car, the land, the buildings, the people and the music. No models, no textures, no recordings.</p>
+        <div class="ui-cols">
+          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div></div>
+          <div><div class="ui-label">Inspired by</div><div class="ui-stat"><span>Road trips</span><span>The Long Drive</span></div><div class="ui-stat"><span>Dust</span><span>Route 66, 89, 95</span></div></div>
+        </div>`;
+      const a = el('div', 'ui-actions', p);
+      this.item(a, 'Back', () => this.showTitle());
+    });
+    this.show('credits');
   }
 
   item(parent, label, fn, small) {
     const b = el('button', 'ui-item', parent, esc(label) + (small ? `<small>${esc(small)}</small>` : ''));
     b.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.game && this.game.audio && this.game.audio.uiSound('select');
       fn();
     });
+    b.addEventListener('pointerenter', () => this.game && this.game.audio && this.game.audio.uiSound('hover'));
     return b;
   }
 
@@ -242,6 +314,7 @@ export class UI {
 
   // Navigate to a fresh page load that boots straight into the game.
   go(params) {
+    this.game && this.game.audio && this.game.audio.stopMenuMusic && this.game.audio.stopMenuMusic();
     const q = new URLSearchParams({ play: '1', ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
     this.screen('fade', (s) => s.classList.add('ui-shade-dark'));
     this.show('fade');
@@ -733,6 +806,22 @@ export class UI {
       btn.textContent = keyName(settings.data.bindings[action]);
       return;
     }
+    if (this.mode === 'menu' && this.nav && this.current === 'title') {
+      const { items, focus } = this.nav;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        focus(this.navIndex + 1);
+        this.game.audio && this.game.audio.uiSound('hover');
+        e.preventDefault();
+      } else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        focus(this.navIndex - 1);
+        this.game.audio && this.game.audio.uiSound('hover');
+        e.preventDefault();
+      } else if (e.code === 'Enter' || e.code === 'Space') {
+        items[this.navIndex].click();
+        e.preventDefault();
+      }
+    }
+    if (e.code === 'Escape' && this.mode === 'menu' && this.current && !['title', 'splash'].includes(this.current)) this.showTitle();
     if (this.mode !== 'play' || !this.game) return;
     const journalKey = settings.data.bindings.journal;
     if (e.code === journalKey && !e.repeat) {

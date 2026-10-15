@@ -171,7 +171,15 @@ export class Game {
     this.car.syncVisual();
     this.items.update();
     this.hud.show(!attract);
-    if (attract) this.interaction.viewRoot.visible = false;
+    if (attract) {
+      // title screen: the car drives itself north at dusk with its lights on
+      this.interaction.viewRoot.visible = false;
+      this.player.enterSeat(this.car, 'driver');
+      this.car.setIgnition(true);
+      this.car.dyn.startEngine();
+      this.car.lightsOn = 1;
+      this.car.dyn.automatic = true;
+    }
     for (const s of this.systems) s.init && (await s.init(this));
     onProgress('Ready', 1);
     this.running = true;
@@ -303,7 +311,8 @@ export class Game {
     }
     // car controls
     let controls = null;
-    if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
+    if (this.attract) controls = this.attractControls(dt);
+    else if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
     this.car.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
     this.physics.update(dt);
@@ -474,18 +483,67 @@ export class Game {
     if (severity > 4) this.stats.crashes++;
   }
 
-  // Slow cinematic orbit around the parked car for the title screen.
+  // Title-screen autopilot: hold the right lane at a cruising speed.
+  attractControls() {
+    const car = this.car;
+    const p = car.root.position;
+    const gz = p.z + this.origin.z;
+    const ahead = Math.max(14, (Math.abs(car.speedKmh) / 3.6) * 1.3);
+    const tz = gz + ahead;
+    const tx = this.gen.roadX(tz) - this.origin.x + 1.9;
+    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(car.root.quaternion);
+    const want = Math.atan2(tx - p.x, tz - this.origin.z - p.z);
+    let d = want - Math.atan2(fwd.x, fwd.z);
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    const sp = car.speedKmh;
+    if (car.fuel < 5) car.fuel = 30;
+    return { throttle: sp < 72 ? 0.7 : 0, brake: sp > 80 ? 0.3 : 0, reverse: 0, steer: clamp(-d * 2.2, -1, 1), handbrake: 0 };
+  }
+
+  // Cinematic shots around the driving car: low tracking, high follow, front three-quarter,
+  // wheel-level pass-by. Cuts every ~11 s with a short blend.
   updateAttractCamera(dt) {
     const cam = this.renderer.camera;
-    const c = this.car.root.position;
+    const car = this.car;
+    const c = car.root.position;
+    const q = car.root.quaternion;
     this.attractT = (this.attractT || 0) + dt;
-    const a = 2.3 + this.attractT * 0.035;
-    const r = 7.6 + Math.sin(this.attractT * 0.05) * 0.8;
-    const x = c.x + Math.sin(a) * r,
-      z = c.z + Math.cos(a) * r;
-    const y = Math.max(this.groundHeightAt(x, z, c.y + 5) + 1.25, c.y + 0.9);
-    cam.position.set(x, y, z);
-    cam.lookAt(c.x - Math.sin(a) * 1.5, c.y + 0.55, c.z - Math.cos(a) * 1.5);
+    const T = 11;
+    const shot = Math.floor(this.attractT / T) % 4;
+    const u = (this.attractT % T) / T;
+    const local = (x, y, z) => new THREE.Vector3(x, y, z).applyQuaternion(q).add(c);
+    let pos, look;
+    if (shot === 0) {
+      pos = local(-3.6, 0.9, -1.5 + u * 3.5);
+      look = local(0.3, 0.7, 0.8);
+    } else if (shot === 1) {
+      pos = local(1.5 + u * 2, 4.2 - u * 0.8, -9 - u * 1.5);
+      look = local(0, 0.8, 6);
+    } else if (shot === 2) {
+      pos = local(3.2 - u * 1.4, 1.15, 7.5 - u * 2.5);
+      look = local(0, 0.75, 0);
+    } else {
+      pos = local(-2.4, 0.45, 4.5 - u * 9);
+      look = local(0, 0.6, 1.2 - u * 3);
+    }
+    const gy = this.groundHeightAt(pos.x, pos.z, pos.y + 4) + 0.35;
+    pos.y = Math.max(pos.y, gy);
+    // keep the car right of centre so the menu column on the left stays clear
+    const viewDir = look.clone().sub(pos).normalize();
+    const camRight = viewDir.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+    look.addScaledVector(camRight, -(shot === 1 ? 2.2 : 1.7));
+    // short dissolve-like ease at cuts
+    const fresh = this.attractT % T < dt * 1.5;
+    if (fresh || !this._attractPos) {
+      this._attractPos = pos.clone();
+      this._attractLook = look.clone();
+    }
+    this._attractPos.lerp(pos, Math.min(1, dt * 6));
+    this._attractLook.lerp(look, Math.min(1, dt * 6));
+    cam.position.copy(this._attractPos);
+    cam.lookAt(this._attractLook);
+    this.attractShot = shot;
   }
 
   // Pump -> car refuelling session started from a pump.

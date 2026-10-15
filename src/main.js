@@ -61,11 +61,12 @@ async function boot() {
   }
   // title screen: the world loads behind a dark veil, then fades in
   ui.mode = 'menu';
-  ui.showTitle();
+  ui.showSplash();
   const veil = document.createElement('div');
   veil.style.cssText = 'position:fixed;inset:0;background:#0d0c0b;z-index:5;transition:opacity 1.6s ease';
   document.body.appendChild(veil);
-  await game.init({ seed: 1234, time: 18.35, weather: 'clear', startZ: 1880, attract: true });
+  await game.init({ seed: 1234, time: 18.2, weather: 'clear', startZ: 1880, attract: true });
+  game.env.timeScale = 0.12; // dusk lingers on the title screen
   game.start();
   requestAnimationFrame(() => (veil.style.opacity = '0'));
   setTimeout(() => veil.remove(), 1800);

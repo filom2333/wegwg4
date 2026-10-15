@@ -608,3 +608,109 @@
 .ui-note-item:hover {
   border-color: var(--amber);
 }
+
+/* ------------------------------------------------------------------ title (release look) */
+.ui-shade-bottom {
+  background: linear-gradient(180deg, rgba(10, 9, 8, 0) 40%, rgba(10, 9, 8, 0.75) 100%);
+}
+.ui-logo-wrap {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.ui-shield {
+  width: clamp(64px, 6.6vw, 96px);
+  color: var(--amber);
+  flex: none;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45));
+}
+.ui-shield text {
+  font-family: var(--font-display);
+}
+.ui-logo {
+  text-shadow: 0 6px 40px rgba(0, 0, 0, 0.45);
+}
+.ui-splash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+}
+.ui-splash .ui-logo {
+  font-size: clamp(60px, 8vw, 120px);
+}
+.ui-press {
+  font-size: 15px;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  animation: ui-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ui-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.reveal {
+  animation: ui-reveal 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    letter-spacing: 0.3em;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ui-item.kb {
+  color: var(--ink);
+}
+.ui-item.kb::before {
+  width: 22px;
+}
+.ui-item {
+  outline: none;
+}
+.ui-news {
+  position: absolute;
+  right: 28px;
+  bottom: 58px;
+  width: 320px;
+  padding: 16px 18px;
+  border-left: 2px solid var(--amber);
+  background: rgba(13, 12, 11, 0.5);
+  backdrop-filter: blur(4px);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.ui-news-k {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.ui-news-k.dim {
+  color: var(--ink-3);
+  margin: 10px 0 0;
+}
+.ui-news-t {
+  color: var(--ink);
+}
+@media (max-width: 900px) {
+  .ui-news {
+    display: none;
+  }
+}

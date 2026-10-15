@@ -388,6 +388,114 @@ export class AudioSystem {
     }
   }
 
+  // ---------------------------------------------------------------- title theme
+  // A slow, warm pad (detuned saws through a breathing low-pass) under a sparse plucked melody
+  // with a long delay: road-movie at dusk. Runs on the music bus.
+  startMenuMusic() {
+    if (!this.ready || this.menuMusic) return;
+    const c = this.ctx;
+    const out = c.createGain();
+    out.gain.value = 0;
+    out.gain.linearRampToValueAtTime(0.9, c.currentTime + 4);
+    out.connect(this.music);
+    const delay = c.createDelay(2);
+    delay.delayTime.value = 0.62;
+    const fb = c.createGain();
+    fb.gain.value = 0.38;
+    const dl = c.createBiquadFilter();
+    dl.type = 'lowpass';
+    dl.frequency.value = 2400;
+    delay.connect(dl).connect(fb).connect(delay);
+    dl.connect(out);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    lp.Q.value = 0.7;
+    const lfo = c.createOscillator();
+    lfo.frequency.value = 0.07;
+    const lfoG = c.createGain();
+    lfoG.gain.value = 380;
+    lfo.connect(lfoG).connect(lp.frequency);
+    lfo.start();
+    const padG = c.createGain();
+    padG.gain.value = 0.09;
+    lp.connect(padG).connect(out);
+    const chords = [
+      [110, 164.81, 220, 261.63],
+      [87.31, 130.81, 174.61, 220],
+      [98, 146.83, 196, 246.94],
+      [82.41, 123.47, 164.81, 207.65],
+    ];
+    const voices = [];
+    for (let i = 0; i < 4; i++)
+      for (const det of [-6, 6]) {
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.detune.value = det;
+        o.frequency.value = chords[0][i];
+        o.connect(lp);
+        o.start();
+        voices.push({ o, i });
+      }
+    const mm = (this.menuMusic = { out, voices, lfo, chord: 0, step: 0, timer: null });
+    const tick = () => {
+      if (this.menuMusic !== mm) return;
+      // chord change every 8 steps, glide
+      if (mm.step % 8 === 0) {
+        const ch = chords[(mm.step / 8) % chords.length];
+        for (const v of voices) v.o.frequency.setTargetAtTime(ch[v.i], c.currentTime, 0.8);
+        mm.chord = (mm.step / 8) % chords.length;
+      }
+      // sparse melody from the pluck bank
+      const pat = [0, -1, 2, -1, 3, 1, -1, 4];
+      const k = pat[mm.step % pat.length];
+      if (k >= 0 && Math.random() < 0.85) {
+        const idx = (k + mm.chord * 2) % this.buffers.pluck.length;
+        const src = c.createBufferSource();
+        src.buffer = this.buffers.pluck[idx];
+        const g = c.createGain();
+        g.gain.value = 0.22;
+        src.connect(g);
+        g.connect(out);
+        g.connect(delay);
+        src.start();
+      }
+      mm.step++;
+      mm.timer = setTimeout(tick, 680);
+    };
+    mm.timer = setTimeout(tick, 1500);
+  }
+
+  stopMenuMusic() {
+    const mm = this.menuMusic;
+    if (!mm) return;
+    this.menuMusic = null;
+    clearTimeout(mm.timer);
+    const c = this.ctx;
+    mm.out.gain.setTargetAtTime(0, c.currentTime, 0.4);
+    setTimeout(() => {
+      for (const v of mm.voices) v.o.stop();
+      mm.lfo.stop();
+      mm.out.disconnect();
+    }, 2500);
+  }
+
+  // UI ticks: short filtered clicks for hover / select.
+  uiSound(kind = 'hover') {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = 'triangle';
+    o.frequency.value = kind === 'hover' ? 1400 : 520;
+    o.frequency.exponentialRampToValueAtTime(kind === 'hover' ? 1100 : 300, c.currentTime + 0.08);
+    g.gain.value = kind === 'hover' ? 0.035 : 0.09;
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + (kind === 'hover' ? 0.06 : 0.16));
+    o.connect(g).connect(this.sfx);
+    o.start();
+    o.stop(c.currentTime + 0.2);
+  }
+
   radioNote() {
     // slow arpeggiated progression in A minor; occasional fades for "signal"
     const r = this.radio;
