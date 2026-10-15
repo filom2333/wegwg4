@@ -1,2 +1,96 @@
-# wegwg4
-wegwg4
+# Dust Road
+
+A first-person survival driving game in the spirit of *The Long Drive*: an endless desert road
+running north, a car you keep alive part by part, and not much else. Built from scratch with
+three.js and Rapier. Every model (car, buildings, furniture, items, hands, characters) is
+generated in code. There are no external assets.
+
+## Run
+
+```bash
+npm install
+npm run dev        # http://localhost:5173  (game)  ·  /inspect.html  (inspection stand)
+npm run build      # production build in dist/
+```
+
+You need a desktop browser with WebGL2. Click the canvas to capture the mouse; Esc releases it and pauses.
+
+## Controls (rebindable in Settings → Controls)
+
+| Key | Action |
+| --- | --- |
+| W A S D | Walk / drive |
+| Shift, Ctrl, Space | Sprint, crouch, jump (handbrake in the car) |
+| E | Interact: pick up, open/close, get in/out, install a held part, search a body |
+| R (hold) | Unbolt the car part you are looking at · reload a weapon |
+| G (hold to throw) | Drop the held item |
+| RMB | Rotate held item · aim a weapon |
+| LMB | Use / pour / eat / drink / fire |
+| Q, 1–6 | Pocket the held item, take an item out of a pocket |
+| F | Flashlight · quick-use |
+| I (hold) | Ignition, hold to crank |
+| L, H, K | Headlights (off / low / high), horn, wipers |
+| X / Z | Gear up / down (manual gearbox) |
+| C | Look back |
+| B | Sleep (seated in the car, engine off) |
+| J | Journal (stats) |
+
+## What is in it
+
+- **Car**: a procedural 2010-era sedan (implicit-surface body, trimmed panels with real gaps,
+  glass, lamps, mirrors, interior with live gauges, engine bay, chassis). 30 parts can be removed
+  and installed; parts depend on each other (no doors before the shell, no air filter before the
+  engine). Heavy parts (engine, body shell) are dragged along the ground rather than carried.
+  Fuel, oil, coolant, battery charge, engine temperature and condition, tyre wear are simulated.
+- **Driving**: raycast suspension with springs, dampers, anti-roll and bump stops; a combined-slip
+  tyre model with surface grip (asphalt, gravel, dirt, sand, salt) and rain; ABS, traction control,
+  automatic or manual gearbox. Rollovers need a real cause (kerbs, slopes, excessive speed).
+- **World**: an endless road through scrubland, dunes, badlands, salt flats and high desert with
+  gradual transitions; streamed terrain with LOD in a worker; instanced flora and rocks; points of
+  interest every ~600 m (homestead, gas stations with working pumps, motels, diners, houses,
+  ranches, junkyards, trailer parks, outposts, ruins, camps, towers, wrecks) with furnished
+  interiors and loot.
+- **People and animals**: vagrants (neutral or hostile), a night creature that stalks and fears
+  light, coyote packs, jackrabbits. Procedural animation, per-bone hitboxes, headshots, looting.
+- **Survival**: health, food, water, rest, bleeding; jerry cans and bottles with real volumes;
+  food with nutrition; day/night; weather (clear, haze, cloud, rain, storm, sandstorm) that changes
+  grip and visibility.
+- **Effects and sound**: wheel dust, exhaust, engine smoke and fire, backfires, debris, muzzle
+  flashes, tracers, casings, blood, rain splashes, lightning, dust devils, tumbleweeds, vultures,
+  meteors, moths at lamps. All sound is synthesised at runtime with WebAudio.
+- **Menus**: title screen over a live scene, new game (difficulty, ready-to-drive or build-it-first,
+  seed), settings, statistics, pause, journal, death screen, save/load with autosave. The
+  Multiplayer button is a placeholder only: there is no networking.
+
+## Inspection stand
+
+`/inspect.html` shows the car on a turntable: orbit, preset views, open/close every hinged part,
+assembly stages, clay / wireframe / normals / hole views, section planes, open-edge and
+self-intersection checks. `?subject=npc`, `?subject=house`, `?subject=items` and `?subject=hand`
+show other generated models on the same stand.
+
+## Layout
+
+```
+src/vehicle    car body generator, parts, materials, systems (car.js)
+src/physics    Rapier wrapper, vehicle dynamics
+src/world      world generator, terrain streaming, scatter, POIs, buildings
+src/npc        SDF character modelling, polygoniser worker, NPC AI and animation
+src/items      item models, definitions, physics items and loot
+src/player     controller, first-person hands, interaction
+src/gfx        renderer, sky, terrain material, effects
+src/audio      procedural synthesis and mixing
+src/ui         HUD, menus
+src/core       input, settings, noise, save games
+tools/         headless screenshot and test drivers (Playwright)
+```
+
+## Known limitations
+
+- No multiplayer (button only, by design for this version).
+- Only one car model. Characters are modelled from signed-distance primitives, so they read well
+  at gameplay distance but are not film-quality up close.
+- NPCs walk on the ground and steer around obstacles with ray probes; there is no navigation mesh,
+  so they can get stuck in tight building interiors.
+- Performance has been measured only in a software renderer during development (simulation costs
+  about 3 ms per frame on the CPU). Use the Low or Medium quality preset on slower GPUs.
