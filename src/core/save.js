@@ -98,6 +98,7 @@ export function serializeGame(g) {
       trip: car.trip,
       dirt: car.dirt,
       lightsOn: car.lightsOn,
+      paintColor: car.paintColor ?? null,
       parts,
       open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
     },
@@ -127,6 +128,10 @@ export function applySave(g, d) {
   // car
   const c = d.car;
   for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'radiatorCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined) car[k] = c[k];
+  if (c.paintColor) {
+    car.paintColor = c.paintColor;
+    g.carMats.paint.color.setHex(c.paintColor);
+  }
   for (const [id, st] of Object.entries(c.parts || {})) {
     if (!car.parts[id]) continue;
     if (!!car.parts[id].installed !== st.installed) car.setInstalled(id, st.installed);

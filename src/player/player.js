@@ -440,7 +440,7 @@ export class Player {
   }
 
   // eat / drink / heal
-  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0 }) {
+  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0 } = {}) {
     this.food = clamp(this.food + food, 0, 100);
     this.water = clamp(this.water + water, 0, 100);
     this.health = clamp(this.health + health, 0, 100);

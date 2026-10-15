@@ -29,6 +29,10 @@ export const ITEMS = {
   shotgun: { name: 'Double-barrel shotgun', model: ['shotgun'], mass: 3.2, weapon: { ammo: '12', mag: 2, damage: 14, pellets: 9, spread: 0.05, rate: 0.3, reload: 2.6, range: 45 }, hold: 'rifle' },
   ammo38: { name: '.38 cartridges', model: ['ammoBox', '38'], mass: 0.15, ammo: { type: '38', count: 12 }, hold: 'hand', desc: 'Use to put them in your pouch.' },
   ammo12: { name: '12 ga shells', model: ['ammoBox', '12'], mass: 0.4, ammo: { type: '12', count: 8 }, hold: 'hand' },
+  sponge: { name: 'Sponge', model: ['sponge'], mass: 0.03, clean: true, hold: 'hand', desc: 'Hold LMB on the car to wash off the dust.' },
+  sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 1, hold: 'hand', desc: 'Use on the car to give it a new colour.' },
+  cigarettes: { name: 'Cigarettes', model: ['cigarettes'], mass: 0.03, consume: { energy: 6, food: -3, water: -5, smoke: true }, charges: 5, hold: 'hand', desc: 'Calms the nerves. Makes you thirsty.' },
+  coffee: { name: 'Canned coffee', model: ['coffee'], mass: 0.3, consume: { energy: 28, water: 6, food: 2 }, hold: 'hand', desc: 'Keeps you awake on long drives.' },
   note: { name: 'Note', model: ['note'], mass: 0.01, readable: true, hold: 'hand', desc: 'Someone left this for whoever came next.' },
   meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
 };
@@ -43,6 +47,8 @@ export const LOOT = {
     ['bandage', 1],
   ],
   kitchen: [
+    ['coffee', 1],
+    ['sponge', 0.6],
     ['cannedBeans', 3],
     ['cannedSoup', 3],
     ['cannedPeaches', 2],
@@ -62,6 +68,8 @@ export const LOOT = {
     ['cannedPeaches', 1],
   ],
   table: [
+    ['cigarettes', 1],
+    ['coffee', 0.8],
     ['sodaCan', 2],
     ['chips', 2],
     ['chocolate', 2],
@@ -119,6 +127,8 @@ export const LOOT = {
     ['cannedBeans', 1],
   ],
   tools: [
+    ['sprayPaint', 0.8],
+    ['sponge', 0.8],
     ['wrench', 2],
     ['oilBottle', 2],
     ['tyreKit', 1],
@@ -126,6 +136,9 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['cigarettes', 1.2],
+    ['coffee', 1.2],
+    ['sprayPaint', 0.4],
     ['chips', 3],
     ['chocolate', 3],
     ['jerky', 2],

@@ -209,6 +209,69 @@ export function snackBag(kind = 'chips') {
   return centered(g);
 }
 
+export function sponge() {
+  const g = new THREE.Group();
+  const m = cached('spongeMat', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xd9b23a, roughness: 0.95 }), 'cast', 1.2));
+  const scour = cached('scourMat', () => new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 1 }));
+  g.add(mesh(roundedBox(0.12, 0.035, 0.075, 0.012, 3).translate(0, 0.0175, 0), m));
+  g.add(mesh(roundedBox(0.12, 0.01, 0.075, 0.004, 2).translate(0, 0.04, 0), scour));
+  return centered(g);
+}
+
+export function sprayPaint() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const lab = labelMat('spray', 256, 128, (c, w, h) => {
+    const gr = c.createLinearGradient(0, 0, w, 0);
+    gr.addColorStop(0, '#1d4e8a');
+    gr.addColorStop(0.5, '#c23b22');
+    gr.addColorStop(1, '#e0b21c');
+    c.fillStyle = gr;
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = '#fff';
+    c.font = 'bold 30px Arial';
+    c.fillText('AUTO ENAMEL', 18, 74);
+  }, { metalness: 0.5, roughness: 0.35 });
+  g.add(mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.16, 24, 1, true).translate(0, 0.085, 0), lab));
+  g.add(mesh(latheY([[0.0, 0.0], [0.03, 0.0], [0.033, 0.005]], 24), M.steel));
+  g.add(mesh(latheY([[0.033, 0.165], [0.02, 0.185], [0.012, 0.19], [0.0, 0.19]], 24), M.steel));
+  g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.015, 10).translate(0, 0.197, 0), M.rubber));
+  return centered(g);
+}
+
+export function cigarettes() {
+  const g = new THREE.Group();
+  const lab = labelMat('cigs', 128, 192, (c, w, h) => {
+    c.fillStyle = '#efe9dc';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = '#8c1d1d';
+    c.fillRect(0, 0, w, 70);
+    c.fillStyle = '#111';
+    c.font = 'bold 22px Arial';
+    c.fillText('DESERT', 18, 110);
+    c.font = '14px Arial';
+    c.fillText('FILTERS · 20', 18, 135);
+  }, { roughness: 0.6 });
+  g.add(mesh(roundedBox(0.055, 0.085, 0.022, 0.003, 1).translate(0, 0.0425, 0), lab));
+  return centered(g);
+}
+
+export function coffee() {
+  const g = new THREE.Group();
+  const M = itemMats();
+  const lab = labelMat('coffee', 256, 128, (c, w, h) => {
+    c.fillStyle = '#3b2416';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = '#e8c27a';
+    c.font = 'bold 40px Arial';
+    c.fillText('COFFEE', 40, 78);
+  }, { roughness: 0.4, metalness: 0.3 });
+  g.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.11, 24, 1, true).translate(0, 0.06, 0), lab));
+  g.add(mesh(latheY([[0.0, 0.0], [0.04, 0.0], [0.04, 0.005]], 24), M.steel));
+  g.add(mesh(latheY([[0.04, 0.115], [0.036, 0.122], [0.0, 0.12]], 24), M.steel));
+  return centered(g);
+}
+
 // Folded sheet of paper with handwriting.
 export function note() {
   const mat = cached('noteMat', () => {
@@ -511,6 +574,10 @@ export function ammoBox(kind = '38') {
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
   note,
+  sponge,
+  sprayPaint,
+  cigarettes,
+  coffee,
   jerryCan,
   waterBottle,
   sodaCan,

@@ -492,6 +492,14 @@ export class Car {
       w.tyreCondition = st.condition;
       if (st.condition < 0.02) w.flat = true;
     }
+    // dust builds up off the asphalt; rain washes it off; drives the paint weathering shader
+    const env2 = this.game.env;
+    const spd = Math.abs(d.forwardSpeed);
+    const surf = (d.wheels[0] && d.wheels[0].surface) || 'asphalt';
+    if (spd > 2) this.dirt = Math.min(1, this.dirt + dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
+    if (env2 && env2.w.rain > 0.3) this.dirt = Math.max(0.05, this.dirt - dt * 0.004 * env2.w.rain);
+    const wu = this.game.carMats && this.game.carMats.weather;
+    if (wu && wu.uDirt) wu.uDirt.value = this.dirt;
     // wipers
     if (this.wipers && this.isInstalled('battery') && this.battery > 0.03) this.wiperPhase += dt * 2.4;
     else if (this.wiperPhase % (Math.PI * 2) > 0.05) this.wiperPhase += dt * 2.4;

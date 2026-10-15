@@ -290,9 +290,11 @@ export class Interaction {
       return out;
     }
     if (def.melee) out.push(['LMB', 'Swing']);
-    if (def.consume) out.push(['LMB', def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
+    if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
+    if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
+    if (def.paint) out.push(['LMB', 'Repaint the car']);
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.liquid) {
       const tgt = this.pourTarget(it, t);
@@ -663,6 +665,19 @@ export class Interaction {
         const tgt = this.pourTarget(it, this.target);
         if (input.mouseDown(0)) this.pour(it, tgt, dt);
         else this.pouring = 0;
+      } else if (def.clean) {
+        const car = this.game.car;
+        const t = this.target;
+        const onCar = t && (t.kind === 'part' || t.kind === 'hotspot' || t.kind === 'seat');
+        if (input.mouseDown(0) && onCar && car) {
+          car.dirt = Math.max(0, car.dirt - dt * 0.06);
+          this.useAnim = Math.max(this.useAnim, 0.6 + 0.3 * Math.sin(this.game.time * 14));
+          this.cleanSnd = (this.cleanSnd || 0) - dt;
+          if (this.cleanSnd <= 0) {
+            this.cleanSnd = 0.35;
+            this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
+          }
+        }
       } else if (input.mousePressed(0)) this.useHeld();
     }
   }
@@ -701,9 +716,33 @@ export class Interaction {
     const p = g.player;
     if (def.consume) {
       p.consume(def.consume);
+      if (def.consume.smoke) {
+        // a cigarette: a few puffs of smoke drifting up past the view
+        const cam = this.cam;
+        const at = cam.position.clone().add(V(0, -0.05, -0.25).applyQuaternion(cam.quaternion));
+        for (let k = 0; k < 6; k++) setTimeout(() => g.effects && g.effects.smoke && g.effects.smoke.emit({ pos: at.clone(), vel: V((Math.random() - 0.5) * 0.1, 0.25, (Math.random() - 0.5) * 0.1), size: 0.06, grow: 0.5, life: 2.2, color: [0.75, 0.75, 0.75], alpha: 0.25, drag: 1 }), k * 120);
+        g.audio && g.audio.play('breath' in (g.audio.buffers || {}) ? 'breath' : 'click');
+        it.state.charges = (it.state.charges ?? def.charges ?? 1) - 1;
+        if (it.state.charges <= 0) this.consumeHeld();
+        else this.useAnim = 1;
+        return;
+      }
       if (def.consume.food > 0) g.stats.meals++;
       else g.stats.drinks++;
       g.audio && g.audio.play(def.consume.food > 0 ? 'eat' : def.consume.health > 0 ? 'bandage' : 'drink');
+      this.consumeHeld();
+      return;
+    }
+    if (def.paint) {
+      const car = g.car;
+      if (!car || car.root.position.distanceTo(p.position) > 4) return g.hud && g.hud.toast('Stand next to the car');
+      const palette = [0xa8502c, 0x2f4a5c, 0x6d7a7f, 0x7a2e24, 0x4b5a3a, 0xb9b2a0, 0x1f1f22, 0xc8a14a];
+      const cur = g.carMats.paint.color.getHex();
+      const i = (palette.findIndex((c) => Math.abs(c - cur) < 0x10) + 1) % palette.length;
+      g.carMats.paint.color.setHex(palette[i]);
+      car.paintColor = palette[i];
+      g.audio && g.audio.play('pour');
+      g.hud && g.hud.toast('New coat of paint');
       this.consumeHeld();
       return;
     }
