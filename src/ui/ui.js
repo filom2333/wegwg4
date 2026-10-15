@@ -50,6 +50,7 @@ const LABELS = {
   lookBack: 'Look back',
   journal: 'Journal',
   sleep: 'Sleep (in the car)',
+  view: 'First / third person',
 };
 
 function keyName(code) {

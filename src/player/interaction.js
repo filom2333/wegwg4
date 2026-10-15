@@ -32,7 +32,7 @@ const HOLD = {
 export class Interaction {
   constructor(game) {
     this.game = game;
-    this.cam = game.renderer.camera;
+    this.cam = game.eyeCam;
     this.held = null;
     this.dragging = false;
     this.holdRot = new THREE.Quaternion();
@@ -611,6 +611,19 @@ export class Interaction {
     // world transform
     const wp = local.clone().applyQuaternion(cam.quaternion).add(cam.position);
     const wq = cam.quaternion.clone().multiply(localQ);
+    // third person: small items sit in the body's right hand
+    const pl = this.game.player;
+    const av = this.game.npcs && this.game.npcs.avatar;
+    if (pl.tpBlend > 0.5 && av && !(it.part || this.dragging) && !big) {
+      const hw = av.handWorld(V());
+      const hq = new THREE.Quaternion();
+      av.bones.handR.getWorldQuaternion(hq);
+      const off = hold ? hold.item.clone().multiplyScalar(-1).applyQuaternion(cam.quaternion) : V();
+      void off;
+      wp.copy(hw).add(V(0, -0.06, 0).applyQuaternion(hq));
+      wq.copy(av.root.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)));
+      if (def && def.weapon) wq.copy(cam.quaternion).multiply(localQ);
+    }
     // keep big items out of walls: pull toward the eye if the path is blocked
     if (big) {
       const dir = wp.clone().sub(cam.position);

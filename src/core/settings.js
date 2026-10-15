@@ -24,6 +24,7 @@ export const DEFAULT_BINDINGS = {
   lookBack: 'KeyC',
   journal: 'KeyJ',
   sleep: 'KeyB',
+  view: 'KeyV',
 };
 
 export const DEFAULTS = {

@@ -95,10 +95,10 @@ function humanJoints(h = 1, { hunch = 0, armLen = 1, legLen = 1 } = {}) {
 }
 
 // ------------------------------------------------------------------ vagrant
-export function defineVagrant(seed = 1) {
+export function defineVagrant(seed = 1, { pack: withPack = true, hunch = 0.15, coat = null, beardScale = 1 } = {}) {
   const r = mulberry32(seed);
   const m = new SDFModel();
-  const sk = skeleton(humanJoints(1, { hunch: 0.15 }));
+  const sk = skeleton(humanJoints(1, { hunch }));
   const J = sk.world;
   const skinTone = [
     [0.62, 0.45, 0.35],
@@ -115,7 +115,7 @@ export function defineVagrant(seed = 1) {
     [0.4, 0.28, 0.2],
     [0.22, 0.22, 0.24],
   ];
-  m.material('coat', coatCols[Math.floor(r() * coatCols.length)], 0.95, 0.16);
+  m.material('coat', coat || coatCols[Math.floor(r() * coatCols.length)], 0.95, 0.16);
   m.material('lining', [0.5, 0.46, 0.38], 0.95, 0.12);
   m.material('pants', [0.18, 0.2, 0.24].map((c) => c * (0.85 + r() * 0.3)), 0.95, 0.12);
   m.material('boot', [0.2, 0.14, 0.09], 0.65, 0.12);
@@ -203,6 +203,7 @@ export function defineVagrant(seed = 1) {
     m.box(P('foot' + s).add(V(0, -0.035, 0.05)), V(0.05, 0.04, 0.12), 0.035, 'foot' + s, 'boot', { blend: 0.03, layer: 2 });
     m.cone(P('foot' + s).add(V(0, -0.075, -0.06)), P('foot' + s).add(V(0, -0.075, 0.16)), 0.018, 0.018, 'foot' + s, 'sole', { blend: 0.035, layer: 3 });
   }
+  if (!withPack) return { ...finish(m, sk, 0.0105), height: 1.78, kind: 'human', hitboxes: humanHitboxes() };
   // backpack (with flap and side pocket), bedroll, shoulder straps following the jacket
   const pack = chest.clone().add(V(0, -0.05, -0.2));
   const tilt = new THREE.Euler(0.12, 0, 0);
@@ -425,5 +426,10 @@ export function defineCoyote(seed = 5) {
   };
 }
 
-export const DEFINE = { vagrant: defineVagrant, creature: defineCreature, rabbit: defineRabbit, coyote: defineCoyote };
+// The player's own body (third-person view, future co-op): upright, no pack, work jacket.
+export function defineSurvivor(seed = 11) {
+  return defineVagrant(seed, { pack: false, hunch: 0.02, coat: [0.27, 0.3, 0.22] });
+}
+
+export const DEFINE = { vagrant: defineVagrant, creature: defineCreature, rabbit: defineRabbit, coyote: defineCoyote, survivor: defineSurvivor };
 export const CHARACTER_BUILDERS = Object.fromEntries(Object.keys(DEFINE).map((k) => [k, (seed) => buildCharacter(k, seed)]));

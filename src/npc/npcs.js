@@ -27,6 +27,7 @@ const TYPES = {
   creature: { name: 'Pale thing', hp: 150, walk: 1.5, run: 7.2, turn: 6, reach: 1.9, deathLift: 0.12, seeds: [7], radius: 0.35 },
   coyote: { name: 'Coyote', hp: 40, walk: 1.3, run: 9.5, turn: 7, reach: 1.1, deathLift: 0.11, seeds: [5], radius: 0.3 },
   rabbit: { name: 'Jackrabbit', hp: 8, walk: 1.2, run: 9, turn: 9, reach: 0.3, deathLift: 0.06, seeds: [3, 4], radius: 0.12 },
+  survivor: { name: 'You', hp: 100, walk: 3.1, run: 5.8, turn: 12, reach: 1, deathLift: 0.15, seeds: [11], radius: 0.3, avatar: true },
 };
 
 const VAGRANT_LOOT = [
@@ -1050,7 +1051,7 @@ export class NPCManager {
     const jobs = [];
     for (const [type, T] of Object.entries(TYPES)) for (const seed of T.seeds) jobs.push({ type, seed });
     // the most common first
-    const order = { rabbit: 0, vagrant: 1, coyote: 2, creature: 3 };
+    const order = { survivor: 0, rabbit: 1, vagrant: 2, coyote: 3, creature: 4 };
     jobs.sort((a, b) => order[a.type] - order[b.type]);
     // first-person hand poses go first: they are on screen from the first frame
     const hands = HAND_POSES.map((pose) => ({ type: 'hand', pose, seed: 0 }));
@@ -1340,6 +1341,15 @@ export class NPCManager {
   }
 
   // ---------------------------------------------------------------- frame
+  ensureAvatar() {
+    if (this.avatar || !this.ready('survivor')) return this.avatar;
+    const proto = this.protos.survivor[0];
+    this.avatar = new PlayerAvatar(this, proto, this.g.player.position.clone());
+    this.avatar.root.visible = false;
+    this.g.worldGroup.add(this.avatar.root);
+    return this.avatar;
+  }
+
   update(dt) {
     const g = this.g;
     if (!g.player) return;
@@ -1371,6 +1381,10 @@ export class NPCManager {
   }
 
   rebase(dx, dz) {
+    if (this.avatar) {
+      this.avatar.pos.x -= dx;
+      this.avatar.pos.z -= dz;
+    }
     for (const n of this.list) {
       n.pos.x -= dx;
       n.pos.z -= dz;
@@ -1392,5 +1406,139 @@ export class NPCManager {
   // Nearby NPCs summarised for the HUD/compass, debugging and tests.
   debugList() {
     return this.list.map((n) => ({ type: n.type, state: n.state, hp: Math.round(n.hp), dead: n.dead, x: +n.pos.x.toFixed(1), z: +n.pos.z.toFixed(1) }));
+  }
+}
+
+
+// ------------------------------------------------------------------ player avatar
+// The player's body for the third-person camera (and remote players later). Driven by the player
+// controller instead of AI: walk/run/crouch/jump/seated poses, head following the view, the held
+// item in the right hand. No hitboxes.
+export class PlayerAvatar extends NPC {
+  constructor(mgr, proto, pos) {
+    super(mgr, proto, 'survivor', pos, { yaw: 0 });
+    for (const h of this.hitboxes) mgr.g.physics.removeCollider(h.col);
+    this.hitboxes = [];
+    this.mesh.traverse((o) => (o.castShadow = true));
+  }
+
+  sync(dt, player) {
+    const a = this.anim;
+    a.t += dt;
+    this.seated = !!player.seat;
+    if (this.seated) {
+      const car = player.car;
+      const sp = car.seatWorld(player.seat);
+      // hips sit on the cushion below the eye point
+      const q = car.root.quaternion;
+      const hipW = V(0, -0.62, -0.02).applyQuaternion(q).add(sp);
+      this.pos.copy(hipW).addScaledVector(V(0, 1, 0).applyQuaternion(q), -0.98);
+      this.root.position.copy(this.pos);
+      this.root.quaternion.copy(q);
+      this.speed = 0;
+      this.animSeated(dt, player);
+    } else {
+      const p = player.position;
+      const v = player.velocity;
+      const sp = Math.hypot(v.x, v.z);
+      this.speed += (sp - this.speed) * Math.min(1, dt * 10);
+      this.pos.set(p.x, p.y, p.z);
+      // the body turns toward where you look, lagging a little; legs follow the movement
+      const want = player.yaw;
+      this.yaw += Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)) * Math.min(1, dt * 8);
+      this.root.position.copy(this.pos);
+      this.root.rotation.set(0, this.yaw, 0);
+      this.anim.crouch = player.crouch * 0.9;
+      this.animHuman(dt);
+      const B = this.bones;
+      if (!player.grounded) {
+        // airborne: knees up a little
+        B.thighL.rotation.x -= 0.35;
+        B.thighR.rotation.x -= 0.15;
+        B.shinL.rotation.x += 0.5;
+        B.shinR.rotation.x += 0.3;
+      }
+      // head follows the view pitch
+      B.neck.rotation.x = -player.pitch * 0.35 + B.neck.rotation.x;
+      B.head.rotation.x = -player.pitch * 0.45;
+      B.head.rotation.y = 0;
+      B.neck.rotation.y = 0;
+      this.holdPose(player);
+      if (player.dead) {
+        if (a.death < 0) a.death = 0;
+        a.death = Math.min(1, a.death + dt / 0.85);
+        this.applyDeathPose();
+      }
+    }
+    this.root.updateMatrixWorld(true);
+  }
+
+  // Arms when something is in the hands.
+  holdPose(player) {
+    const B = this.bones;
+    const ia = this.g.interaction;
+    const it = ia && ia.held;
+    if (!it) return;
+    const weapon = it.def && it.def.weapon;
+    const big = it.part || (it.size && Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !weapon);
+    if (big) {
+      for (const s of ['L', 'R']) {
+        B['upperArm' + s].rotation.x = -1.0;
+        B['foreArm' + s].rotation.x = -0.9;
+        B['upperArm' + s].rotation.z = s === 'L' ? 0.15 : -0.15;
+      }
+    } else if (weapon) {
+      const aim = ia.aim;
+      B.upperArmR.rotation.x = -1.2 - player.pitch * 0.8 * aim - 0.2 * (1 - aim);
+      B.upperArmR.rotation.z = -0.15;
+      B.foreArmR.rotation.x = -0.25 * (1 - aim);
+      if (it.def.weapon.ammo === '12' || aim > 0.5) {
+        B.upperArmL.rotation.x = -1.1 - player.pitch * 0.8 * aim;
+        B.upperArmL.rotation.z = -0.45;
+        B.foreArmL.rotation.x = -0.5;
+      }
+    } else {
+      B.upperArmR.rotation.x = -0.55;
+      B.foreArmR.rotation.x = -0.85;
+    }
+  }
+
+  animSeated(dt, player) {
+    const B = this.bones;
+    for (const b of Object.values(B)) b.rotation.set(0, 0, 0);
+    B.hips.position.copy(B.hips.userData.restPos);
+    for (const [s, sg] of [
+      ['L', 1],
+      ['R', -1],
+    ]) {
+      B['thigh' + s].rotation.x = -1.45;
+      B['thigh' + s].rotation.z = sg * 0.08;
+      B['shin' + s].rotation.x = 1.25;
+      B['foot' + s].rotation.x = 0.1;
+    }
+    B.spine.rotation.x = -0.12;
+    const driving = player.seat === 'driver';
+    const car = player.car;
+    const steer = driving && car ? car.dyn.steerSmoothed * 14 : 0;
+    for (const [s, sg] of [
+      ['L', 1],
+      ['R', -1],
+    ]) {
+      if (driving) {
+        B['upperArm' + s].rotation.x = -0.95;
+        B['upperArm' + s].rotation.z = sg * 0.25 + steer * 0.25;
+        B['foreArm' + s].rotation.x = -0.55;
+      } else {
+        B['upperArm' + s].rotation.x = -0.35;
+        B['foreArm' + s].rotation.x = -0.9;
+        B['upperArm' + s].rotation.z = sg * 0.1;
+      }
+    }
+    B.head.rotation.y = player.seatYaw * 0.8;
+    B.head.rotation.x = -player.seatPitch * 0.6;
+  }
+
+  handWorld(out = V()) {
+    return this.bones.handR.getWorldPosition(out);
   }
 }

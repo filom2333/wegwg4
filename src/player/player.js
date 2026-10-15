@@ -308,7 +308,11 @@ export class Player {
   }
 
   updateCamera(dt) {
-    const cam = this.game.renderer.camera;
+    // `eye` is the first-person view used for aiming, reach and the viewmodel; the rendered
+    // camera either copies it or orbits behind the body (third person).
+    const g = this.game;
+    const cam = g.eyeCam;
+    if (input.wasPressed('view') && !(g.ui && g.ui.blocksMove)) this.thirdPerson = !this.thirdPerson;
     if (this.seat && this.car) {
       const car = this.car;
       const seatPos = car.seatWorld(this.seat);
@@ -336,12 +340,56 @@ export class Player {
       const right = V(1, 0, 0).applyQuaternion(cam.quaternion);
       cam.position.addScaledVector(right, sway);
     }
+    cam.updateMatrixWorld();
     this.eye.copy(cam.position);
     this.lookDir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    this.applyView(dt);
     // headlamp
     this.headlamp.intensity = this.headlampOn ? 9 : 0;
     this.headlamp.position.copy(cam.position).add(V(0, -0.08, 0));
     this.headlamp.target.position.copy(cam.position).addScaledVector(this.lookDir, 10);
+  }
+
+  // Rendered camera: first person = the eye; third person = orbit behind the body / car,
+  // pulled in front of anything solid between it and the character.
+  applyView(dt) {
+    const g = this.game;
+    const eye = g.eyeCam;
+    const cam = g.renderer.camera;
+    const avatar = g.npcs && g.npcs.ensureAvatar();
+    const third = this.thirdPerson && avatar && !this.dead;
+    this.tpBlend = lerp(this.tpBlend || 0, third ? 1 : 0, Math.min(1, dt * 8));
+    if (avatar) {
+      avatar.root.visible = this.tpBlend > 0.05 || !!(g.remoteView);
+      if (avatar.root.visible) avatar.sync(dt, this);
+    }
+    if (g.interaction) g.interaction.viewRoot.visible = this.tpBlend < 0.5;
+    if (this.tpBlend < 0.001) {
+      cam.position.copy(eye.position);
+      cam.quaternion.copy(eye.quaternion);
+      return;
+    }
+    let pivot, dist;
+    if (this.seat && this.car) {
+      pivot = this.car.root.position.clone().add(V(0, 1.2, 0));
+      dist = 6.5;
+    } else {
+      pivot = this.position.clone().add(V(0, 1.62 - this.crouch * 0.5, 0));
+      dist = 2.3;
+    }
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.seat ? this.seatPitch - 0.18 : this.pitch, this.seat ? new THREE.Euler().setFromQuaternion(this.car.root.quaternion, 'YXZ').y + this.seatYaw + Math.PI : this.yaw + Math.PI, 0, 'YXZ'));
+    const back = V(0, 0, 1).applyQuaternion(q);
+    const shoulder = this.seat ? V(0, 0, 0) : V(0.5, 0, 0).applyQuaternion(q);
+    const origin = pivot.clone().add(shoulder);
+    const hit = g.physics.raycast(origin, back, dist + 0.3, GROUPS.look, this.body, (c) => {
+      const o = g.physics.ownerOf(c);
+      return !(this.seat && o && o.kind === 'car');
+    });
+    const d = hit ? Math.max(0.4, hit.distance - 0.3) : dist;
+    this.tpDist = Math.min(d, lerp(this.tpDist || d, d, Math.min(1, dt * 5)));
+    const tp = origin.clone().addScaledVector(back, this.tpDist);
+    cam.position.copy(eye.position).lerp(tp, this.tpBlend);
+    cam.quaternion.copy(eye.quaternion).slerp(q, this.tpBlend);
   }
 
   // ------------------------------------------------------------------ needs
