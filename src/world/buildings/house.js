@@ -112,7 +112,7 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
     r.wallMat = roomWall[r.type] === M.wallpaper && r.type === 'bedroom' ? M.plasterGreen : roomWall[r.type];
     b.box((r.x0 + r.x1) / 2, floorY + 0.01, (r.z0 + r.z1) / 2, r.x1 - r.x0, 0.02, r.z1 - r.z0, roomFloor[r.type], { collide: false });
     // ceiling
-    b.box((r.x0 + r.x1) / 2, floorY + WALL_H + 0.03, (r.z0 + r.z1) / 2, r.x1 - r.x0, 0.06, r.z1 - r.z0, M.plaster, { collide: false });
+    b.box((r.x0 + r.x1) / 2, floorY + WALL_H + 0.03, (r.z0 + r.z1) / 2, r.x1 - r.x0, 0.06, r.z1 - r.z0, M.ceiling, { collide: false });
   }
   b.collider(0, floorY - 0.1, 0, plan.W, 0.2, plan.D, 0, 'wood');
   // ceiling collider (keeps physics items in)

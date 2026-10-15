@@ -32,7 +32,7 @@ function room(b, x0, z0, x1, z1, y, h, { ext, inner, floor, t = 0.22, openings =
       else if (o.type === 'gap') b.doorway(info, a, y, o, t, { frameMat: trim, leaf: false });
     }
   }
-  if (ceiling) b.box((x0 + x1) / 2, y + h + 0.03, (z0 + z1) / 2, x1 - x0 - t, 0.06, z1 - z0 - t, M.plaster, { collide: false });
+  if (ceiling) b.box((x0 + x1) / 2, y + h + 0.03, (z0 + z1) / 2, x1 - x0 - t, 0.06, z1 - z0 - t, M.ceiling, { collide: false });
   if (roof === 'none') {
     // caller adds its own roof
   } else if (roof === 'flat') b.flatRoof(x0 - t / 2, z0 - t / 2, x1 + t / 2, z1 + t / 2, y + h + 0.06, { mat: roofMat || M.concrete, parapetMat: ext, parapet: 0.4 });

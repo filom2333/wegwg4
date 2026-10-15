@@ -370,6 +370,23 @@ export function archMaterials() {
   if (MATS) return MATS;
   const tex = (k, n = 2) => texPair(k, TEX_METRES[k], P[k], { normal: n });
   const wthr = weatheringUniforms({ dirt: 0.5, dust: 0.35, rust: 0, fade: 0.1 });
+  // Light reaching an interior ceiling has bounced off walls and floor several times and arrives
+  // close to neutral; desaturate the indirect term instead of tinting it with the sand-coloured sky.
+  const neutralBounce = (m) => {
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <lights_fragment_end>',
+        `#include <lights_fragment_end>
+{
+  vec3 ind = reflectedLight.indirectDiffuse;
+  float l = dot(ind, vec3(0.3, 0.55, 0.15));
+  reflectedLight.indirectDiffuse = mix(vec3(l), ind, 0.2) * 1.25;
+}`
+      );
+    };
+    m.customProgramCacheKey = () => 'neutralBounce';
+    return m;
+  };
   const std = (k, opts = {}, weather = false) => {
     const t = tex(k, opts.normalStrength || 2);
     const m = new THREE.MeshStandardMaterial({
@@ -388,6 +405,9 @@ export function archMaterials() {
     stuccoBlue: std('stucco', { roughness: 0.95, color: 0xa9b8bf }, true),
     stuccoPink: std('stucco', { roughness: 0.95, color: 0xe6c1ac }, true),
     plaster: std('plaster', { roughness: 0.92, ns: 0.3 }),
+    // interior ceilings only see light bounced off the floor; the outdoor environment map would
+    // paint them with the sand-coloured lower sky, so they take less of it and a cooler base
+    ceiling: neutralBounce(std('plaster', { roughness: 0.95, ns: 0.2, color: 0xdcdcdc })),
     plasterGreen: std('plaster', { roughness: 0.92, ns: 0.3, color: 0xb9c2a6 }),
     plasterBlue: std('plaster', { roughness: 0.92, ns: 0.3, color: 0xa9b6c4 }),
     siding: std('siding', { roughness: 0.85 }, true),
