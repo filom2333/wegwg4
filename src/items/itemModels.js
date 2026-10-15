@@ -31,7 +31,7 @@ export function itemMats() {
     brass: new THREE.MeshStandardMaterial({ color: 0xc89b3c, roughness: 0.3, metalness: 1 }),
     glassAmber: new THREE.MeshPhysicalMaterial({ color: 0x8a5a1a, roughness: 0.05, transparent: true, opacity: 0.7, depthWrite: false }),
     lanternGlow: new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xffc070, emissiveIntensity: 0, roughness: 0.3, transparent: true, opacity: 0.6 }),
-    white: new THREE.MeshStandardMaterial({ color: 0xe9e6de, roughness: 0.6 }),
+    white: new THREE.MeshStandardMaterial({ color: 0xc4c1b9, roughness: 0.6 }),
     fabric: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x5b6046, roughness: 0.95 }), 'weave', 0.3),
   };
   return MAT;

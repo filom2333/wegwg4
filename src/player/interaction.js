@@ -22,10 +22,11 @@ const tmpV = new THREE.Vector3();
 const HOLD = {
   hand: { hand: V(0.2, -0.2, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.03, 0.0, -0.065), itemRot: new THREE.Euler(0, 0, 0) },
   // carried by the top handle, hanging low at the right side (handle bar inside the curled fingers)
-  side: { hand: V(0.26, -0.33, -0.5), rotZ: 0, pose: 'grip', item: V(0.05, -0.295, -0.08), itemRot: new THREE.Euler(0, Math.PI / 2, 0) },
-  tool: { hand: V(0.22, -0.22, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.035, 0.0, -0.06), itemRot: new THREE.Euler(0, Math.PI / 2, Math.PI / 2) },
-  pistol: { hand: V(0.17, -0.18, -0.34), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.03, 0.03, -0.035), itemRot: new THREE.Euler(0, 0, 0) },
-  rifle: { hand: V(0.16, -0.2, -0.3), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.03, 0.03, -0.0), itemRot: new THREE.Euler(0, 0, 0), left: V(-0.02, -0.21, -0.62) },
+  side: { hand: V(0.24, -0.25, -0.5), rotZ: 0, pose: 'grip', item: V(0.05, -0.295, -0.08), itemRot: new THREE.Euler(0, Math.PI / 2, 0) },
+  tool: { hand: V(0.22, -0.22, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.035, 0.0, -0.06), itemRot: new THREE.Euler(-0.75, Math.PI / 2, Math.PI / 2, 'XYZ') },
+  // weapon models are authored muzzle along +Z; turned 180 degrees so the muzzle points away
+  pistol: { hand: V(0.17, -0.18, -0.34), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.028, 0.032, -0.098), itemRot: new THREE.Euler(0, Math.PI, 0) },
+  rifle: { hand: V(0.16, -0.2, -0.3), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.028, 0.032, -0.12), itemRot: new THREE.Euler(0, Math.PI, 0), left: V(-0.02, -0.21, -0.62) },
 };
 
 export class Interaction {
@@ -575,7 +576,7 @@ export class Interaction {
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
-    const big = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55;
+    const big = it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon));
     if (hold && !big) {
       const h = hold.hand.clone();
       if (weapon) h.lerp(V(0, -0.12, -0.32), this.aim);
@@ -1041,6 +1042,99 @@ export class Interaction {
     out.visibleEdgeColor.set(this.ghost ? (this.ghost.children[0] && this.ghost.children[0].material === this.ghostBad ? 0xe07a6a : 0x9bd88f) : 0xf2e6cf);
   }
 
+  // ------------------------------------------------------------------ driver's hands
+  // A short reach from the wheel to a control (ignition key, light stalk, gear lever).
+  driverReach(target) {
+    this.reach = { target, t: 0 };
+  }
+
+  // Car-space point of a driver control.
+  controlPoint(car, target) {
+    const col = car.model.steeringColumn;
+    if (target === 'key') return (col && col.userData.ignitionPos ? col.userData.ignitionPos.clone() : V(0.31, 0.88, 0.35)).add(V(0, 0.0, -0.02));
+    if (target === 'stalk') return V(0.37 - 0.13, 0.955, 0.37);
+    if (target === 'shifter') return V(0, 0.64, 0.23);
+    if (target === 'horn') return V(0.37, 0.935, 0.255).addScaledVector(V(0, 0.36, -0.933).normalize(), 0.05);
+    return V(0, 0, 0);
+  }
+
+  // Hands on the steering wheel (they turn with it), reaching for controls when used.
+  updateDriverHands(dt) {
+    const g = this.game;
+    const car = g.car;
+    const h = this.hands;
+    const cam = this.cam;
+    const sw = car.model.steeringWheel;
+    const wheelObj = sw && sw.children[0];
+    if (!wheelObj || !car.isInstalled('steeringWheel')) return false;
+    wheelObj.updateMatrixWorld(true);
+    const inv = cam.quaternion.clone().invert();
+    const toCam = (wp) => wp.clone().sub(cam.position).applyQuaternion(inv);
+    const R = 0.188;
+    // grip points at ten-to-two, in the rotating wheel frame (X right, Y up, Z toward the driver)
+    const grips = {
+      left: { a: Math.PI - 0.32 },
+      right: { a: 0.32 },
+    };
+    // hands ride with the rim up to about 80 degrees each way, then slide along it
+    const turn = clamp(wheelObj.rotation.z, -1.4, 1.4);
+    sw.updateMatrixWorld(true);
+    const pivotW = sw.matrixWorld;
+    const camQ = cam.quaternion;
+    const right = V(1, 0, 0).applyQuaternion(camQ),
+      up = V(0, 1, 0).applyQuaternion(camQ),
+      fwd = V(0, 0, -1).applyQuaternion(camQ);
+    for (const side of ['left', 'right']) {
+      const hand = h[side];
+      const sgn = side === 'left' ? -1 : 1;
+      const a = grips[side].a + turn;
+      hand.visible = true;
+      h.setPose(side, 'grip');
+      const rimW = V(Math.cos(a) * R, Math.sin(a) * R, 0).applyMatrix4(pivotW);
+      const tanW = V(-Math.sin(a), Math.cos(a), 0).transformDirection(pivotW);
+      // the forearm runs down and back toward the elbow
+      const elbow = cam.position.clone().addScaledVector(right, 0.44 * sgn).addScaledVector(up, -0.8).addScaledVector(fwd, 0.12);
+      const zAxis = elbow.clone().sub(rimW);
+      zAxis.addScaledVector(tanW, -zAxis.dot(tanW)).normalize();
+      // thumb along the rim toward 12 o'clock; it turns with the wheel without flipping
+      const thumb = side === 'left' ? tanW.clone().negate() : tanW.clone();
+      // left model: thumb +X; the right hand is the mirrored model (thumb -X)
+      const xAxis = side === 'left' ? thumb : thumb.clone().negate();
+      const yAxis = zAxis.clone().cross(xAxis).normalize();
+      const zFix = xAxis.clone().cross(yAxis).normalize();
+      const qWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zFix));
+      const gripLocal = V(0.0, -0.028, -0.088);
+      let posW = rimW.clone().sub(gripLocal.clone().applyQuaternion(qWorld));
+      const qCam = camQ.clone().invert().multiply(qWorld);
+      // reaching for a control (right hand for key/shifter, left for the stalk)
+      const r = this.reach;
+      let qOut = qCam;
+      if (r && ((side === 'right' && r.target !== 'stalk') || (side === 'left' && r.target === 'stalk'))) {
+        const k = Math.sin(Math.min(1, r.t) * Math.PI);
+        const tp = this.controlPoint(car, r.target).applyMatrix4(car.root.matrixWorld);
+        // fingertips land on the control: palm down, fingers pointing forward from the elbow
+        const dir = tp.clone().sub(elbow).normalize();
+        const zR = dir.clone().negate();
+        const xR0 = V(0, 1, 0).applyQuaternion(car.root.quaternion).cross(zR).normalize();
+        const xR = side === 'left' ? xR0 : xR0.clone().negate();
+        const yR = zR.clone().cross(xR).normalize();
+        const qReach = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xR, yR, xR.clone().cross(yR)));
+        const tipLocal = V(0, -0.01, -0.17);
+        const reachPos = tp.clone().sub(tipLocal.clone().applyQuaternion(qReach));
+        posW = posW.lerp(reachPos, k);
+        qOut = qCam.clone().slerp(camQ.clone().invert().multiply(qReach), k);
+        h.setPose(side, k > 0.4 ? 'pinch' : 'grip');
+      }
+      hand.position.copy(toCam(posW));
+      hand.quaternion.copy(qOut);
+    }
+    if (this.reach) {
+      this.reach.t += dt * 2.2;
+      if (this.reach.t >= 1) this.reach = null;
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------------ view model
   updateView(dt) {
     const cam = this.cam;
@@ -1049,7 +1143,7 @@ export class Interaction {
     const it = this.held;
     const h = this.hands;
     const hold = it && it.def ? HOLD[it.def.hold] : null;
-    const big = it && (it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55);
+    const big = it && (it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon)));
     const seated = !!this.game.player.seat;
     h.right.visible = true;
     h.left.visible = false;
@@ -1088,8 +1182,11 @@ export class Interaction {
       h.left.position.set(c.x - half, bottom, c.z + 0.08);
       h.right.rotation.set(-0.35, 0.25, Math.PI);
       h.left.rotation.set(-0.35, -0.25, Math.PI);
+    } else if (seated && this.game.player.seat === 'driver' && this.updateDriverHands(dt)) {
+      // hands on the wheel
     } else {
       // idle: relaxed right hand low at the edge of the view; reaching when targeting
+      h.right.quaternion.identity();
       h.setPose('right', this.target ? 'pinch' : 'relax');
       const p = this.game.player;
       const bob = p.bobAmp * 0.012;

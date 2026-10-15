@@ -508,6 +508,10 @@ export class Game {
     if (!blocked) {
       // Ignition key: press turns it on (hold to crank), press while running stops the engine,
       // a quick tap with the ignition on and the engine off switches it off.
+      const ia = this.interaction;
+      if (input.wasPressed('ignition')) ia.driverReach('key');
+      if (input.wasPressed('lights') || input.wasPressed('wipers')) ia.driverReach('stalk');
+      if ((input.wasPressed('gearUp') || input.wasPressed('gearDown')) && !car.dyn.automatic) ia.driverReach('shifter');
       if (input.wasPressed('ignition')) {
         this._keyWasOn = car.ignition;
         this._keyHeld = 0;
