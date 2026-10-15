@@ -65,7 +65,8 @@ export function buildChassisFrame(M) {
   for (const s of [1, -1]) {
     g.add(
       beam(
-        [V(0.46 * s, 0.19, 1.95), V(0.45 * s, 0.175, 1.1), V(0.47 * s, 0.172, 0.5), V(0.5 * s, 0.172, -0.75), V(0.5 * s, 0.23, -1.0), V(0.5 * s, 0.25, -1.3), V(0.5 * s, 0.26, -1.75), V(0.5 * s, 0.27, -2.12)],
+        // ends tuck up behind the bumper covers so no frame shows below them
+        [V(0.46 * s, 0.3, 1.8), V(0.455, 0.2, 1.45).setX(0.455 * s), V(0.45 * s, 0.175, 1.1), V(0.47 * s, 0.172, 0.5), V(0.5 * s, 0.172, -0.75), V(0.5 * s, 0.23, -1.0), V(0.5 * s, 0.25, -1.3), V(0.5 * s, 0.3, -1.7), V(0.5 * s, 0.37, -1.98)],
         0.06,
         0.05,
         M.frame
@@ -74,11 +75,11 @@ export function buildChassisFrame(M) {
   }
   // Cross members
   for (const [z, y] of [
-    [1.95, 0.19],
+    [1.8, 0.3],
     [1.05, 0.175],
     [-0.3, 0.172],
-    [-1.6, 0.255],
-    [-2.1, 0.27],
+    [-1.6, 0.285],
+    [-1.98, 0.37],
   ]) {
     g.add(beam([V(-0.48, y, z), V(0.48, y, z)], 0.05, 0.05, M.frame));
   }
@@ -183,7 +184,7 @@ export function buildExhaustLine(M) {
   cat.rotateX(-Math.PI / 2);
   cat.translate(-0.05, 0.16, 0.6);
   g.add(mesh(cat, M.exhaust));
-  g.add(mesh(tubeAlong([V(-0.05, 0.16, 0.24), V(-0.06, 0.16, -0.5), V(-0.12, 0.2, -1.1), V(-0.3, 0.22, -1.5)], 0.024, 10), M.exhaust));
+  g.add(mesh(tubeAlong([V(-0.05, 0.16, 0.24), V(-0.06, 0.16, -0.5), V(-0.12, 0.2, -1.1), V(-0.16, 0.24, -1.58), V(-0.2, 0.26, -1.72)], 0.024, 10), M.exhaust));
   // Rear muffler (transverse oval can)
   const secs = [];
   for (let i = 0; i <= 6; i++) {

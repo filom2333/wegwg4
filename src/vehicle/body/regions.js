@@ -235,24 +235,16 @@ const frontGlassPoly = sideView(
   [0.02, 0.03, 0.05, 0, 0, 0, 0, 0, 0, 0, 0.025, 0.012],
   6
 );
+// Rear door glass: one pane running back to the slanted C-pillar seam (no fixed quarter light).
+const rgRearBelt = cSeam(yBelt(-1.0)) - 0.03;
 const rearGlassMainPoly = sideView(
   [
-    ...sampleCurve(yBelt, -0.79, -0.165, 6),
+    ...sampleCurve(yBelt, rgRearBelt, -0.165, 7),
     [-0.165, yRail(-0.165) - 0.024],
-    ...sampleCurve((z) => yRail(z) - 0.024, -0.22, -0.66, 5),
-    [-0.79, yRail(-0.79) - 0.03],
+    ...sampleCurve((z) => yRail(z) - 0.024, -0.22, -0.62, 5),
+    [cSeam(yRail(-0.72) - 0.034) - 0.03, yRail(-0.72) - 0.034],
   ],
-  [0.012, 0, 0, 0, 0, 0, 0, 0.025, 0.03, 0, 0, 0, 0, 0.012],
-  6
-);
-const rearGlassQuarterPoly = sideView(
-  [
-    [-0.818, yBelt(-0.818)],
-    [-0.818, yRail(-0.79) - 0.035],
-    [cSeam(yRail(-0.75)) - 0.03, yRail(-0.75) - 0.036],
-    [cSeam(yBelt(-0.95)) - 0.024, yBelt(-0.95)],
-  ],
-  [0.008, 0.012, 0.03, 0.02],
+  [0.014, 0, 0, 0, 0, 0, 0, 0, 0.025, 0.03, 0, 0, 0, 0, 0.035],
   6
 );
 function glassShape(poly, X, y, z) {
@@ -262,7 +254,7 @@ function glassShape(poly, X, y, z) {
 
 // Front bumper cover: everything forward of the bumper/fender seam on the front, below the hood/lamps.
 function bumperFShape(X, y, z) {
-  if (z < 1.45) return -0.2;
+  if (z < 1.3) return -0.2;
   const U = unwrapFront(X, z);
   // seam from the arch (about 10 o'clock) up to the lamp's rear lower corner
   const seamU = 1.44 - (y - 0.6) * 0.33;
@@ -273,9 +265,10 @@ function bumperFShape(X, y, z) {
 }
 
 function bumperRShape(X, y, z) {
-  if (z > -1.45) return -0.2;
+  if (z > -1.3) return -0.2;
   const U = unwrapRear(X, z);
-  const side = 1.47 - U;
+  // side seam runs from the lamp's lower outer corner down and forward to the arch
+  const side = Math.min(1.47, 1.06 + Math.max(0, 0.81 - y) * 1.3) - U;
   const under = Math.max(-1.92 - z, y - 0.33);
   const top = 0.805 - y;
   return Math.min(side, under, top);
@@ -285,9 +278,15 @@ function fenderShape(X, y, z) {
   if (X < 0.25 || z < 0.7) return -0.2;
   const rear = z - 0.8; // generous: the front door defines this seam
   const sill = y - 0.305;
-  // Up to the base of the A-pillar (top edge of the lower body there).
-  const top = z < 1.15 ? Tside(z) + 0.012 - y : 1;
-  return Math.min(rear, sill, X - 0.6, top);
+  // Up to the base of the A-pillar (top edge of the lower body there). Further forward the hood
+  // seam bounds the fender, so the limit rises away smoothly (a step here tore the seam).
+  // Ahead of the hood's rear edge the hood seam bounds the fender; behind it the fender stops at
+  // the A-pillar base. The step is blended over a few centimetres so the corner stays clean.
+  const zHood = 1.115 - 0.17 * X * X;
+  const top = Tside(z) + 0.012 + 3 * Math.max(0, z - zHood + 0.01) - y;
+  // inboard edge continues the hood side seam straight back to the A-pillar
+  const inboard = X - (0.79 - 0.035 * (z - 1.0)) + 0.004;
+  return Math.min(rear, sill, Math.max(inboard, X - 0.84), top);
 }
 
 function fuelFlapShape(X, y, z) {
@@ -359,7 +358,6 @@ export function buildPanelDefs() {
   ]) {
     add({ id: 'glass_F' + n, kind: 'glass', shape: sideOf((X, y, z) => glassShape(frontGlassPoly, X, y, z), s) });
     add({ id: 'glass_R' + n, kind: 'glass', shape: sideOf((X, y, z) => glassShape(rearGlassMainPoly, X, y, z), s) });
-    add({ id: 'glass_Q' + n, kind: 'glass', shape: sideOf((X, y, z) => glassShape(rearGlassQuarterPoly, X, y, z), s) });
   }
   for (const [s, n] of [
     [L, 'L'],
@@ -381,7 +379,6 @@ export function buildPanelDefs() {
       shape: sideOf(rearDoorShape, s),
       subs: [
         { id: 'trim', mat: 2, shape: sideOf((X, y, z) => Math.min(z + 0.2, y - yBelt(z) + 0.004), s) },
-        { id: 'bar', mat: 2, shape: sideOf((X, y, z) => Math.min(0.018 - Math.abs(z + 0.804), y - yBelt(z) + 0.004), s) },
         { id: 'belt', mat: 2, shape: sideOf((X, y, z) => beltMolding(X, y, z), s) },
       ],
     });

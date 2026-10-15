@@ -3,6 +3,8 @@
 
 import { bodyField, bodyGradient } from './shape.js';
 
+const SLOT_PAINT = 0;
+
 // ---------------------------------------------------------------------------
 // Full (mirrored) node set built from the half grid.
 
@@ -148,7 +150,9 @@ function intersect(A, B, f, iso, cellId) {
   vals[f] = iso;
   const p = [A.p[0] + (B.p[0] - A.p[0]) * t, A.p[1] + (B.p[1] - A.p[1]) * t, A.p[2] + (B.p[2] - A.p[2]) * t];
   const ce = commonEdge(A, B);
-  let key, edge = null, edgeNodes = null;
+  let key,
+    edge = null,
+    edgeNodes = null;
   if (ce) {
     key = 'e' + ce + '|' + f + '|' + iso;
     edge = ce;
@@ -187,8 +191,11 @@ function clipKeep(poly, f, iso, cellId, keepAbove = true) {
  * @param constraints  [{ field: Float32Array, iso: number, sign: 1|-1 }] keep where sign*field >= iso
  * @param subs         [{ field: Float32Array, mat: number }] material sub-regions (iso 0), later override
  */
-export function extractSurface(nodes, constraints, subs = []) {
+export function extractSurface(nodes, constraints, subs = [], { maxStep = 0.014 } = {}) {
   const fields = [...constraints.map((c) => c.field), ...subs.map((s) => s.field)];
+  // analytic functions + the iso value each cut vertex sits on (for exact boundary projection)
+  const fns = [...constraints.map((c) => c.fn || null), ...subs.map((s) => s.fn || null)];
+  const targets = [...constraints.map((c) => (c.sign > 0 ? c.iso : -c.iso)), ...subs.map(() => 0)];
   const nc = constraints.length;
   const verts = new Map();
   const vlist = [];
@@ -299,24 +306,79 @@ export function extractSurface(nodes, constraints, subs = []) {
     return d;
   };
 
-  // Positions: re-project chord / edge points onto the skin; normals from gradient.
+  // Positions: cut vertices were placed by linear interpolation along grid edges, which makes
+  // seams wobble wherever the region field bends inside a cell. Slide them along the skin onto the
+  // exact iso-line of every field they lie on, then re-project onto the skin.
   const nv = vlist.length;
   const pos = new Float32Array(nv * 3);
   const nrm = new Float32Array(nv * 3);
   const dist = new Float32Array(nv);
   const g = [0, 0, 0];
+  const toSkin = (p) => {
+    for (let k = 0; k < 2; k++) {
+      const f = bodyField(p[0], p[1], p[2]);
+      const gl = bodyGradient(p[0], p[1], p[2], g);
+      const st = f / Math.max(gl, 0.3);
+      p[0] -= g[0] * st;
+      p[1] -= g[1] * st;
+      p[2] -= g[2] * st;
+    }
+  };
+  const he = 6e-4;
+  const onIso = [];
+  const projectIso = (p, fn, target) => {
+    for (let it = 0; it < 4; it++) {
+      const x = p[0],
+        y = p[1],
+        z = p[2];
+      const v = fn(x, y, z);
+      const gx = (fn(x + he, y, z) - fn(x - he, y, z)) / (2 * he);
+      const gy = (fn(x, y + he, z) - fn(x, y - he, z)) / (2 * he);
+      const gz = (fn(x, y, z + he) - fn(x, y, z - he)) / (2 * he);
+      bodyGradient(x, y, z, g); // g: unit skin normal
+      const nx = g[0],
+        ny = g[1],
+        nz = g[2];
+      const dn = gx * nx + gy * ny + gz * nz;
+      const tx = gx - dn * nx,
+        ty = gy - dn * ny,
+        tz = gz - dn * nz;
+      const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tl < 1e-4) return;
+      // the sampled fields are normalised by the tangential gradient near their zero set
+      const s = Math.abs(v) < 0.08 ? Math.max(tl, 0.25) : 1;
+      const h = v / s - target;
+      if (Math.abs(h) < 2e-5) return;
+      let k = (-h * s) / (tl * tl);
+      const len = Math.abs(k) * tl;
+      if (len > maxStep) k *= maxStep / len;
+      p[0] += tx * k;
+      p[1] += ty * k;
+      p[2] += tz * k;
+      toSkin(p);
+    }
+  };
   for (let i = 0; i < nv; i++) {
     const v = vlist[i];
     let p = v.p;
     if (v.node === null) {
       p = [p[0], p[1], p[2]];
-      for (let k = 0; k < 2; k++) {
-        const f = bodyField(p[0], p[1], p[2]);
-        const gl = bodyGradient(p[0], p[1], p[2], g);
-        const st = f / Math.max(gl, 0.3);
-        p[0] -= g[0] * st;
-        p[1] -= g[1] * st;
-        p[2] -= g[2] * st;
+      toSkin(p);
+      onIso.length = 0;
+      for (let k = 0; k < fields.length; k++) if (fns[k] && Math.abs(v.vals[k] - targets[k]) < 1e-9) onIso.push(k);
+      if (onIso.length) {
+        const p0 = [p[0], p[1], p[2]];
+        for (let round = 0; round < (onIso.length > 1 ? 3 : 1); round++) for (const k of onIso) projectIso(p, fns[k], targets[k]);
+        // never wander more than a cell from where the grid put the vertex
+        const dx = p[0] - p0[0],
+          dy = p[1] - p0[1],
+          dz = p[2] - p0[2];
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > maxStep * 1.5 || !Number.isFinite(d)) {
+          p[0] = p0[0];
+          p[1] = p0[1];
+          p[2] = p0[2];
+        }
       }
     }
     pos[i * 3] = p[0];
@@ -380,13 +442,22 @@ export function thicken(surf, opts) {
   const ipos = new Float32Array(nv * 3);
   const inrm = new Float32Array(nv * 3);
   const g = [0, 0, 0];
+  // Sheet-metal edges: every cut edge is a short folded flange; the full section depth (door
+  // cavity, sill, pillar box) is only reached a little way in from the edge. Without this, deep
+  // panels showed tall slanted walls and torn-looking strips through every seam.
+  const flange = opts.flange;
   for (let i = 0; i < nv; i++) {
     const x = pos[i * 3],
       y = pos[i * 3 + 1],
       z = pos[i * 3 + 2];
-    const D = depthFn(x, y, z);
-    let p = [x - nrm[i * 3] * D, y - nrm[i * 3 + 1] * D, z - nrm[i * 3 + 2] * D];
+    let D = depthFn(x, y, z);
+    if (flange) D = Math.min(D, flange + Math.max(0, surf.dist[i]) * 0.9);
+    const nx0 = nrm[i * 3],
+      ny0 = nrm[i * 3 + 1],
+      nz0 = nrm[i * 3 + 2];
+    let p = [x - nx0 * D, y - ny0 * D, z - nz0 * D];
     if (opts.innerMode !== 'offset') {
+      const q = [p[0], p[1], p[2]];
       for (let k = 0; k < 3; k++) {
         const f = bodyField(p[0], p[1], p[2]) + D;
         const gl = bodyGradient(p[0], p[1], p[2], g);
@@ -395,7 +466,14 @@ export function thicken(surf, opts) {
         p[1] -= g[1] * st;
         p[2] -= g[2] * st;
       }
-      bodyGradient(p[0], p[1], p[2], g);
+      // in concave corners the inner level set folds over; keep the plain offset there
+      const drift = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+      if (!(drift < 0.35 * D + 0.002)) {
+        p = q;
+        g[0] = nx0;
+        g[1] = ny0;
+        g[2] = nz0;
+      } else bodyGradient(p[0], p[1], p[2], g);
     } else {
       g[0] = nrm[i * 3];
       g[1] = nrm[i * 3 + 1];
@@ -514,11 +592,13 @@ export function thicken(surf, opts) {
   for (const [a, b] of edges) {
     const ra = rings.get(a),
       rb = rings.get(b);
+    const rm = typeof rimMat === 'function' ? rimMat((pos[a * 3] + pos[b * 3]) / 2, (pos[a * 3 + 1] + pos[b * 3 + 1]) / 2, (pos[a * 3 + 2] + pos[b * 3 + 2]) / 2) : rimMat;
     for (let k = 0; k < ra.length - 1; k++) {
       // quad ra[k], rb[k], rb[k+1], ra[k+1]; outward facing
       I.push(ra[k], ra[k + 1], rb[k]);
       I.push(rb[k], ra[k + 1], rb[k + 1]);
-      M.push(rimMat, rimMat);
+      // the outer half of the rim shows paint; the inner half (facing the opening) takes rimMat
+      M.push(k < (ra.length - 1) / 2 ? SLOT_PAINT : rm, k < (ra.length - 1) / 2 ? SLOT_PAINT : rm);
     }
   }
   return finish();

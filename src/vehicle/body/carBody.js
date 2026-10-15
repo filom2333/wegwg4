@@ -66,11 +66,19 @@ function bodyInnerSlot(pos, tris, t) {
   return SLOT.interior;
 }
 
+// Where an edge borders a window or door opening of the cabin it carries a rubber seal.
+function cabinSealRim(x, y, z) {
+  if (z < -1.38 || z > 1.02) return SLOT.paint;
+  if (y > yBelt(z) - 0.03) return SLOT.rubber; // window frames / pillars
+  if (Math.abs(x) > 0.55 && y > 0.3) return SLOT.rubber; // door apertures
+  return SLOT.paint;
+}
+
 const KIND = {
   panel: { depth: 0.012, edgeR: 0.0052, inner: SLOT.inner, rim: SLOT.paint },
   bumper: { depth: 0.018, edgeR: 0.006, inner: SLOT.under, rim: SLOT.paint },
-  door: { depth: doorDepth, edgeR: 0.005, inner: SLOT.interior, rim: SLOT.paint },
-  body: { depth: bodyDepth, edgeR: 0.005, inner: bodyInnerSlot, rim: SLOT.paint },
+  door: { depth: doorDepth, edgeR: 0.005, inner: SLOT.interior, rim: cabinSealRim },
+  body: { depth: bodyDepth, edgeR: 0.005, inner: bodyInnerSlot, rim: cabinSealRim },
 };
 
 function toGeometry(data) {
@@ -133,7 +141,7 @@ export function buildCarBody({ res = 0.02, onProgress, lowDetail = false } = {})
     else iso = GAP_HALF + kd.edgeR;
     // Constraints: own shape, minus every higher-priority region touching it.
     const cons = [];
-    if (!d.complement) cons.push({ field: raw[k], iso, sign: 1 });
+    if (!d.complement) cons.push({ field: raw[k], iso, sign: 1, fn: d.shape });
     const own = d.complement ? null : nearMasks[k];
     const upto = d.complement ? defs.length : k;
     for (let j = 0; j < upto; j++) {
@@ -149,12 +157,13 @@ export function buildCarBody({ res = 0.02, onProgress, lowDetail = false } = {})
           }
         }
       }
-      if (touches) cons.push({ field: raw[j], iso: d.kind === 'glass' ? GAP_HALF + 0.005 : iso, sign: -1 });
+      if (touches) cons.push({ field: raw[j], iso: d.kind === 'glass' ? GAP_HALF + 0.005 : iso, sign: -1, fn: defs[j].shape });
     }
-    const subs = (d.subs || []).map((s) => ({ field: nodes.evalField(s.shape), mat: s.mat }));
+    const subs = (d.subs || []).map((s) => ({ field: nodes.evalField(s.shape), mat: s.mat, fn: s.shape }));
+    const xopt = { maxStep: res * 0.55 };
     let data;
     if (d.kind === 'glass') {
-      const surf = extractSurface(nodes, cons, []);
+      const surf = extractSurface(nodes, cons, [], xopt);
       data = thicken(surf, { depth: 0.01, innerMode: 'offset', skipInner: true });
       const P = data.position,
         N = data.normal;
@@ -165,7 +174,7 @@ export function buildCarBody({ res = 0.02, onProgress, lowDetail = false } = {})
       }
       data.mats = data.mats.map(() => SLOT.glass);
     } else if (d.kind === 'lamp') {
-      const surf = extractSurface(nodes, cons, subs);
+      const surf = extractSurface(nodes, cons, subs, xopt);
       const tail = d.id.startsWith('tail');
       data = thicken(surf, {
         depth: tail ? 0.045 : 0.06,
@@ -176,9 +185,10 @@ export function buildCarBody({ res = 0.02, onProgress, lowDetail = false } = {})
         outerMats: (m) => (m === 3 ? SLOT.lens : m === 4 ? SLOT.lensAmber : tail ? SLOT.lensRed : SLOT.lens),
       });
     } else {
-      const surf = extractSurface(nodes, cons, subs);
+      const surf = extractSurface(nodes, cons, subs, xopt);
       data = thicken(surf, {
         depth: kd.depth,
+        flange: d.kind === 'bumper' ? 0.022 : 0.016,
         edgeR: kd.edgeR,
         rimSegs: lowDetail ? 1 : 3,
         innerMat: kd.inner,

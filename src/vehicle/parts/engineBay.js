@@ -48,6 +48,7 @@ export function createBayMaterials(carMats) {
       valveCover: null,
       copper: new THREE.MeshStandardMaterial({ color: 0xb8733e, metalness: 0.9, roughness: 0.35 }),
       belt: new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.75 }),
+      kickPanel: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x3a3936, roughness: 0.8 }), 'grain', 0.25),
       trunkLiner: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x1e1d1c, roughness: 1 }), 'carpet', 0.5, { tint: 0.2 }),
     };
     // Radiator fins texture
@@ -144,74 +145,18 @@ export function buildStructure(M) {
     const hp = box(0.06, 0.66, 0.15, 0.8 * s, 0.6, 0.915, 0.01);
     g.add(mesh(hp, S));
   }
-  // Upper apron rails and apron panels with strut towers.
+  g.add(buildBayShell(M));
+  // Footwell kick panels: moulded trim over the hinge pillars on the cabin side
   for (const s of [1, -1]) {
-    const rail = tubeAlong([V(0.7 * s, 0.86, 1.0), V(0.68 * s, 0.82, 1.4), V(0.64 * s, 0.76, 1.85)], 0.03, 8, {});
-    rail.scale(1, 1, 1);
-    g.add(mesh(rail, S));
-    // apron panel between the liner wall (x=0.47) and the rail
-    const ap = new THREE.BufferGeometry();
-    const pts = [];
-    const idx = [];
-    const N = 12;
-    for (let i = 0; i <= N; i++) {
-      const z = 1.0 + (0.85 * i) / N;
-      const yRail = 0.86 - (0.1 * (z - 1.0)) / 0.85;
-      const xr = (0.7 - (0.06 * (z - 1.0)) / 0.85) * s;
-      pts.push(0.47 * s, 0.7, z, xr, yRail - 0.02, z);
+    const kp = [];
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6;
+      const y = 0.3 + 0.36 * t;
+      kp.push({ p: V(0.745 * s, y, 0.86 + 0.02 * Math.sin(t * Math.PI)), w: 0.05, h: 0.2 });
     }
-    for (let i = 0; i < N; i++) {
-      const a = i * 2;
-      if (s > 0) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-      else idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
-    ap.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    ap.setIndex(idx);
-    ap.computeVertexNormals();
-    const apm = mesh(ap, S);
-    apm.material = S.clone();
-    apm.material.side = THREE.DoubleSide;
-    g.add(apm);
-    // Strut tower dome
-    const tower = latheY(
-      [
-        [0.0, 0.0],
-        [0.05, -0.004],
-        [0.075, -0.02],
-        [0.09, -0.07],
-        [0.1, -0.16],
-      ],
-      24
-    );
-    tower.translate(0.53 * s, 0.86, SPEC.axleF - 0.02);
-    g.add(mesh(tower, S));
-    // strut top mount + nut
-    const mount = latheY(
-      [
-        [0.0, 0.018],
-        [0.03, 0.016],
-        [0.035, 0.0],
-      ],
-      16
-    );
-    mount.translate(0.53 * s, 0.86, SPEC.axleF - 0.02);
-    g.add(mesh(mount, M.rubberHose));
+    const secs = kp.map((k) => superSection(k.p, V(1, 0, 0), V(0, 0, 1), k.w / 2, k.h / 2, 4, 16));
+    g.add(mesh(loftSections(secs, { capStart: true, capEnd: true }), M.kickPanel || M.blackPlastic));
   }
-  // Radiator core support frame
-  g.add(mesh(box(1.12, 0.05, 0.05, 0, 0.8, 1.97), S));
-  g.add(mesh(box(1.0, 0.06, 0.06, 0, 0.34, 1.99), S));
-  for (const s of [1, -1]) g.add(mesh(box(0.05, 0.5, 0.05, 0.53 * s, 0.57, 1.98), S));
-  // Front crash beam with crash boxes
-  const beamPts = [];
-  for (let i = 0; i <= 10; i++) {
-    const x = -0.66 + (1.32 * i) / 10;
-    beamPts.push(V(x, 0.46, 2.1 - 0.12 * x * x));
-  }
-  const beamSecs = beamPts.map((p) => superSection(p, V(0, 1, 0), V(0, 0, 1), 0.055, 0.035, 5, 12));
-  g.add(mesh(loftSections(beamSecs, { capStart: true, capEnd: true }), M.steel));
-  for (const s of [1, -1]) g.add(mesh(box(0.08, 0.08, 0.18, 0.45 * s, 0.46, 1.98), M.steel));
-  // Front longitudinal rails under the engine (part of the shell)
-  for (const s of [1, -1]) g.add(mesh(box(0.07, 0.1, 1.1, 0.4 * s, 0.32, 1.45, 0.012), S));
   // Rear back panel (behind the rear bumper) + crash beam
   const bp = new THREE.BufferGeometry();
   {
@@ -245,6 +190,210 @@ export function buildStructure(M) {
   g.add(mesh(box(1.18, 0.015, 0.68, 0, 0.44, -1.86, 0.006), M.trunkLiner));
   // Rear seat partition (behind the rear bench back)
   g.add(mesh(box(1.3, 0.55, 0.012, 0, 0.72, -1.27, 0.004), M.trunkLiner));
+  return g;
+}
+
+// ------------------------------------------------------------------ engine bay shell
+// Inner fender aprons with integrated strut towers, box-section upper rails, a radiator core
+// support that follows the hood line, front rails tied into the crash boxes, and a plastic
+// undertray. Every upper edge is fitted below the skin (probed) so nothing pokes through the hood.
+const BAY_Z0 = 1.0,
+  BAY_Z1 = 1.86;
+function hoodUnder(x, z, clear = 0.045) {
+  return skinTopY(x, z, 0.4, 1.4) - clear;
+}
+
+function sectionLoft(path, shape, mat, { caps = true } = {}) {
+  // path: [{ p: Vector3, w, h }]; shape exponent for superSection
+  const secs = [];
+  for (let i = 0; i < path.length; i++) {
+    const a = path[Math.max(0, i - 1)].p,
+      b = path[Math.min(path.length - 1, i + 1)].p;
+    const t = b.clone().sub(a).normalize();
+    const side = Math.abs(t.y) > 0.9 ? V(1, 0, 0) : V(0, 1, 0).cross(t).normalize();
+    const up = t.clone().cross(side).normalize();
+    secs.push(superSection(path[i].p, side, up, path[i].w / 2, path[i].h / 2, shape, 12));
+  }
+  return mesh(loftSections(secs, { capStart: caps, capEnd: caps }), mat);
+}
+
+export function buildBayShell(M) {
+  const g = new THREE.Group();
+  const S = M.structure;
+  const N = 18;
+  for (const s of [1, -1]) {
+    // apron surface: profile in (x, y) swept along z
+    const rows = [];
+    for (let i = 0; i <= N; i++) {
+      const z = BAY_Z0 + 0.04 + ((BAY_Z1 - BAY_Z0 - 0.06) * i) / N;
+      const top = hoodUnder(0.7, z, 0.06);
+      // strut tower bulge: the inner wall moves inboard around the strut
+      const dz = (z - (SPEC.axleF - 0.02)) / 0.13;
+      const bulge = Math.exp(-dz * dz * 1.6) * 0.06;
+      const xin = 0.5 - bulge;
+      const prof = [
+        [0.6, 0.3],
+        [xin + 0.02, 0.34],
+        [xin, 0.42],
+        [xin, top - 0.07 + bulge * 0.4],
+        [xin + 0.03, top - 0.04 + bulge * 0.3],
+        [0.66, top - 0.035],
+        [0.72, top - 0.03],
+      ];
+      rows.push(prof.map(([x, y]) => V(x * s, y, z)));
+    }
+    const pos = [],
+      idx = [];
+    const W = rows[0].length;
+    for (const r of rows) for (const p of r) pos.push(p.x, p.y, p.z);
+    for (let i = 0; i < rows.length - 1; i++)
+      for (let k = 0; k < W - 1; k++) {
+        const a = i * W + k,
+          b = a + 1,
+          c = a + W,
+          d = c + 1;
+        if (s > 0) idx.push(a, c, b, b, c, d);
+        else idx.push(a, b, c, b, d, c);
+      }
+    const ag = new THREE.BufferGeometry();
+    ag.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    ag.setIndex(idx);
+    ag.computeVertexNormals();
+    const am = mesh(ag, S.clone());
+    am.material.side = THREE.DoubleSide;
+    g.add(am);
+    // strut top: domed cap with three studs and the rubber mount
+    const zt = SPEC.axleF - 0.02;
+    const ty = hoodUnder(0.56, zt, 0.075);
+    const dome = latheY(
+      [
+        [0.0, 0.0],
+        [0.045, -0.002],
+        [0.07, -0.014],
+        [0.082, -0.04],
+        [0.085, -0.07],
+      ],
+      28
+    );
+    dome.translate(0.565 * s, ty, zt);
+    g.add(mesh(dome, S));
+    const mount = latheY(
+      [
+        [0.0, 0.02],
+        [0.026, 0.018],
+        [0.032, 0.0],
+      ],
+      16
+    );
+    mount.translate(0.565 * s, ty, zt);
+    g.add(mesh(mount, M.rubberHose));
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2 + 0.4;
+      const stud = new THREE.CylinderGeometry(0.006, 0.006, 0.02, 8);
+      stud.translate(0.565 * s + Math.cos(a) * 0.052, ty, zt + Math.sin(a) * 0.052);
+      g.add(mesh(stud, M.steel, false));
+    }
+    // upper rail: closed box section along the top of the apron, under the fender seam
+    const rail = [];
+    for (let i = 0; i <= 10; i++) {
+      const z = BAY_Z0 + 0.02 + ((BAY_Z1 - BAY_Z0) * i) / 10;
+      rail.push({ p: V(0.72 * s, hoodUnder(0.72, z, 0.075), z), w: 0.05, h: 0.06 });
+    }
+    g.add(sectionLoft(rail, 6, S));
+    // front rail (frame horn) from the firewall foot to the crash box, rising toward the front
+    const fr = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const z = 0.92 + t * (1.98 - 0.92);
+      fr.push({ p: V((0.4 + 0.04 * t) * s, 0.27 + 0.17 * t * t, z), w: 0.07, h: 0.11 - 0.02 * t });
+    }
+    g.add(sectionLoft(fr, 6, S));
+    // crash box joining the rail to the bumper beam
+    g.add(mesh(box(0.09, 0.09, 0.12, 0.44 * s, 0.445, 2.03, 0.01), M.steel));
+  }
+  // Radiator core support: hood-following top tie bar with headlamp wings, side posts, lower bar.
+  const zr = 1.88;
+  const tie = [];
+  for (let i = 0; i <= 16; i++) {
+    const x = -0.58 + (1.16 * i) / 16;
+    tie.push({ p: V(x, Math.min(0.735, hoodUnder(Math.abs(x), zr, 0.05)), zr), w: 0.075, h: 0.035 });
+  }
+  g.add(sectionLoft(tie, 5, S));
+  for (const s of [1, -1]) {
+    // headlamp mount bracket behind the lamp housing (the lamp itself fills the corner)
+    const yEnd = Math.min(0.735, hoodUnder(0.6, zr, 0.05));
+    g.add(
+      sectionLoft(
+        [
+          { p: V(0.58 * s, yEnd, zr), w: 0.05, h: 0.035 },
+          { p: V(0.6 * s, yEnd - 0.06, zr - 0.06), w: 0.05, h: 0.04 },
+          { p: V(0.6 * s, 0.56, zr - 0.08), w: 0.05, h: 0.045 },
+        ],
+        5,
+        S
+      )
+    );
+    // side posts beside the radiator
+    g.add(
+      sectionLoft(
+        [
+          { p: V(0.4 * s, 0.33, zr), w: 0.055, h: 0.045 },
+          { p: V(0.4 * s, 0.53, zr), w: 0.055, h: 0.045 },
+          { p: V(0.4 * s, Math.min(0.72, hoodUnder(0.4, zr, 0.06)), zr), w: 0.055, h: 0.045 },
+        ],
+        5,
+        S
+      )
+    );
+  }
+  g.add(sectionLoft([-0.46, -0.2, 0.2, 0.46].map((x) => ({ p: V(x, 0.33, zr), w: 0.08, h: 0.05 })), 5, S));
+  // hood latch with striker guide
+  const latchY = Math.min(0.735, hoodUnder(0, zr, 0.05));
+  g.add(mesh(box(0.1, 0.06, 0.05, 0, latchY - 0.035, zr - 0.035, 0.008), M.blackPlastic));
+  g.add(mesh(box(0.02, 0.025, 0.02, 0, latchY + 0.005, zr - 0.035, 0.004), M.steel));
+  // front crash beam behind the bumper cover
+  const beamPts = [];
+  for (let i = 0; i <= 12; i++) {
+    const x = -0.66 + (1.32 * i) / 12;
+    beamPts.push(V(x, 0.45, 2.1 - 0.12 * x * x));
+  }
+  g.add(mesh(loftSections(beamPts.map((p) => superSection(p, V(0, 1, 0), V(0, 0, 1), 0.06, 0.035, 5, 12)), { capStart: true, capEnd: true }), M.steel));
+  // plastic undertray: the ground is not visible through the bay
+  const ut = [];
+  for (let i = 0; i <= 8; i++) {
+    const z = 1.0 + (0.9 * i) / 8;
+    const row = [];
+    for (let k = 0; k <= 8; k++) {
+      const x = -0.56 + (1.12 * k) / 8;
+      row.push(V(x, 0.205 + 0.03 * (x / 0.56) ** 4 + 0.05 * Math.max(0, (z - 1.7) / 0.2) ** 2, z));
+    }
+    ut.push(row);
+  }
+  {
+    const pos = [],
+      idx = [];
+    for (const r of ut) for (const p of r) pos.push(p.x, p.y, p.z);
+    for (let i = 0; i < ut.length - 1; i++)
+      for (let k = 0; k < 8; k++) {
+        const a = i * 9 + k;
+        idx.push(a, a + 9, a + 1, a + 1, a + 9, a + 10);
+      }
+    const ug = new THREE.BufferGeometry();
+    ug.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    ug.setIndex(idx);
+    ug.computeVertexNormals();
+    const um = mesh(ug, M.blackPlastic.clone());
+    um.material.side = THREE.DoubleSide;
+    g.add(um);
+  }
+  // hood seal along the cowl
+  const seal = [];
+  for (let i = 0; i <= 14; i++) {
+    const x = -0.7 + (1.4 * i) / 14;
+    const z = 1.06 - 0.17 * x * x;
+    seal.push(V(x, hoodUnder(Math.abs(x), z, 0.025), z));
+  }
+  g.add(mesh(tubeAlong(seal, 0.008, 8, {}), M.rubberHose));
   return g;
 }
 

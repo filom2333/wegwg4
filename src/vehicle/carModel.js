@@ -68,8 +68,8 @@ function hingeDefs() {
 const PART_PANELS = {
   door_FL: ['door_FL', 'glass_FL'],
   door_FR: ['door_FR', 'glass_FR'],
-  door_RL: ['door_RL', 'glass_RL', 'glass_QL'],
-  door_RR: ['door_RR', 'glass_RR', 'glass_QR'],
+  door_RL: ['door_RL', 'glass_RL'],
+  door_RR: ['door_RR', 'glass_RR'],
   hood: ['hood'],
   trunk: ['trunk'],
   fuelflap: ['fuelflap'],

@@ -895,11 +895,18 @@ export function buildRoofInterior(M) {
   g.add(gm);
   // Sun visors
   for (const s of [1, -1]) {
-    const v = roundedBox(0.34, 0.15, 0.02, 0.02, 3);
-    v.rotateX(-1.42);
-    const yv = skinTopY(0.3 * s, 0.25) - 0.072;
+    // stowed flat against the headliner on a hinge rod, with a vanity mirror cover underneath
+    const v = roundedBox(0.33, 0.15, 0.016, 0.03, 3);
+    v.rotateX(-1.5);
+    const yv = skinTopY(0.3 * s, 0.25) - 0.05;
     v.translate(0.29 * s, yv, 0.24);
     g.add(mesh(v, M.headliner));
+    const vm = roundedBox(0.12, 0.06, 0.004, 0.01, 2);
+    vm.rotateX(-1.5);
+    vm.translate(0.29 * s, yv - 0.009, 0.23);
+    g.add(mesh(vm, M.plastic, false));
+    const rod = tubeAlong([V(0.12 * s, yv + 0.005, 0.32), V(0.45 * s, yv + 0.005, 0.32)], 0.005, 8);
+    g.add(mesh(rod, M.plastic, false));
   }
   // Dome light
   const yd = skinTopY(0, -0.05) - 0.06;

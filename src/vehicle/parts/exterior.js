@@ -700,7 +700,7 @@ export function buildExhaustTip(mats) {
   const m = new THREE.Mesh(tip, mats.chrome);
   m.castShadow = true;
   g.add(m);
-  const pipe = tubeAlong([V(-0.5, 0.305, -2.14), V(-0.49, 0.29, -1.98), V(-0.44, 0.255, -1.78), V(-0.3, 0.2, -1.5)], 0.024, 12);
+  const pipe = tubeAlong([V(-0.5, 0.305, -2.215), V(-0.5, 0.302, -2.14), V(-0.49, 0.29, -1.98), V(-0.44, 0.255, -1.84)], 0.024, 12);
   const p2 = new THREE.Mesh(pipe, mats.exhaustMat || mats.blackMatte);
   g.add(p2);
   return g;
