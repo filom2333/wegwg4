@@ -21,7 +21,10 @@ async function boot() {
   });
   if (!params.get('manual')) game.start();
   else game.clock.start();
-  canvas.addEventListener('click', () => input.lock());
+  canvas.addEventListener('click', () => {
+    input.lock();
+    game.audio.start();
+  });
   window.__ready = true;
 }
 boot();

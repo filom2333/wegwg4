@@ -400,7 +400,7 @@ export class Car {
           throttle = 0;
         } else {
           if (d.gear !== 0 && v < 0.8) d.gear = 0;
-          if (d.gear === 0) throttle = c.reverse;
+          if (d.gear === 0) throttle = c.reverse * 0.6;
         }
       } else if (c.throttle > 0 && d.gear === 0) {
         if (v < -0.8) {

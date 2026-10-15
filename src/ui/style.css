@@ -66,6 +66,9 @@ canvas#game {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   transition: transform 0.12s, background 0.12s;
 }
+.hud-cross.none {
+  opacity: 0;
+}
 .hud-cross.active {
   transform: scale(1.6);
   background: #fff;

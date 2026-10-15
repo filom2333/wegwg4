@@ -91,6 +91,8 @@ export class Player {
       const ground = this.game.groundHeightAt(wp.x, wp.z, wp.y + 2.5);
       const p = V(wp.x, Math.max(ground, wp.y - 1.5), wp.z);
       if (this.isFree(p)) {
+        const door = s.door;
+        if (car.isInstalled(door) && car.model.parts[door].openT < 0.5) car.toggleOpen(door);
         this.seat = null;
         this.car = null;
         this.collider.setEnabled(true);

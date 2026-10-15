@@ -123,7 +123,9 @@ export class Interaction {
     const car = this.game.car;
     const list = [];
     const inv = new THREE.Matrix4();
+    const seated = !!this.game.player.seat;
     for (const [id, part] of Object.entries(car.model.parts)) {
+      if (seated) break;
       if (!car.isInstalled(id) || id === 'body' || id === 'chassis' || id === 'fuelflap') continue;
       if (!part.bbox || part.bbox.isEmpty()) continue;
       inv.copy(this.partMatrix(car, id)).invert();
@@ -235,7 +237,7 @@ export class Interaction {
     if (ui) {
       ui.setPrompts(prompts);
       ui.setTargetInfo(info);
-      ui.setCrosshair(this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : 'dot');
+      ui.setCrosshair(this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : p.seat === 'driver' ? 'none' : 'dot');
     }
     // outline highlight
     this.updateOutline(t);
@@ -443,11 +445,14 @@ export class Interaction {
         g.audio && g.audio.play('click');
         break;
       }
-      case 'seat':
+      case 'seat': {
         if (viaMouse) return;
         g.player.enterSeat(car, t.seat);
         g.audio && g.audio.play('seat');
+        const door = SEATS[t.seat].door;
+        if (car.isInstalled(door) && car.model.parts[door].openT > 0.5) setTimeout(() => car.toggleOpen(door), 350);
         break;
+      }
       case 'poiDoor':
         if (viaMouse) return;
         g.pois.toggleDoor(t.door);
@@ -1018,17 +1023,20 @@ export class Interaction {
         h.left.rotation.set(0, 0, Math.PI / 2);
       }
     } else if (it && big) {
-      // two hands on the sides of a large part
+      // carry from below: both hands under the lower edge, palms up, forearms toward the camera
       const inv = cam.quaternion.clone().invert();
       const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
-      const half = Math.min(0.35, Math.max(0.16, Math.min(it.size.x, it.size.z) * 0.5));
+      const box = new THREE.Box3().setFromObject(it.mesh);
+      const sz = box.getSize(V(0, 0, 0));
+      const half = Math.min(0.32, Math.max(0.14, Math.max(sz.x, sz.z) * 0.32));
+      const bottom = c.y - Math.min(0.45, sz.y * 0.5) + 0.03;
       h.setPose('right', 'carry');
       h.setPose('left', 'carry');
       h.left.visible = true;
-      h.right.position.set(c.x + half, c.y - 0.02, c.z + 0.12);
-      h.left.position.set(c.x - half, c.y - 0.02, c.z + 0.12);
-      h.right.rotation.set(0.25, 0, -Math.PI / 2);
-      h.left.rotation.set(0.25, 0, Math.PI / 2);
+      h.right.position.set(c.x + half, bottom, c.z + 0.08);
+      h.left.position.set(c.x - half, bottom, c.z + 0.08);
+      h.right.rotation.set(-0.35, 0.25, Math.PI);
+      h.left.rotation.set(-0.35, -0.25, Math.PI);
     } else {
       // idle: relaxed right hand low at the edge of the view; reaching when targeting
       h.setPose('right', this.target ? 'pinch' : 'relax');
@@ -1040,7 +1048,7 @@ export class Interaction {
       h.right.position.copy(base.lerp(V(0.15, -0.22, -0.45), this.reachT * 0.6));
       h.right.position.y += Math.sin(p.bob * 2) * bob;
       h.right.rotation.set(-0.2 + this.reachT * 0.3, 0.15, -0.5);
-      h.right.visible = !seated || this.reachT > 0.1;
+      h.right.visible = this.reachT > 0.15;
     }
   }
 }

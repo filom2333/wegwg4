@@ -418,8 +418,10 @@ export class POIManager {
     return best;
   }
 
-  rebase() {
+  rebase(dx, dz) {
     for (const inst of this.loaded.values()) {
+      inst.root.position.x -= dx;
+      inst.root.position.z -= dz;
       inst.root.updateMatrixWorld(true);
       for (const d of inst.doors) this.applyDoor(d, true);
     }

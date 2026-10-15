@@ -21,6 +21,8 @@ import { ItemSystem } from './items/items.js';
 import { ITEMS } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
+import { AudioSystem } from './audio/audio.js';
+import { Effects } from './gfx/effects.js';
 import { PARTS } from './vehicle/carParts.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
@@ -92,6 +94,7 @@ export class Game {
       shadowSize: this.renderer.q.shadow,
       shadowExtent: this.renderer.q.shadowExtent,
     });
+    this.env.onLightning = (r) => this.effects && this.effects.lightning(r);
     this.terrain = new Terrain({
       gen: this.gen,
       scene: this.worldGroup,
@@ -108,6 +111,8 @@ export class Game {
     this.interaction = new Interaction(this);
     this.ui = this.ui || null;
     this.hud = new HUD(this);
+    this.audio = this.audio || new AudioSystem(this);
+    this.effects = new Effects(this);
     onProgress('Building the car', 0.35);
     await tick();
     this.carBody = buildCarBody({ res: settings.data.quality === 'low' ? 0.034 : 0.028 });
@@ -195,16 +200,16 @@ export class Game {
       b.setTranslation({ x: t.x - dx, y: t.y, z: t.z - dz }, true);
       if (b.isKinematic()) b.setNextKinematicTranslation({ x: t.x - dx, y: t.y, z: t.z - dz });
     });
-    for (const c of this.worldGroup.children) {
-      if (c === this.terrain.group) continue;
-      c.position.x -= dx;
-      c.position.z -= dz;
-      c.updateMatrixWorld(true);
-    }
     this.terrain.rebase(dx, dz);
     this.scatter.rebase(dx, dz);
     this.pois.rebase(dx, dz);
+    this.items.rebase(dx, dz);
+    this.effects && this.effects.rebase(dx, dz);
+    this.npcs && this.npcs.rebase(dx, dz);
+    this.car.syncVisual();
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
+    const f2 = this.focusPoint();
+    this.scatter.update(f2.x + this.origin.x, f2.z + this.origin.z);
     this.car && this.car.prevPos.set(this.car.prevPos.x - dx, this.car.prevPos.y, this.car.prevPos.z - dz);
   }
 
@@ -267,6 +272,8 @@ export class Game {
     this.interaction.update(dt);
     this.interaction.updateView(dt);
     this.updateRefuel(dt);
+    this.effects.update(dt);
+    this.audio.update(dt);
     this.hud.update(dt);
     // streaming
     const f = this.focusPoint();
@@ -342,11 +349,24 @@ export class Game {
     this._steer += (steer - this._steer) * Math.min(1, dt * 6);
     const car = this.car;
     if (!blocked) {
+      // Ignition key: press turns it on (hold to crank), press while running stops the engine,
+      // a quick tap with the ignition on and the engine off switches it off.
       if (input.wasPressed('ignition')) {
-        if (!car.ignition) car.setIgnition(true);
-        else car.setIgnition(false);
+        this._keyWasOn = car.ignition;
+        this._keyHeld = 0;
+        if (car.dyn.engine.running) {
+          car.setIgnition(false);
+          this._keyWasOn = null;
+        } else if (!car.ignition) car.setIgnition(true);
       }
-      if (input.isDown('ignition') && car.ignition && !car.dyn.engine.running) car.crank(dt);
+      if (input.isDown('ignition')) {
+        this._keyHeld = (this._keyHeld || 0) + dt;
+        if (car.ignition && !car.dyn.engine.running && this._keyWasOn !== null) car.crank(dt);
+      }
+      if (input.wasReleased('ignition')) {
+        if (this._keyWasOn && this._keyHeld < 0.2 && !car.dyn.engine.running) car.setIgnition(false);
+        car.cranking = 0;
+      }
       if (input.wasPressed('lights')) car.lightsOn = (car.lightsOn + 1) % 3;
       if (input.wasPressed('wipers')) car.wipers = !car.wipers;
       if (!car.dyn.automatic) {

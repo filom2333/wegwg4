@@ -261,8 +261,11 @@ export class Scatter {
 
   rebase() {
     // instances are rebuilt relative to the new origin; colliders were shifted with all bodies
-    this.group.position.set(0, 0, 0);
-    this.group.updateMatrixWorld(true);
     this.lastCell = null;
+    for (const c of this.cells.values()) {
+      if (c.colliders) {
+        // static bodies were shifted with all others; nothing else to do
+      }
+    }
   }
 }

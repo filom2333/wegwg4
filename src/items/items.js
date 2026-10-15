@@ -346,8 +346,13 @@ export class ItemSystem {
     }
   }
 
-  rebase() {
-    // bodies were shifted with all others; meshes are children of worldGroup and shifted too
+  rebase(dx, dz) {
+    // bodies were shifted with all others; meshes of resting items follow their (sleeping) bodies
+    for (const it of this.items) {
+      if (it.held || it.stowed) continue;
+      it.mesh.position.x -= dx;
+      it.mesh.position.z -= dz;
+    }
   }
 
   // Serialize every item (for save games).
