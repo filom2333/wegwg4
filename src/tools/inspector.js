@@ -215,6 +215,19 @@ function setSection(axis, pos) {
   if (axis === 'x') sectionPlane.set(new THREE.Vector3(-1, 0, 0), pos);
   if (axis === 'y') sectionPlane.set(new THREE.Vector3(0, -1, 0), pos);
   if (axis === 'z') sectionPlane.set(new THREE.Vector3(0, 0, -1), pos);
+  if (window.subject) {
+    const clip = axis !== 'none' ? [sectionPlane] : [];
+    window.subject.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        m.clippingPlanes = clip;
+        m.clipShadows = true;
+        m.needsUpdate = true;
+      }
+    });
+    markDirty();
+    return;
+  }
   applyMode();
 }
 
@@ -613,8 +626,42 @@ window.addEventListener('pointerup', markDirty);
 window.addEventListener('change', markDirty, true);
 window.addEventListener('click', () => setTimeout(markDirty, 0), true);
 
+// Non-car subjects (buildings, props, creatures) for the same stand.
+async function initSubject(subject) {
+  const seed = +(params.get('seed') || 1);
+  const { mulberry32 } = await import('../core/noise.js');
+  const rnd = mulberry32(seed);
+  let group;
+  if (subject === 'house' || subject === 'poi') {
+    const { buildPoiPreview } = await import('../world/poiPreview.js');
+    group = await buildPoiPreview(params.get('type') || 'house', seed);
+  }
+  void rnd;
+  scene.add(group);
+  window.subject = group;
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  sun.shadow.camera.left = -size.length() / 1.6;
+  sun.shadow.camera.right = size.length() / 1.6;
+  sun.shadow.camera.top = size.length() / 1.6;
+  sun.shadow.camera.bottom = -size.length() / 1.6;
+  sun.shadow.camera.updateProjectionMatrix();
+  camera.position.set(size.x * 0.9, size.y * 1.4 + 4, size.z * 1.3 + 6);
+  controls.target.set(0, 1.2, 0);
+  controls.update();
+  if (params.get('ui') === '0') {
+    panelEl.style.display = 'none';
+    statusEl.style.display = 'none';
+  }
+  statusEl.textContent = subject + ' seed ' + seed;
+  loop();
+  window.__ready = true;
+}
+
 async function init() {
   await new Promise((r) => setTimeout(r, 30));
+  const subject = params.get('subject');
+  if (subject && subject !== 'car') return initSubject(subject);
   const res = parseFloat(params.get('res') || '0.028');
   body = buildCarBody({ res });
   mats = createCarMaterials({ color: params.get('color') ? parseInt(params.get('color'), 16) : 0xb4532a });
