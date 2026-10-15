@@ -292,10 +292,12 @@ export class POIManager {
     w.rotation.set(0, rot, tilt);
     // random paint per wreck
     const paints = [0x6d7a7f, 0x7a2e24, 0x2f4a5c, 0xb9b2a0, 0x4b5a3a, 0x8b6d3c];
-    const pm = w.userData.paint.clone();
+    // (clone() deep-copies userData through JSON, so the shared material comes from the prototype)
+    const base = this.wreckProto.userData.paint;
+    const pm = base.clone();
     pm.color.setHex(paints[Math.floor(rnd() * paints.length)]);
     w.traverse((o) => {
-      if (o.isMesh && o.material === w.userData.paint) o.material = pm;
+      if (o.isMesh && o.material === base) o.material = pm;
     });
     inst.root.add(w);
     // collider (box)

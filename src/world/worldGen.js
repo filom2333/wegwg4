@@ -101,9 +101,13 @@ export class WorldGen {
 
   // ---------------------------------------------------------------- biomes
   biomeOfCell(k) {
-    if (k <= 0) return 'scrub';
-    // avoid repeating the previous cell's biome
-    const prev = this.biomeOfCell(k - 1);
+    if (!(k > 0)) return 'scrub';
+    if (!this._cells) this._cells = new Map();
+    // avoid repeating the previous cell's biome (walk forward from the last cached cell)
+    let start = k - 1;
+    while (start > 0 && !this._cells.has(start)) start--;
+    for (let j = start + 1; j < k; j++) this._cellCached(j);
+    const prev = k - 1 > 0 ? this._cellCached(k - 1) : 'scrub';
     let b;
     let tries = 0;
     do {

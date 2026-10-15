@@ -14,6 +14,7 @@ export function sdRoundCone(px, py, pz, a, b, r1, r2) {
     bay = b.y - a.y,
     baz = b.z - a.z;
   const l2 = bax * bax + bay * bay + baz * baz;
+  if (l2 < 1e-10) return Math.hypot(px - a.x, py - a.y, pz - a.z) - Math.max(r1, r2);
   const rr = r1 - r2;
   const a2 = l2 - rr * rr;
   const il2 = 1 / l2;
@@ -52,6 +53,25 @@ export function sdEllipsoid(px, py, pz, c, r, rot) {
   return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(r.x, r.y, r.z);
 }
 
+export function sdRoundBox(px, py, pz, c, h, rad, rot) {
+  let x = px - c.x,
+    y = py - c.y,
+    z = pz - c.z;
+  if (rot) {
+    const e = rot.elements;
+    const ix = e[0] * x + e[1] * y + e[2] * z,
+      iy = e[3] * x + e[4] * y + e[5] * z,
+      iz = e[6] * x + e[7] * y + e[8] * z;
+    x = ix;
+    y = iy;
+    z = iz;
+  }
+  const qx = Math.abs(x) - h.x + rad,
+    qy = Math.abs(y) - h.y + rad,
+    qz = Math.abs(z) - h.z + rad;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - rad;
+}
+
 function smin(a, b, k) {
   if (k <= 0) return Math.min(a, b);
   const h = Math.max(k - Math.abs(a - b), 0) / k;
@@ -70,11 +90,13 @@ export class SDFModel {
   constructor() {
     this.shapes = [];
     this.mats = {};
+    this.attachments = [];
     this.bbox = new THREE.Box3();
   }
 
   material(name, color, rough = 0.8, noise = 0.08) {
-    this.mats[name] = { color: new THREE.Color(...color), rough, noise };
+    // authored as sRGB, stored linear (vertex colours are in the working colour space)
+    this.mats[name] = { color: new THREE.Color().setRGB(color[0], color[1], color[2], THREE.SRGBColorSpace), rough, noise };
     return name;
   }
 
@@ -91,13 +113,27 @@ export class SDFModel {
     this.grow(c, Math.max(r.x, r.y, r.z));
   }
 
+  box(c, h, rad, bone, mat, { blend = 0.02, sub = false, rot = null, layer = 0 } = {}) {
+    let m = null;
+    if (rot) m = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromEuler(rot)).transpose();
+    this.shapes.push({ type: 'box', c: c.clone(), h: h.clone(), rad, rot: m, bone, mat, blend, sub, layer });
+    this.grow(c, h.length());
+  }
+
+  // Separate meshes rigidly attached to a bone (eyes): { type, bone, pos:[x,y,z] world rest, r, color }
+  attach(a) {
+    this.attachments.push(a);
+  }
+
   grow(p, r) {
     this.bbox.expandByPoint(V(p.x - r, p.y - r, p.z - r));
     this.bbox.expandByPoint(V(p.x + r, p.y + r, p.z + r));
   }
 
   dist(s, x, y, z) {
-    return s.type === 'cone' ? sdRoundCone(x, y, z, s.a, s.b, s.r1, s.r2) : sdEllipsoid(x, y, z, s.c, s.r, s.rot);
+    if (s.type === 'cone') return sdRoundCone(x, y, z, s.a, s.b, s.r1, s.r2);
+    if (s.type === 'box') return sdRoundBox(x, y, z, s.c, s.h, s.rad, s.rot);
+    return sdEllipsoid(x, y, z, s.c, s.r, s.rot);
   }
 
   // Field value; also fills `info` with per-shape distances (for weights / materials).
@@ -120,12 +156,17 @@ export class SDFModel {
         s.cx = (s.a.x + s.b.x) / 2;
         s.cy = (s.a.y + s.b.y) / 2;
         s.cz = (s.a.z + s.b.z) / 2;
-        s.rad = s.a.distanceTo(s.b) / 2 + Math.max(s.r1, s.r2);
+        s.brad = s.a.distanceTo(s.b) / 2 + Math.max(s.r1, s.r2);
+      } else if (s.type === 'box') {
+        s.cx = s.c.x;
+        s.cy = s.c.y;
+        s.cz = s.c.z;
+        s.brad = s.h.length();
       } else {
         s.cx = s.c.x;
         s.cy = s.c.y;
         s.cz = s.c.z;
-        s.rad = Math.max(s.r.x, s.r.y, s.r.z);
+        s.brad = Math.max(s.r.x, s.r.y, s.r.z);
       }
     }
   }
@@ -133,6 +174,23 @@ export class SDFModel {
 
 // ------------------------------------------------------------------ surface nets
 export function polygonize(model, cell, bones) {
+  return geometryFromArrays(polygonizeArrays(model, cell, bones));
+}
+
+export function geometryFromArrays(a) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.P, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(a.N, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.C, 3));
+  g.setAttribute('rough', new THREE.BufferAttribute(a.R, 1));
+  g.setAttribute('skinIndex', new THREE.BufferAttribute(a.SI, 4));
+  g.setAttribute('skinWeight', new THREE.BufferAttribute(a.SW, 4));
+  g.setIndex(new THREE.BufferAttribute(a.I, 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+export function polygonizeArrays(model, cell, bones) {
   model.buildAccel();
   const pad = cell * 2;
   const min = model.bbox.min.clone().subScalar(pad),
@@ -157,7 +215,7 @@ export function polygonize(model, cell, bones) {
         let anyAdd = false;
         for (let s = 0; s < S.length; s++) {
           const sh = S[s];
-          const d = Math.hypot(sh.cx - cx, sh.cy - cy, sh.cz - cz) - sh.rad;
+          const d = Math.hypot(sh.cx - cx, sh.cy - cy, sh.cz - cz) - sh.brad;
           if (d < half) {
             list.push(sh);
             if (!sh.sub) anyAdd = true;
@@ -288,6 +346,7 @@ export function polygonize(model, cell, bones) {
   const R = new Float32Array(nv);
   const SI = new Uint16Array(nv * 4);
   const SW = new Float32Array(nv * 4);
+  const MI = new Uint16Array(nv);
   const dists = new Float32Array(S.length);
   const e = cell * 0.25;
   const boneIndex = new Map(bones.map((b, i) => [b, i]));
@@ -317,18 +376,19 @@ export function polygonize(model, cell, bones) {
     N[v * 3 + 1] = gy / gl;
     N[v * 3 + 2] = gz / gl;
     model.field(x, y, z, dists);
-    // material: the additive shape closest to the surface; outer layers (clothes) win near-ties
+    // material: the shape whose boundary passes closest to this surface point (carved surfaces
+    // take the carving shape's material); outer layers (clothes, beard, lips) win near-ties
     let best = 0,
       bd = 1e9;
     for (let s = 0; s < S.length; s++) {
-      if (S[s].sub) continue;
-      const d = dists[s] - S[s].layer * 0.004;
+      const d = Math.abs(dists[s]) - S[s].layer * 0.004;
       if (d < bd) {
         bd = d;
         best = s;
       }
     }
     const m = model.mats[S[best].mat];
+    MI[v] = best;
     const nn = (Math.sin(x * 91.7 + y * 37.3) * Math.sin(z * 71.1 - y * 13.7) + Math.sin(x * 23.1 - z * 41.9)) * 0.5;
     C[v * 3] = m.color.r * (1 + nn * m.noise);
     C[v * 3 + 1] = m.color.g * (1 + nn * m.noise);
@@ -350,16 +410,8 @@ export function polygonize(model, cell, bones) {
       SW[v * 4 + q] = arr[q] ? arr[q][1] / sum : 0;
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(P, 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
-  g.setAttribute('color', new THREE.BufferAttribute(C, 3));
-  g.setAttribute('rough', new THREE.BufferAttribute(R, 1));
-  g.setAttribute('skinIndex', new THREE.BufferAttribute(SI, 4));
-  g.setAttribute('skinWeight', new THREE.BufferAttribute(SW, 4));
-  g.setIndex(tris);
-  g.computeBoundingSphere();
-  return g;
+  const I = nv > 65535 ? new Uint32Array(tris) : new Uint16Array(tris);
+  return { P, N, C, R, SI, SW, I, MI };
 }
 
 // Material: vertex colours + per-vertex roughness + fine fabric/skin detail.
@@ -382,11 +434,44 @@ roughnessFactor = vRough;`
 {
   // fabric weave / skin pores breakup
   vec3 q = vLocal * 260.0;
+  float fade = clamp(1.6 - length(fwidth(q)) * 0.9, 0.0, 1.0);
   float w = 0.5 + 0.5 * sin(q.x) * sin(q.y + q.z);
-  diffuseColor.rgb *= 0.94 + 0.08 * w * step(0.7, vRough) + 0.04 * hh(floor(vLocal * 600.0));
+  float grain = hh(floor(vLocal * 600.0));
+  diffuseColor.rgb *= 1.0 + fade * (0.08 * (w - 0.5) * step(0.7, vRough) + 0.05 * (grain - 0.5));
 }`
       );
   };
   m.customProgramCacheKey = () => 'charmat';
+  return m;
+}
+
+
+// Eyeball: sclera, iris ring and pupil from the local position (forward = +z), wet highlight.
+const eyeMats = new Map();
+export function eyeMaterial(iris = [0.3, 0.22, 0.12], glow = 0) {
+  const key = iris.join(',') + glow;
+  if (eyeMats.has(key)) return eyeMats.get(key);
+  const m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 });
+  const ic = new THREE.Color().setRGB(iris[0], iris[1], iris[2], THREE.SRGBColorSpace);
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uIris = { value: ic };
+    sh.uniforms.uGlow = { value: glow };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vEyeP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeP = normalize(position);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vEyeP;\nuniform vec3 uIris;\nuniform float uGlow;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+float rr = length(vEyeP.xy) * step(0.0, vEyeP.z);
+vec3 sclera = mix(vec3(0.42, 0.36, 0.32), vec3(0.62, 0.58, 0.52), smoothstep(0.9, 0.2, rr));
+float iris = smoothstep(0.47, 0.43, rr) * step(0.0, vEyeP.z);
+float pupil = smoothstep(0.2, 0.17, rr) * step(0.0, vEyeP.z);
+vec3 ir = uIris * (0.7 + 0.5 * smoothstep(0.43, 0.2, rr));
+diffuseColor.rgb = mix(mix(sclera, ir, iris), vec3(0.01), pupil);`
+      )
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uGlow * uIris * iris * (1.0 - pupil);');
+  };
+  m.customProgramCacheKey = () => 'eye' + key;
+  eyeMats.set(key, m);
   return m;
 }

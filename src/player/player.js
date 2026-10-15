@@ -314,6 +314,15 @@ export class Player {
     }
   }
 
+  // shoved by an attacker
+  knock(v) {
+    if (this.seat) return;
+    this.velocity.x += v.x;
+    this.velocity.z += v.z;
+    this.vy = Math.max(this.vy, 1.2);
+    this.grounded = false;
+  }
+
   // eat / drink / heal
   consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0 }) {
     this.food = clamp(this.food + food, 0, 100);

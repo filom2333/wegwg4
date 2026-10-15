@@ -29,6 +29,7 @@ for (const s of steps) {
     // simulate seconds of game time at fixed dt without rendering
     await page.evaluate(([sec, dt]) => window.game.debugSimulate(sec, dt), [s.sim, s.dt || 1 / 30]);
   }
+  if (s.waitFor) await page.waitForFunction(s.waitFor, null, { timeout: 300000 });
   if (s.wait) await page.waitForTimeout(s.wait);
   if (s.shot) {
     fs.mkdirSync('shots', { recursive: true });

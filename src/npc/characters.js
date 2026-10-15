@@ -2,7 +2,7 @@
 // and the coyote. Each builder returns { mesh: SkinnedMesh, bones, rig, height, hitboxes }.
 
 import * as THREE from 'three';
-import { SDFModel, polygonize, characterMaterial } from './sdfMesh.js';
+import { SDFModel, polygonizeArrays, geometryFromArrays, characterMaterial, eyeMaterial } from './sdfMesh.js';
 import { mulberry32 } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -24,22 +24,48 @@ function skeleton(defs) {
     bones[name] = b;
     list.push(b);
   }
-  return { bones, world, list };
+  return { bones, world, list, defs };
 }
 
-function finish(model, sk, cell, { scale = 1 } = {}) {
-  const geo = polygonize(model, cell, sk.list.map((b) => b.name));
+function finish(model, sk, cell) {
+  return { model, defs: sk.defs, cell, attachments: model.attachments };
+}
+
+const eyeGeo = new THREE.SphereGeometry(1, 16, 12);
+
+let sharedMaterial = null;
+// Turn polygonised arrays + joint definitions into a skinned mesh with its own skeleton.
+export function assembleCharacter(arrays, defs, attachments = []) {
+  const sk = skeleton(defs);
+  const geo = arrays.isBufferGeometry ? arrays : geometryFromArrays(arrays);
   const skel = new THREE.Skeleton(sk.list);
-  const mesh = new THREE.SkinnedMesh(geo, characterMaterial());
+  sharedMaterial = sharedMaterial || characterMaterial();
+  const mesh = new THREE.SkinnedMesh(geo, sharedMaterial);
   mesh.add(sk.list[0]);
   mesh.bind(skel);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
-  mesh.scale.setScalar(scale);
-  // remember the rest pose
-  for (const b of sk.list) b.userData.rest = b.quaternion.clone();
-  return mesh;
+  for (const b of sk.list) {
+    b.userData.rest = b.quaternion.clone();
+    b.userData.restPos = b.position.clone();
+  }
+  for (const a of attachments) {
+    if (a.type !== 'eye') continue;
+    const e = new THREE.Mesh(eyeGeo, eyeMaterial(a.color, a.glow || 0));
+    e.scale.setScalar(a.r);
+    e.position.set(a.pos[0], a.pos[1], a.pos[2]).sub(sk.world[a.bone]);
+    if (a.look) e.rotation.set(a.look[0], a.look[1], 0);
+    sk.bones[a.bone].add(e);
+  }
+  return { mesh, bones: sk.bones, world: sk.world };
+}
+
+// Synchronous build (inspector, fallback when workers are unavailable).
+export function buildCharacter(type, seed = 1) {
+  const def = DEFINE[type](seed);
+  const arrays = polygonizeArrays(def.model, def.cell, def.defs.map((d) => d[0]));
+  return { ...assembleCharacter(arrays, def.defs, def.attachments), type, height: def.height, kind: def.kind, hitboxes: def.hitboxes, arrays };
 }
 
 // ------------------------------------------------------------------ humanoid skeleton
@@ -69,88 +95,135 @@ function humanJoints(h = 1, { hunch = 0, armLen = 1, legLen = 1 } = {}) {
 }
 
 // ------------------------------------------------------------------ vagrant
-export function buildVagrant(seed = 1) {
+export function defineVagrant(seed = 1) {
   const r = mulberry32(seed);
   const m = new SDFModel();
   const sk = skeleton(humanJoints(1, { hunch: 0.15 }));
   const J = sk.world;
   const skinTone = [
-    [0.62, 0.44, 0.33],
-    [0.48, 0.33, 0.24],
-    [0.7, 0.52, 0.4],
+    [0.62, 0.45, 0.35],
+    [0.45, 0.31, 0.23],
+    [0.72, 0.55, 0.44],
   ][Math.floor(r() * 3)];
-  m.material('skin', skinTone, 0.6, 0.06);
-  m.material('lip', skinTone.map((c) => c * 0.8), 0.5, 0.0);
-  m.material('eye', [0.06, 0.05, 0.05], 0.2, 0);
+  m.material('skin', skinTone, 0.55, 0.07);
+  m.material('lip', skinTone.map((c) => c * 0.78), 0.45, 0.0);
+  m.material('eye', [0.08, 0.07, 0.06], 0.15, 0);
+  m.material('white', [0.78, 0.74, 0.68], 0.25, 0);
   const coatCols = [
-    [0.33, 0.29, 0.21],
-    [0.24, 0.26, 0.22],
-    [0.36, 0.25, 0.18],
+    [0.36, 0.31, 0.22],
+    [0.27, 0.29, 0.24],
+    [0.4, 0.28, 0.2],
+    [0.22, 0.22, 0.24],
   ];
-  m.material('coat', coatCols[Math.floor(r() * 3)], 0.95, 0.15);
-  m.material('shirt', [0.42, 0.4, 0.35], 0.95, 0.12);
-  m.material('pants', [0.2, 0.22, 0.25], 0.95, 0.12);
-  m.material('boot', [0.15, 0.11, 0.08], 0.7, 0.1);
-  m.material('hat', [0.28, 0.08, 0.06].map((c) => c * (0.8 + r() * 0.5)), 0.95, 0.15);
-  m.material('beard', [0.22, 0.2, 0.18], 1.0, 0.25);
-  m.material('canvas', [0.38, 0.36, 0.26], 0.95, 0.15);
-  m.material('strap', [0.12, 0.1, 0.08], 0.7, 0.05);
+  m.material('coat', coatCols[Math.floor(r() * coatCols.length)], 0.95, 0.16);
+  m.material('lining', [0.5, 0.46, 0.38], 0.95, 0.12);
+  m.material('pants', [0.18, 0.2, 0.24].map((c) => c * (0.85 + r() * 0.3)), 0.95, 0.12);
+  m.material('boot', [0.2, 0.14, 0.09], 0.65, 0.12);
+  m.material('sole', [0.08, 0.07, 0.06], 0.8, 0.05);
+  const hatCols = [
+    [0.42, 0.14, 0.1],
+    [0.25, 0.27, 0.2],
+    [0.18, 0.18, 0.2],
+  ];
+  m.material('hat', hatCols[Math.floor(r() * 3)], 0.98, 0.18);
+  m.material('beard', [0.3, 0.22, 0.16].map((c) => c * (0.6 + r() * 0.8)), 1.0, 0.4);
+  m.material('canvas', [0.36, 0.34, 0.24], 0.95, 0.15);
+  m.material('roll', [0.24, 0.27, 0.2], 0.95, 0.14);
+  m.material('strap', [0.12, 0.1, 0.08], 0.6, 0.05);
+  m.material('button', [0.06, 0.05, 0.04], 0.4, 0);
   const P = (n) => J[n].clone();
-  const L = (n) => J[n + 'L'].clone();
-  const Rr = (n) => J[n + 'R'].clone();
-  void L;
-  void Rr;
-  // --- head & face (skin)
+  // --- head & face
   const hc = P('head').add(V(0, 0.07, 0.01));
-  m.ell(hc, V(0.083, 0.105, 0.098), 'head', 'skin', { blend: 0.02 });
-  m.ell(hc.clone().add(V(0, -0.06, 0.035)), V(0.066, 0.052, 0.07), 'head', 'skin', { blend: 0.03 }); // jaw
-  m.ell(hc.clone().add(V(0, 0.032, 0.07)), V(0.075, 0.02, 0.03), 'head', 'skin', { blend: 0.02 }); // brow ridge
-  m.cone(hc.clone().add(V(0, 0.018, 0.088)), hc.clone().add(V(0, -0.02, 0.112)), 0.011, 0.016, 'head', 'skin', { blend: 0.012 }); // nose
+  m.ell(hc, V(0.08, 0.102, 0.095), 'head', 'skin', { blend: 0.02 });
+  const jawC = hc.clone().add(V(0, -0.058, 0.032));
+  const jawR = V(0.064, 0.05, 0.068);
+  m.ell(jawC, jawR, 'head', 'skin', { blend: 0.03 });
+  m.ell(hc.clone().add(V(0, 0.03, 0.068)), V(0.072, 0.019, 0.028), 'head', 'skin', { blend: 0.02 }); // brow ridge
+  for (const s of [-1, 1]) m.ell(hc.clone().add(V(0.045 * s, -0.018, 0.064)), V(0.024, 0.018, 0.02), 'head', 'skin', { blend: 0.02 }); // cheekbones
+  m.cone(hc.clone().add(V(0, 0.016, 0.088)), hc.clone().add(V(0, -0.021, 0.108)), 0.01, 0.015, 'head', 'skin', { blend: 0.012 }); // nose
   for (const s of [-1, 1]) {
-    m.ell(hc.clone().add(V(0.034 * s, 0.012, 0.083)), V(0.017, 0.013, 0.012), 'head', 'skin', { sub: true, blend: 0.01 }); // socket
-    m.ell(hc.clone().add(V(0.034 * s, 0.012, 0.076)), V(0.0125, 0.0125, 0.0125), 'head', 'eye', { blend: 0.0 });
-    m.ell(hc.clone().add(V(0.082 * s, 0.0, -0.005)), V(0.012, 0.028, 0.02), 'head', 'skin', { blend: 0.01 }); // ear
+    m.ell(hc.clone().add(V(0.033 * s, 0.01, 0.084)), V(0.018, 0.011, 0.011), 'head', 'skin', { sub: true, blend: 0.01 }); // socket
+    m.ell(hc.clone().add(V(0.033 * s, 0.021, 0.08)), V(0.017, 0.006, 0.01), 'head', 'skin', { blend: 0.006 }); // upper lid / heavy brow
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.033 * s, 0.009, 0.071)).toArray(), r: 0.0118, color: [0.32, 0.24, 0.14] });
+    m.ell(hc.clone().add(V(0.08 * s, 0.0, -0.004)), V(0.012, 0.028, 0.02), 'head', 'skin', { blend: 0.01 }); // ear
   }
-  m.ell(hc.clone().add(V(0, -0.047, 0.088)), V(0.024, 0.006, 0.01), 'head', 'lip', { blend: 0.006 });
-  // beard + moustache, beanie
-  m.ell(hc.clone().add(V(0, -0.072, 0.052)), V(0.07, 0.06, 0.06), 'head', 'beard', { blend: 0.02, layer: 1 });
-  m.ell(hc.clone().add(V(0, -0.035, 0.086)), V(0.035, 0.01, 0.018), 'head', 'beard', { blend: 0.01, layer: 1 });
-  m.ell(hc.clone().add(V(0, 0.055, -0.005)), V(0.091, 0.075, 0.104), 'head', 'hat', { blend: 0.01, layer: 2 });
-  m.cone(hc.clone().add(V(-0.09, 0.02, -0.01)), hc.clone().add(V(0.09, 0.02, -0.01)), 0.012, 0.012, 'head', 'hat', { blend: 0.02, layer: 2 }); // rolled brim
-  // neck
-  m.cone(P('neck'), P('head').add(V(0, 0.02, 0.01)), 0.055, 0.05, 'neck', 'skin', { blend: 0.03 });
-  // --- torso: shirt collar + coat
+  // beard shell hugs the jaw just outside it; lips and nose stay on top
+  m.ell(jawC.clone().add(V(0, -0.006, 0.002)), jawR.clone().addScalar(0.006), 'head', 'beard', { blend: 0.02, layer: 1 });
+  m.ell(hc.clone().add(V(0, -0.033, 0.094)), V(0.03, 0.008, 0.012), 'head', 'beard', { blend: 0.008, layer: 1 }); // moustache
+  m.ell(hc.clone().add(V(0, -0.048, 0.093)), V(0.021, 0.0055, 0.008), 'head', 'lip', { blend: 0.005, layer: 3 });
+  // beanie with folded cuff, a fringe of hair at the nape
+  m.ell(hc.clone().add(V(0, 0.07, -0.008)), V(0.088, 0.072, 0.1), 'head', 'hat', { blend: 0.01, layer: 2 });
+  m.ell(hc.clone().add(V(0, 0.062, -0.008)), V(0.091, 0.017, 0.103), 'head', 'hat', { blend: 0.012, layer: 2 });
+  m.ell(hc.clone().add(V(0, -0.02, -0.06)), V(0.07, 0.04, 0.045), 'head', 'beard', { blend: 0.02, layer: 1 });
+  // neck + scarf
+  m.cone(P('neck'), P('head').add(V(0, 0.02, 0.01)), 0.052, 0.048, 'neck', 'skin', { blend: 0.03 });
+  // --- torso: jacket
   const chest = P('chest');
-  m.ell(chest.clone().add(V(0, -0.02, 0.0)), V(0.185, 0.2, 0.125), 'chest', 'coat', { blend: 0.06, layer: 1 });
-  m.ell(P('spine').add(V(0, -0.02, 0.01)), V(0.165, 0.17, 0.12), 'spine', 'coat', { blend: 0.06, layer: 1 });
-  m.ell(P('hips').add(V(0, -0.02, 0.0)), V(0.175, 0.12, 0.125), 'hips', 'coat', { blend: 0.05, layer: 1 });
-  m.cone(P('neck').add(V(0, -0.03, -0.01)), P('neck').add(V(0, 0.02, -0.02)), 0.075, 0.068, 'neck', 'coat', { blend: 0.03, layer: 1 }); // collar
-  m.cone(P('upperArmL').add(V(-0.04, 0.0, 0)), P('upperArmR').add(V(0.04, 0, 0)), 0.068, 0.068, 'chest', 'coat', { blend: 0.05, layer: 1 }); // shoulders
+  m.ell(chest.clone().add(V(0, -0.015, 0.0)), V(0.172, 0.19, 0.112), 'chest', 'coat', { blend: 0.06, layer: 1 });
+  m.ell(P('spine').add(V(0, -0.02, 0.008)), V(0.155, 0.16, 0.108), 'spine', 'coat', { blend: 0.06, layer: 1 });
+  m.ell(P('hips').add(V(0, -0.01, 0.0)), V(0.162, 0.1, 0.112), 'hips', 'coat', { blend: 0.05, layer: 1 });
+  m.ell(P('hips').add(V(0, -0.075, 0.0)), V(0.168, 0.04, 0.118), 'hips', 'coat', { blend: 0.02, layer: 1 }); // hem
+  // raised collar, open at the front
+  m.cone(P('neck').add(V(0, -0.035, -0.012)), P('neck').add(V(0, 0.025, -0.03)), 0.078, 0.07, 'neck', 'coat', { blend: 0.03, layer: 1 });
+
+  m.cone(P('upperArmL').add(V(-0.04, 0.0, 0)), P('upperArmR').add(V(0.04, 0, 0)), 0.064, 0.064, 'chest', 'coat', { blend: 0.05, layer: 1 }); // shoulders
+  // buttons, pocket flaps
+  const front = (x, y) => {
+    // point on the chest/spine ellipsoids' front surface
+    const c = y > P('spine').y + 0.05 ? chest.clone().add(V(0, -0.015, 0)) : P('spine').add(V(0, -0.02, 0.008));
+    const rr = y > P('spine').y + 0.05 ? V(0.172, 0.19, 0.112) : V(0.155, 0.16, 0.108);
+    const u = Math.max(0, 1 - (x / rr.x) ** 2 - ((y - c.y) / rr.y) ** 2);
+    return V(x, y, c.z + rr.z * Math.sqrt(u));
+  };
+  for (let i = 0; i < 4; i++) m.ell(front(0.012, chest.y + 0.05 - i * 0.1).add(V(0, 0, 0.004)), V(0.009, 0.009, 0.004), 'chest', 'button', { blend: 0.002, layer: 3 });
+  for (const s of [-1, 1]) {
+    m.ell(front(0.085 * s, P('spine').y - 0.04).add(V(0, 0, 0.0)), V(0.05, 0.012, 0.012), 'spine', 'coat', { blend: 0.006, layer: 1 });
+    m.ell(front(0.08 * s, chest.y + 0.06).add(V(0, 0, 0.0)), V(0.04, 0.01, 0.01), 'chest', 'coat', { blend: 0.006, layer: 1 });
+  }
   // arms
   for (const s of ['L', 'R']) {
     const sg = s === 'L' ? 1 : -1;
-    m.cone(P('upperArm' + s), P('foreArm' + s), 0.062, 0.052, 'upperArm' + s, 'coat', { blend: 0.03, layer: 1 });
-    m.cone(P('foreArm' + s), P('hand' + s).add(V(0, 0.04, 0)), 0.052, 0.046, 'foreArm' + s, 'coat', { blend: 0.025, layer: 1 });
-    m.ell(P('hand' + s).add(V(0, 0.045, 0)), V(0.05, 0.022, 0.05), 'foreArm' + s, 'coat', { blend: 0.01, layer: 1 }); // cuff
-    // hand: palm + mitten fingers + thumb
+    m.cone(P('upperArm' + s), P('foreArm' + s), 0.06, 0.05, 'upperArm' + s, 'coat', { blend: 0.03, layer: 1 });
+    m.ell(P('foreArm' + s), V(0.05, 0.045, 0.05), 'foreArm' + s, 'coat', { blend: 0.03, layer: 1 }); // elbow bunching
+    m.cone(P('foreArm' + s), P('hand' + s).add(V(0, 0.04, 0)), 0.05, 0.045, 'foreArm' + s, 'coat', { blend: 0.025, layer: 1 });
+    m.ell(P('hand' + s).add(V(0, 0.042, 0)), V(0.048, 0.02, 0.048), 'foreArm' + s, 'coat', { blend: 0.01, layer: 1 }); // cuff
+    // hand: palm, four fingers held together, thumb
     const hp = P('hand' + s);
-    m.ell(hp.clone().add(V(0.005 * sg, -0.04, 0.0)), V(0.022, 0.048, 0.043), 'hand' + s, 'skin', { blend: 0.02 });
-    m.cone(hp.clone().add(V(0.004 * sg, -0.075, 0.0)), hp.clone().add(V(0.0, -0.13, 0.012)), 0.019, 0.014, 'hand' + s, 'skin', { blend: 0.02 });
-    m.cone(hp.clone().add(V(-0.008 * sg, -0.035, 0.035)), hp.clone().add(V(-0.012 * sg, -0.085, 0.05)), 0.012, 0.01, 'hand' + s, 'skin', { blend: 0.012 });
+    m.ell(hp.clone().add(V(0.004 * sg, -0.04, 0.0)), V(0.02, 0.046, 0.041), 'hand' + s, 'skin', { blend: 0.02 });
+    for (let f = 0; f < 4; f++) {
+      const z = -0.026 + f * 0.0175;
+      m.cone(hp.clone().add(V(0.003 * sg, -0.08, z)), hp.clone().add(V(-0.004 * sg, -0.135 + Math.abs(f - 1.5) * 0.008, z + 0.006)), 0.0095, 0.0075, 'hand' + s, 'skin', { blend: 0.006 });
+    }
+    m.cone(hp.clone().add(V(-0.008 * sg, -0.035, 0.032)), hp.clone().add(V(-0.016 * sg, -0.08, 0.05)), 0.011, 0.0085, 'hand' + s, 'skin', { blend: 0.01 });
     // legs: trousers + boots
-    m.cone(P('thigh' + s), P('shin' + s), 0.088, 0.063, 'thigh' + s, 'pants', { blend: 0.04, layer: 1 });
-    m.cone(P('shin' + s), P('foot' + s).add(V(0, 0.05, 0)), 0.06, 0.05, 'shin' + s, 'pants', { blend: 0.03, layer: 1 });
-    m.cone(P('foot' + s).add(V(0, 0.06, -0.01)), P('foot' + s).add(V(0, -0.02, -0.015)), 0.055, 0.052, 'foot' + s, 'boot', { blend: 0.02, layer: 2 });
-    m.cone(P('foot' + s).add(V(0, -0.035, -0.05)), P('foot' + s).add(V(0, -0.045, 0.15)), 0.048, 0.04, 'foot' + s, 'boot', { blend: 0.03, layer: 2 });
+    m.cone(P('thigh' + s), P('shin' + s), 0.084, 0.06, 'thigh' + s, 'pants', { blend: 0.04, layer: 1 });
+    m.ell(P('shin' + s).add(V(0, 0.01, 0.012)), V(0.058, 0.055, 0.056), 'shin' + s, 'pants', { blend: 0.03, layer: 1 }); // knee
+    m.cone(P('shin' + s), P('foot' + s).add(V(0, 0.07, 0)), 0.058, 0.052, 'shin' + s, 'pants', { blend: 0.03, layer: 1 });
+    m.cone(P('foot' + s).add(V(0, 0.09, -0.01)), P('foot' + s).add(V(0, -0.02, -0.015)), 0.056, 0.052, 'foot' + s, 'boot', { blend: 0.02, layer: 2 });
+    m.box(P('foot' + s).add(V(0, -0.035, 0.05)), V(0.05, 0.04, 0.12), 0.035, 'foot' + s, 'boot', { blend: 0.03, layer: 2 });
+    m.cone(P('foot' + s).add(V(0, -0.075, -0.06)), P('foot' + s).add(V(0, -0.075, 0.16)), 0.018, 0.018, 'foot' + s, 'sole', { blend: 0.035, layer: 3 });
   }
-  // coat skirt flaps front/back only (they belong to the hips, legs move inside)
-  m.ell(P('hips').add(V(0, -0.15, -0.05)), V(0.17, 0.12, 0.06), 'hips', 'coat', { blend: 0.04, layer: 1 });
-  // backpack + bedroll + straps
-  m.ell(chest.clone().add(V(0, -0.04, -0.2)), V(0.15, 0.2, 0.085), 'chest', 'canvas', { blend: 0.02, layer: 3 });
-  m.cone(chest.clone().add(V(-0.17, 0.18, -0.2)), chest.clone().add(V(0.17, 0.18, -0.2)), 0.058, 0.058, 'chest', 'pants', { blend: 0.01, layer: 3 });
-  for (const s of [-1, 1]) m.cone(chest.clone().add(V(0.1 * s, 0.17, -0.07)), chest.clone().add(V(0.1 * s, -0.15, 0.11)), 0.014, 0.014, 'chest', 'strap', { blend: 0.01, layer: 3 });
-  const mesh = finish(m, sk, 0.0115);
-  return { mesh, bones: sk.bones, height: 1.75, kind: 'human', hitboxes: humanHitboxes() };
+  // backpack (with flap and side pocket), bedroll, shoulder straps following the jacket
+  const pack = chest.clone().add(V(0, -0.05, -0.2));
+  const tilt = new THREE.Euler(0.12, 0, 0);
+  m.box(pack, V(0.15, 0.2, 0.075), 0.045, 'chest', 'canvas', { blend: 0.02, layer: 3, rot: tilt });
+  m.box(pack.clone().add(V(0, 0.13, -0.012)), V(0.152, 0.07, 0.085), 0.03, 'chest', 'canvas', { blend: 0.008, layer: 3, rot: tilt }); // lid flap
+  m.box(pack.clone().add(V(0, -0.06, -0.085)), V(0.1, 0.08, 0.03), 0.02, 'chest', 'canvas', { blend: 0.008, layer: 3, rot: tilt }); // front pocket
+  for (const s of [-1, 1]) {
+    m.box(pack.clone().add(V(0.155 * s, -0.04, 0)), V(0.025, 0.09, 0.05), 0.018, 'chest', 'canvas', { blend: 0.008, layer: 3, rot: tilt }); // side pockets
+    m.box(pack.clone().add(V(0.06 * s, 0.11, -0.095)), V(0.012, 0.06, 0.006), 0.004, 'chest', 'strap', { blend: 0.004, layer: 4, rot: tilt }); // lid straps
+    m.cone(chest.clone().add(V(0.115 * s, 0.17, -0.2)), chest.clone().add(V(0.125 * s, 0.17, -0.2)), 0.059, 0.059, 'chest', 'strap', { blend: 0.002, layer: 4 }); // bedroll ties
+  }
+  m.cone(chest.clone().add(V(-0.16, 0.17, -0.2)), chest.clone().add(V(0.16, 0.17, -0.2)), 0.055, 0.055, 'chest', 'roll', { blend: 0.01, layer: 3 });
+  for (const s of [-1, 1]) {
+    const top = V(0.095 * s, chest.y + 0.2, chest.z - 0.02);
+    const mid = front(0.095 * s, chest.y + 0.06).add(V(0, 0, 0.012));
+    const low = front(0.11 * s, chest.y - 0.12).add(V(0, 0, 0.008));
+    m.cone(V(0.095 * s, chest.y + 0.14, chest.z - 0.14), top, 0.012, 0.012, 'chest', 'strap', { blend: 0.004, layer: 3 });
+    m.cone(top, mid, 0.012, 0.012, 'chest', 'strap', { blend: 0.004, layer: 3 });
+    m.cone(mid, low, 0.012, 0.012, 'chest', 'strap', { blend: 0.004, layer: 3 });
+  }
+  return { ...finish(m, sk, 0.0105), height: 1.78, kind: 'human', hitboxes: humanHitboxes() };
 }
 
 function humanHitboxes() {
@@ -170,31 +243,39 @@ function humanHitboxes() {
 }
 
 // ------------------------------------------------------------------ night creature
-export function buildCreature(seed = 7) {
+export function defineCreature(seed = 7) {
   const r = mulberry32(seed);
   const m = new SDFModel();
   const H = 1.22;
   const sk = skeleton(humanJoints(H, { hunch: 0.55, armLen: 1.35, legLen: 1.05 }));
   const J = sk.world;
-  m.material('hide', [0.42, 0.4, 0.37].map((c) => c * (0.85 + r() * 0.2)), 0.55, 0.25);
-  m.material('dark', [0.13, 0.12, 0.12], 0.5, 0.2);
-  m.material('claw', [0.08, 0.07, 0.06], 0.3, 0.05);
-  m.material('maw', [0.2, 0.04, 0.04], 0.4, 0.05);
-  m.material('eye', [0.9, 0.85, 0.6], 0.2, 0.0);
+  m.material('hide', [0.33, 0.3, 0.28].map((c) => c * (0.85 + r() * 0.2)), 0.5, 0.3);
+  m.material('dark', [0.12, 0.1, 0.1], 0.5, 0.2);
+  m.material('claw', [0.1, 0.085, 0.07], 0.3, 0.05);
+  m.material('teeth', [0.66, 0.6, 0.48], 0.35, 0.1);
+  m.material('maw', [0.22, 0.05, 0.05], 0.4, 0.05);
+  m.material('eye', [1.0, 0.92, 0.62], 0.2, 0.0);
   const P = (n) => J[n].clone();
   // elongated skull with a long jaw and deep eye pits
   const hc = P('head').add(V(0, 0.05, 0.05));
   m.ell(hc, V(0.075, 0.1, 0.13), 'head', 'hide', { blend: 0.02, rot: new THREE.Euler(-0.4, 0, 0) });
   m.ell(hc.clone().add(V(0, -0.08, 0.08)), V(0.06, 0.04, 0.1), 'head', 'hide', { blend: 0.03, rot: new THREE.Euler(-0.2, 0, 0) });
-  m.ell(hc.clone().add(V(0, -0.09, 0.13)), V(0.045, 0.012, 0.05), 'head', 'maw', { sub: true, blend: 0.01 });
+  m.ell(hc.clone().add(V(0, -0.09, 0.13)), V(0.045, 0.014, 0.06), 'head', 'maw', { sub: true, blend: 0.01 });
+  m.ell(hc.clone().add(V(0, -0.095, 0.11)), V(0.035, 0.008, 0.05), 'head', 'maw', { blend: 0.004, layer: 1 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 5 - 0.5) * 1.6;
+    const p = hc.clone().add(V(Math.sin(a) * 0.04, -0.077, 0.1 + Math.cos(a) * 0.065));
+    m.cone(p, p.clone().add(V(0, -0.016, 0.003)), 0.0045, 0.0008, 'head', 'teeth', { blend: 0.002, layer: 2 });
+  }
+  m.ell(hc.clone().add(V(0, 0.06, -0.02)), V(0.02, 0.05, 0.11), 'head', 'hide', { blend: 0.03, rot: new THREE.Euler(-0.5, 0, 0) }); // crest
   for (const s of [-1, 1]) {
     m.ell(hc.clone().add(V(0.035 * s, 0.01, 0.11)), V(0.02, 0.016, 0.02), 'head', 'dark', { sub: true, blend: 0.012 });
-    m.ell(hc.clone().add(V(0.035 * s, 0.01, 0.1)), V(0.007, 0.007, 0.007), 'head', 'eye', { blend: 0 });
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.035 * s, 0.01, 0.1)).toArray(), r: 0.009, color: [1.0, 0.85, 0.45], glow: 2.5 });
   }
   m.cone(P('neck'), P('head').add(V(0, 0.02, 0.03)), 0.045, 0.04, 'neck', 'hide', { blend: 0.03 });
   // ribcage, sunken belly, spine ridge
   m.ell(P('chest').add(V(0, -0.03, 0.0)), V(0.15, 0.19, 0.11), 'chest', 'hide', { blend: 0.05 });
-  for (let i = 0; i < 5; i++) m.ell(P('chest').add(V(0, -0.12 + i * 0.05, 0.1)), V(0.13, 0.008, 0.02), 'chest', 'dark', { sub: true, blend: 0.01 });
+  for (let i = 0; i < 5; i++) m.ell(P('chest').add(V(0, -0.13 + i * 0.045, 0.105)), V(0.11, 0.005, 0.008), 'chest', 'hide', { sub: true, blend: 0.018 });
   m.cone(P('spine'), P('hips'), 0.075, 0.09, 'spine', 'hide', { blend: 0.06 });
   m.ell(P('hips').add(V(0, 0, 0)), V(0.13, 0.09, 0.09), 'hips', 'hide', { blend: 0.04 });
   for (let i = 0; i < 7; i++) {
@@ -214,7 +295,7 @@ export function buildCreature(seed = 7) {
       const base = hp.clone().add(V(0, -0.06, z));
       const tip = hp.clone().add(V(0.01 * sg, -0.2, z + 0.03));
       m.cone(base, tip, 0.008, 0.004, 'hand' + s, 'hide', { blend: 0.01 });
-      m.cone(tip, tip.clone().add(V(0, -0.04, 0.025)), 0.0045, 0.0005, 'hand' + s, 'claw', { blend: 0.004, layer: 1 });
+      m.cone(tip, tip.clone().add(V(0.004 * sg, -0.07, 0.04)), 0.0065, 0.0008, 'hand' + s, 'claw', { blend: 0.004, layer: 1 });
     }
     m.cone(P('thigh' + s), P('shin' + s), 0.065, 0.04, 'thigh' + s, 'hide', { blend: 0.035 });
     m.ell(P('shin' + s), V(0.04, 0.045, 0.045), 'shin' + s, 'hide', { blend: 0.03 }); // knee
@@ -222,13 +303,12 @@ export function buildCreature(seed = 7) {
     m.cone(P('foot' + s), P('foot' + s).add(V(0, -0.05, 0.17)), 0.03, 0.02, 'foot' + s, 'hide', { blend: 0.02 });
     for (let f = -1; f <= 1; f++) m.cone(P('foot' + s).add(V(f * 0.02, -0.06, 0.17)), P('foot' + s).add(V(f * 0.025, -0.08, 0.22)), 0.007, 0.001, 'foot' + s, 'claw', { blend: 0.004, layer: 1 });
   }
-  const mesh = finish(m, sk, 0.013);
   const hb = humanHitboxes().map((h) => ({ ...h, r: h.r * 0.85 }));
-  return { mesh, bones: sk.bones, height: 2.1, kind: 'human', hitboxes: hb };
+  return { ...finish(m, sk, 0.0115), height: 2.1, kind: 'human', hitboxes: hb };
 }
 
 // ------------------------------------------------------------------ jackrabbit
-export function buildRabbit(seed = 3) {
+export function defineRabbit(seed = 3) {
   const r = mulberry32(seed);
   const m = new SDFModel();
   const sk = skeleton([
@@ -247,7 +327,7 @@ export function buildRabbit(seed = 3) {
   ]);
   const J = sk.world;
   const P = (n) => J[n].clone();
-  const fur = [0.55, 0.47, 0.37].map((c) => c * (0.9 + r() * 0.2));
+  const fur = [0.56, 0.45, 0.32].map((c) => c * (0.9 + r() * 0.2));
   m.material('fur', fur, 1, 0.18);
   m.material('belly', [0.78, 0.74, 0.66], 1, 0.1);
   m.material('earIn', [0.75, 0.55, 0.5], 0.8, 0.05);
@@ -261,7 +341,7 @@ export function buildRabbit(seed = 3) {
   m.ell(hc.clone().add(V(0, -0.012, 0.045)), V(0.025, 0.024, 0.026), 'head', 'fur', { blend: 0.02 });
   m.ell(hc.clone().add(V(0, -0.006, 0.07)), V(0.008, 0.006, 0.005), 'head', 'nose', { blend: 0.005, layer: 1 });
   for (const s of [-1, 1]) {
-    m.ell(hc.clone().add(V(0.03 * s, 0.01, 0.018)), V(0.009, 0.011, 0.009), 'head', 'eye', { blend: 0.004, layer: 1 });
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.031 * s, 0.01, 0.016)).toArray(), r: 0.0095, color: [0.12, 0.07, 0.03], look: [0, 1.25 * s] });
     const e = P(s > 0 ? 'earL' : 'earR');
     m.ell(e.clone().add(V(0.01 * s, 0.075, -0.02)), V(0.018, 0.085, 0.007), s > 0 ? 'earL' : 'earR', 'fur', { blend: 0.01, rot: new THREE.Euler(-0.25, 0, -0.2 * s) });
     m.ell(e.clone().add(V(0.01 * s, 0.075, -0.014)), V(0.012, 0.07, 0.003), s > 0 ? 'earL' : 'earR', 'earIn', { blend: 0.004, layer: 1, rot: new THREE.Euler(-0.25, 0, -0.2 * s) });
@@ -271,12 +351,11 @@ export function buildRabbit(seed = 3) {
     m.cone(P('hindFoot' + fs), P('hindFoot' + fs).add(V(0, -0.018, 0.11)), 0.016, 0.012, 'hindFoot' + fs, 'fur', { blend: 0.015 });
   }
   m.ell(P('tail'), V(0.025, 0.025, 0.022), 'tail', 'belly', { blend: 0.02, layer: 1 });
-  const mesh = finish(m, sk, 0.0045);
-  return { mesh, bones: sk.bones, height: 0.3, kind: 'rabbit', hitboxes: [{ bone: 'body', zone: 'torso', r: 0.09, a: [0, 0, -0.08], b: [0, 0.05, 0.1] }, { bone: 'head', zone: 'head', r: 0.045, a: [0, 0, 0], b: [0, 0, 0.05] }] };
+  return { ...finish(m, sk, 0.0045), height: 0.3, kind: 'rabbit', hitboxes: [{ bone: 'body', zone: 'torso', r: 0.09, a: [0, 0, -0.08], b: [0, 0.05, 0.1] }, { bone: 'head', zone: 'head', r: 0.045, a: [0, 0, 0], b: [0, 0, 0.05] }] };
 }
 
 // ------------------------------------------------------------------ coyote
-export function buildCoyote(seed = 5) {
+export function defineCoyote(seed = 5) {
   const r = mulberry32(seed);
   const m = new SDFModel();
   const sk = skeleton([
@@ -301,11 +380,11 @@ export function buildCoyote(seed = 5) {
   ]);
   const J = sk.world;
   const P = (n) => J[n].clone();
-  const fur = [0.56, 0.47, 0.36].map((c) => c * (0.9 + r() * 0.2));
+  const fur = [0.6, 0.46, 0.3].map((c) => c * (0.9 + r() * 0.2));
   m.material('fur', fur, 1, 0.2);
-  m.material('dark', fur.map((c) => c * 0.45), 1, 0.15);
+  m.material('dark', fur.map((c) => c * 0.62), 1, 0.2);
   m.material('light', [0.82, 0.77, 0.68], 1, 0.1);
-  m.material('eye', [0.55, 0.42, 0.12], 0.2, 0);
+  m.material('eye', [0.12, 0.08, 0.03], 0.15, 0);
   m.material('nose', [0.06, 0.05, 0.05], 0.4, 0);
   m.ell(P('chest').add(V(0, -0.02, 0)), V(0.12, 0.15, 0.17), 'chest', 'fur', { blend: 0.06 });
   m.ell(P('hips').add(V(0, 0, 0.06)), V(0.1, 0.11, 0.15), 'hips', 'fur', { blend: 0.06 });
@@ -313,14 +392,15 @@ export function buildCoyote(seed = 5) {
   m.ell(P('chest').add(V(0, -0.1, 0.05)), V(0.08, 0.06, 0.12), 'chest', 'light', { blend: 0.03, layer: 1 });
   m.cone(P('chest').add(V(0, 0.04, 0.08)), P('head').add(V(0, -0.02, -0.04)), 0.09, 0.06, 'neck', 'fur', { blend: 0.05 });
   // dark saddle along the back
-  m.ell(P('hips').lerp(P('chest'), 0.5).add(V(0, 0.1, 0)), V(0.07, 0.04, 0.28), 'hips', 'dark', { blend: 0.03, layer: 1 });
+  m.ell(P('hips').lerp(P('chest'), 0.5).add(V(0, 0.085, 0)), V(0.06, 0.035, 0.26), 'hips', 'dark', { blend: 0.04, layer: 1 });
   const hc = P('head');
   m.ell(hc, V(0.065, 0.06, 0.075), 'head', 'fur', { blend: 0.03 });
   m.cone(hc.clone().add(V(0, -0.005, 0.04)), hc.clone().add(V(0, -0.025, 0.15)), 0.04, 0.018, 'head', 'fur', { blend: 0.03 });
   m.ell(hc.clone().add(V(0, -0.02, 0.155)), V(0.014, 0.011, 0.01), 'head', 'nose', { blend: 0.006, layer: 1 });
   m.cone(P('jaw').add(V(0, -0.015, 0.0)), P('jaw').add(V(0, -0.035, 0.09)), 0.025, 0.012, 'jaw', 'light', { blend: 0.02 });
   for (const s of [-1, 1]) {
-    m.ell(hc.clone().add(V(0.035 * s, 0.02, 0.05)), V(0.01, 0.008, 0.007), 'head', 'eye', { blend: 0.004, layer: 1 });
+    m.ell(hc.clone().add(V(0.033 * s, 0.022, 0.056)), V(0.013, 0.009, 0.008), 'head', 'dark', { sub: true, blend: 0.006 });
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.033 * s, 0.022, 0.05)).toArray(), r: 0.0085, color: [0.62, 0.45, 0.14], look: [0, 0.35 * s] });
     m.cone(hc.clone().add(V(0.04 * s, 0.04, -0.01)), hc.clone().add(V(0.05 * s, 0.13, -0.02)), 0.028, 0.004, 'head', 'fur', { blend: 0.015 });
   }
   for (const leg of ['FL', 'FR', 'HL', 'HR']) {
@@ -333,10 +413,8 @@ export function buildCoyote(seed = 5) {
   const t0 = P('tail');
   m.cone(t0, t0.clone().add(V(0, -0.2, -0.22)), 0.04, 0.06, 'tail', 'fur', { blend: 0.03 });
   m.cone(t0.clone().add(V(0, -0.2, -0.22)), t0.clone().add(V(0, -0.32, -0.3)), 0.06, 0.02, 'tail', 'dark', { blend: 0.03 });
-  const mesh = finish(m, sk, 0.009);
   return {
-    mesh,
-    bones: sk.bones,
+    ...finish(m, sk, 0.009),
     height: 0.75,
     kind: 'quad',
     hitboxes: [
@@ -347,4 +425,5 @@ export function buildCoyote(seed = 5) {
   };
 }
 
-export const CHARACTER_BUILDERS = { vagrant: buildVagrant, creature: buildCreature, rabbit: buildRabbit, coyote: buildCoyote };
+export const DEFINE = { vagrant: defineVagrant, creature: defineCreature, rabbit: defineRabbit, coyote: defineCoyote };
+export const CHARACTER_BUILDERS = Object.fromEntries(Object.keys(DEFINE).map((k) => [k, (seed) => buildCharacter(k, seed)]));

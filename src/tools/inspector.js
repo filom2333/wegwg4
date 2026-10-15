@@ -656,6 +656,22 @@ async function initSubject(subject) {
       group.add(m);
     });
   }
+  if (subject === 'npc') {
+    const { CHARACTER_BUILDERS } = await import('../npc/characters.js');
+    group = new THREE.Group();
+    const types = (params.get('type') || 'vagrant,creature,coyote,rabbit').split(',');
+    let x = -((types.length - 1) * 0.9) / 2;
+    const t0 = performance.now();
+    for (const t of types) {
+      const c = CHARACTER_BUILDERS[t](seed);
+      c.mesh.position.x = x;
+      x += 0.9;
+      group.add(c.mesh);
+      window.characters = window.characters || [];
+      window.characters.push(c);
+    }
+    console.log('characters built in', (performance.now() - t0).toFixed(0), 'ms', window.characters.map((c) => c.mesh.geometry.index.count / 3));
+  }
   void rnd;
   scene.add(group);
   window.subject = group;

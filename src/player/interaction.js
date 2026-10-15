@@ -71,9 +71,11 @@ export class Interaction {
     const origin = this.cam.position.clone();
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     const reach = REACH + (p.seat ? 0.6 : 0);
-    const ex = this.held && this.held.body ? this.held.body : p.body;
-    const hit = g.physics.raycast(origin, dir, reach + 3, GROUPS.look, ex, (c) => {
+    // the camera sits inside the player capsule: always exclude it; the held item is filtered out
+    const heldBody = this.held && this.held.body;
+    const hit = g.physics.raycast(origin, dir, reach + 3, GROUPS.look, p.body, (c) => {
       const o = g.physics.ownerOf(c);
+      if (heldBody && c.parent() === heldBody) return false;
       return !(o && o.item && o.item === this.held);
     });
     const hitDist = hit ? hit.distance : Infinity;
@@ -102,6 +104,11 @@ export class Interaction {
     }
     // npcs (for melee / corpses)
     if (hit && hit.owner && hit.owner.kind === 'npc' && hit.distance <= reach && (!best || hit.distance < best.dist)) best = { kind: 'npc', npc: hit.owner.npc, dist: hit.distance, zone: hit.owner.zone };
+    // lootable bodies are small and low: accept a near miss
+    if (!best && g.npcs) {
+      const c = g.npcs.corpseNear(origin, dir, Math.min(reach + 0.4, hitDist + 0.6));
+      if (c) best = { kind: 'npc', npc: c.npc, dist: c.dist, zone: 'torso' };
+    }
     this.lookHit = hit;
     return best;
   }

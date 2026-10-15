@@ -238,7 +238,10 @@ export class Effects {
     this.decals = [];
     this.decalGeo = new THREE.CircleGeometry(0.03, 10);
     this.decalMat = new THREE.MeshBasicMaterial({ color: 0x0b0a09, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
-    this.bloodMat = new THREE.MeshStandardMaterial({ color: 0x3a0606, roughness: 0.3, transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    // blood: a few irregular splatter shapes (alpha maps), soaked dark into sand
+    this.bloodGeo = new THREE.PlaneGeometry(1, 1);
+    this.bloodMats = [0, 1, 2, 3].map((i) => new THREE.MeshStandardMaterial({ color: 0x4a0707, roughness: 0.35, transparent: true, alphaMap: splatterTexture(17 + i * 31), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+    this.bloodMat = this.bloodMats[0];
     // casings
     this.casings = [];
     this.casingGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.03, 8).rotateZ(Math.PI / 2);
@@ -461,9 +464,15 @@ export class Effects {
   }
 
   decal(p, n, mat, scale = 1) {
-    const d = new THREE.Mesh(this.decalGeo, mat);
+    const blood = this.bloodMats.includes(mat);
+    if (blood) {
+      mat = this.bloodMats[Math.floor(Math.random() * this.bloodMats.length)];
+      scale *= 0.07;
+    }
+    const d = new THREE.Mesh(blood ? this.bloodGeo : this.decalGeo, mat);
     d.position.copy(p).addScaledVector(n, 0.004);
     d.lookAt(p.clone().add(n));
+    if (blood) d.rotateZ(Math.random() * Math.PI * 2);
     d.scale.setScalar(scale);
     this.root.add(d);
     this.decals.push(d);
@@ -794,4 +803,49 @@ export class Effects {
       c.m.position.z -= dz;
     }
   }
+}
+
+
+// Irregular splatter alpha map: a lumpy central pool, satellite drops and a few streaks.
+function splatterTexture(seed) {
+  let x = seed;
+  const r = () => ((x = (x * 16807) % 2147483647) / 2147483647);
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = '#fff';
+  const blob = (cx, cy, rad) => {
+    g.beginPath();
+    const n = 14;
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const rr = rad * (0.75 + r() * 0.45);
+      const px = cx + Math.cos(a) * rr,
+        py = cy + Math.sin(a) * rr;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+  };
+  for (let i = 0; i < 5; i++) blob(S / 2 + (r() - 0.5) * 22, S / 2 + (r() - 0.5) * 22, 12 + r() * 14);
+  for (let i = 0; i < 18; i++) {
+    const a = r() * Math.PI * 2,
+      d = 24 + r() * 34;
+    blob(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d, 1.5 + r() * 4);
+  }
+  for (let i = 0; i < 4; i++) {
+    const a = r() * Math.PI * 2;
+    g.lineWidth = 2 + r() * 3;
+    g.strokeStyle = '#fff';
+    g.beginPath();
+    g.moveTo(S / 2 + Math.cos(a) * 14, S / 2 + Math.sin(a) * 14);
+    g.lineTo(S / 2 + Math.cos(a) * (34 + r() * 20), S / 2 + Math.sin(a) * (34 + r() * 20));
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
 }
