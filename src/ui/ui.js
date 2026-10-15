@@ -3,7 +3,7 @@
 
 import { settings, DEFAULT_BINDINGS } from '../core/settings.js';
 import { input } from '../core/input.js';
-import { hasSave, saveSummary, writeSave, readCareer, recordRun } from '../core/save.js';
+import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -596,7 +596,7 @@ export class UI {
     const g = this.game;
     const st = g.stats;
     recordRun(st, cause);
-    import('../core/save.js').then((m) => m.deleteSave());
+    deleteSave();
     if (document.pointerLockElement) document.exitPointerLock();
     const imperial = settings.data.units === 'imperial';
     const dist = (m) => (imperial ? (m / 1609.34).toFixed(1) + ' mi' : (m / 1000).toFixed(1) + ' km');
