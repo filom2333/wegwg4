@@ -23,6 +23,7 @@ export const DEFAULT_BINDINGS = {
   wipers: 'KeyK',
   lookBack: 'KeyC',
   journal: 'KeyJ',
+  sleep: 'KeyB',
 };
 
 export const DEFAULTS = {

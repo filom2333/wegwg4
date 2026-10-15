@@ -258,6 +258,13 @@ export class Player {
       cam.quaternion.copy(q).multiply(e);
       // look back key
       if (input.isDown('lookBack')) cam.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0, 0, 'YXZ')));
+    } else if (this.dead) {
+      // collapse: the view drops to the ground and rolls
+      this.deathT = Math.min(1, (this.deathT || 0) + dt * 1.4);
+      const t = this.deathT * this.deathT;
+      const p = this.position;
+      cam.position.set(p.x, p.y + lerp(EYE, 0.22, t), p.z);
+      cam.quaternion.setFromEuler(new THREE.Euler(lerp(this.pitch, -0.15, t), this.yaw + Math.PI, t * 1.1, 'YXZ'));
     } else {
       const p = this.position;
       const eyeH = lerp(EYE, 1.05, this.crouch);

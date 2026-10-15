@@ -430,7 +430,9 @@ export class Car {
     const diff = this.game.difficulty || { consumption: 1, wear: 1 };
     if (running) {
       const lph = 0.75 + powerKw * 0.36;
-      this.fuel = Math.max(0, this.fuel - (lph / 3600) * dt * diff.consumption);
+      const burn = Math.min(this.fuel, (lph / 3600) * dt * diff.consumption);
+      this.fuel -= burn;
+      if (this.game.stats) this.game.stats.fuelUsed += burn;
       this.oil = Math.max(0, this.oil - (0.004 + powerKw * 0.00006) * (dt / 60) * diff.wear * (this.engineCondition < 0.5 ? 2 : 1));
       // engine temperature
       const coolantFrac = this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;

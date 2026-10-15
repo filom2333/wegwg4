@@ -7,7 +7,8 @@
   --red: #d9614c;
   --green: #9bc28a;
   --panel: rgba(16, 15, 13, 0.72);
-  --font: 'Bahnschrift', 'DIN Alternate', 'Roboto Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --font: 'Barlow', 'Bahnschrift', 'DIN Alternate', 'Roboto Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
+  --font-display: 'Barlow Condensed', 'Bahnschrift', 'DIN Condensed', 'Roboto Condensed', 'Arial Narrow', sans-serif;
   --mono: 'Bahnschrift', 'DIN Alternate', 'Roboto Mono', 'Consolas', monospace;
 }
 * {

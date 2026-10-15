@@ -1,6 +1,7 @@
 // Renderer, camera and post-processing chain with quality presets.
 
 import * as THREE from 'three';
+import { settings } from '../core/settings.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -56,7 +57,17 @@ export class Renderer {
   setQuality(q) {
     this.qualityName = q;
     this.q = QUALITY[q] || QUALITY.high;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * this.q.pixelRatio);
+    this.applyPixelRatio();
+  }
+
+  // Render scale (settings) on top of the preset's pixel ratio.
+  setScale(s) {
+    this.scale = s;
+    this.applyPixelRatio();
+  }
+
+  applyPixelRatio() {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * this.q.pixelRatio * (this.scale ?? settings.data.resolutionScale ?? 1));
     this.resize();
   }
 
@@ -89,7 +100,7 @@ export class Renderer {
 
   applyPassSettings() {
     if (!this.composer) return;
-    this.bloom.enabled = this.q.bloom && this.bloomSetting !== false;
+    this.bloom.enabled = this.q.bloom && settings.data.bloom !== false;
     this.fxaa.enabled = this.q.aa;
   }
 
