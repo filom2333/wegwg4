@@ -698,10 +698,21 @@ export class NPC {
     if (dx * dx + dz * dz > 16) return;
     const v = car.dyn.body.linvel();
     const sp = Math.hypot(v.x, v.z);
-    if (sp < 2.2) return;
     _m.copy(car.root.matrixWorld).invert();
     const l = _v.copy(this.pos).setY(this.pos.y + 0.4).applyMatrix4(_m);
-    if (Math.abs(l.x) > 0.98 + this.T.radius * 0.5 || Math.abs(l.z) > 2.4 + this.T.radius * 0.5 || l.y < -0.6 || l.y > 1.7) return;
+    const hx = 0.98 + this.T.radius * 0.5,
+      hz = 2.4 + this.T.radius * 0.5;
+    if (Math.abs(l.x) > hx || Math.abs(l.z) > hz || l.y < -0.6 || l.y > 1.7) return;
+    if (sp < 2.2) {
+      // slow contact: nudged aside, never overlapped
+      const px = hx - Math.abs(l.x),
+        pz = hz - Math.abs(l.z);
+      const out = px < pz ? new THREE.Vector3(Math.sign(l.x) * (px + 0.02), 0, 0) : new THREE.Vector3(0, 0, Math.sign(l.z) * (pz + 0.02));
+      out.applyQuaternion(car.root.quaternion);
+      this.pos.x += out.x;
+      this.pos.z += out.z;
+      return;
+    }
     const dir = V(v.x, 0, v.z).normalize();
     const dmg = sp * sp * 0.9;
     const g = this.g;

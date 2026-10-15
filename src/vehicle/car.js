@@ -412,8 +412,11 @@ export class Car {
     d.controls.throttle = running ? throttle : 0;
     d.controls.brake = brake;
     d.controls.steer = c.steer;
-    d.controls.handbrake = c.handbrake || (!hasDriver && !running ? 0.6 : 0);
-    if (!hasDriver && Math.abs(d.forwardSpeed) < 2) d.controls.brake = Math.max(d.controls.brake, 0.3);
+    // nobody at the wheel: the car rolls on (engine braking only) and the parking brake only
+    // holds it once it has nearly stopped, so leaving a moving car never stops it dead
+    const slow = Math.abs(d.forwardSpeed) < 0.8;
+    d.controls.handbrake = c.handbrake || (!hasDriver && !running && slow ? 0.6 : 0);
+    if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
     const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
     d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1);
     if (running && (!fuelOk || this.oil <= 0.02 || this.engineCondition <= 0.01 || !this.ignition)) {

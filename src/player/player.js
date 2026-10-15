@@ -97,6 +97,14 @@ export class Player {
         this.car = null;
         this.collider.setEnabled(true);
         this.setPosition(p);
+        const cv = car.dyn.body.linvel();
+        const sp = Math.hypot(cv.x, cv.z);
+        this.velocity.set(cv.x * 0.8, 0, cv.z * 0.8);
+        if (sp > 4) {
+          this.vy = 1.5;
+          this.grounded = false;
+          this.damage((sp - 4) * (sp - 4) * 0.55, 'fall');
+        }
         const e = new THREE.Euler().setFromQuaternion(car.root.quaternion, 'YXZ');
         this.yaw = e.y + (c.x > 0 ? Math.PI / 2 : c.x < 0 ? -Math.PI / 2 : 0);
         this.pitch = 0;
@@ -119,7 +127,7 @@ export class Player {
         return false;
       },
       undefined,
-      GROUPS.player,
+      GROUPS.playerQuery,
       this.collider
     );
     return !hit;
@@ -191,7 +199,7 @@ export class Player {
       }
     } else this.vy -= 9.81 * dt;
     const desired = { x: this.velocity.x * dt, y: this.vy * dt, z: this.velocity.z * dt };
-    this.cc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.player);
+    this.cc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
     const mv = this.cc.computedMovement();
     const t = this.body.translation();
     const next = { x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z };
@@ -213,6 +221,7 @@ export class Player {
     // safety: never fall through the world
     const gy = g.groundHeightAt(next.x, next.z, next.y + 1);
     if (next.y - HALF - RADIUS < gy - 1.5) this.setPosition(V(next.x, gy + 0.2, next.z));
+    this.carContact(dt);
     // footsteps & head bob
     const hs = Math.hypot(mv.x, mv.z) / Math.max(dt, 1e-4);
     if (this.grounded && hs > 0.5) {
@@ -230,6 +239,56 @@ export class Player {
         if (g.effects && (surf === 'sand' || surf === 'dirt' || surf === 'gravel') && !crouching) g.effects.footDust(V(p.x, p.y + 0.05, p.z), hs > 4.5 ? 1 : 0.45);
       }
     } else this.bobAmp = lerp(this.bobAmp, 0, dt * 6);
+  }
+
+  // A moving car meeting the player: push the player clear of its footprint and hurt them in
+  // proportion to the closing speed. (The capsule itself does not collide with the car.)
+  carContact(dt) {
+    const g = this.game;
+    const car = g.car;
+    if (!car || !car.dyn) return;
+    const pos = this.position;
+    const cp = car.root.position;
+    const dx = pos.x - cp.x,
+      dz = pos.z - cp.z;
+    if (dx * dx + dz * dz > 12) return;
+    const inv = car.root.matrixWorld.clone().invert();
+    const l = V(pos.x, pos.y + 0.9, pos.z).applyMatrix4(inv);
+    const hx = 0.92 + RADIUS,
+      hz = 2.28 + RADIUS;
+    if (Math.abs(l.x) > hx || Math.abs(l.z) > hz || l.y < -0.4 || l.y > 1.9) return;
+    // standing on the roof / hood: let the controller handle it
+    if (pos.y > car.root.position.y + 1.25) return;
+    const v = car.dyn.body.linvel();
+    const vRel = Math.hypot(v.x - this.velocity.x, v.z - this.velocity.z);
+    // push out along the shallowest side
+    const px = hx - Math.abs(l.x),
+      pz = hz - Math.abs(l.z);
+    // a moving car shoves people aside (never carries them on the bumper)
+    const moving = Math.hypot(v.x, v.z) > 1;
+    const out = px < pz || moving ? V((Math.sign(l.x) || 1) * (px + 0.02), 0, 0) : V(0, 0, Math.sign(l.z) * (pz + 0.02));
+    out.applyQuaternion(car.root.quaternion);
+    const np = { x: pos.x + out.x, y: pos.y, z: pos.z + out.z };
+    if (this.isFree(np)) this.setPosition(np);
+    // carried along with the car's velocity, knocked off the ground when hit fast
+    this.velocity.x = v.x;
+    this.velocity.z = v.z;
+    if (vRel > 3) {
+      if (!this._carHitT || g.time - this._carHitT > 0.6) {
+        this._carHitT = g.time;
+        this.damage((vRel - 3) * (vRel - 3) * 1.1 + 4, 'crash');
+        this.vy = Math.min(6, 1.5 + vRel * 0.25);
+        this.grounded = false;
+        // thrown clear to the side rather than carried on the bumper
+        const side = V(1, 0, 0).applyQuaternion(car.root.quaternion).multiplyScalar(Math.sign(l.x || 1) * (2 + vRel * 0.35));
+        this.velocity.x += side.x;
+        this.velocity.z += side.z;
+        g.audio && g.audio.play(vRel > 9 ? 'crashHeavy' : 'hitFlesh', { at: pos, volume: Math.min(1, vRel / 12) });
+        g.effects && g.effects.bloodHit && vRel > 8 && g.effects.bloodHit(V(pos.x, pos.y + 1, pos.z), V(v.x, 0, v.z).normalize(), 1);
+        // the car feels the impact too
+        car.dyn.body.applyImpulse({ x: -v.x * 40, y: 0, z: -v.z * 40 }, true);
+      }
+    }
   }
 
   updateSeated(dt) {
