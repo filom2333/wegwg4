@@ -226,8 +226,10 @@ export function buildGasStation(rnd) {
     pz = 9;
   b.box(px, 3.5, pz, 0.3, 7, 0.3, M.metal, { surface: 'metal' });
   const prices = ['REGULAR  3.89', 'PREMIUM  4.29', 'DIESEL   4.09'];
-  signBoard(b, px, 6.8, pz, 2.6, 1.0, signMaterial([brandName], { w: 512, h: 196, bg: brandCol, fg: '#f3efe6', border: null }), 0);
-  signBoard(b, px, 5.6, pz, 2.4, 1.3, signMaterial(prices, { w: 512, h: 280, bg: '#efe8d8', fg: '#1a1a1a', font: 'Courier New', worn: 0.5 }), 0);
+  // boards are bolted to the road side of the pole, not threaded through it
+  signBoard(b, px, 6.8, pz + 0.2, 2.6, 1.0, signMaterial([brandName], { w: 512, h: 196, bg: brandCol, fg: '#f3efe6', border: null }), 0);
+  signBoard(b, px, 5.6, pz + 0.2, 2.4, 1.3, signMaterial(prices, { w: 512, h: 280, bg: '#efe8d8', fg: '#1a1a1a', font: 'Courier New', worn: 0.5 }), 0);
+  for (const y of [6.8, 5.6]) b.box(px, y, pz + 0.12, 0.5, 0.12, 0.1, M.metal, { collide: false }); // brackets
   // air/water stand, dumpster, propane cage
   b.box(-10, 0.7, 4, 0.5, 1.4, 0.4, M.metalRed, { surface: 'metal' });
   b.box(9.5, 0.75, -6, 2.0, 1.5, 1.2, M.metalGreen, { surface: 'metal' });
@@ -309,7 +311,8 @@ export function buildMotel(rnd) {
   placeIt(b, FUR.desk(rnd), ox1 - 1.0, y, -rd / 2 + 0.6, 0);
   // tall sign
   b.box(ox0 - 2, 3.8, rd / 2 + 4, 0.25, 7.6, 0.25, M.metal, { surface: 'metal' });
-  signBoard(b, ox0 - 2, 6.6, rd / 2 + 4, 3.4, 1.4, signMaterial([{ text: 'MOTEL', size: 120 }, { text: 'VACANCY', size: 50 }], { bg: '#203a4a', fg: '#e8c25a', border: '#e8c25a' }), 0);
+  signBoard(b, ox0 - 2, 6.6, rd / 2 + 4.2, 3.4, 1.4, signMaterial([{ text: 'MOTEL', size: 120 }, { text: 'VACANCY', size: 50 }], { bg: '#203a4a', fg: '#e8c25a', border: '#e8c25a' }), 0);
+  b.box(ox0 - 2, 6.6, rd / 2 + 4.13, 0.5, 0.12, 0.08, M.metal, { collide: false }); // bracket
   return { builder: b, footprint: { w: total + 14, d: rd + 7 } };
 }
 
@@ -353,9 +356,10 @@ export function buildDiner(rnd) {
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), 5.2, y, z0 + 0.4, 0);
   b.lights.push({ pos: [0, y + 2.8, 1], color: 0xfff0d0, intensity: 0, distance: 12, fixture: true });
   // roof sign
-  signBoard(b, 0, y + 3.9, z1 - 0.3, 5, 1.1, signMaterial([{ text: 'DINER', size: 150 }], { bg: '#7a1c18', fg: '#f1e2b8', border: '#f1e2b8' }), 0);
-  b.box(-1.5, y + 3.4, z1 - 0.3, 0.1, 0.8, 0.1, M.metal, { collide: false });
-  b.box(1.5, y + 3.4, z1 - 0.3, 0.1, 0.8, 0.1, M.metal, { collide: false });
+  // stands on two posts above the parapet (top of the parapet is ~3.6 m above the floor)
+  signBoard(b, 0, y + 4.35, z1 - 0.3, 5, 1.1, signMaterial([{ text: 'DINER', size: 150 }], { bg: '#7a1c18', fg: '#f1e2b8', border: '#f1e2b8' }), 0);
+  b.box(-1.5, y + 3.5, z1 - 0.3, 0.1, 0.84, 0.1, M.metal, { collide: false });
+  b.box(1.5, y + 3.5, z1 - 0.3, 0.1, 0.84, 0.1, M.metal, { collide: false });
   // parking lot
   b.box(0, 0.04, z1 + 5, 18, 0.08, 9, M.asphalt, { surface: 'asphalt' });
   return { builder: b, footprint: { w: 18, d: 18 } };

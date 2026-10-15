@@ -481,9 +481,16 @@ export function signMaterial(lines, { w = 512, h = 256, bg = '#e8e2d2', fg = '#1
     ctx.textBaseline = 'middle';
     const n = lines.length;
     lines.forEach((ln, i) => {
-      const size = typeof ln === 'object' ? ln.size : (h * 0.7) / n;
+      let size = typeof ln === 'object' ? ln.size : (h * 0.7) / n;
       const text = typeof ln === 'object' ? ln.text : ln;
       ctx.font = `${weight} ${size}px ${font}`;
+      // never let a line run off the board
+      const tw = ctx.measureText(text).width;
+      const maxW = w * (border ? 0.84 : 0.9);
+      if (tw > maxW) {
+        size *= maxW / tw;
+        ctx.font = `${weight} ${size}px ${font}`;
+      }
       ctx.fillText(text, w / 2, (h * (i + 0.5)) / n);
     });
     // wear
