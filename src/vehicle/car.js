@@ -337,7 +337,7 @@ export class Car {
   setIgnition(on) {
     if (on) {
       if (!this.isInstalled('battery') || this.battery < 0.05) {
-        this.game.ui && this.game.ui.toast('Battery is dead');
+        this.game.hud && this.game.hud.toast('Battery is dead');
         this.game.audio && this.game.audio.play('click');
         return false;
       }

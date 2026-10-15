@@ -387,7 +387,7 @@ export function chair(rnd, wood) {
 
 export function kitchenRun(rnd, len = 2.4, { sink = true, stove = true, uppers = true } = {}) {
   const M = archMaterials();
-  const it = new Item([len, 2.2, 0.62]);
+  const it = new Item([len, uppers ? 2.2 : 0.95, 0.62]);
   const cab = rnd() < 0.5 ? M.trimWhite : M.wood;
   const top = rnd() < 0.5 ? M.concrete : M.linoleum;
   const n = Math.max(2, Math.round(len / 0.6));

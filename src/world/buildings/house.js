@@ -332,14 +332,14 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
   for (const r of rooms) furnishRoom(b, r, rnd, floorY, allOpenings);
   // debris: sand drifts inside near doors, scattered boards
   if (abandoned > 0.3) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const r = rooms[Math.floor(rnd() * rooms.length)];
       const x = r.x0 + 0.5 + rnd() * (r.x1 - r.x0 - 1),
         z = r.z0 + 0.5 + rnd() * (r.z1 - r.z0 - 1);
       const g = new THREE.BoxGeometry(0.1 + rnd() * 0.1, 0.02, 0.8 + rnd() * 0.8);
       g.rotateY(rnd() * Math.PI);
       g.translate(x, floorY + 0.03, z);
-      b.add(g, M.woodDark);
+      b.add(g, M.wood);
     }
   }
   const footprint = { w: plan.W + 1, d: plan.D + 3.2 };
@@ -468,7 +468,8 @@ function furnishRoom(b, r, rnd, y, openings) {
       const len = Math.min(Math.max(W, D) - 0.6, 3.0);
       const sides = W >= D ? ['back', 'front', 'left', 'right'] : ['left', 'right', 'back', 'front'];
       let ok = false;
-      for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L), sides, { tall: false });
+      for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L), sides);
+      for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L, { uppers: false }), sides);
       P.wall(FUR.fridge(rnd), shuffle(all));
       if (D > 3 && W > 2.8) P.free(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 }), cx, cz, 0) || P.free(FUR.diningTable(rnd, { chairs: 2 }), cx, cz + 0.4, 0);
       break;

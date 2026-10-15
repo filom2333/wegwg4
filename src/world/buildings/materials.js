@@ -438,6 +438,8 @@ export function archMaterials() {
     sandbag: std('fabric', { roughness: 1, color: 0xc8b48a, ns: 0.8 }),
     canvasGreen: std('fabric', { roughness: 1, color: 0x8a9a70, ns: 0.6 }),
     canvasOrange: std('fabric', { roughness: 1, color: 0xd88850, ns: 0.6 }),
+    cardboard: new THREE.MeshStandardMaterial({ color: 0xa88458, roughness: 0.95 }),
+    asphalt: std('concrete', { roughness: 0.95, color: 0x55524e }),
   };
   return MATS;
 }

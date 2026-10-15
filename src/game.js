@@ -10,12 +10,18 @@ import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
+import { POIManager, makeWreckPrototype } from './world/poi.js';
 import { buildCarBody } from './vehicle/body/carBody.js';
 import { createCarMaterials } from './vehicle/carMaterials.js';
 import { buildFullCarModel } from './vehicle/carModel.js';
 import { Car } from './vehicle/car.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
+import { ItemSystem } from './items/items.js';
+import { ITEMS } from './items/itemDefs.js';
+import { Interaction } from './player/interaction.js';
+import { HUD } from './ui/hud.js';
+import { PARTS } from './vehicle/carParts.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
 
@@ -60,6 +66,7 @@ export class Game {
     this.systems = [];
     window.addEventListener('resize', () => this.renderer.resize());
     input.attach(canvas);
+    this.__input = input;
   }
 
   // ------------------------------------------------------------------ setup
@@ -96,11 +103,17 @@ export class Game {
     });
     await this.terrain.workerReady;
     this.scatter = new Scatter(this, this.groundTex);
+    this.pois = new POIManager(this);
+    this.items = new ItemSystem(this);
+    this.interaction = new Interaction(this);
+    this.ui = this.ui || null;
+    this.hud = new HUD(this);
     onProgress('Building the car', 0.35);
     await tick();
     this.carBody = buildCarBody({ res: settings.data.quality === 'low' ? 0.034 : 0.028 });
     this.carMats = createCarMaterials({ color: 0xa8502c });
     this.carModel = buildFullCarModel(this.carBody, this.carMats);
+    this.pois.setWreckPrototype(makeWreckPrototype(buildCarBody({ res: 0.08, lowDetail: true }), this.carMats));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ) {
@@ -112,22 +125,34 @@ export class Game {
     this.scatter.update(spawn.x, spawn.z);
     onProgress('Streaming terrain', 0.55);
     await this.waitForTerrain(spawn.x, spawn.z);
-    const carPos = new THREE.Vector3(spawn.carX, this.gen.height(spawn.carX, spawn.carZ) + 0.05, spawn.carZ);
+    const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
     this.car = new Car(this, this.carModel, {
       position: new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z),
       quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw),
     });
-    this.player = new Player(this, new THREE.Vector3(spawn.x - this.origin.x, this.gen.height(spawn.x, spawn.z) + 0.05, spawn.z - this.origin.z));
+    this.player = new Player(this, new THREE.Vector3(spawn.x - this.origin.x, this.gen.height(spawn.x, spawn.z) + 0.3, spawn.z - this.origin.z));
     this.player.yaw = spawn.yaw;
+    this.spawnStarterItems();
+    this.hud.show(true);
     for (const s of this.systems) s.init && (await s.init(this));
     onProgress('Ready', 1);
     this.running = true;
   }
 
   spawnPoint() {
-    const z = 6 + (this.startZ || 0);
-    const rx = this.gen.roadX(z);
-    return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carYaw: 0 };
+    if (this.startZ) {
+      const z = 6 + this.startZ;
+      const rx = this.gen.roadX(z);
+      return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carYaw: 0 };
+    }
+    // homestead: car inside the garage, player at the garage door
+    const inst = this.pois.ensureLoaded(0);
+    const poi = inst.poi;
+    const spot = inst.carSpot || new THREE.Vector3(8.5, 0, -1);
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(poi.x, poi.y, poi.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), poi.rot), new THREE.Vector3(1, 1, 1));
+    const car = spot.clone().applyMatrix4(m);
+    const front = new THREE.Vector3(spot.x - 1.6, 0, spot.z + 5.2).applyMatrix4(m);
+    return { x: front.x, z: front.z, yaw: poi.rot + Math.PI + 0.25, carX: car.x, carZ: car.z, carYaw: poi.rot + Math.PI, carY: poi.y + 0.12 };
   }
 
   async waitForTerrain(x, z) {
@@ -178,6 +203,7 @@ export class Game {
     }
     this.terrain.rebase(dx, dz);
     this.scatter.rebase(dx, dz);
+    this.pois.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     this.car && this.car.prevPos.set(this.car.prevPos.x - dx, this.car.prevPos.y, this.car.prevPos.z - dz);
   }
@@ -220,6 +246,15 @@ export class Game {
     this.env.update(dt, hours);
     if (this.env.day !== prevDay) this.stats.daysSurvived = this.env.day;
     this.player.update(dt);
+    // leave the car
+    if (this.player.seat && input.wasPressed('interact') && !(this.ui && this.ui.blocksMove)) {
+      const t = this.interaction.target;
+      if (!t || t.kind !== 'hotspot') {
+        const seat = this.player.seat;
+        if (this.player.exitSeat()) this.audio && this.audio.play('seat');
+        void seat;
+      }
+    }
     // car controls
     let controls = null;
     if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
@@ -227,7 +262,12 @@ export class Game {
     for (const s of this.systems) s.update && s.update(dt);
     this.physics.update(dt);
     this.car.syncVisual();
+    this.items.update(dt);
     this.player.updateCamera(dt);
+    this.interaction.update(dt);
+    this.interaction.updateView(dt);
+    this.updateRefuel(dt);
+    this.hud.update(dt);
     // streaming
     const f = this.focusPoint();
     const gx = f.x + this.origin.x,
@@ -235,6 +275,8 @@ export class Game {
     this.terrain.update(gx, gz);
     this.scatter.update(gx, gz);
     this.scatter.setTime(this.time, this.env.w.wind);
+    this.pois.update(gx, gz);
+    this.pois.update2(dt);
     this.env.focus.copy(f);
     this.env.biome = this.gen.dominantBiome(gx, gz);
     this.maybeRebase();
@@ -244,6 +286,52 @@ export class Game {
       this.stats.maxSpeed = Math.max(this.stats.maxSpeed, s);
     }
     this.stats.timeAlive += dt;
+  }
+
+  // A few essentials in the homestead garage next to the car.
+  spawnStarterItems() {
+    if (this.startZ) return;
+    const inst = this.pois.loaded.get(0);
+    if (!inst) return;
+    inst.root.updateMatrixWorld(true);
+    const at = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(inst.root.matrixWorld);
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), inst.poi.rot);
+    const gx = 8.5,
+      gz = -1.5; // garage centre in POI space
+    const list = [
+      ['jerryCan', gx - 2.4, 0.4, gz + 2.0, { liquid: 12, liquidType: 'fuel' }],
+      ['oilBottle', gx - 1.6, 1.1, gz - 3.2, null],
+      ['waterBottle', gx - 2.0, 1.1, gz - 3.2, null],
+      ['cannedBeans', gx - 2.4, 1.1, gz - 3.2, null],
+      ['wrench', gx - 1.0, 1.1, gz - 3.25, null],
+      ['repairKit', gx + 2.6, 0.35, gz + 2.6, null],
+    ];
+    for (const [id, x, y, z, st] of list) {
+      const it = this.items.spawn(id, at(x, y + 0.1, z), q.clone(), st ? { ...st } : null);
+      it.poiKey = null;
+    }
+  }
+
+  // Pump -> car refuelling session started from a pump.
+  updateRefuel(dt) {
+    const r = this.refuel;
+    if (!r || !r.active) return;
+    const car = this.car;
+    const st = r.pump.inst.state;
+    const filler = car.worldPointOf(new THREE.Vector3(-0.87, 0.86, -1.63));
+    if (filler.distanceTo(r.pump.world) > 6 || st.fuel <= 0.01 || car.fuel >= car.fuelCap - 0.01 || this.player.position.distanceTo(r.pump.world) > 6) {
+      r.active = false;
+      this.hud.toast(car.fuel >= car.fuelCap - 0.01 ? 'Tank full' : st.fuel <= 0.01 ? 'The pump is dry' : 'Refuelling stopped');
+      return;
+    }
+    const a = Math.min(dt * 0.8, st.fuel, car.fuelCap - car.fuel);
+    st.fuel -= a;
+    car.fuel += a;
+  }
+
+  itemName(id) {
+    if (id.startsWith('part:')) return PARTS[id.slice(5)].label;
+    return ITEMS[id] ? ITEMS[id].name : id;
   }
 
   driveControls(dt) {
@@ -285,13 +373,14 @@ export class Game {
     cam.updateProjectionMatrix();
     this.env.sky.mesh.position.copy(cam.position);
     for (const s of this.systems) s.preRender && s.preRender(dt);
+    if (this.interaction) this.interaction.updateView(0);
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
     this.renderer.render(dt);
   }
 
   // Headless testing helper: advance the simulation without rendering.
   debugSimulate(seconds, dt = 1 / 30) {
-    const n = Math.round(seconds / dt);
+    const n = Math.max(1, Math.round(seconds / dt));
     for (let i = 0; i < n; i++) {
       this.step(dt);
       input.endFrame();

@@ -636,6 +636,26 @@ async function initSubject(subject) {
     const { buildPoiPreview } = await import('../world/poiPreview.js');
     group = await buildPoiPreview(params.get('type') || 'house', seed);
   }
+  if (subject === 'hand') {
+    const { buildHand } = await import('../player/hands.js');
+    group = new THREE.Group();
+    ['relax', 'grip', 'pistol', 'carry', 'pinch'].forEach((p, i) => {
+      const h = buildHand(p);
+      h.position.set((i - 2) * 0.16, 0.25, 0);
+      group.add(h);
+    });
+  }
+  if (subject === 'items') {
+    const { MODEL_BUILDERS } = await import('../items/itemModels.js');
+    group = new THREE.Group();
+    const names = Object.keys(MODEL_BUILDERS);
+    names.forEach((n, i) => {
+      const m = MODEL_BUILDERS[n]();
+      const b = new THREE.Box3().setFromObject(m);
+      m.position.set((i % 7) * 0.45 - 1.35, -b.min.y + 0.0, Math.floor(i / 7) * 0.5 - 0.5);
+      group.add(m);
+    });
+  }
   void rnd;
   scene.add(group);
   window.subject = group;

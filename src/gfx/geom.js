@@ -111,11 +111,37 @@ export function shapeFromPoints(pts) {
 export function loftSections(sections, { capStart = false, capEnd = false, closed = true } = {}) {
   const ns = sections.length;
   const nv = sections[0].length;
+  // Orient every ring counter-clockwise about the loft direction so side faces point outward.
+  const ringNormal = (sec) => {
+    const n = new THREE.Vector3();
+    for (let j = 0; j < sec.length; j++) {
+      const a = sec[j],
+        b = sec[(j + 1) % sec.length];
+      n.x += (a.y - b.y) * (a.z + b.z);
+      n.y += (a.z - b.z) * (a.x + b.x);
+      n.z += (a.x - b.x) * (a.y + b.y);
+    }
+    return n;
+  };
+  const centroid = (sec) => {
+    const c = new THREE.Vector3();
+    sec.forEach((p) => c.add(p));
+    return c.multiplyScalar(1 / sec.length);
+  };
+  let k = 1;
+  const c0 = centroid(sections[0]);
+  let dir = centroid(sections[Math.min(ns - 1, 1)]).sub(c0);
+  while (dir.lengthSq() < 1e-12 && k < ns - 1) dir = centroid(sections[++k]).sub(c0);
+  // pick the ring with the clearest normal (the first may be degenerate, e.g. a pointed cap)
+  let rn = ringNormal(sections[0]);
+  for (let i = 1; i < ns && rn.lengthSq() < 1e-10; i++) rn = ringNormal(sections[i]);
+  const reverse = closed && rn.dot(dir) < 0;
+  const secs = reverse ? sections.map((sec) => [sec[0], ...sec.slice(1).reverse()]) : sections;
   const pos = [];
   const uv = [];
   for (let i = 0; i < ns; i++) {
     for (let j = 0; j < nv; j++) {
-      const p = sections[i][j];
+      const p = secs[i][j];
       pos.push(p.x, p.y, p.z);
       uv.push(j / (nv - (closed ? 0 : 1)), i / (ns - 1));
     }
@@ -131,10 +157,8 @@ export function loftSections(sections, { capStart = false, capEnd = false, close
       idx.push(a, b, d, b, c, d);
     }
   }
-  const addCap = (sec, flip) => {
-    const c = new THREE.Vector3();
-    sec.forEach((p) => c.add(p));
-    c.multiplyScalar(1 / sec.length);
+  const addCap = (sec, isStart) => {
+    const c = centroid(sec);
     const base = pos.length / 3;
     pos.push(c.x, c.y, c.z);
     uv.push(0.5, 0.5);
@@ -145,32 +169,13 @@ export function loftSections(sections, { capStart = false, capEnd = false, close
     for (let j = 0; j < sec.length; j++) {
       const a = base + 1 + j,
         b = base + 1 + ((j + 1) % sec.length);
-      if (flip) idx.push(base, b, a);
+      // rings run CCW about the loft direction: the start cap faces backwards
+      if (isStart) idx.push(base, b, a);
       else idx.push(base, a, b);
     }
   };
-  if (capStart) addCap(sections[0], false);
-  if (capEnd) addCap(sections[ns - 1], true);
-  // Orientation fix: for capped (closed) lofts make the signed volume positive.
-  if (capStart && capEnd) {
-    let vol = 0;
-    for (let t = 0; t < idx.length; t += 3) {
-      const a = idx[t] * 3,
-        b = idx[t + 1] * 3,
-        c = idx[t + 2] * 3;
-      vol +=
-        pos[a] * (pos[b + 1] * pos[c + 2] - pos[b + 2] * pos[c + 1]) -
-        pos[a + 1] * (pos[b] * pos[c + 2] - pos[b + 2] * pos[c]) +
-        pos[a + 2] * (pos[b] * pos[c + 1] - pos[b + 1] * pos[c]);
-    }
-    if (vol < 0) {
-      for (let t = 0; t < idx.length; t += 3) {
-        const tmp = idx[t + 1];
-        idx[t + 1] = idx[t + 2];
-        idx[t + 2] = tmp;
-      }
-    }
-  }
+  if (capStart) addCap(secs[0], true);
+  if (capEnd) addCap(secs[ns - 1], false);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));

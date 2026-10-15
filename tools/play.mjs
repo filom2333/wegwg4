@@ -18,6 +18,7 @@ try {
   await browser.close();
   process.exit(1);
 }
+if (process.env.HELPERS) await page.addScriptTag({ content: fs.readFileSync(process.env.HELPERS, 'utf8') });
 // The page's own RAF loop is too slow in software GL; we drive time manually via game.debugStep.
 for (const s of steps) {
   if (s.eval) {

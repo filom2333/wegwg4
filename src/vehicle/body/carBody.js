@@ -104,9 +104,9 @@ function toGeometry(data) {
   return geo;
 }
 
-export function buildCarBody({ res = 0.02, onProgress } = {}) {
+export function buildCarBody({ res = 0.02, onProgress, lowDetail = false } = {}) {
   const t0 = performance.now();
-  const grid = buildSkinGrid(res);
+  const grid = buildSkinGrid(res, lowDetail ? { thetaRows: 0.7, thetaCols: 0.45 } : {});
   const nodes = new SkinNodes(grid);
   onProgress && onProgress('grid', performance.now() - t0);
   const defs = buildPanelDefs();
@@ -180,6 +180,7 @@ export function buildCarBody({ res = 0.02, onProgress } = {}) {
       data = thicken(surf, {
         depth: kd.depth,
         edgeR: kd.edgeR,
+        rimSegs: lowDetail ? 1 : 3,
         innerMat: kd.inner,
         rimMat: kd.rim,
         outerMats: (m) => (m === 2 ? SLOT.trim : m === 5 ? SLOT.under : SLOT.paint),
