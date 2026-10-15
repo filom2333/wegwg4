@@ -27,6 +27,31 @@ export const DRIVER = {
 const smooth01 = (t) => t * t * (3 - 2 * t);
 const lerp = (a, b, t) => a + (b - a) * t;
 
+// Shift pattern engraved on the knob top (1-5, R).
+function shiftPatternMat() {
+  return cached('shiftPat', () => {
+    const c = makeCanvas(128, 128);
+    const x = c.getContext('2d');
+    x.fillStyle = '#1d1c1b';
+    x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = '#b8b2a6';
+    x.lineWidth = 4;
+    x.beginPath();
+    for (const cx of [32, 64, 96]) {
+      x.moveTo(cx, 30);
+      x.lineTo(cx, 98);
+    }
+    x.moveTo(32, 64);
+    x.lineTo(96, 64);
+    x.stroke();
+    x.fillStyle = '#d9d3c6';
+    x.font = 'bold 18px Arial';
+    x.textAlign = 'center';
+    [['1', 32, 24], ['2', 32, 118], ['3', 64, 24], ['4', 64, 118], ['5', 96, 24], ['R', 96, 118]].forEach(([t, px, py]) => x.fillText(t, px, py));
+    return new THREE.MeshStandardMaterial({ map: canvasTexture(c, { wrap: false }), roughness: 0.5 });
+  });
+}
+
 // ---------- materials ----------
 export function createInteriorMaterials() {
   return cached('interiorMats', () => {
@@ -427,6 +452,39 @@ export function buildCenterStack(M) {
     return superSection(V(0, (0.28 + h) / 2, z), V(1, 0, 0), V(0, 1, 0), w, (h - 0.28) / 2 + 0.005, 6, 24);
   });
   g.add(mesh(loftSections(sections, { capStart: true, capEnd: true }), M.plastic));
+  // Twin cupholders recessed into the console top, 12 V socket, coin tray
+  for (const zc of [0.06, -0.035]) {
+    const cup = latheY(
+      [
+        [0.04, 0.0],
+        [0.038, -0.006],
+        [0.036, -0.06],
+        [0.0, -0.062],
+      ],
+      24
+    );
+    cup.translate(0, 0.437, zc);
+    g.add(mesh(cup, M.rubber, false));
+    const rim = new THREE.TorusGeometry(0.041, 0.003, 6, 28);
+    rim.rotateX(Math.PI / 2);
+    rim.translate(0, 0.437, zc);
+    g.add(mesh(rim, M.satin, false));
+  }
+  const sock = latheY([[0.0, -0.004], [0.011, -0.002], [0.012, 0.004], [0.009, 0.004], [0.0, -0.002]], 18);
+  sock.rotateX(-Math.PI / 2);
+  sock.translate(0.05, 0.6, 0.474);
+  g.add(mesh(sock, M.satin, false));
+  const tray = roundedBox(0.13, 0.008, 0.07, 0.006, 2);
+  tray.translate(0, 0.53, 0.49);
+  g.add(mesh(tray, M.rubber, false));
+  // Shifter gate surround with chrome ring and printed shift pattern
+  const sur = roundedBox(0.12, 0.01, 0.14, 0.02, 3);
+  sur.translate(0, 0.442, 0.24);
+  g.add(mesh(sur, M.piano, false));
+  const ring = new THREE.TorusGeometry(0.058, 0.003, 6, 32);
+  ring.rotateX(Math.PI / 2);
+  ring.translate(0, 0.447, 0.24);
+  g.add(mesh(ring, M.chrome, false));
   // Armrest lid (leather)
   const lid = roundedBox(0.22, 0.03, 0.3, 0.014, 3);
   lid.translate(0, 0.62, -0.28);
@@ -463,6 +521,10 @@ export function buildCenterStack(M) {
   knobS.scale(1, 0.85, 1.05);
   knobS.translate(0, 0.63, 0.232);
   g.add(mesh(knobS, M.leather));
+  const pat = new THREE.CircleGeometry(0.014, 20);
+  pat.rotateX(-Math.PI / 2);
+  pat.translate(0, 0.6505, 0.232);
+  g.add(mesh(pat, shiftPatternMat(), false));
   // Handbrake lever beside the console
   const hb = new THREE.Group();
   const hbBody = roundedBox(0.035, 0.03, 0.26, 0.012, 3);
@@ -581,6 +643,19 @@ export function buildSteering(M) {
       return superSection(p, side, V(0, 0, 1), ang === -Math.PI / 2 ? 0.024 - 0.01 * t : 0.028 - 0.008 * t, 0.009, 3, 14);
     });
     wheel.add(mesh(loftSections(secs, { capStart: true, capEnd: true }), M.plastic));
+  }
+  // Spoke buttons: audio on the left, cruise on the right, horn icons on the pad
+  for (const s2 of [-1, 1]) {
+    for (let k = 0; k < 3; k++) {
+      const b = roundedBox(0.012, 0.009, 0.005, 0.0025, 1);
+      b.translate(s2 * (0.085 + k * 0.016), 0.004 - k * 0.002, 0.006);
+      wheel.add(mesh(b, k === 1 ? M.satin : M.piano, false));
+    }
+  }
+  for (const s2 of [-1, 1]) {
+    const hi = new THREE.CircleGeometry(0.004, 10);
+    hi.translate(s2 * 0.045, -0.03, 0.0215);
+    wheel.add(mesh(hi, M.satin, false));
   }
   // Orient the wheel frame
   const zAxis = n.clone();
@@ -771,6 +846,27 @@ export function buildFrontSeat(M, side) {
   // flip so the occupant-facing side is +z (front)
   back.rotation.y = Math.PI;
   g.add(back);
+  // Belt buckle on a stalk on the inboard side, height lever and recline knob outboard
+  const bk = new THREE.Group();
+  const stalk = roundedBox(0.02, 0.12, 0.012, 0.005, 2);
+  stalk.translate(0, 0.06, 0);
+  bk.add(mesh(stalk, M.belt, false));
+  const buckle = roundedBox(0.03, 0.05, 0.018, 0.006, 2);
+  buckle.translate(0, 0.14, 0);
+  bk.add(mesh(buckle, M.plastic, false));
+  const btn = roundedBox(0.016, 0.006, 0.02, 0.002, 1);
+  btn.translate(0, 0.167, 0);
+  bk.add(mesh(btn, M.brakeLight, false));
+  bk.position.set(-side * 0.27, 0.3, -0.12);
+  bk.rotation.x = -0.35;
+  g.add(bk);
+  const hLever = roundedBox(0.012, 0.018, 0.12, 0.006, 2);
+  hLever.translate(side * 0.26, 0.33, 0.06);
+  g.add(mesh(hLever, M.plastic, false));
+  const rk = latheY([[0.0, 0.0], [0.024, 0.0], [0.026, 0.012], [0.0, 0.016]], 18);
+  rk.rotateZ((side * Math.PI) / 2);
+  rk.translate(side * 0.27, 0.42, -0.2);
+  g.add(mesh(rk, M.plastic, false));
   g.position.set(x, 0, DRIVER.seatZ);
   g.name = side > 0 ? 'seat_FL' : 'seat_FR';
   return g;
@@ -864,6 +960,53 @@ export function buildDoorTrim(M, doorId) {
   const pocket = roundedBox(0.03, 0.09, 0.28, 0.01, 2);
   pocket.translate(xp - side * 0.015, 0.4, zp);
   g.add(mesh(pocket, M.plastic));
+  // Window switches (two on the front doors, one on the rear)
+  const nsw = front ? 2 : 1;
+  for (let k = 0; k < nsw; k++) {
+    const b = roundedBox(0.018, 0.008, 0.03, 0.003, 1);
+    b.translate(xs, yA + 0.04, zs - 0.022 + k * 0.044 * (front ? 1 : 0));
+    g.add(mesh(b, M.plastic, false));
+  }
+  if (front && side > 0) {
+    // mirror adjuster joystick next to the switches
+    const mj = latheY([[0.0, 0.012], [0.009, 0.01], [0.012, 0.0]], 14);
+    mj.translate(xs, yA + 0.036, zs + 0.06);
+    g.add(mesh(mj, M.satin, false));
+  }
+  // Fabric insert across the upper door card, framed by a stitched seam
+  const zi0 = z0 + (z1 - z0) * 0.12,
+    zi1 = z0 + (z1 - z0) * 0.88;
+  const ins = [];
+  for (let i = 0; i <= 10; i++) {
+    const z = zi0 + ((zi1 - zi0) * i) / 10;
+    const yTop = yBelt(z) - 0.07;
+    const pts = [];
+    for (let j = 0; j <= 4; j++) {
+      const y = 0.74 + ((yTop - 0.74) * j) / 4;
+      pts.push(V(innerSideX(y, z, 0.105, side) - side * 0.004, y, z));
+    }
+    ins.push(pts);
+  }
+  {
+    const pos = [],
+      idx = [];
+    for (const r of ins) for (const q of r) pos.push(q.x, q.y, q.z);
+    for (let i = 0; i < ins.length - 1; i++)
+      for (let j = 0; j < 4; j++) {
+        const a = i * 5 + j;
+        if (side > 0) idx.push(a, a + 1, a + 5, a + 1, a + 6, a + 5);
+        else idx.push(a, a + 5, a + 1, a + 1, a + 5, a + 6);
+      }
+    const ig = new THREE.BufferGeometry();
+    ig.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    ig.setIndex(idx);
+    ig.computeVertexNormals();
+    g.add(mesh(ig, M.seatSide, false));
+  }
+  // Reflector on the trailing edge (visible with the door open)
+  const rf = roundedBox(0.01, 0.025, 0.07, 0.004, 1);
+  rf.translate(innerSideX(0.45, z1 + 0.02, 0.105, side) - side * 0.01, 0.45, z1 + 0.04);
+  g.add(mesh(rf, M.brakeLight, false));
   // Lock pin on the window sill
   const pin = new THREE.CylinderGeometry(0.0045, 0.0055, 0.03, 10);
   const zl = z0 + (z1 - z0) * 0.85;
