@@ -11,14 +11,14 @@ const CELL = 64;
 
 // density per 1000 m² for each biome
 const SPECIES = {
-  grass: { variants: 5, near: true, dens: { scrub: 55, dunes: 5, badlands: 7, saltflat: 0.3, highland: 30 }, scale: [1.0, 1.8], sway: true },
-  shrub: { variants: 5, near: true, dens: { scrub: 12, dunes: 1.2, badlands: 2.5, saltflat: 0.05, highland: 6 }, scale: [0.7, 1.5], sway: true },
+  grass: { variants: 5, near: true, dens: { scrub: 85, dunes: 9, badlands: 12, saltflat: 0.6, highland: 45 }, scale: [1.0, 1.9], sway: true },
+  shrub: { variants: 5, near: true, dens: { scrub: 18, dunes: 2.2, badlands: 4, saltflat: 0.1, highland: 9 }, scale: [0.7, 1.6], sway: true },
   pebble: { variants: 4, near: true, dens: { scrub: 2, dunes: 0.3, badlands: 5, saltflat: 0.2, highland: 7 }, scale: [0.12, 0.35], rock: true },
   barrel: { variants: 2, near: true, dens: { scrub: 0.4, dunes: 0.05, badlands: 0.6, saltflat: 0, highland: 0.2 }, scale: [0.8, 1.3] },
   boulder: { variants: 6, dens: { scrub: 0.25, dunes: 0.04, badlands: 1.1, saltflat: 0.02, highland: 1.6 }, scale: [0.6, 2.2], rock: true, solid: 'ball' },
   slab: { variants: 3, dens: { scrub: 0.1, dunes: 0.02, badlands: 0.4, saltflat: 0.01, highland: 0.5 }, scale: [0.8, 2.4], rock: true, solid: 'ball' },
-  saguaro: { variants: 4, dens: { scrub: 0.12, dunes: 0.02, badlands: 0.25, saltflat: 0, highland: 0.12 }, scale: [0.85, 1.2], solid: 'trunk' },
-  joshua: { variants: 3, dens: { scrub: 0.18, dunes: 0, badlands: 0.04, saltflat: 0, highland: 0.3 }, scale: [0.9, 1.5], solid: 'trunk' },
+  saguaro: { variants: 4, dens: { scrub: 0.2, dunes: 0.03, badlands: 0.3, saltflat: 0, highland: 0.15 }, scale: [0.85, 1.25], solid: 'trunk' },
+  joshua: { variants: 3, dens: { scrub: 0.26, dunes: 0.01, badlands: 0.05, saltflat: 0, highland: 0.4 }, scale: [0.9, 1.5], solid: 'trunk' },
   deadtree: { variants: 3, dens: { scrub: 0.05, dunes: 0.02, badlands: 0.06, saltflat: 0.01, highland: 0.1 }, scale: [0.8, 1.4], solid: 'trunk' },
   hoodoo: { variants: 3, dens: { scrub: 0, dunes: 0, badlands: 0.06, saltflat: 0, highland: 0.02 }, scale: [1, 2.2], rock: true, solid: 'trunkWide' },
 };

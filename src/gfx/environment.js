@@ -8,7 +8,7 @@ const LAT = (34 * Math.PI) / 180;
 const DEC = (12 * Math.PI) / 180;
 
 export const WEATHERS = {
-  clear: { cloud: 0.12, overcast: 0, dust: 0, rain: 0, wind: 0.25, turbidity: 2.5, fogDensity: 0.00011 },
+  clear: { cloud: 0.3, overcast: 0, dust: 0, rain: 0, wind: 0.25, turbidity: 2.5, fogDensity: 0.00013 },
   hazy: { cloud: 0.25, overcast: 0.1, dust: 0.12, rain: 0, wind: 0.35, turbidity: 5, fogDensity: 0.00022 },
   cloudy: { cloud: 0.6, overcast: 0.25, dust: 0, rain: 0, wind: 0.45, turbidity: 3, fogDensity: 0.00016 },
   rain: { cloud: 0.9, overcast: 0.75, dust: 0, rain: 0.65, wind: 0.6, turbidity: 3, fogDensity: 0.0006 },
@@ -62,7 +62,7 @@ export class Environment {
     this.lightningTimer = 3;
     this.onLightning = null;
     this.rand = mulberry32(opts.seed || 77);
-    this.groundColor = new THREE.Color(0x8a6f52);
+    this.groundColor = new THREE.Color(0x9c7a55);
     this.focus = new THREE.Vector3();
     this.biome = 'scrub';
     this.update(0);
@@ -185,35 +185,42 @@ export class Environment {
     // sun light
     const day = this.daylight;
     const sunY = this.sunDir.y;
-    const warm = 1 - smoothstep(0.0, 0.35, sunY);
-    const sunColor = new THREE.Color(1.0, 0.96, 0.9).lerp(new THREE.Color(1.0, 0.58, 0.3), warm);
+    const warm = 1 - smoothstep(0.0, 0.4, sunY);
+    // desert sun: warm white at noon, deep amber near the horizon, strong
+    const sunColor = new THREE.Color(1.0, 0.94, 0.84).lerp(new THREE.Color(1.0, 0.52, 0.24), warm);
     const cover = 1 - this.w.overcast * 0.85 - this.w.dust * 0.5;
     this.sun.color.copy(sunColor);
-    this.sun.intensity = 3.2 * smoothstep(-0.03, 0.12, sunY) * Math.max(0.05, cover);
+    this.sun.intensity = (3.6 + 0.8 * warm) * smoothstep(-0.03, 0.1, sunY) * Math.max(0.05, cover);
     const moonUp = smoothstep(-0.05, 0.15, this.moonDir.y);
     this.moon.intensity = 0.32 * moonUp * night * (1 - this.w.overcast * 0.8);
     // the stronger of sun/moon casts shadows
     this.sun.castShadow = this.sun.intensity > 0.05;
 
     // ambient
-    const skyCol = new THREE.Color().setRGB(0.42, 0.5, 0.62).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);
+    const skyCol = new THREE.Color().setRGB(0.46, 0.55, 0.68).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);
+    skyCol.lerp(new THREE.Color(0.75, 0.58, 0.48), warm * day * 0.6);
     skyCol.lerp(new THREE.Color(0.7, 0.55, 0.4), this.w.dust * 0.8);
-    const nightSky = new THREE.Color(0.035, 0.045, 0.075);
+    const nightSky = new THREE.Color(0.04, 0.055, 0.095);
     this.hemi.color.copy(nightSky).lerp(skyCol, day);
-    this.hemi.groundColor.copy(this.groundColor).multiplyScalar(0.35 + 0.65 * day);
-    this.hemi.intensity = 0.3 + 0.25 * day + this.flash * 2.5;
+    // sunlit sand bounces a lot of warm light back up
+    this.hemi.groundColor.copy(this.groundColor).multiplyScalar((0.35 + 0.9 * day) * (1 + 0.4 * (1 - this.w.overcast)));
+    // twilight: the whole sky still lights the land for a while after the sun has set
+    const twilight = smoothstep(-0.16, 0.0, sunY) * (1 - smoothstep(0.0, 0.25, sunY));
+    this.hemi.intensity = 0.32 + 0.3 * day + 0.55 * twilight + this.flash * 2.5;
 
     // fog color ~ horizon colour
-    const horizon = new THREE.Color(0.72, 0.78, 0.84);
-    horizon.lerp(new THREE.Color(0.95, 0.66, 0.42), warm * day * 0.7);
+    const horizon = new THREE.Color(0.76, 0.78, 0.8);
+    horizon.lerp(new THREE.Color(0.98, 0.64, 0.38), warm * day * 0.8);
     horizon.lerp(new THREE.Color(0.6, 0.62, 0.64), this.w.overcast * 0.8);
     horizon.lerp(new THREE.Color(0.72, 0.58, 0.42), this.w.dust);
     const nightFog = new THREE.Color(0.03, 0.035, 0.05);
     this.scene.fog.color.copy(nightFog).lerp(horizon, smoothstep(-0.15, 0.15, sunY));
     this.scene.fog.density = this.w.fogDensity * (1 + night * 0.6);
 
-    this.renderer.toneMappingExposure = lerp(1.15, 0.92, day) * (1 + this.flash * 0.3);
-    this.scene.environmentIntensity = 0.25 + 0.75 * day;
+    this.renderer.toneMappingExposure = lerp(1.25, 0.9, day) * (1 + 0.12 * warm * day) * (1 + this.flash * 0.3);
+    // the baked sky is cool; let the sun and bounce light carry the daytime look
+    this.scene.environmentIntensity = 0.3 + 0.4 * day;
+    this.grade = { warm: warm * day, night: 1 - day, overcast: this.w.overcast, dust: this.w.dust };
 
     // shadow camera follows the focus point
     const f = this.focus;

@@ -42,8 +42,8 @@ vec3 skyColor(vec3 dir, vec3 sun) {
   float mu = dot(dir, sun);
   // Rayleigh-ish gradient
   float day = smoothstep(-0.12, 0.25, sunH);
-  vec3 zenith = mix(vec3(0.012, 0.018, 0.04), vec3(0.20, 0.42, 0.80), day);
-  vec3 horizon = mix(vec3(0.03, 0.04, 0.07), vec3(0.72, 0.80, 0.88), day);
+  vec3 zenith = mix(vec3(0.012, 0.018, 0.04), vec3(0.16, 0.38, 0.82), day);
+  vec3 horizon = mix(vec3(0.03, 0.04, 0.07), vec3(0.74, 0.8, 0.86), day);
   // warm horizon at low sun
   float low = smoothstep(0.35, 0.0, abs(sunH)) * smoothstep(-0.2, 0.02, sunH);
   float az = pow(max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(sun.x, 0.0001, sun.z))), 0.0), 2.0);
@@ -94,20 +94,41 @@ void main() {
     col += vec3(0.08, 0.1, 0.16) * pow(max(md, 0.0), 80.0) * night * 0.6;
   }
 
-  // Clouds (2D noise projected on a dome)
+  // Clouds: a cumulus layer (domain-warped fbm) lit from the sun with a self-shadow march,
+  // silver lining toward the sun and warm undersides at golden hour; thin cirrus streaks above.
   if (dir.y > 0.0) {
-    vec2 uv = dir.xz / (dir.y + 0.12) * 1.6;
-    vec3 q = vec3(uv * 0.7 + vec2(uTime * 0.004, uTime * 0.002), uTime * 0.003);
-    float n = fbm(q);
-    float cover = mix(0.72, 0.28, uCloud);
-    float c = smoothstep(cover, cover + 0.22, n) * smoothstep(0.0, 0.12, dir.y);
-    float sunLit = clamp(dot(sun, vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5, 0.0, 1.0);
-    float day = smoothstep(-0.1, 0.2, sun.y);
-    vec3 cloudCol = mix(vec3(0.05, 0.055, 0.07), vec3(0.95, 0.94, 0.92), day);
-    cloudCol = mix(cloudCol, cloudCol * vec3(1.0, 0.7, 0.5), smoothstep(0.3, 0.0, sun.y) * day);
-    cloudCol *= mix(1.0, 0.45, uOvercast);
-    float shade = 1.0 - 0.35 * smoothstep(0.4, 0.9, n);
-    col = mix(col, cloudCol * shade, c * 0.92);
+    float dayC = smoothstep(-0.14, 0.04, sun.y);
+    vec2 uv = dir.xz / (dir.y + 0.09) * 1.25;
+    vec2 wind = vec2(uTime * 0.006, uTime * 0.003);
+    vec3 q = vec3(uv * 0.55 + wind, uTime * 0.002);
+    vec3 warp = vec3(fbm(q * 0.6 + 4.2), fbm(q * 0.6 + 9.1), 0.0);
+    float n = fbm(q + warp * 0.9);
+    float cover = mix(0.66, 0.24, uCloud);
+    float dens = smoothstep(cover, cover + 0.2, n) * smoothstep(0.0, 0.1, dir.y);
+    // light march toward the sun across the cloud layer
+    vec2 sdir = normalize(sun.xz + 1e-4) * 0.06;
+    float occ = 0.0;
+    for (int i = 1; i <= 3; i++) {
+      vec3 qs = vec3((uv + sdir * float(i)) * 0.55 + wind, uTime * 0.002);
+      occ += smoothstep(cover, cover + 0.25, fbm(qs + warp * 0.9));
+    }
+    float lightT = exp(-occ * 0.75);
+    float mu2 = dot(dir, sun);
+    float silver = pow(max(mu2, 0.0), 6.0) * (1.0 - dens) * 2.2;
+    vec3 sunTint = mix(vec3(1.0, 0.55, 0.3), vec3(1.0, 0.97, 0.92), smoothstep(0.02, 0.35, sun.y));
+    // sunset: undersides catch the low sun and glow pink-orange
+    float glow = smoothstep(0.25, 0.0, sun.y) * smoothstep(-0.14, -0.02, sun.y);
+    vec3 lit = sunTint * (0.55 + 0.75 * lightT) + silver * sunTint + vec3(1.0, 0.45, 0.32) * glow * (0.6 + 0.6 * (1.0 - lightT));
+    vec3 ambient = mix(vec3(0.42, 0.48, 0.6), vec3(0.62, 0.5, 0.48), smoothstep(0.3, 0.0, sun.y));
+    vec3 cloudCol = mix(ambient * 0.7, lit, 0.7);
+    // night: dim moonlit grey
+    cloudCol = mix(vec3(0.03, 0.035, 0.05) + vec3(0.04, 0.045, 0.06) * lightT, cloudCol, dayC);
+    cloudCol *= mix(1.0, 0.5, uOvercast);
+    col = mix(col, cloudCol, dens * 0.95);
+    // cirrus
+    vec2 cu = dir.xz / (dir.y + 0.25) * vec2(0.6, 2.4) + wind * 2.0;
+    float ci = smoothstep(0.55, 0.85, fbm(vec3(cu, 1.7))) * smoothstep(0.05, 0.3, dir.y) * (0.25 + 0.5 * uCloud) * (1.0 - dens);
+    col = mix(col, sunTint * mix(0.25, 1.05, dayC), ci * 0.35);
   }
   // Overcast & dust haze
   vec3 grey = mix(vec3(0.03, 0.035, 0.045), vec3(0.55, 0.57, 0.6), smoothstep(-0.1, 0.3, sun.y));

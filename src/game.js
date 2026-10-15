@@ -560,6 +560,13 @@ export class Game {
     this.env.sky.mesh.position.copy(cam.position);
     for (const s of this.systems) s.preRender && s.preRender(dt);
     if (this.interaction && !this.attract) this.interaction.updateView(0);
+    const gr = this.env && this.env.grade;
+    if (gr) {
+      const u = this.renderer.grade.uniforms;
+      u.uWarm.value = gr.warm;
+      u.uNight.value = gr.night;
+      u.uOvercast.value = gr.overcast;
+    }
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
     this.renderer.render(dt);
   }
