@@ -91,6 +91,8 @@ export class SDFModel {
     this.shapes = [];
     this.mats = {};
     this.attachments = [];
+    this.layerBias = 0.004; // how strongly outer layers win material ties (m per layer)
+    this.colorBlend = 0; // >0: blend material colours over this distance (m) instead of hard switching
     this.bbox = new THREE.Box3();
   }
 
@@ -106,9 +108,12 @@ export class SDFModel {
     this.grow(b, Math.max(r1, r2));
   }
 
-  ell(c, r, bone, mat, { blend = 0.03, sub = false, rot = null, layer = 0 } = {}) {
+  // `basis`: optional Matrix4 whose columns are the ellipsoid's local axes in model space.
+  ell(c, r, bone, mat, { blend = 0.03, sub = false, rot = null, basis = null, layer = 0 } = {}) {
     let m = null;
     if (rot) m = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromEuler(rot)).transpose();
+    // the evaluator computes (m^T p), so an explicit basis is stored as-is to get local = R^T p
+    if (basis) m = new THREE.Matrix3().setFromMatrix4(basis);
     this.shapes.push({ type: 'ell', c: c.clone(), r: r.clone(), rot: m, bone, mat, blend, sub, layer });
     this.grow(c, Math.max(r.x, r.y, r.z));
   }
@@ -143,6 +148,19 @@ export class SDFModel {
       const s = this.shapes[i];
       const d = this.dist(s, x, y, z);
       if (dists) dists[i] = d;
+      if (s.sub) f = smax(f, -d, s.blend);
+      else f = smin(f, d, s.blend);
+    }
+    return f;
+  }
+
+  // Field over a subset of shapes (block-local); fills dl[q] for list[q].
+  fieldList(list, x, y, z, dl) {
+    let f = 1e9;
+    for (let q = 0; q < list.length; q++) {
+      const s = list[q];
+      const d = this.dist(s, x, y, z);
+      if (dl) dl[q] = d;
       if (s.sub) f = smax(f, -d, s.blend);
       else f = smin(f, d, s.blend);
     }
@@ -204,13 +222,18 @@ export function polygonizeArrays(model, cell, bones) {
   const B = 8;
   const S = model.shapes;
   const blockList = [];
+  let maxBlend = 0;
+  for (const sh of S) maxBlend = Math.max(maxBlend, sh.blend);
+  const margin = cell * 2 + maxBlend * 1.5;
+  const nbx = Math.ceil(nx / B),
+    nby = Math.ceil(ny / B);
   for (let bk = 0; bk < nz; bk += B)
     for (let bj = 0; bj < ny; bj += B)
       for (let bi = 0; bi < nx; bi += B) {
         const cx = min.x + (bi + B / 2) * cell,
           cy = min.y + (bj + B / 2) * cell,
           cz = min.z + (bk + B / 2) * cell;
-        const half = (B / 2) * cell * 1.75 + 0.06;
+        const half = (B / 2) * cell * 1.75 + margin;
         const list = [];
         let anyAdd = false;
         for (let s = 0; s < S.length; s++) {
@@ -246,6 +269,7 @@ export function polygonizeArrays(model, cell, bones) {
   // vertices: one per cell crossing the surface
   const vid = new Int32Array(nx * ny * nz).fill(-1);
   const pos = [];
+  const vblk = [];
   const corners = [
     [0, 0, 0],
     [1, 0, 0],
@@ -300,6 +324,7 @@ export function polygonizeArrays(model, cell, bones) {
         }
         vid[idx(i, j, k)] = pos.length / 3;
         pos.push(min.x + (i + sx / n) * cell, min.y + (j + sy / n) * cell, min.z + (k + sz / n) * cell);
+        vblk.push((Math.floor(k / B) * nby + Math.floor(j / B)) * nbx + Math.floor(i / B));
       }
   // quads across crossing edges
   const tris = [];
@@ -347,18 +372,23 @@ export function polygonizeArrays(model, cell, bones) {
   const SI = new Uint16Array(nv * 4);
   const SW = new Float32Array(nv * 4);
   const MI = new Uint16Array(nv);
-  const dists = new Float32Array(S.length);
+  const dl = new Float32Array(S.length);
   const e = cell * 0.25;
   const boneIndex = new Map(bones.map((b, i) => [b, i]));
+  const shapeIndex = new Map(S.map((sh, i) => [sh, i]));
+  const boneD = new Float32Array(bones.length);
   for (let v = 0; v < nv; v++) {
+    const blk = blockList[vblk[v]];
+    const L = blk && blk.list ? blk.list : S;
+    const F = (x, y, z, out) => model.fieldList(L, x, y, z, out);
     let x = P[v * 3],
       y = P[v * 3 + 1],
       z = P[v * 3 + 2];
     for (let it = 0; it < 3; it++) {
-      const f = model.field(x, y, z);
-      const gx = model.field(x + e, y, z) - model.field(x - e, y, z);
-      const gy = model.field(x, y + e, z) - model.field(x, y - e, z);
-      const gz = model.field(x, y, z + e) - model.field(x, y, z - e);
+      const f = F(x, y, z);
+      const gx = F(x + e, y, z) - F(x - e, y, z);
+      const gy = F(x, y + e, z) - F(x, y - e, z);
+      const gz = F(x, y, z + e) - F(x, y, z - e);
       const gl = Math.hypot(gx, gy, gz) / (2 * e) || 1;
       const s = f / gl / gl / (2 * e);
       x -= gx * s;
@@ -368,41 +398,70 @@ export function polygonizeArrays(model, cell, bones) {
     P[v * 3] = x;
     P[v * 3 + 1] = y;
     P[v * 3 + 2] = z;
-    const gx = model.field(x + e, y, z) - model.field(x - e, y, z);
-    const gy = model.field(x, y + e, z) - model.field(x, y - e, z);
-    const gz = model.field(x, y, z + e) - model.field(x, y, z - e);
+    const gx = F(x + e, y, z) - F(x - e, y, z);
+    const gy = F(x, y + e, z) - F(x, y - e, z);
+    const gz = F(x, y, z + e) - F(x, y, z - e);
     const gl = Math.hypot(gx, gy, gz) || 1;
     N[v * 3] = gx / gl;
     N[v * 3 + 1] = gy / gl;
     N[v * 3 + 2] = gz / gl;
-    model.field(x, y, z, dists);
+    F(x, y, z, dl);
     // material: the shape whose boundary passes closest to this surface point (carved surfaces
     // take the carving shape's material); outer layers (clothes, beard, lips) win near-ties
     let best = 0,
       bd = 1e9;
-    for (let s = 0; s < S.length; s++) {
-      const d = Math.abs(dists[s]) - S[s].layer * 0.004;
+    for (let q = 0; q < L.length; q++) {
+      const d = Math.abs(dl[q]) - L[q].layer * model.layerBias;
       if (d < bd) {
         bd = d;
-        best = s;
+        best = q;
       }
     }
-    const m = model.mats[S[best].mat];
-    MI[v] = best;
+    const m = model.mats[L[best].mat];
+    MI[v] = shapeIndex.get(L[best]);
     const nn = (Math.sin(x * 91.7 + y * 37.3) * Math.sin(z * 71.1 - y * 13.7) + Math.sin(x * 23.1 - z * 41.9)) * 0.5;
-    C[v * 3] = m.color.r * (1 + nn * m.noise);
-    C[v * 3 + 1] = m.color.g * (1 + nn * m.noise);
-    C[v * 3 + 2] = m.color.b * (1 + nn * m.noise);
-    R[v] = m.rough;
-    // weights: exp falloff by distance per bone (min over the bone's shapes)
-    const boneD = new Map();
-    for (let s = 0; s < S.length; s++) {
-      if (S[s].sub) continue;
-      const bi = boneIndex.get(S[s].bone);
-      const cur = boneD.get(bi);
-      if (cur === undefined || dists[s] < cur) boneD.set(bi, dists[s]);
+    if (model.colorBlend > 0) {
+      // soft transitions: every shape near the surface contributes its material colour
+      let wr = 0,
+        wg = 0,
+        wb = 0,
+        wro = 0,
+        wn = 0,
+        ws = 0;
+      for (let q = 0; q < L.length; q++) {
+        const sc = Math.abs(dl[q]) - L[q].layer * model.layerBias - bd;
+        if (sc > model.colorBlend * 4) continue;
+        const w = Math.exp(-sc / model.colorBlend);
+        const mm = model.mats[L[q].mat];
+        wr += mm.color.r * w;
+        wg += mm.color.g * w;
+        wb += mm.color.b * w;
+        wro += mm.rough * w;
+        wn += mm.noise * w;
+        ws += w;
+      }
+      const k = 1 + (nn * wn) / ws;
+      C[v * 3] = (wr / ws) * k;
+      C[v * 3 + 1] = (wg / ws) * k;
+      C[v * 3 + 2] = (wb / ws) * k;
+      R[v] = wro / ws;
+    } else {
+      C[v * 3] = m.color.r * (1 + nn * m.noise);
+      C[v * 3 + 1] = m.color.g * (1 + nn * m.noise);
+      C[v * 3 + 2] = m.color.b * (1 + nn * m.noise);
+      R[v] = m.rough;
     }
-    const arr = [...boneD.entries()].map(([bi, d]) => [bi, Math.exp(-Math.max(0, d) / 0.012)]).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    // weights: exp falloff by distance per bone (min over the bone's shapes)
+    boneD.fill(1e9);
+    for (let q = 0; q < L.length; q++) {
+      if (L[q].sub) continue;
+      const bi = boneIndex.get(L[q].bone);
+      if (dl[q] < boneD[bi]) boneD[bi] = dl[q];
+    }
+    const arr = [];
+    for (let bi = 0; bi < boneD.length; bi++) if (boneD[bi] < 1e8) arr.push([bi, Math.exp(-Math.max(0, boneD[bi]) / 0.012)]);
+    arr.sort((a, b) => b[1] - a[1]);
+    arr.length = Math.min(arr.length, 4);
     let sum = 0;
     for (const [, w] of arr) sum += w;
     for (let q = 0; q < 4; q++) {

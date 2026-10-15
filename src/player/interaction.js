@@ -21,7 +21,8 @@ const tmpV = new THREE.Vector3();
 // Hold presets in camera space: hand placement and item offset relative to the hand.
 const HOLD = {
   hand: { hand: V(0.2, -0.2, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.03, 0.0, -0.065), itemRot: new THREE.Euler(0, 0, 0) },
-  side: { hand: V(0.3, -0.3, -0.55), rotZ: 0, pose: 'grip', item: V(0, -0.15, -0.05), itemRot: new THREE.Euler(0, Math.PI / 2, 0) },
+  // carried by the top handle, hanging low at the right side (handle bar inside the curled fingers)
+  side: { hand: V(0.26, -0.33, -0.5), rotZ: 0, pose: 'grip', item: V(0.05, -0.295, -0.08), itemRot: new THREE.Euler(0, Math.PI / 2, 0) },
   tool: { hand: V(0.22, -0.22, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.035, 0.0, -0.06), itemRot: new THREE.Euler(0, Math.PI / 2, Math.PI / 2) },
   pistol: { hand: V(0.17, -0.18, -0.34), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.03, 0.03, -0.035), itemRot: new THREE.Euler(0, 0, 0) },
   rifle: { hand: V(0.16, -0.2, -0.3), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.03, 0.03, -0.0), itemRot: new THREE.Euler(0, 0, 0), left: V(-0.02, -0.21, -0.62) },

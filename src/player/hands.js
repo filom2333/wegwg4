@@ -5,46 +5,10 @@
 import * as THREE from 'three';
 import { loftSections, superSection } from '../gfx/geom.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
+import { POSES, FINGERS, THUMB, fingerPoints, handArrays } from './handShape.js';
+export { POSES };
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-
-// Hand frame (right hand, palm facing -X / left, fingers along -Z / forward, back of hand +Y).
-// Finger base points on the knuckle line and segment lengths (metres).
-const FINGERS = {
-  index: { base: V(0.027, 0.002, -0.088), len: [0.037, 0.022, 0.018], r: 0.0088, splay: 0.07 },
-  middle: { base: V(0.008, 0.003, -0.092), len: [0.041, 0.025, 0.019], r: 0.0091, splay: 0.0 },
-  ring: { base: V(-0.011, 0.002, -0.088), len: [0.038, 0.024, 0.018], r: 0.0085, splay: -0.05 },
-  pinky: { base: V(-0.029, -0.002, -0.079), len: [0.03, 0.018, 0.016], r: 0.0074, splay: -0.12 },
-};
-const THUMB = { base: V(0.036, -0.011, -0.028), len: [0.034, 0.028, 0.024], r: 0.0102 };
-
-// Pose = curl angles per finger joint [mcp, pip, dip] (radians), thumb [cmc yaw, mcp, ip], wrist tilt.
-export const POSES = {
-  relax: { fingers: { index: [0.25, 0.35, 0.25], middle: [0.3, 0.45, 0.3], ring: [0.35, 0.5, 0.3], pinky: [0.4, 0.55, 0.3] }, thumb: [0.6, 0.15, 0.2] },
-  grip: { fingers: { index: [0.95, 1.3, 0.7], middle: [1.0, 1.35, 0.7], ring: [1.05, 1.35, 0.7], pinky: [1.1, 1.3, 0.7] }, thumb: [1.0, 0.45, 0.35] },
-  pistol: { fingers: { index: [0.5, 0.75, 0.25], middle: [1.15, 1.45, 0.8], ring: [1.2, 1.45, 0.8], pinky: [1.25, 1.4, 0.8] }, thumb: [0.85, 0.25, 0.15] },
-  carry: { fingers: { index: [0.55, 0.65, 0.35], middle: [0.6, 0.7, 0.35], ring: [0.62, 0.7, 0.35], pinky: [0.65, 0.7, 0.35] }, thumb: [0.4, 0.1, 0.1] },
-  pinch: { fingers: { index: [0.7, 0.9, 0.5], middle: [0.85, 1.1, 0.6], ring: [1.05, 1.3, 0.7], pinky: [1.15, 1.3, 0.7] }, thumb: [1.15, 0.35, 0.3] },
-};
-
-function fingerPoints(f, curl) {
-  const pts = [];
-  // start a little inside the palm so the root blends with the palm surface
-  const dir = V(Math.sin(f.splay) * 0.2, 0, -1).normalize();
-  const up = V(0, 1, 0);
-  let p = f.base.clone().addScaledVector(dir, -0.012);
-  pts.push(p.clone());
-  p = f.base.clone();
-  pts.push(p.clone());
-  let d = dir.clone();
-  const side = d.clone().cross(up).normalize();
-  for (let j = 0; j < 3; j++) {
-    d.applyAxisAngle(side, -curl[j]); // curl toward the palm (-Y)
-    p = p.clone().addScaledVector(d, f.len[j]);
-    pts.push(p.clone());
-  }
-  return { pts, tipDir: d };
-}
 
 function tubeFromJoints(pts, r0, r1, radial = 12) {
   // smooth path through joints, tapered radius, rounded tip
@@ -161,7 +125,90 @@ function materials() {
   return SKIN;
 }
 
-export function buildHand(poseName, mirror = false) {
+// ------------------------------------------------------------------ SDF hand
+// Sculpted geometry per pose arrives from the character worker (handShape.js); until then the
+// lofted fallback hand is shown.
+const handGeos = new Map();
+const handListeners = new Set();
+
+export function registerHandArrays(pose, a) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(a.P, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(a.N, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(a.C, 3));
+  g.setIndex(new THREE.BufferAttribute(a.I, 1));
+  g.computeBoundingSphere();
+  handGeos.set(pose, g);
+  for (const f of handListeners) f(pose);
+}
+
+export function buildHandGeometry(pose) {
+  if (!handGeos.has(pose)) registerHandArrays(pose, handArrays(pose));
+  return handGeos.get(pose);
+}
+
+export const HAND_POSES = Object.keys(POSES);
+
+// Mirror across X (left hand -> right hand) keeping triangles front-facing.
+function mirrorGeometry(src) {
+  let geo = src.clone();
+  if (!geo.attributes.normal) geo.computeVertexNormals();
+  geo.scale(-1, 1, 1); // also mirrors the normals (normal matrix)
+  if (geo.index) {
+    const idx = geo.index.array;
+    for (let i = 0; i < idx.length; i += 3) {
+      const t = idx[i + 1];
+      idx[i + 1] = idx[i + 2];
+      idx[i + 2] = t;
+    }
+  } else {
+    for (const a of Object.values(geo.attributes)) {
+      const arr = a.array,
+        k = a.itemSize;
+      for (let i = 0; i < arr.length; i += 3 * k)
+        for (let c = 0; c < k; c++) {
+          const t = arr[i + k + c];
+          arr[i + k + c] = arr[i + 2 * k + c];
+          arr[i + 2 * k + c] = t;
+        }
+    }
+  }
+  return geo;
+}
+
+let HAND_MAT = null;
+function handMaterial() {
+  if (HAND_MAT) return HAND_MAT;
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.56, sheen: 0.35, sheenColor: new THREE.Color(0xb0503c), sheenRoughness: 0.55 });
+  HAND_MAT = addSurfaceDetail(mat, 'grain', 0.45);
+  return HAND_MAT;
+}
+
+export function buildHand(poseName, mirror = false, { sync = true } = {}) {
+  if (!handGeos.has(poseName) && !sync) return buildHandLegacy(poseName, mirror);
+  const g = new THREE.Group();
+  let geo = buildHandGeometry(poseName);
+  if (mirror) geo = mirrorGeometry(geo);
+  const hand = new THREE.Mesh(geo, handMaterial());
+  // a viewmodel this small cannot be resolved by the sun's shadow map (it only produces acne)
+  hand.castShadow = false;
+  hand.receiveShadow = false;
+  g.add(hand);
+  // sleeve (lofted fabric) from the old builder
+  const M = materials();
+  const [sl, cuff] = sleeve();
+  for (const [sg, mat] of [
+    [sl, M.sleeve],
+    [cuff, M.cuff],
+  ]) {
+    const sm = new THREE.Mesh(mirror ? mirrorGeometry(sg) : sg, mat);
+    sm.receiveShadow = false;
+    g.add(sm);
+  }
+  return g;
+}
+
+export function buildHandLegacy(poseName, mirror = false) {
   const pose = POSES[poseName] || POSES.relax;
   const M = materials();
   const g = new THREE.Group();
@@ -248,13 +295,28 @@ export class Hands {
     this.setPose('right', 'relax');
     this.setPose('left', 'carry');
     this.left.visible = false;
+    this._listener = (pose) => this.onSculpted(pose);
+    handListeners.add(this._listener);
     this.bob = 0;
   }
 
   meshFor(pose, mirror) {
     const key = pose + (mirror ? 'L' : 'R');
-    if (!this.poses[key]) this.poses[key] = buildHand(pose, mirror);
+    if (!this.poses[key]) {
+      this.poses[key] = buildHand(pose, mirror, { sync: false });
+      this.poses[key].userData.sculpted = handGeos.has(pose);
+    }
     return this.poses[key];
+  }
+
+  // A sculpted pose arrived: drop the fallback meshes for it and re-apply the current poses.
+  onSculpted(pose) {
+    for (const k of [pose + 'L', pose + 'R']) if (this.poses[k] && !this.poses[k].userData.sculpted) delete this.poses[k];
+    for (const side of ['right', 'left']) {
+      if (this.cur[side] !== pose) continue;
+      this.cur[side] = null;
+      this.setPose(side, pose);
+    }
   }
 
   setPose(side, pose) {

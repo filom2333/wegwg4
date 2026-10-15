@@ -10,6 +10,8 @@ import { assembleCharacter, DEFINE } from './characters.js';
 import { geometryFromArrays, polygonizeArrays } from './sdfMesh.js';
 import { mulberry32, clamp, lerp } from '../core/noise.js';
 import { initialState } from '../items/itemDefs.js';
+import { registerHandArrays, HAND_POSES } from '../player/hands.js';
+import { handArrays } from '../player/handShape.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const _v = V(),
@@ -1039,6 +1041,10 @@ export class NPCManager {
     // the most common first
     const order = { rabbit: 0, vagrant: 1, coyote: 2, creature: 3 };
     jobs.sort((a, b) => order[a.type] - order[b.type]);
+    // first-person hand poses go first: they are on screen from the first frame
+    const hands = HAND_POSES.map((pose) => ({ type: 'hand', pose, seed: 0 }));
+    hands.sort((a, b) => (a.pose === 'relax' ? -1 : b.pose === 'relax' ? 1 : 0));
+    jobs.unshift(...hands);
     this.pending = jobs.length;
     let workersOk = true;
     try {
@@ -1076,6 +1082,12 @@ export class NPCManager {
   }
 
   onBuilt(d, w) {
+    if (d.type === 'hand') {
+      registerHandArrays(d.pose, d.arrays);
+      this.pending--;
+      if (w) this.feed(w);
+      return;
+    }
     if (d.error) {
       console.warn('character build failed', d.type, d.error);
     } else {
@@ -1092,6 +1104,11 @@ export class NPCManager {
     const step = () => {
       const job = this.queue.shift();
       if (!job) return;
+      if (job.type === 'hand') {
+        this.onBuilt({ type: 'hand', pose: job.pose, arrays: handArrays(job.pose) }, null);
+        setTimeout(step, 30);
+        return;
+      }
       const def = DEFINE[job.type](job.seed);
       const arrays = polygonizeArrays(def.model, def.cell, def.defs.map((x) => x[0]));
       this.onBuilt({ type: job.type, seed: job.seed, arrays, defs: def.defs, attachments: def.attachments, height: def.height, kind: def.kind, hitboxes: def.hitboxes }, null);
