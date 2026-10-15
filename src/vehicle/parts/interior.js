@@ -19,10 +19,13 @@ export const DRIVER = {
   x: 0.37,
   seatZ: -0.16, // seat cushion centre
   hip: V(0.37, 0.56, -0.27),
-  eye: V(0.37, 1.17, -0.36),
+  eye: V(0.37, 1.17, -0.34),
   wheelCenter: V(0.37, 0.935, 0.255),
   wheelNormal: V(0, 0.36, -0.933).normalize(),
 };
+
+const smooth01 = (t) => t * t * (3 - 2 * t);
+const lerp = (a, b, t) => a + (b - a) * t;
 
 // ---------- materials ----------
 export function createInteriorMaterials() {
@@ -198,10 +201,24 @@ export function buildDashboard(M) {
     [0.93, 0.62],
     [0.99, 0.78],
   ];
+  // the instrument pocket: the dash top dips in front of the driver so the dials sit in a recess
+  const pocket = (x) => {
+    const t = Math.abs(x - 0.37) / 0.2;
+    return t < 0.8 ? 1 : t > 1.08 ? 0 : 1 - smooth01((t - 0.8) / 0.28);
+  };
   const profileAt = (x) => {
     const ax = Math.abs(x);
     const endTaper = Math.max(0, ax - 0.62) / 0.12; // ends get shallower under the A-pillars
-    return base.map(([z, y]) => {
+    const w = pocket(x);
+    return base.map(([z0, y0], i) => {
+      let z = z0,
+        y = y0;
+      if (w > 0) {
+        if (i === 2) [z, y] = [lerp(z0, 0.71, w), y0];
+        if (i === 3) [z, y] = [lerp(z0, 0.705, w), lerp(y0, 0.885, w)];
+        if (i === 4) [z, y] = [lerp(z0, 0.6, w), lerp(y0, 0.882, w)];
+        if (i === 5) [z, y] = [z0, lerp(y0, 0.885, w)];
+      }
       let zz = z,
         yy = y;
       // front edge must stay under the windshield / cowl
@@ -268,23 +285,29 @@ export function buildCluster(M) {
   for (let i = 0; i <= 14; i++) xs.push(0.18 + (0.38 * i) / 14);
   const hood = sectionLoftAlongX(xs, (x) => {
     const t = (x - 0.37) / 0.19;
-    const lift = 0.05 * Math.sqrt(Math.max(0, 1 - t * t));
+    const lift = 0.045 * Math.sqrt(Math.max(0, 1 - t * t));
+    const y = 1.012;
     return [
-      [0.66, 0.99],
-      [0.62, 1.0 + lift],
-      [0.56, 1.0 + lift + 0.004],
-      [0.525, 0.995 + lift * 0.9],
-      [0.53, 0.985 + lift * 0.7],
-      [0.6, 0.99],
+      [0.72, y - 0.006],
+      [0.64, y + lift],
+      [0.565, y + lift + 0.004],
+      [0.53, y - 0.005 + lift * 0.9],
+      [0.535, y - 0.016 + lift * 0.7],
+      [0.6, y + lift * 0.4],
+      [0.715, y - 0.008],
     ];
   });
   g.add(mesh(hood, M.dashTop));
+  // back wall of the pocket behind the dials
+  const wall = roundedBox(0.4, 0.15, 0.02, 0.008, 2);
+  wall.translate(0.37, 0.955, 0.715);
+  g.add(mesh(wall, M.dashTop, false));
   // Gauge face (tilted toward the driver's eye).
   const face = new THREE.PlaneGeometry(0.32, 0.12);
   const tilt = new THREE.Group();
   const fm = mesh(face, M.gauge, false);
   tilt.add(fm);
-  tilt.position.set(0.37, 0.985, 0.585);
+  tilt.position.set(0.37, 0.948, 0.64);
   tilt.lookAt(DRIVER.eye);
   g.add(tilt);
   // Needles: pivot groups in face space. Face 0.32 x 0.12 maps texture 1024x384.

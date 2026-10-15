@@ -50,7 +50,7 @@ const BOXES = [
 ];
 
 export const SEATS = {
-  driver: { pos: V(0.37, 1.13, -0.3), door: 'door_FL', part: 'seat_FL', exit: V(1.4, 0.0, 0.0) },
+  driver: { pos: V(0.37, 1.165, -0.34), door: 'door_FL', part: 'seat_FL', exit: V(1.4, 0.0, 0.0) },
   passenger: { pos: V(-0.37, 1.13, -0.3), door: 'door_FR', part: 'seat_FR', exit: V(-1.4, 0.0, 0.0) },
   rearL: { pos: V(0.34, 1.08, -1.0), door: 'door_RL', part: 'seat_R', exit: V(1.4, 0.0, -0.9) },
   rearR: { pos: V(-0.34, 1.08, -1.0), door: 'door_RR', part: 'seat_R', exit: V(-1.4, 0.0, -0.9) },

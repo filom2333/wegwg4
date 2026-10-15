@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
+import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { PARTS, PART_FAMILY } from '../vehicle/carParts.js';
 import { HOTSPOTS, SEATS } from '../vehicle/car.js';
@@ -237,6 +238,11 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
+      if (!t && p.seat && g.car && Math.abs(g.car.speedKmh) < 3) {
+        const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
+        prompts.push([kn('interact'), 'Get out']);
+        if (g.car && !g.car.dyn.engine.running) prompts.push([kn('sleep'), 'Sleep']);
+      }
       if (!blocked) {
         for (let i = 0; i < 6; i++) if (input.pressed.has('Digit' + (i + 1))) this.unpocket(i);
       }
