@@ -140,6 +140,21 @@ function trunkShape(x, y, z) {
 }
 
 // Headlight in front-unwrapped (U, y) space.
+// outline of the headlamp lens in unwrapped (U, y) space, also used for the lamp bucket
+export const HEAD_POLY_PTS = roundPolygon(
+  [
+    [0.335, 0.655],
+    [0.335, 0.9],
+    [1.2, 0.95],
+    [1.36, 0.9],
+    [1.36, 0.84],
+    [1.12, 0.735],
+    [0.86, 0.672],
+    [0.6, 0.65],
+  ],
+  [0.03, 0, 0, 0, 0.03, 0.06, 0.06, 0.06],
+  8
+);
 const headPoly = makePoly(
   roundPolygon(
     [

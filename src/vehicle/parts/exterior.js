@@ -7,7 +7,7 @@ import { latheY, loftSections, roundedBox, tubeAlong, superSection } from '../..
 import { makeCanvas, canvasTexture, cached, normalFromHeight } from '../../gfx/textures.js';
 import { skinFrontZ, skinRearZ, skinSideX, skinTopY, skinNormal, skinAlong } from '../body/probe.js';
 import { SPEC, GLASS_FRAMES } from '../body/shape.js';
-import { yBelt } from '../body/regions.js';
+import { yBelt, unwrapFront, HEAD_POLY_PTS } from '../body/regions.js';
 import { mergeList } from './wheel.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -69,10 +69,90 @@ function frontPoint(x, y, inset = 0) {
 }
 
 // ------------------------------------------------------------------ headlamps
+// Skin point at unwrapped front coordinate U (see regions.unwrapFront) and height y: walks the
+// body's outline at that height (across the front, round the corner, along the side).
+function frontOutline(y) {
+  const pts = [];
+  const zMax = skinFrontZ(0, y);
+  for (let i = 0; i <= 40; i++) {
+    const x = (0.78 * i) / 40;
+    const z = skinFrontZ(x, y);
+    if (!isFinite(z)) break;
+    pts.push([x, z]);
+  }
+  const last = pts[pts.length - 1];
+  for (let i = 1; i <= 30; i++) {
+    const z = last[1] - (0.45 * i) / 30;
+    const x = skinSideX(y, z);
+    if (!isFinite(x)) break;
+    pts.push([x, z]);
+  }
+  void zMax;
+  return pts.map(([x, z]) => ({ x, z, U: unwrapFront(x, z) })).filter((p, i, a) => i === 0 || p.U > a[i - 1].U);
+}
+function skinAtU(U, y, cache) {
+  const key = y.toFixed(3);
+  const o = cache[key] || (cache[key] = frontOutline(y));
+  let i = 1;
+  while (i < o.length - 1 && o[i].U < U) i++;
+  const a = o[i - 1],
+    b = o[i];
+  const t = Math.max(0, Math.min(1, (U - a.U) / Math.max(1e-6, b.U - a.U)));
+  return V(a.x + (b.x - a.x) * t, y, a.z + (b.z - a.z) * t);
+}
+
+// Lamp bucket: a closed dark-chrome housing behind the lens, following its outline, so nothing
+// of the engine bay shows through the glass.
+function headlampBucket(mats) {
+  const cache = {};
+  // resample the outline so long edges follow the body round the corner
+  const pts = [];
+  for (let i = 0; i < HEAD_POLY_PTS.length; i++) {
+    const a = HEAD_POLY_PTS[i],
+      b = HEAD_POLY_PTS[(i + 1) % HEAD_POLY_PTS.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.025));
+    for (let k = 0; k < n; k++) pts.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  const ring = pts.map(([U, y0]) => {
+    // the top of the lens stops at the hood seam: keep off the hood's upper surface, and raise a
+    // lip from there up to the hood's underside so nothing shows over the bucket
+    let y = y0;
+    let p = skinAtU(U, y, cache);
+    let n = V(...skinNormal([p.x, p.y, p.z]));
+    while (n.y > 0.72 && y > 0.68) {
+      y -= 0.005;
+      p = skinAtU(U, y, cache);
+      n = V(...skinNormal([p.x, p.y, p.z]));
+    }
+    let lip = null;
+    if (y < y0 - 0.004) {
+      const top = skinTopY(p.x, p.z - 0.01, 0.6, 1.2);
+      lip = V(p.x, Math.min(y0, (isFinite(top) ? top : y0) - 0.008), p.z - 0.01);
+    }
+    return { p, n, lip };
+  });
+  const c = V(0, 0, 0);
+  ring.forEach((r) => c.add(r.p));
+  c.multiplyScalar(1 / ring.length);
+  const secs = [0.004, 0.02, 0.05, 0.08].map((d, k) =>
+    ring.map(({ p, n, lip }) => {
+      if (k === 0 && lip) return lip.clone();
+      const q = p.clone().addScaledVector(n, -d);
+      // narrow toward the back
+      return q.lerp(c.clone().addScaledVector(V(0, 0, -1), d * 0.6), k * 0.07);
+    })
+  );
+  const geo = loftSections(secs, { capStart: false, capEnd: true });
+  const mat = cached('lampBucket', () => new THREE.MeshStandardMaterial({ color: 0x3a3d42, metalness: 0.85, roughness: 0.32, side: THREE.DoubleSide }));
+  void mats;
+  return [geo, mat];
+}
+
 export function buildHeadlampInternals(mats, side) {
   const g = new THREE.Group();
   const s = side;
   const parts = [];
+  parts.push(headlampBucket(mats));
   // Low-beam projector.
   {
     const { p, n } = frontPoint(0.56, 0.722, 0.03);
@@ -171,7 +251,12 @@ export function buildHeadlampInternals(mats, side) {
     geo.translate(p.x, p.y, p.z);
     parts.push([geo, mats.lampHousingDark || mats.blackMatte]);
   }
-  for (const [geo, mat] of parts) g.add(meshL(geo, mat, s));
+  for (const [geo, mat] of parts) {
+    const m = meshL(geo, mat, s);
+    // everything sits behind the lens inside the body: no shadow casting (VSM leaks through the hood)
+    m.castShadow = false;
+    g.add(m);
+  }
   return g;
 }
 

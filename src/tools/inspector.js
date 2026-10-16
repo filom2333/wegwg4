@@ -615,6 +615,7 @@ function markDirty() {
 }
 function loop() {
   controls.update();
+  if (window.beforeRender) window.beforeRender();
   if (dirty > 0) {
     renderer.render(scene, camera);
     dirty--;
@@ -644,6 +645,61 @@ async function initSubject(subject) {
       h.position.set((i - 2) * 0.16, 0.25, 0);
       group.add(h);
     });
+  }
+  if (subject === 'viewmodel') {
+    // first-person hold poses; window.vmShow(id, {aim, use, kind, reload, recoil}) switches items
+    const { Hands, buildHandGeometry, HAND_POSES } = await import('../player/hands.js');
+    HAND_POSES.forEach((p) => buildHandGeometry(p));
+    const G = await import('../player/grips.js');
+    const { MODEL_BUILDERS } = await import('../items/itemModels.js');
+    const { ITEMS } = await import('../items/itemDefs.js');
+    const hands = new Hands();
+    group = new THREE.Group();
+    const vm = new THREE.Group();
+    vm.add(hands.root);
+    let cur = null;
+    window.vmShow = (id, o = {}) => {
+      if (cur) hands.root.remove(cur);
+      const d = ITEMS[id];
+      const [fn, ...args] = d.model;
+      const m = MODEL_BUILDERS[fn](...args);
+      if (!m.userData.size) {
+        const b = new THREE.Box3().setFromObject(m);
+        const c = b.getCenter(new THREE.Vector3());
+        for (const ch of m.children) ch.position.sub(c);
+        for (const k of ['grip', 'grip2']) if (m.userData[k]) m.userData[k].p.sub(c);
+        m.userData.size = b.getSize(new THREE.Vector3());
+      }
+      hands.root.add(m);
+      cur = m;
+      const st = { aim: o.aim || 0, use: o.use || 0, useKind: o.kind || '', raise: 1, recoil: o.recoil || 0, reload: o.reload || 0 };
+      const pose = G.holdPose(m, st);
+      m.position.copy(pose.item.p);
+      m.quaternion.copy(pose.item.q);
+      const hp = G.handsOnItem(m, pose.item, pose.item.hang || 0, st.aim);
+      for (const side of ['right', 'left']) {
+        const h = hp[side];
+        hands[side].visible = !!h;
+        if (!h) continue;
+        hands.setPose(side, h.pose);
+        hands.place(side, h.p, h.q);
+        hands.solveArm(side, pose.arms[side].shoulder, pose.arms[side].pole);
+      }
+      return true;
+    };
+    window.vmShow(params.get('item') || 'sodaCan', { aim: +(params.get('aim') || 0) });
+    window.hands = hands;
+    window.__cam = camera;
+    window.__renderer = renderer;
+    window.beforeRender = () => {
+      vm.position.copy(camera.position);
+      vm.quaternion.copy(camera.quaternion);
+    };
+    scene.add(vm);
+    sun.castShadow = false;
+    const bounds = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    bounds.visible = false;
+    group.add(bounds);
   }
   if (subject === 'items') {
     const { MODEL_BUILDERS } = await import('../items/itemModels.js');
@@ -684,6 +740,13 @@ async function initSubject(subject) {
   sun.shadow.camera.updateProjectionMatrix();
   camera.position.set(size.x * 0.9, size.y * 1.4 + 4, size.z * 1.3 + 6);
   controls.target.set(0, 1.2, 0);
+  if (subject === 'viewmodel') {
+    camera.fov = 72;
+    camera.near = 0.01;
+    camera.updateProjectionMatrix();
+    camera.position.set(0, 1.6, 0);
+    controls.target.set(0, 1.6 - +(params.get('pitch') || 0), -1);
+  }
   controls.update();
   if (params.get('ui') === '0') {
     panelEl.style.display = 'none';
@@ -728,6 +791,7 @@ async function init() {
 window.inspector = {
   renderNow: () => {
     controls.update();
+    if (window.beforeRender) window.beforeRender();
     renderer.render(scene, camera);
     return true;
   },
@@ -741,6 +805,11 @@ window.inspector = {
   setSection,
   hide: (id, hidden = true) => car.setInstalled(id, !hidden),
   stage: (s) => setStage(s),
+  sun: (x, y, z, k = 2.6) => {
+    sun.position.set(x, y, z).multiplyScalar(10);
+    sun.intensity = k;
+    return true;
+  },
   lights: (cabin, work) => {
     cabinLamp.visible = !!cabin;
     workLights.visible = !!work;

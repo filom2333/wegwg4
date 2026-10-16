@@ -226,6 +226,100 @@ export class AudioSystem {
     rf.connect(rg).connect(this.music);
     this.radio = { in: rf, g: rg, step: 0 };
     this.loops.static = mkNoise(this.buffers.white, rf, 'bandpass', 3000, 0.4);
+    // CD player: full-range through door speakers (a little bass lift, rolled-off top); muffled by
+    // the body when you are outside the car
+    const cdHp = c.createBiquadFilter();
+    cdHp.type = 'highpass';
+    cdHp.frequency.value = 55;
+    const cdLow = c.createBiquadFilter();
+    cdLow.type = 'lowshelf';
+    cdLow.frequency.value = 140;
+    cdLow.gain.value = 3;
+    const cdLp = c.createBiquadFilter();
+    cdLp.type = 'lowpass';
+    cdLp.frequency.value = 14000;
+    const cdG = c.createGain();
+    cdG.gain.value = 0;
+    cdHp.connect(cdLow).connect(cdLp).connect(cdG).connect(this.music);
+    this.cd = { in: cdHp, lp: cdLp, g: cdG, src: null, key: null, buffers: new Map(), pending: new Map(), worker: null, startedAt: 0, offset: 0 };
+  }
+
+  // ------------------------------------------------------------------ CD player
+  // Rendered tracks come from a worker; the two most recent stay cached.
+  cdTrack(album, track) {
+    const cd = this.cd;
+    const key = album + ':' + track;
+    if (cd.buffers.has(key)) return cd.buffers.get(key);
+    if (!cd.pending.has(key)) {
+      if (!cd.worker) {
+        cd.worker = new Worker(new URL('./music/musicWorker.js', import.meta.url), { type: 'module' });
+        cd.worker.onmessage = (e) => {
+          const d = e.data;
+          const k = d.album + ':' + d.track;
+          cd.pending.delete(k);
+          if (d.error) {
+            console.warn('cd render failed', d.error);
+            return;
+          }
+          const b = this.ctx.createBuffer(2, d.L.length, d.sr);
+          b.copyToChannel(d.L, 0);
+          b.copyToChannel(d.R, 1);
+          cd.buffers.set(k, b);
+          while (cd.buffers.size > 3) cd.buffers.delete(cd.buffers.keys().next().value);
+        };
+      }
+      cd.pending.set(key, true);
+      cd.worker.postMessage({ id: key, album, track });
+    }
+    return null;
+  }
+
+  // Keeps the CD playing what the car's stereo says; returns playback state for the display.
+  updateCd(car, dt, seated) {
+    const cd = this.cd;
+    const now = this.ctx.currentTime;
+    const st = car && car.stereo;
+    const powered = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03;
+    const want = powered && st.mode === 'cd' && st.disc >= 0 ? st.disc + ':' + st.track : null;
+    if (cd.key !== want || st?.restart) {
+      if (cd.src) {
+        try {
+          cd.src.stop();
+        } catch (e) {
+          /* already stopped */
+        }
+        cd.src = null;
+      }
+      cd.key = null;
+      if (st) st.restart = false;
+      if (want) {
+        const buf = this.cdTrack(st.disc, st.track);
+        if (buf) {
+          const src = this.ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(cd.in);
+          const off = Math.min(st.pos || 0, buf.duration - 0.5);
+          src.start(now + 0.05, Math.max(0, off));
+          cd.src = src;
+          cd.key = want;
+          cd.startedAt = now + 0.05 - Math.max(0, off);
+          cd.duration = buf.duration;
+          src.onended = () => {
+            if (cd.src === src && car.stereo.disc >= 0) {
+              car.stereo.pos = 0;
+              car.nextTrack();
+            }
+          };
+          this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
+          // render the next one in the background
+          this.cdTrack(st.disc, (st.track + 1) % 3);
+        }
+      }
+    }
+    if (cd.key && st) st.pos = Math.max(0, now - cd.startedAt);
+    set(cd.g.gain, cd.key ? 0.85 * (seated ? 1 : 0.4) : 0, now, 0.08);
+    set(cd.lp.frequency, seated ? 14000 : 1600, now, 0.2);
+    return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0 };
   }
 
   // ------------------------------------------------------------------ one-shots
@@ -365,8 +459,10 @@ export class AudioSystem {
     this.pourT = Math.max(0, (this.pourT || 0) - dt);
     set(this.loops.pour.g.gain, this.pourT > 0 ? 0.35 : 0, now, 0.04);
     if (g.interaction && g.interaction.pouring) this.pourT = 0.12;
+    // ---- CD player (replaces the radio while a disc plays)
+    if (car) car.stereoState = this.updateCd(car, dt, seated);
     // ---- radio
-    const radioOn = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03;
+    const radioOn = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03 && !(car.stereo && car.stereo.mode === 'cd');
     set(this.radio.g.gain, radioOn ? 0.5 * (seated ? 1 : 0.35) : 0, now, 0.1);
     set(this.loops.static.g.gain, radioOn ? 0.03 : 0, now, 0.1);
     if (radioOn) {

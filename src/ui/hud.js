@@ -1,7 +1,10 @@
 // In-game HUD: crosshair, target card with key prompts, needs, vehicle readout, toasts,
-// hit markers, compass and pockets. Quiet by design: everything fades when not relevant.
+// hit markers, compass and the hotbar. Quiet by design: everything fades when not relevant.
 
 import { ICONS } from './icons.js';
+import { ITEMS } from '../items/itemDefs.js';
+import { itemIcon } from './itemIcons.js';
+import { ALBUMS } from '../audio/music/albums.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -71,8 +74,16 @@ export class HUD {
     this.compassStrip.innerHTML = marks.join('') + marks.join('').replace(/left:(\d+)px/g, (m, n) => `left:${+n + 864}px`);
     this.clock = el('div', 'hud-clock', this.top);
     this.dist = el('div', 'hud-dist', this.top);
-    // pockets
-    this.pocketEl = el('div', 'hud-pockets', this.root);
+    // hotbar (bottom centre): slots 1-6 of the backpack
+    this.hotbar = el('div', 'hud-hotbar', this.root);
+    this.hotSlots = [];
+    for (let i = 0; i < 6; i++) {
+      const d = el('div', 'hb-slot', this.hotbar);
+      el('span', 'hb-key', d, String(i + 1));
+      this.hotSlots.push(d);
+    }
+    this.ammoEl = el('div', 'hud-ammo', this.root);
+    this.hotIdle = 0;
     // toasts
     this.toasts = el('div', 'hud-toasts', this.root);
     // radio / speech subtitles
@@ -143,6 +154,18 @@ export class HUD {
     this._subT = setTimeout(() => this.sub.classList.remove('on'), seconds * 1000);
   }
 
+  // "Now playing" line when a CD track starts.
+  nowPlaying(disc, track) {
+    const al = ALBUMS[disc % ALBUMS.length];
+    this.subtitle('\u266a ' + al.artist, `${al.tracks[track]}  \u00b7  ${al.title}`, 5);
+  }
+
+  // Brings the hotbar back to full opacity for a few seconds.
+  pulseHotbar() {
+    this.hotIdle = 0;
+    this._hb = null;
+  }
+
   toast(text, kind = '') {
     const t = el('div', 'hud-toast ' + kind, this.toasts, text);
     while (this.toasts.children.length > 3) this.toasts.firstChild.remove();
@@ -210,15 +233,46 @@ export class HUD {
     this.clock.textContent = `Day ${g.env.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     const z = g.focusPoint().z + g.origin.z;
     this.dist.textContent = `${(Math.max(0, z) / 1000).toFixed(1)} km`;
-    // pockets
+    // hotbar
     const ia = g.interaction;
-    if (ia) {
-      const key = ia.pockets.map((x) => (x ? x.id : '')).join(',') + '|' + ia.ammo['38'] + ',' + ia.ammo['12'];
-      if (key !== this._pk) {
-        this._pk = key;
-        const items = ia.pockets.map((x, i) => (x ? `<div class="pk"><kbd>${i + 1}</kbd>${g.itemName(x.id)}</div>` : '')).join('');
-        const ammo = (ia.ammo['38'] ? `<div class="pk ammo">.38 × ${ia.ammo['38']}</div>` : '') + (ia.ammo['12'] ? `<div class="pk ammo">12 ga × ${ia.ammo['12']}</div>` : '');
-        this.pocketEl.innerHTML = items + ammo;
+    const inv = g.inventory;
+    if (ia && inv) {
+      const key = inv.slots.slice(0, 6).map((x) => (x ? x.id + ':' + (x.count || 1) : '')).join(',') + '|' + inv.heldFrom + '|' + (ia.held ? 1 : 0);
+      if (key !== this._hb) {
+        this._hb = key;
+        this.hotIdle = 0;
+        this.hotSlots.forEach((d, i) => {
+          const e = inv.slots[i];
+          d.classList.toggle('on', i === inv.heldFrom && !!ia.held);
+          d.classList.toggle('empty', !e);
+          let img = d.querySelector('img');
+          if (!e) {
+            if (img) img.remove();
+            d.querySelector('.hb-n') && d.querySelector('.hb-n').remove();
+            d.title = '';
+            return;
+          }
+          if (!img) {
+            img = el('img', '', d);
+            img.draggable = false;
+          }
+          const def = ITEMS[e.id];
+          const ikey = e.id + (def && def.variants ? ':' + (e.state.variant || 0) : '');
+          const url = itemIcon(ikey, () => g.items.buildMesh(e.id, e.state), def && def.weapon ? 'weapon' : '', { async: true, onReady: () => (this._hb = null) });
+          if (url) img.src = url;
+          let n = d.querySelector('.hb-n');
+          if ((e.count || 1) > 1) {
+            if (!n) n = el('span', 'hb-n', d);
+            n.textContent = '×' + e.count;
+          } else if (n) n.remove();
+        });
+      }
+      this.hotIdle += dt;
+      this.hotbar.classList.toggle('dim', this.hotIdle > 4 && !(g.ui && g.ui.current === 'inventory'));
+      const akey = ia.ammo['38'] + ',' + ia.ammo['12'];
+      if (akey !== this._am) {
+        this._am = akey;
+        this.ammoEl.innerHTML = (ia.ammo['38'] ? `<span>.38 × ${ia.ammo['38']}</span>` : '') + (ia.ammo['12'] ? `<span>12 ga × ${ia.ammo['12']}</span>` : '');
       }
     }
   }

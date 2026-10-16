@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
-import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass } from './itemDefs.js';
+import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass, itemLabel } from './itemDefs.js';
 import { MODEL_BUILDERS } from './itemModels.js';
 import { PARTS } from '../vehicle/carParts.js';
 import { mulberry32 } from '../core/noise.js';
@@ -32,7 +32,7 @@ export class Item {
 
   get name() {
     if (this.part) return PARTS[this.part].label;
-    return this.def.name;
+    return itemLabel(this.id, this.state);
   }
 
   get mass() {
@@ -67,6 +67,7 @@ export class ItemSystem {
       const c = b.getCenter(V(0, 0, 0));
       for (const ch of g.children) ch.position.sub(c);
       if (g.userData.muzzle) g.userData.muzzle.sub(c);
+      for (const k of ['grip', 'grip2']) if (g.userData[k]) g.userData[k].p.sub(c);
       g.userData.size = b.getSize(V(0, 0, 0));
     }
     g.traverse((o) => {
@@ -192,7 +193,8 @@ export class ItemSystem {
       .setCollisionGroups(GROUPS.item);
     const col = this.game.physics.world.createCollider(cd, car.dyn.body);
     this.game.physics.setOwner(col, it.ownerTag);
-    it.stowed = { car, collider: col };
+    // car-space state for the cargo simulation: it rests where it was put down
+    it.stowed = { car, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
     car.attached.push(it);
     car.updateMass();
     it.poiKey = null;
@@ -317,8 +319,9 @@ export class ItemSystem {
   }
 
   // ------------------------------------------------------------------ update
-  update() {
+  update(dt = 0) {
     const ph = this.game.physics;
+    if (dt > 0) this.updateCargo(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || !it.body) continue;
       if (it.body.isSleeping()) continue;
@@ -334,6 +337,108 @@ export class ItemSystem {
       }
     }
     void ph;
+  }
+
+  // ------------------------------------------------------------------ cargo
+  // Things riding in the car stay attached to it but feel its motion: they slide across seats and
+  // the trunk floor under hard braking, cornering and crashes, hop over bumps, and come to rest
+  // again, always inside the car (bounded around where they were put down and by the cabin/trunk).
+  updateCargo(dt) {
+    const car = this.game.car;
+    if (!car || !car.attached || !car.attached.length || !car.dyn) return;
+    const body = car.dyn.body;
+    const lv = body.linvel();
+    const v = V(lv.x, lv.y, lv.z);
+    const cs = (this._cargo = this._cargo || { v: v.clone(), a: V(0, 0, 0) });
+    // the car's acceleration, smoothed over a couple of physics steps
+    const a = v.clone().sub(cs.v).multiplyScalar(1 / Math.max(dt, 1e-3));
+    cs.v.copy(v);
+    cs.a.lerp(a, Math.min(1, dt / 0.04));
+    // what the cargo feels in the car's frame: gravity minus the car's acceleration
+    const qi = car.root.quaternion.clone().invert();
+    const f = V(0, -9.81, 0).sub(cs.a).applyQuaternion(qi);
+    const MU_S = 0.7,
+      MU_K = 0.45;
+    for (const it of car.attached) {
+      const s = it.stowed;
+      if (!s || !s.rest) continue;
+      const load = -f.y; // pressing it onto the surface
+      const tang = V(f.x, 0, f.z);
+      const speed = Math.hypot(s.v.x, s.v.z);
+      if (!s.air) {
+        if (load < 3.5) {
+          // the car dropped away underneath (crest, crash): it floats free
+          s.air = true;
+          s.tumble.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+        } else if (speed > 0.01 || tang.length() > MU_S * load) {
+          // sliding: pushed by the in-plane force, held back by friction
+          const acc = tang.clone();
+          const dir = speed > 0.01 ? V(s.v.x, 0, s.v.z).normalize() : tang.clone().normalize();
+          acc.addScaledVector(dir, -MU_K * load);
+          s.v.x += acc.x * dt;
+          s.v.z += acc.z * dt;
+          if (speed > 0.01 && V(s.v.x, 0, s.v.z).dot(dir) < 0) s.v.set(0, 0, 0); // friction stopped it
+          s.spin += (Math.random() - 0.5) * speed * dt * 8;
+        }
+        s.v.y = 0;
+        s.p.y = s.rest.y;
+      } else {
+        s.v.addScaledVector(f, dt);
+        s.v.multiplyScalar(1 - 0.4 * dt);
+        if (s.p.y + s.v.y * dt <= s.rest.y && s.v.y < 0) {
+          // landing
+          s.p.y = s.rest.y;
+          s.v.y = -s.v.y * 0.25;
+          s.v.x *= 0.6;
+          s.v.z *= 0.6;
+          if (Math.abs(s.v.y) < 0.4) {
+            s.air = false;
+            s.v.y = 0;
+            s.tumble.multiplyScalar(0);
+            // settle flat again about its own vertical
+            const e = new THREE.Euler().setFromQuaternion(s.q, 'YXZ');
+            s.q.setFromEuler(new THREE.Euler(0, e.y, 0, 'YXZ')).multiply(s.flat || new THREE.Quaternion());
+          }
+          if (Math.abs(s.v.y) > 0.6) this.game.audio && this.game.audio.play('land', { at: it.mesh.getWorldPosition(V(0, 0, 0)), volume: 0.25 });
+        }
+      }
+      s.p.addScaledVector(s.v, dt);
+      // stay inside: near where it was put down, below the roof, inside the cabin or trunk
+      const R = 0.32;
+      for (const k of ['x', 'z']) {
+        const lo = s.rest[k] - R,
+          hi = s.rest[k] + R;
+        if (s.p[k] < lo || s.p[k] > hi) {
+          s.p[k] = Math.min(hi, Math.max(lo, s.p[k]));
+          if ((s.v[k] < 0 && s.p[k] === lo) || (s.v[k] > 0 && s.p[k] === hi)) {
+            if (Math.abs(s.v[k]) > 1.2) this.game.audio && this.game.audio.play('land', { at: it.mesh.getWorldPosition(V(0, 0, 0)), volume: 0.2 });
+            s.v[k] *= -0.3;
+          }
+        }
+      }
+      const inTrunk = s.rest.z < -1.3;
+      const roof = inTrunk ? 0.95 : 1.25;
+      if (s.p.y > roof) {
+        s.p.y = roof;
+        if (s.v.y > 0) s.v.y *= -0.3;
+      }
+      s.p.x = Math.max(-0.66, Math.min(0.66, s.p.x));
+      // orientation: spins while sliding, tumbles in the air
+      if (!s.flat) s.flat = s.q.clone().premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -new THREE.Euler().setFromQuaternion(s.q, 'YXZ').y, 0, 'YXZ')));
+      if (s.air) {
+        const tq = new THREE.Quaternion().setFromEuler(new THREE.Euler(s.tumble.x * dt, s.tumble.y * dt, s.tumble.z * dt));
+        s.q.premultiply(tq);
+      } else if (s.spin) {
+        s.q.premultiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), s.spin * dt));
+        s.spin *= Math.max(0, 1 - dt * 4);
+      }
+      if (s.air || speed > 0.005 || s.spin) {
+        it.mesh.position.copy(s.p);
+        it.mesh.quaternion.copy(s.q);
+        s.collider.setTranslationWrtParent({ x: s.p.x, y: s.p.y, z: s.p.z });
+        s.collider.setRotationWrtParent({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w });
+      }
+    }
   }
 
   // Liquid level visuals etc.

@@ -23,6 +23,9 @@ export const DEFAULT_BINDINGS = {
   wipers: 'KeyK',
   lookBack: 'KeyC',
   journal: 'KeyJ',
+  inventory: 'Tab',
+  nextTrack: 'KeyN',
+  stow: 'KeyQ',
   sleep: 'KeyB',
   view: 'KeyV',
 };

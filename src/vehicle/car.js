@@ -2,6 +2,7 @@
 // (fuel, oil, coolant, battery, engine temperature and condition, tyres) + lights.
 
 import * as THREE from 'three';
+import { ALBUMS } from '../audio/music/albums.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { PARTS, dependentsOf } from './carParts.js';
@@ -94,6 +95,9 @@ export class Car {
     this.ignition = false;
     this.cranking = 0;
     this.radioOn = false;
+    // head unit: FM radio or the CD in the slot (album index), track and position in it
+    this.stereo = { disc: -1, track: 0, pos: 0, mode: 'radio', restart: false };
+    this.stereoState = { loading: false, playing: false, pos: 0 };
     this.fire = 0;
     this.smoke = 0;
     this.dirt = 0.35;
@@ -239,6 +243,91 @@ export class Car {
     this.game.audio && this.game.audio.play(snd, { at: this.worldPointOf(p.hinge.origin) });
   }
 
+  // ------------------------------------------------------------------ stereo
+  insertDisc(album) {
+    if (this.stereo.disc >= 0) return false;
+    Object.assign(this.stereo, { disc: album, track: 0, pos: 0, mode: 'cd' });
+    this.radioOn = true;
+    return true;
+  }
+
+  ejectDisc() {
+    const a = this.stereo.disc;
+    if (a < 0) return -1;
+    Object.assign(this.stereo, { disc: -1, track: 0, pos: 0, mode: 'radio' });
+    return a;
+  }
+
+  nextTrack() {
+    const s = this.stereo;
+    if (s.disc < 0) return;
+    s.track = (s.track + 1) % 3;
+    s.pos = 0;
+    s.mode = 'cd';
+    s.restart = true;
+  }
+
+  // Paints the head unit's dot-matrix display (only when the text changes).
+  drawStereo(mat) {
+    const t = this.stereoText();
+    const key = t.a + '|' + t.b + '|' + (t.t || '');
+    if (key === this._stereoKey) return;
+    this._stereoKey = key;
+    if (!this._stereoCanvas) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 56;
+      this._stereoCanvas = c;
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+      mat.emissiveMap = tex;
+      mat.color.set(0xffffff);
+      mat.emissive.set(0xffffff);
+      mat.needsUpdate = true;
+      this._stereoTex = tex;
+    }
+    const c = this._stereoCanvas.getContext('2d');
+    c.fillStyle = '#071009';
+    c.fillRect(0, 0, 256, 56);
+    c.fillStyle = '#7dd3a6';
+    c.font = 'bold 22px monospace';
+    c.textBaseline = 'middle';
+    c.fillText(t.a, 10, 29);
+    c.font = 'bold 20px monospace';
+    let b = t.b;
+    while (c.measureText(b).width > (t.t ? 140 : 190) && b.length > 4) b = b.slice(0, -2) + '\u2026';
+    c.fillText(b, 62, 29);
+    if (t.t) {
+      c.textAlign = 'right';
+      c.fillText(t.t, 248, 29);
+      c.textAlign = 'left';
+    }
+    // faint pixel grid
+    c.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let x = 0; x < 256; x += 3) c.fillRect(x, 0, 1, 56);
+    this._stereoTex.needsUpdate = true;
+  }
+
+  // Text on the head unit's display.
+  stereoText() {
+    const s = this.stereo;
+    if (s.mode === 'cd' && s.disc >= 0) {
+      const al = ALBUMS[s.disc % ALBUMS.length];
+      if (this.stereoState.loading) return { a: 'CD', b: 'READING\u2026' };
+      const p = Math.floor(this.stereoState.pos || 0);
+      return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[s.track].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
+    }
+    return { a: 'FM', b: '98.1  HAVEN', t: s.disc >= 0 ? 'CD IN' : '' };
+  }
+
+  // Trunk storage is reachable standing behind the car with the lid up (or gone).
+  canReachTrunk(eye) {
+    if (!this.isInstalled('body')) return false;
+    if (this.isInstalled('trunk') && this.model.parts.trunk.openT < 0.6) return false;
+    return this.worldPointOf(new THREE.Vector3(0, 0.85, -2.05)).distanceTo(eye) < 1.9;
+  }
+
   worldPointOf(local) {
     return local.clone().applyMatrix4(this.root.matrixWorld);
   }
@@ -326,6 +415,14 @@ export class Car {
     e.gauge.emissiveIntensity = powered && this.ignition ? (on ? 1.4 : 0.8) : 0.25;
     e.needle.emissiveIntensity = powered && this.ignition ? 1.5 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
+    if (powered && this.radioOn) this.drawStereo(e.display);
+    else if (this._stereoKey && this._stereoKey !== 'off') {
+      this._stereoKey = 'off';
+      const c = this._stereoCanvas.getContext('2d');
+      c.fillStyle = '#071009';
+      c.fillRect(0, 0, 256, 56);
+      this._stereoTex.needsUpdate = true;
+    }
     // cabin lamp: on while a front door is open or toggled
     const doorOpen = ['door_FL', 'door_FR', 'door_RL', 'door_RR'].some((d) => this.isInstalled(d) && this.model.parts[d].openT > 0.2);
     const cabinOn = powered && (this.cabinLight || doorOpen);

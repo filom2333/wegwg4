@@ -314,25 +314,13 @@ export function buildBayShell(M) {
   // Radiator core support: hood-following top tie bar with headlamp wings, side posts, lower bar.
   const zr = 1.88;
   const tie = [];
-  for (let i = 0; i <= 16; i++) {
-    const x = -0.58 + (1.16 * i) / 16;
+  // the tie bar stops at the lamp buckets, which bolt to its ends
+  for (let i = 0; i <= 10; i++) {
+    const x = -0.33 + (0.66 * i) / 10;
     tie.push({ p: V(x, Math.min(0.735, hoodUnder(Math.abs(x), zr, 0.05)), zr), w: 0.075, h: 0.035 });
   }
   g.add(sectionLoft(tie, 5, S));
   for (const s of [1, -1]) {
-    // headlamp mount bracket behind the lamp housing (the lamp itself fills the corner)
-    const yEnd = Math.min(0.735, hoodUnder(0.6, zr, 0.05));
-    g.add(
-      sectionLoft(
-        [
-          { p: V(0.58 * s, yEnd, zr), w: 0.05, h: 0.035 },
-          { p: V(0.6 * s, yEnd - 0.06, zr - 0.06), w: 0.05, h: 0.04 },
-          { p: V(0.6 * s, 0.56, zr - 0.08), w: 0.05, h: 0.045 },
-        ],
-        5,
-        S
-      )
-    );
     // side posts beside the radiator
     g.add(
       sectionLoft(

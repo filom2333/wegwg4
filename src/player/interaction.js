@@ -9,25 +9,19 @@ import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { PARTS, PART_FAMILY } from '../vehicle/carParts.js';
 import { HOTSPOTS, SEATS } from '../vehicle/car.js';
-import { Hands } from './hands.js';
+import { Hands, PALM_CONTACT } from './hands.js';
+import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
+import { HOTBAR, fitsInBag } from '../items/inventory.js';
+import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const REACH = 2.6;
+// where thumb and index meet in the pinch pose (hand space)
+const PINCH_TIP = V(0, -0.028, -0.135);
 const tmpM = new THREE.Matrix4();
 const tmpRay = new THREE.Ray();
 const tmpV = new THREE.Vector3();
-
-// Hold presets in camera space: hand placement and item offset relative to the hand.
-const HOLD = {
-  hand: { hand: V(0.2, -0.2, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.03, 0.0, -0.065), itemRot: new THREE.Euler(0, 0, 0) },
-  // carried by the top handle, hanging low at the right side (handle bar inside the curled fingers)
-  side: { hand: V(0.24, -0.25, -0.5), rotZ: 0, pose: 'grip', item: V(0.05, -0.295, -0.08), itemRot: new THREE.Euler(0, Math.PI / 2, 0) },
-  tool: { hand: V(0.22, -0.22, -0.36), rotZ: -Math.PI / 2, pose: 'grip', item: V(-0.035, 0.0, -0.06), itemRot: new THREE.Euler(-0.75, Math.PI / 2, Math.PI / 2, 'XYZ') },
-  // weapon models are authored muzzle along +Z; turned 180 degrees so the muzzle points away
-  pistol: { hand: V(0.17, -0.18, -0.34), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.028, 0.032, -0.098), itemRot: new THREE.Euler(0, Math.PI, 0) },
-  rifle: { hand: V(0.16, -0.2, -0.3), rotZ: -Math.PI / 2, pose: 'pistol', item: V(-0.028, 0.032, -0.12), itemRot: new THREE.Euler(0, Math.PI, 0), left: V(-0.02, -0.21, -0.62) },
-};
 
 export class Interaction {
   constructor(game) {
@@ -47,7 +41,6 @@ export class Interaction {
     this.ghostFor = null;
     this.removing = null; // { part, t }
     this.pouring = 0;
-    this.pockets = [null, null, null, null, null, null];
     this.ammo = { 38: 0, 12: 0 };
     this.useAnim = 0;
     this.swing = 0;
@@ -203,6 +196,7 @@ export class Interaction {
     const t = this.target;
     const prompts = [];
     let info = null;
+    const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
     // ---- held item logic
     if (this.held) {
       const it = this.held;
@@ -224,14 +218,15 @@ export class Interaction {
       }
       prompts.push(['G', 'Drop', 'hold to throw']);
       if (!def || !def.weapon) prompts.push(['RMB', 'Rotate']);
-      if (def && def.mass < 1.2 && !it.part) prompts.push(['Q', 'Pocket']);
+      if (def && !it.part) prompts.push([kn('stow'), fitsInBag(it.id, it.state) ? 'Put in backpack' : 'Too bulky for the backpack']);
       if (!blocked) {
         if (input.isDown('drop')) this.dropHold += dt;
         if (input.wasReleased('drop')) {
           this.drop(this.dropHold > 0.35 ? 9 + Math.min(1, this.dropHold) * 3 : 0);
           this.dropHold = 0;
         }
-        if (input.wasPressed('KeyQ') || input.pressed.has('KeyQ')) this.pocketHeld();
+        if (input.wasPressed('stow')) this.stowHeld(this.game.inventory);
+        this.hotbarKeys();
       }
     } else {
       this.hideGhost();
@@ -241,13 +236,20 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
+      if (p.seat && g.car && !blocked && input.wasPressed('nextTrack') && g.car.stereo.disc >= 0) {
+        if (g.car.stereo.mode === 'cd') g.car.nextTrack();
+        else g.car.stereo.mode = 'cd';
+        g.car.radioOn = true;
+        g.audio && g.audio.play('click');
+      }
       if (!t && p.seat && g.car && Math.abs(g.car.speedKmh) < 3) {
-        const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
         prompts.push([kn('interact'), 'Get out']);
         if (g.car && !g.car.dyn.engine.running) prompts.push([kn('sleep'), 'Sleep']);
       }
       if (!blocked) {
-        for (let i = 0; i < 6; i++) if (input.pressed.has('Digit' + (i + 1))) this.unpocket(i);
+        this.hotbarKeys();
+        // Q on something lying about: straight into the backpack
+        if (input.wasPressed('stow') && t && t.kind === 'item' && !t.item.part) this.lootToBag(t.item);
       }
     }
     if (ui) {
@@ -278,7 +280,7 @@ export class Interaction {
     } else if (def.weapon) sub = `${s.loaded || 0} / ${def.weapon.mag}  ·  pouch ${this.ammo[def.weapon.ammo] || 0}`;
     else if (def.charges !== undefined) sub = `${s.charges} use${s.charges === 1 ? '' : 's'} left`;
     else if (def.ammo) sub = `${def.ammo.count} rounds`;
-    return { title: def.name, sub, bar, desc: def.desc };
+    return { title: it.name, sub, bar, desc: def.desc };
   }
 
   useOptions(it, t) {
@@ -293,6 +295,7 @@ export class Interaction {
     if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
+    if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
     if (def.paint) out.push(['LMB', 'Repaint the car']);
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
@@ -335,6 +338,7 @@ export class Interaction {
           info = { title: it.name, sub: `Car part · ${PARTS[it.part].mass} kg` };
         } else info = this.heldInfo(it);
         prompts.push(['E', 'Pick up']);
+        if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
         if (it.def && it.def.consume) prompts.push(['F', 'Use now']);
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
         break;
@@ -384,8 +388,12 @@ export class Interaction {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
           prompts.push(['E', 'Switch']);
         } else if (h.id === 'radio') {
-          info.sub = car.radioOn ? 'On' : 'Off';
+          const st = car.stereo;
+          info.title = 'Stereo';
+          info.sub = !car.radioOn ? 'Off' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : 'FM 98.1' + (st.disc >= 0 ? ' · disc in' : '');
           prompts.push(['E', car.radioOn ? 'Turn off' : 'Turn on']);
+          if (st.disc >= 0) prompts.push(['LMB', st.mode === 'cd' ? 'Next track' : 'Play the CD'], ['R', 'Eject disc']);
+          else if (car.radioOn) prompts.push(['', 'Hold a CD and click to put it in']);
         }
         break;
       }
@@ -435,6 +443,22 @@ export class Interaction {
       return;
     }
     if (!input.isDown('reload')) this.removing = null;
+    if (t.kind === 'hotspot' && t.hotspot.id === 'radio') {
+      const st = car.stereo;
+      if (input.mousePressed(0) && st.disc >= 0) {
+        if (st.mode === 'cd') car.nextTrack();
+        else {
+          st.mode = 'cd';
+          car.radioOn = true;
+        }
+        g.audio && g.audio.play('click');
+        return;
+      }
+      if (input.wasPressed('reload') && st.disc >= 0) {
+        this.ejectDisc();
+        return;
+      }
+    }
     if (input.pressed.has('KeyF') && t.kind === 'item' && t.item.def && t.item.def.readable) {
       const n = this.game.story && this.game.story.noteById(t.item.state.note);
       if (n) {
@@ -512,7 +536,10 @@ export class Interaction {
     // keep the current orientation relative to the camera so the item doesn't snap
     const camQ = this.cam.quaternion.clone();
     this.holdRot.copy(camQ.clone().invert().multiply(it.mesh.quaternion));
-    if (it.def && HOLD[it.def.hold]) this.holdRot.identity();
+    if (it.def) this.holdRot.identity();
+    this.userRotated = false;
+    this.hangAng = 0;
+    this.hangVel = 0;
     this.holdDist = it.part ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
@@ -544,29 +571,125 @@ export class Interaction {
     if (throwSpeed > 0) g.audio && g.audio.play('throw');
   }
 
-  pocketHeld() {
+  // ------------------------------------------------------------------ inventory
+  // Puts the item in the hands into a container (the backpack by default), into slot `prefer`
+  // when given and free, else where it came from, else the best free slot.
+  stowHeld(container = this.game.inventory, prefer = -1) {
+    const g = this.game;
     const it = this.held;
-    if (!it || it.part || it.def.mass > 1.2) return;
-    const i = this.pockets.indexOf(null);
-    if (i < 0) {
-      this.game.hud && this.game.hud.toast('Pockets are full');
-      return;
+    const inv = g.inventory;
+    if (!it || it.part) return false;
+    const e = { id: it.id, state: it.state };
+    if (!container.accepts(e)) {
+      g.hud && g.hud.toast(`${it.name} is too bulky for the ${container.title.toLowerCase()}`);
+      return false;
     }
-    this.pockets[i] = { id: it.id, state: it.state };
+    let slot;
+    if (prefer >= 0 && !container.slots[prefer]) slot = container.add(e, prefer);
+    else if (container === inv && inv.heldFrom >= 0 && !inv.slots[inv.heldFrom]) slot = inv.add(e, inv.heldFrom);
+    else slot = container === inv ? inv.addSmart(e) : container.add(e);
+    if (slot < 0) {
+      g.hud && g.hud.toast(`No room in the ${container.title.toLowerCase()}`);
+      return false;
+    }
     it.mesh.parent && it.mesh.parent.remove(it.mesh);
-    this.game.items.items.delete(it);
+    g.items.items.delete(it);
     this.held = null;
     this.dragging = false;
-    this.game.player.carryMass = 0;
-    this.game.audio && this.game.audio.play('pocket');
+    inv.heldFrom = -1;
+    g.player.carryMass = 0;
+    g.audio && g.audio.play('pocket');
+    return true;
   }
 
-  unpocket(i) {
-    const s = this.pockets[i];
-    if (!s || this.held) return;
-    const it = this.game.items.spawn(s.id, this.cam.position.clone().add(V(0, -0.3, 0)), new THREE.Quaternion(), s.state);
-    this.pockets[i] = null;
+  // Takes slot i of a container into the hands (whatever was in them goes into that slot).
+  equipFrom(container, i) {
+    const g = this.game;
+    const inv = g.inventory;
+    const e = container.slots[i];
+    if (!e) return false;
+    const entry = container.take(i);
+    // what was in the hands goes back where it came from, else where this came from, else the pack
+    const back = this.held && inv.heldFrom >= 0 && !inv.slots[inv.heldFrom];
+    if (this.held && !(back && this.stowHeld(inv, inv.heldFrom)) && !this.stowHeld(container, i) && !(container !== inv && this.stowHeld(inv))) {
+      container.add(entry, i);
+      return false;
+    }
+    const it = g.items.spawn(entry.id, this.cam.position.clone().add(V(0, -0.35, 0)), new THREE.Quaternion(), entry.state);
     this.pick(it);
+    inv.heldFrom = container === inv ? i : -1;
+    return true;
+  }
+
+  // 1-6: take that hotbar slot in hand; the same key again puts it back.
+  hotbarKeys() {
+    const inv = this.game.inventory;
+    for (let i = 0; i < HOTBAR; i++) {
+      if (!input.pressed.has('Digit' + (i + 1))) continue;
+      if (this.held && inv.heldFrom === i) this.stowHeld(inv, i);
+      else if (inv.slots[i]) this.equipFrom(inv, i);
+      else if (this.held && !this.held.part) this.stowHeld(inv, i);
+      this.game.hud && this.game.hud.pulseHotbar();
+    }
+  }
+
+  // Swaps the disc in the hand with the one in the stereo.
+  ejectDiscSwap(it) {
+    const car = this.game.car;
+    const old = car.ejectDisc();
+    car.insertDisc(it.state.variant || 0);
+    it.state.variant = old;
+    this.game.items.refreshVisual(it);
+    // the mesh shows the old album now
+    const mesh = this.game.items.buildMesh('cd', it.state);
+    it.mesh.clear();
+    for (const ch of [...mesh.children]) it.mesh.add(ch);
+    this.game.hud && this.game.hud.toast('Swapped discs');
+  }
+
+  // Takes the disc out of the car stereo: into the hands if they are free, else the backpack.
+  ejectDisc() {
+    const g = this.game;
+    const a = g.car.ejectDisc();
+    if (a < 0) return;
+    g.audio && g.audio.play('click');
+    const e = { id: 'cd', state: { variant: a } };
+    if (!this.held) {
+      const it = g.items.spawn('cd', this.cam.position.clone().add(V(0, -0.3, 0)), new THREE.Quaternion(), e.state);
+      this.pick(it);
+    } else if (g.inventory.addSmart(e) < 0) this.dropEntry(e);
+    else g.hud && g.hud.toast('CD → backpack');
+  }
+
+  // Picks a world item straight into the backpack.
+  lootToBag(it) {
+    const g = this.game;
+    const inv = g.inventory;
+    const e = { id: it.id, state: it.state };
+    if (!fitsInBag(it.id, it.state)) return g.hud && g.hud.toast(`${it.name} is too bulky for the backpack`);
+    if (inv.addSmart(e) < 0) return g.hud && g.hud.toast('No room in the backpack');
+    g.items.take(it);
+    g.items.destroy(it);
+    g.audio && g.audio.play('pickup', { mass: it.mass });
+    g.hud && g.hud.toast(`${it.name} → backpack`);
+    g.hud && g.hud.pulseHotbar();
+  }
+
+  // Puts an inventory entry down on the ground in front of the player.
+  dropEntry(e) {
+    const g = this.game;
+    const eye = this.cam.position;
+    const fwd = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const at = eye.clone().addScaledVector(fwd, 0.55);
+    const hit = g.physics.raycast(eye, at.clone().sub(eye).normalize(), 0.6, GROUPS.ground, g.player.body);
+    if (hit) at.copy(eye).addScaledVector(at.clone().sub(eye).normalize(), Math.max(0.15, hit.distance - 0.15));
+    at.y -= 0.4;
+    const it = g.items.spawn(e.id, at, new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.random() * 6.28), e.state);
+    this.stowWatch.set(it, 0);
+    return it;
   }
 
   // ------------------------------------------------------------------ held item placement
@@ -574,7 +697,6 @@ export class Interaction {
     const it = this.held;
     const cam = this.cam;
     const def = it.def;
-    const hold = def ? HOLD[def.hold] : null;
     // rotation with RMB (not for weapons: RMB aims)
     const weapon = def && def.weapon;
     this.rotating = !weapon && input.mouseDown(2);
@@ -588,38 +710,36 @@ export class Interaction {
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
-    const big = it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon));
-    if (hold && !big) {
-      const h = hold.hand.clone();
-      if (weapon) h.lerp(V(0, -0.12, -0.32), this.aim);
-      local = h.clone().add(hold.item.clone().applyAxisAngle(V(0, 0, 1), 0));
-      localQ = new THREE.Quaternion().setFromEuler(hold.itemRot);
-      if (!weapon && !this.rotating && this.holdRot.angleTo(new THREE.Quaternion()) > 1e-3 && this.userRotated) localQ.copy(this.holdRot);
-      if (this.rotating) {
-        this.userRotated = true;
-        localQ.copy(this.holdRot);
-        local = V(0, -0.05, -0.5);
-      } else if (this.userRotated) local = V(0.05, -0.1, -0.5);
+    const big = it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !weapon);
+    // look sway: the item lags a little behind fast turns
+    const lookDx = input.mouse.dx,
+      lookDy = input.mouse.dy;
+    this.sway.lerp(V(clamp(-lookDx * 0.0006, -0.03, 0.03), clamp(lookDy * 0.0006, -0.03, 0.03), 0), Math.min(1, dt * 8));
+    this.holdLerp = Math.min(1, (this.holdLerp || 0) + dt * 4);
+    this.heldPose = null;
+    if (!big) {
+      if (this.rotating) this.userRotated = true;
+      const st = this.holdState(it, dt);
+      const pose = holdPose(it.mesh, st);
+      if (this.userRotated) {
+        // turned in the hand to look at it: the item spins about its grip
+        local = V(0.03, -0.08, -0.42);
+        localQ = this.holdRot.clone();
+      } else {
+        local = pose.item.p;
+        localQ = pose.item.q;
+      }
+      this.heldPose = pose;
     } else {
       // big items float in front at holdDist, slightly below centre
       local = V(0, -0.18 - Math.min(0.25, it.size.y * 0.25), -this.holdDist);
       localQ = this.holdRot.clone();
+      if (this.useAnim > 0) {
+        const k = Math.sin(Math.min(1, this.useAnim) * Math.PI);
+        local = local.clone().lerp(V(0, -0.12, -0.22), k);
+      }
+      local.add(this.sway);
     }
-    // use / recoil animation
-    if (this.useAnim > 0) {
-      const k = Math.sin(Math.min(1, this.useAnim) * Math.PI);
-      local = local.clone().lerp(V(0, -0.12, -0.22), k);
-    }
-    if (this.recoil > 0) {
-      local = local.clone().add(V(0, 0.01 * this.recoil, 0.05 * this.recoil));
-      localQ = localQ.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), 0.25 * this.recoil));
-      this.recoil = Math.max(0, this.recoil - dt * 6);
-    }
-    // weapon sway from look motion
-    const lookDx = input.mouse.dx,
-      lookDy = input.mouse.dy;
-    this.sway.lerp(V(-lookDx * 0.0006, lookDy * 0.0006, 0), Math.min(1, dt * 8));
-    local.add(this.sway);
     // world transform
     const wp = local.clone().applyQuaternion(cam.quaternion).add(cam.position);
     const wq = cam.quaternion.clone().multiply(localQ);
@@ -630,8 +750,6 @@ export class Interaction {
       const hw = av.handWorld(V());
       const hq = new THREE.Quaternion();
       av.bones.handR.getWorldQuaternion(hq);
-      const off = hold ? hold.item.clone().multiplyScalar(-1).applyQuaternion(cam.quaternion) : V();
-      void off;
       wp.copy(hw).add(V(0, -0.06, 0).applyQuaternion(hq));
       wq.copy(av.root.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)));
       if (def && def.weapon) wq.copy(cam.quaternion).multiply(localQ);
@@ -644,18 +762,17 @@ export class Interaction {
       const hit = this.game.physics.raycast(cam.position, dir, len + 0.3, GROUPS.ground, this.game.player.body);
       const rad = Math.max(it.size.x, it.size.z) * 0.45;
       if (hit && hit.distance < len + rad) wp.copy(cam.position).addScaledVector(dir, Math.max(0.35, hit.distance - rad));
-    }
-    // smooth follow (mass makes heavy items lag)
-    const follow = Math.min(1, dt * (big ? 14 / Math.sqrt(Math.max(1, it.mass / 8)) : 30));
-    this.holdLerp = Math.min(1, (this.holdLerp || 0) + dt * 4);
-    if (this.holdLerp < 1 || big) {
+      // smooth follow (mass makes heavy items lag)
+      const follow = Math.min(1, dt * (14 / Math.sqrt(Math.max(1, it.mass / 8))));
       it.mesh.position.lerp(wp, this.holdLerp < 1 ? follow * 0.6 : follow);
       it.mesh.quaternion.slerp(wq, follow);
     } else {
+      // small items sit in the hand (the raise animation brings them in)
       it.mesh.position.copy(wp);
       it.mesh.quaternion.copy(wq);
     }
     // ---- using the held item
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 6);
     if (this.useAnim > 0) this.useAnim -= dt * 1.6;
     const blocked = this.game.ui && this.game.ui.blocksMove;
     if (blocked) return;
@@ -680,6 +797,46 @@ export class Interaction {
         }
       } else if (input.mousePressed(0)) this.useHeld();
     }
+  }
+
+  // Animation inputs for the held item's pose (see grips.js holdPose).
+  holdState(it, dt) {
+    const def = it.def || {};
+    const cam = this.cam;
+    let kind = '';
+    if (def.weapon) kind = '';
+    else if (def.melee) kind = 'swing';
+    else if (def.clean) kind = 'wipe';
+    else if (def.paint) kind = 'spray';
+    else if (def.liquid) kind = this.pourKind || 'drink';
+    else if (def.consume) kind = def.consume.food > 0 ? 'eat' : def.consume.water > 0 && !def.consume.smoke ? 'drink' : 'use';
+    else kind = 'use';
+    const target = this.pouring ? 1 : this.useAnim > 0 ? Math.sin(Math.min(1, this.useAnim) * Math.PI) : 0;
+    this.useBlend = lerp(this.useBlend || 0, target, Math.min(1, dt * (target > (this.useBlend || 0) ? 9 : 6)));
+    // walking bob
+    const p = this.game.player;
+    const bob = p.seat ? V(0, 0, 0) : V(Math.cos(p.bob) * 0.008, -Math.abs(Math.sin(p.bob)) * 0.01, 0).multiplyScalar(p.bobAmp || 0);
+    // world up in camera space (things carried by a handle hang plumb)
+    const up = V(0, 1, 0).applyQuaternion(cam.quaternion.clone().invert());
+    // handle swing: a damped pendulum kicked by turning and walking
+    const kick = -input.mouse.dx * 0.0025 + Math.sin(p.bob * 2) * 0.02 * (p.bobAmp || 0);
+    this.hangVel = (this.hangVel || 0) + (-30 * (this.hangAng || 0) - 4 * this.hangVel) * dt + kick;
+    this.hangAng = clamp((this.hangAng || 0) + this.hangVel * dt, -0.5, 0.5);
+    const w = def.weapon;
+    const raise = this.holdLerp ?? 1;
+    return {
+      aim: this.aim,
+      recoil: this.recoil,
+      reload: w && this.reloading > 0 ? 1 - this.reloading / w.reload : 0,
+      use: this.useBlend,
+      useKind: kind,
+      raise: raise * raise * (3 - 2 * raise),
+      sway: this.sway.clone(),
+      bob,
+      up,
+      swing: this.hangAng,
+      time: this.game.time,
+    };
   }
 
   // Dragging a heavy part: it slides on the ground in front of the player, turning with them;
@@ -753,6 +910,20 @@ export class Interaction {
       this.consumeHeld();
       return;
     }
+    if (def.disc) {
+      const t = this.target;
+      const car = g.car;
+      if (t && t.kind === 'hotspot' && t.hotspot.id === 'radio') {
+        if (car.stereo.disc >= 0) this.ejectDiscSwap(it);
+        else {
+          car.insertDisc(it.state.variant || 0);
+          this.consumeHeld();
+          this.useAnim = 0;
+        }
+        g.audio && g.audio.play('click');
+      } else g.hud && g.hud.toast('Look at the car stereo to put the disc in');
+      return;
+    }
     if (def.readable) {
       const n = g.story && g.story.noteById(it.state.note);
       if (n) {
@@ -822,6 +993,7 @@ export class Interaction {
     const rate = it.def.liquid.cap >= 5 ? 0.45 : 0.25; // l/s
     let amount = Math.min(s.liquid, rate * dt);
     const car = g.car;
+    this.pourKind = tgt ? 'pour' : 'drink';
     if (!tgt) {
       // drink
       if (s.liquidType !== 'water') return;
@@ -1129,8 +1301,25 @@ export class Interaction {
     return V(0, 0, 0);
   }
 
+  // Shoulders and elbow pole directions of the seated driver, in camera space (fixed to the
+  // seat, so looking around does not drag the arms along).
+  driverArms(car) {
+    const cam = this.cam;
+    const inv = cam.quaternion.clone().invert();
+    const out = {};
+    for (const side of ['right', 'left']) {
+      // car space: +X is the car's left
+      const sg = side === 'left' ? 1 : -1;
+      const S = car.root.localToWorld(V(0.37 + 0.2 * sg, 0.93, -0.38)).sub(cam.position).applyQuaternion(inv);
+      const pole = V(0.35 * sg, -1, 0.1).transformDirection(car.root.matrixWorld).applyQuaternion(inv);
+      out[side] = { shoulder: S, pole };
+    }
+    return out;
+  }
+
   // Hands on the steering wheel (they turn with it), reaching for controls when used.
-  updateDriverHands(dt) {
+  // `only`: place just that hand (the other one is holding something).
+  updateDriverHands(dt, only = null) {
     const g = this.game;
     const car = g.car;
     const h = this.hands;
@@ -1139,67 +1328,55 @@ export class Interaction {
     const wheelObj = sw && sw.children[0];
     if (!wheelObj || !car.isInstalled('steeringWheel')) return false;
     wheelObj.updateMatrixWorld(true);
-    const inv = cam.quaternion.clone().invert();
+    const camQ = cam.quaternion;
+    const inv = camQ.clone().invert();
     const toCam = (wp) => wp.clone().sub(cam.position).applyQuaternion(inv);
     const R = 0.188;
-    // grip points at ten-to-two, in the rotating wheel frame (X right, Y up, Z toward the driver)
-    const grips = {
-      left: { a: Math.PI - 0.32 },
-      right: { a: 0.32 },
-    };
     // hands ride with the rim up to about 80 degrees each way, then slide along it
     const turn = clamp(wheelObj.rotation.z, -1.4, 1.4);
     sw.updateMatrixWorld(true);
     const pivotW = sw.matrixWorld;
-    const camQ = cam.quaternion;
-    const right = V(1, 0, 0).applyQuaternion(camQ),
-      up = V(0, 1, 0).applyQuaternion(camQ),
-      fwd = V(0, 0, -1).applyQuaternion(camQ);
-    for (const side of ['left', 'right']) {
+    const arms = this.driverArms(car);
+    for (const side of only ? [only] : ['left', 'right']) {
       const hand = h[side];
-      const sgn = side === 'left' ? -1 : 1;
-      const a = grips[side].a + turn;
       hand.visible = true;
-      h.setPose(side, 'grip');
+      // grip points at ten-to-two in the rotating wheel frame (X right, Y up, Z toward the driver)
+      const a = (side === 'left' ? Math.PI - 0.5 : 0.5) + turn;
       const rimW = V(Math.cos(a) * R, Math.sin(a) * R, 0).applyMatrix4(pivotW);
       const tanW = V(-Math.sin(a), Math.cos(a), 0).transformDirection(pivotW);
-      // the forearm runs down and back toward the elbow
-      const elbow = cam.position.clone().addScaledVector(right, 0.44 * sgn).addScaledVector(up, -0.8).addScaledVector(fwd, 0.12);
-      const zAxis = elbow.clone().sub(rimW);
-      zAxis.addScaledVector(tanW, -zAxis.dot(tanW)).normalize();
-      // thumb along the rim toward 12 o'clock; it turns with the wheel without flipping
+      const radW = V(Math.cos(a), Math.sin(a), 0).transformDirection(pivotW);
+      const nW = V(0, 0, 1).transformDirection(pivotW);
+      // fist round the rim: thumb side toward 12 o'clock, back of the hand outward and a little
+      // toward the driver, so the wrist points back at the elbow
       const thumb = side === 'left' ? tanW.clone().negate() : tanW.clone();
-      // left model: thumb +X; the right hand is the mirrored model (thumb -X)
-      const xAxis = side === 'left' ? thumb : thumb.clone().negate();
-      const yAxis = zAxis.clone().cross(xAxis).normalize();
-      const zFix = xAxis.clone().cross(yAxis).normalize();
-      const qWorld = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zFix));
-      const gripLocal = V(0.0, -0.028, -0.088);
-      let posW = rimW.clone().sub(gripLocal.clone().applyQuaternion(qWorld));
-      const qCam = camQ.clone().invert().multiply(qWorld);
+      const back = radW.clone().multiplyScalar(0.9).addScaledVector(nW, 0.4);
+      const anchor = { p: toCam(rimW), q: inv.clone().multiply(frameQ(thumb, back)) };
+      const placed = handFromAnchor(side, 'grip', anchor);
+      let pose = 'grip';
+      let posC = placed.p,
+        qC = placed.q;
       // reaching for a control (right hand for key/shifter, left for the stalk)
       const r = this.reach;
-      let qOut = qCam;
       if (r && ((side === 'right' && r.target !== 'stalk') || (side === 'left' && r.target === 'stalk'))) {
         const k = Math.sin(Math.min(1, r.t) * Math.PI);
         const tp = this.controlPoint(car, r.target).applyMatrix4(car.root.matrixWorld);
-        // fingertips land on the control: palm down, fingers pointing forward from the elbow
-        const dir = tp.clone().sub(elbow).normalize();
-        const zR = dir.clone().negate();
-        const xR0 = V(0, 1, 0).applyQuaternion(car.root.quaternion).cross(zR).normalize();
-        const xR = side === 'left' ? xR0 : xR0.clone().negate();
-        const yR = zR.clone().cross(xR).normalize();
-        const qReach = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xR, yR, xR.clone().cross(yR)));
-        const tipLocal = V(0, -0.01, -0.17);
-        const reachPos = tp.clone().sub(tipLocal.clone().applyQuaternion(qReach));
-        posW = posW.lerp(reachPos, k);
-        qOut = qCam.clone().slerp(camQ.clone().invert().multiply(qReach), k);
-        h.setPose(side, k > 0.4 ? 'pinch' : 'grip');
+        // fingertips land on the control: fingers pointing on from the shoulder, thumb up
+        const shoulderW = arms[side].shoulder.clone().applyQuaternion(camQ).add(cam.position);
+        const dir = tp.clone().sub(shoulderW).normalize();
+        const upW = V(0, 1, 0).applyQuaternion(car.root.quaternion);
+        const qReach = inv.clone().multiply(anchorQ(upW.addScaledVector(dir, -upW.dot(dir)), dir.clone().negate()));
+        const placedR = handFromAnchor(side, 'pinch', { p: toCam(tp), q: qReach });
+        // move from the palm contact point to the pinching fingertips
+        placedR.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placedR.q));
+        posC = posC.clone().lerp(placedR.p, k);
+        qC = qC.clone().slerp(placedR.q, k);
+        if (k > 0.4) pose = 'pinch';
       }
-      hand.position.copy(toCam(posW));
-      hand.quaternion.copy(qOut);
+      h.setPose(side, pose);
+      h.place(side, posC, qC);
+      h.solveArm(side, arms[side].shoulder, arms[side].pole);
     }
-    if (this.reach) {
+    if (this.reach && !only) {
       this.reach.t += dt * 2.2;
       if (this.reach.t >= 1) this.reach = null;
     }
@@ -1213,61 +1390,64 @@ export class Interaction {
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;
     const h = this.hands;
-    const hold = it && it.def ? HOLD[it.def.hold] : null;
     const big = it && (it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon)));
     const seated = !!this.game.player.seat;
+    const driving = seated && this.game.player.seat === 'driver';
     h.right.visible = true;
     h.left.visible = false;
-    if (it && hold && !big) {
-      h.setPose('right', hold.pose);
-      const hp = hold.hand.clone();
-      if (it.def.weapon) hp.lerp(V(0, -0.12, -0.32), this.aim);
-      if (this.userRotated) hp.copy(V(0.18, -0.22, -0.42));
-      // keep the hand glued to the item: derive from the item's actual camera-space position
-      const inv = cam.quaternion.clone().invert();
-      const itemLocal = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
-      const desired = itemLocal.clone().sub(hold.item);
-      h.right.position.copy(this.userRotated ? hp : desired);
-      h.right.rotation.set(0, 0, hold.rotZ);
-      if (hold.left) {
+    const inv = cam.quaternion.clone().invert();
+    if (it && !big && !this.dragging) {
+      // both hands are derived from where the item actually is, so they never drift off it
+      const local = { p: it.mesh.position.clone().sub(cam.position).applyQuaternion(inv), q: inv.clone().multiply(it.mesh.quaternion) };
+      const pose = this.heldPose;
+      const hp = handsOnItem(it.mesh, local, (pose && pose.item.hang) || 0, this.aim);
+      const arms = (pose && pose.arms) || defaultArms();
+      h.setPose('right', hp.right.pose);
+      h.place('right', hp.right.p, hp.right.q);
+      h.solveArm('right', arms.right.shoulder, arms.right.pole);
+      if (hp.left) {
         h.left.visible = true;
-        h.setPose('left', 'grip');
-        h.left.position.copy(hold.left.clone().add(V(0, 0, 0)).lerp(V(-0.02, -0.14, -0.58), this.aim));
-        h.left.rotation.set(0, 0, Math.PI / 2);
-      }
+        h.setPose('left', hp.left.pose);
+        h.place('left', hp.left.p, hp.left.q);
+        h.solveArm('left', arms.left.shoulder, arms.left.pole);
+      } else if (driving) this.updateDriverHands(dt, 'left');
     } else if (it && this.dragging) {
       h.right.visible = false;
       h.left.visible = false;
     } else if (it && big) {
-      // carry from below: both hands under the lower edge, palms up, forearms toward the camera
-      const inv = cam.quaternion.clone().invert();
+      // carried from below: both hands under the lower edge, palms up, fingers forward
       const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
       const box = new THREE.Box3().setFromObject(it.mesh);
       const sz = box.getSize(V(0, 0, 0));
-      const half = Math.min(0.32, Math.max(0.14, Math.max(sz.x, sz.z) * 0.32));
-      const bottom = c.y - Math.min(0.45, sz.y * 0.5) + 0.03;
-      h.setPose('right', 'carry');
-      h.setPose('left', 'carry');
+      const half = Math.min(0.3, Math.max(0.13, Math.max(sz.x, sz.z) * 0.32));
+      const bottom = c.y - Math.min(0.45, sz.y * 0.5) + 0.01;
+      const arms = defaultArms();
       h.left.visible = true;
-      h.right.position.set(c.x + half, bottom, c.z + 0.08);
-      h.left.position.set(c.x - half, bottom, c.z + 0.08);
-      h.right.rotation.set(-0.35, 0.25, Math.PI);
-      h.left.rotation.set(-0.35, -0.25, Math.PI);
-    } else if (seated && this.game.player.seat === 'driver' && this.updateDriverHands(dt)) {
+      for (const side of ['right', 'left']) {
+        const sg = side === 'left' ? -1 : 1;
+        const anchor = { p: V(c.x + half * sg, bottom, c.z + 0.1), q: anchorQ(V(sg, 0.1, 0.25), V(0.25 * sg, -0.5, 0.85)) };
+        const placed = handFromAnchor(side, 'carry', anchor);
+        h.setPose(side, 'carry');
+        h.place(side, placed.p, placed.q);
+        h.solveArm(side, arms[side].shoulder, arms[side].pole);
+      }
+    } else if (driving && this.updateDriverHands(dt)) {
       // hands on the wheel
     } else {
       // idle: relaxed right hand low at the edge of the view; reaching when targeting
-      h.right.quaternion.identity();
-      h.setPose('right', this.target ? 'pinch' : 'relax');
       const p = this.game.player;
-      const bob = p.bobAmp * 0.012;
       const reach = this.target && !seated ? 1 : 0;
       this.reachT = lerp(this.reachT || 0, reach, Math.min(1, dt * 6));
-      const base = seated ? V(0.2, -0.32, -0.4) : V(0.24, -0.3, -0.36);
-      h.right.position.copy(base.lerp(V(0.15, -0.22, -0.45), this.reachT * 0.6));
-      h.right.position.y += Math.sin(p.bob * 2) * bob;
-      h.right.rotation.set(-0.2 + this.reachT * 0.3, 0.15, -0.5);
-      h.right.visible = this.reachT > 0.15;
+      const k = this.reachT;
+      const pos = V(0.22, -0.3, -0.36).lerp(V(0.13, -0.2, -0.46), k * 0.7);
+      pos.y += Math.sin(p.bob * 2) * p.bobAmp * 0.012;
+      const anchor = { p: pos, q: anchorQ(V(-0.35, 0.3 + k * 0.4, -0.9), V(0.4, -0.35, 0.85)) };
+      const placed = handFromAnchor('right', 'relax', anchor);
+      h.setPose('right', k > 0.5 ? 'pinch' : 'relax');
+      h.place('right', placed.p, placed.q);
+      const arms = defaultArms();
+      h.solveArm('right', arms.right.shoulder, arms.right.pole);
+      h.right.visible = k > 0.15;
     }
   }
 }

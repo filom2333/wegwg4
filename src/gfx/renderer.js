@@ -111,7 +111,8 @@ export class Renderer {
     this.outline.edgeThickness = 1.0;
     this.outline.pulsePeriod = 0;
     this.outline.visibleEdgeColor.set(0xf2e6cf);
-    this.outline.hiddenEdgeColor.set(0x5a5040);
+    // only the visible silhouette: hidden edges drew every part behind the selection through the body
+    this.outline.hiddenEdgeColor.set(0x000000);
     this.composer.addPass(this.outline);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.35, 0.5, 0.92);
     this.composer.addPass(this.bloom);

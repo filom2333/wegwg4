@@ -422,6 +422,10 @@ export function buildCenterStack(M) {
   const dm = mesh(disp, M.display, false);
   dm.name = 'radioDisplay';
   g.add(dm);
+  // CD slot above the display
+  const slot = new THREE.BoxGeometry(0.13, 0.0025, 0.004);
+  slot.translate(0, 0.878, 0.4775);
+  g.add(mesh(slot, M.piano, false));
   for (let k = 0; k < 6; k++) {
     const b = roundedBox(0.022, 0.009, 0.006, 0.002, 1);
     b.translate(-0.06 + k * 0.024, 0.836, 0.478);

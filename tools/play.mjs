@@ -4,12 +4,12 @@ import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import fs from 'fs';
 const [query = '', scriptArg = '[]', w = '1280', h = '720'] = process.argv.slice(2);
 const steps = fs.existsSync(scriptArg) ? JSON.parse(fs.readFileSync(scriptArg, 'utf8')) : JSON.parse(scriptArg);
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: +w, height: +h } });
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
-await page.goto('http://127.0.0.1:5173/?' + query, { waitUntil: 'load', timeout: 120000 });
+await page.goto((process.env.BASE || 'http://127.0.0.1:5173/') + '?' + query, { waitUntil: 'load', timeout: 120000 });
 try {
   await page.waitForFunction('window.__ready === true', null, { timeout: +(process.env.READY_TIMEOUT || 300000) });
 } catch (e) {

@@ -84,7 +84,7 @@ export function serializeGame(g) {
       seat: p.seat,
       headlampOn: p.headlampOn,
     },
-    inventory: { pockets: ia.pockets, ammo: ia.ammo, held },
+    inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
     car: {
       pos: [cp.x + o.x, cp.y, cp.z + o.z],
       quat: [cq.x, cq.y, cq.z, cq.w],
@@ -99,6 +99,8 @@ export function serializeGame(g) {
       dirt: car.dirt,
       lightsOn: car.lightsOn,
       paintColor: car.paintColor ?? null,
+      stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
+      storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
       parts,
       open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
     },
@@ -157,12 +159,16 @@ export function applySave(g, d) {
   p.yaw = d.player.yaw;
   p.pitch = d.player.pitch;
   const inv = d.inventory || {};
-  if (inv.pockets) g.interaction.pockets = inv.pockets;
+  if (inv.slots) g.inventory.restore(inv.slots);
+  else if (inv.pockets) inv.pockets.forEach((e) => e && g.inventory.addSmart({ id: e.id, state: e.state || {} }));
+  if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
+  if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);
   if (inv.ammo) g.interaction.ammo = inv.ammo;
   if (inv.held) {
     const pos = p.position.clone().add(new THREE.Vector3(0, 1.2, 0));
     const it = inv.held.part ? g.items.spawnPart(inv.held.part, pos, new THREE.Quaternion(), inv.held.state) : g.items.spawn(inv.held.id, pos, new THREE.Quaternion(), inv.held.state);
     g.interaction.pick(it);
+    g.inventory.heldFrom = inv.heldFrom ?? -1;
   }
   if (d.player.seat) p.enterSeat(car, d.player.seat);
 }

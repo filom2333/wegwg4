@@ -2,6 +2,7 @@
 // statistics, multiplayer placeholder, loading, click-to-play, pause, journal, sleep and death.
 
 import { settings, DEFAULT_BINDINGS } from '../core/settings.js';
+import { InventoryUI } from './inventoryUI.js';
 import { input } from '../core/input.js';
 import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
 import { NOTES, HAVEN_KM } from '../story/story.js';
@@ -50,6 +51,9 @@ const LABELS = {
   wipers: 'Wipers',
   lookBack: 'Look back',
   journal: 'Journal',
+  inventory: 'Inventory',
+  nextTrack: 'Next CD track',
+  stow: 'Put in backpack',
   sleep: 'Sleep (in the car)',
   view: 'First / third person',
 };
@@ -76,6 +80,7 @@ export class UI {
     this.fpsN = 0;
     this.autosaveT = 0;
     document.addEventListener('pointerlockchange', () => this.onLockChange());
+    this.inventory = new InventoryUI(this);
     window.addEventListener('keydown', (e) => this.onKey(e), true);
   }
 
@@ -823,6 +828,18 @@ export class UI {
     }
     if (e.code === 'Escape' && this.mode === 'menu' && this.current && !['title', 'splash'].includes(this.current)) this.showTitle();
     if (this.mode !== 'play' || !this.game) return;
+    const invKey = settings.data.bindings.inventory || 'Tab';
+    if (e.code === invKey && !e.repeat) {
+      e.preventDefault();
+      if (this.current === 'inventory') this.inventory.close();
+      else if (!this.current && !this.game.player.dead) this.inventory.show();
+      return;
+    }
+    if (e.code === 'Escape' && this.current === 'inventory') {
+      e.preventDefault();
+      this.inventory.close();
+      return;
+    }
     const journalKey = settings.data.bindings.journal;
     if (e.code === journalKey && !e.repeat) {
       if (this.current === 'journal') this.resume();

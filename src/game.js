@@ -18,7 +18,8 @@ import { Car } from './vehicle/car.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
-import { ITEMS } from './items/itemDefs.js';
+import { Inventory, Container } from './items/inventory.js';
+import { ITEMS, initialState } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
 import { AudioSystem } from './audio/audio.js';
@@ -128,6 +129,7 @@ export class Game {
     if (!attract) this.npcs.startBuilding();
     this.items = new ItemSystem(this);
     if (load) applyWorldState(this, load);
+    this.inventory = new Inventory();
     this.interaction = new Interaction(this);
     this.ui = this.ui || null;
     this.hud = new HUD(this);
@@ -158,6 +160,10 @@ export class Game {
       quaternion: spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw),
     });
     this.car.dyn.automatic = settings.data.transmission !== 'manual';
+    this.car.storage = {
+      trunk: new Container('trunk', 'Trunk', 18, { capacity: 160, bulky: true }),
+      glovebox: new Container('glovebox', 'Glovebox', 6, { capacity: 5 }),
+    };
     const py = spawn.y !== undefined ? spawn.y : this.gen.height(spawn.x, spawn.z) + 0.3;
     this.player = new Player(this, new THREE.Vector3(spawn.x - this.origin.x, py, spawn.z - this.origin.z));
     this.player.yaw = spawn.yaw;
@@ -424,6 +430,11 @@ export class Game {
 
   // A few essentials in the homestead garage next to the car.
   spawnStarterItems() {
+    // something to drink and eat in the backpack from the start
+    this.inventory.addSmart({ id: 'waterBottle', state: initialState('waterBottle', () => 1) });
+    this.inventory.addSmart({ id: 'chocolate', state: initialState('chocolate', Math.random) });
+    // a disc left in the glovebox
+    this.car.storage.glovebox.add({ id: 'cd', state: { variant: Math.floor(Math.random() * 6) } });
     if (this.startZ) return;
     const inst = this.pois.loaded.get(0);
     if (!inst) return;

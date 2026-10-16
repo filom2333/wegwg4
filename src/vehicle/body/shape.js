@@ -144,13 +144,14 @@ function halfWidth(y, z) {
   const ycl = Tside(z) - (0.078 - 0.012 * z);
   const u = (y - ycl) / 0.02;
   w -= 0.17 * 0.02 * softplus(u);
-  const dl = (y - ycl) / 0.024;
-  w += 0.002 * Math.exp(-dl * dl);
+  const dl = (y - ycl) / 0.02;
+  w += 0.0034 * Math.exp(-dl * dl);
   // Lower sculpt: shallow concave band rising toward the rear between the arches.
   const between = smoothstep(-1.0, -0.78, z) * (1 - smoothstep(0.78, 0.98, z));
   const ylow = 0.43 + (0.8 - z) * 0.045;
-  const dr = (y - ylow) / 0.055;
-  w -= 0.0075 * Math.exp(-dr * dr) * between;
+  // sharper upper edge so it reads as a crisp light line along the doors
+  const dr = (y - ylow) / (y > ylow ? 0.035 : 0.07);
+  w -= 0.011 * Math.exp(-dr * dr) * between;
   return w;
 }
 

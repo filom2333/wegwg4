@@ -5,8 +5,13 @@
 import * as THREE from 'three';
 import { loftSections, superSection } from '../gfx/geom.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
-import { POSES, FINGERS, THUMB, fingerPoints, handArrays } from './handShape.js';
-export { POSES };
+import { POSES, FINGERS, THUMB, fingerPoints, wrapFingerPoints, wrapThumbPoints, handArrays, WRIST, gripCenter, PALM_CONTACT } from './handShape.js';
+export { POSES, WRIST, gripCenter, PALM_CONTACT };
+
+// Arm segment lengths (wrist to elbow, elbow to shoulder) and the wrist's range of motion.
+export const FOREARM = 0.255;
+export const UPPER = 0.29;
+const MAX_BEND = 1.3;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -31,7 +36,7 @@ function tubeFromJoints(pts, r0, r1, radial = 12) {
   return loftSections(secs, { capStart: true, capEnd: true });
 }
 
-function nail(f, curlPts, tipDir) {
+function nail(f, curlPts) {
   const tip = curlPts[curlPts.length - 1];
   const prev = curlPts[curlPts.length - 2];
   const along = tip.clone().sub(prev).normalize();
@@ -42,7 +47,6 @@ function nail(f, curlPts, tipDir) {
   g.scale(f.r * 0.72, 0.0016, 0.0075);
   const m = new THREE.Matrix4().makeBasis(side, up, along.clone().negate()).setPosition(c);
   g.applyMatrix4(m);
-  void tipDir;
   return g;
 }
 
@@ -74,39 +78,75 @@ function palm() {
   return loftSections(secs, { capStart: true, capEnd: true });
 }
 
+// Forearm skin in the arm frame (origin at the wrist joint, +Z toward the elbow), coloured like
+// the sculpted hand's skin so the two read as one surface.
+const SKIN_RGB = [0.74, 0.53, 0.42];
 function forearm() {
   const secs = [];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    const z = 0.035 + t * 0.32;
-    const w = 0.024 + 0.013 * Math.pow(t, 0.8);
-    const h = 0.0165 + 0.012 * Math.pow(t, 0.8);
-    secs.push(superSection(V(0, -0.002, z), V(1, 0, 0), V(0, 1, 0), w, h, 2.2, 22));
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const z = -0.014 + t * 0.2;
+    const k = Math.pow(t, 0.75);
+    secs.push(superSection(V(0, 0, z), V(1, 0, 0), V(0, 1, 0), 0.0238 + 0.0115 * k, 0.0158 + 0.0092 * k, 2.2, 22));
   }
-  return loftSections(secs, { capStart: true, capEnd: true });
+  const g = loftSections(secs, { capStart: true, capEnd: true });
+  const n = g.attributes.position.count;
+  const c = new Float32Array(n * 3);
+  // same colour space as the sculpted hand's vertex colours (authored in sRGB)
+  const lin = new THREE.Color().setRGB(SKIN_RGB[0], SKIN_RGB[1], SKIN_RGB[2], THREE.SRGBColorSpace);
+  const p = g.attributes.position;
+  for (let i = 0; i < n; i++) {
+    // a little redder over the wrist, paler on the inside of the forearm
+    const z = p.getZ(i),
+      y = p.getY(i);
+    const k = 1 + 0.04 * Math.sin(z * 90) * 0.5 - (y < 0 ? 0.05 : 0);
+    c[i * 3] = lin.r * k;
+    c[i * 3 + 1] = lin.g * (k - 0.02);
+    c[i * 3 + 2] = lin.b * (k - 0.03);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return g;
 }
 
+// Jacket sleeve over the forearm (arm frame) with a turned-back cuff, and the upper-arm sleeve
+// (upper frame: origin at the elbow, +Z toward the shoulder).
 function sleeve() {
   const secs = [];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    const z = 0.13 + t * 0.32;
-    const r = 0.042 + 0.012 * t;
-    const c = V(0, -0.002, z);
-    const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.86, 2.0, 26);
-    // soft fabric folds
-    g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), 0.0025 * Math.sin(k * 1.3 + i * 2.1) * Math.sin(t * Math.PI + 0.3)));
+  const N = 14;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const z = 0.042 + t * (FOREARM - 0.014);
+    const r = 0.039 + 0.012 * t;
+    const c = V(0, 0.002, z);
+    const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.88, 2.0, 28);
+    // soft fabric folds, bunching toward the elbow
+    g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), (0.0018 + 0.003 * t) * Math.sin(k * 1.3 + i * 2.1) * Math.sin(t * Math.PI + 0.3)));
     secs.push(g);
   }
-  // rolled cuff
   const cuff = [];
-  for (let i = 0; i <= 3; i++) {
-    const t = i / 3;
-    const z = 0.115 + t * 0.03;
-    const r = 0.044 + 0.004 * Math.sin(t * Math.PI);
-    cuff.push(superSection(V(0, -0.002, z), V(1, 0, 0), V(0, 1, 0), r, r * 0.86, 2.0, 26));
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4;
+    const z = 0.034 + t * 0.026;
+    const r = 0.0395 + 0.0035 * Math.sin(t * Math.PI);
+    cuff.push(superSection(V(0, 0.002, z), V(1, 0, 0), V(0, 1, 0), r, r * 0.88, 2.0, 28));
   }
-  return [loftSections(secs, { capStart: true, capEnd: true }), loftSections(cuff, { capStart: true, capEnd: true })];
+  const elbow = new THREE.SphereGeometry(0.05, 20, 12);
+  elbow.scale(1, 0.9, 1);
+  elbow.translate(0, 0.002, FOREARM);
+  return [loftSections(secs, { capStart: true, capEnd: true }), loftSections(cuff, { capStart: true, capEnd: true }), elbow];
+}
+
+function upperSleeve() {
+  const secs = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    const r = 0.05 + 0.01 * t;
+    const c = V(0, 0, -0.02 + t * (UPPER + 0.04));
+    const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.92, 2.0, 24);
+    g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), 0.0022 * Math.sin(k * 1.7 + i * 1.9)));
+    secs.push(g);
+  }
+  return loftSections(secs, { capStart: true, capEnd: true });
 }
 
 let SKIN = null;
@@ -184,56 +224,70 @@ function handMaterial() {
   return HAND_MAT;
 }
 
+// Hand mesh for a pose (hand frame); the forearm and sleeves are separate jointed meshes.
 export function buildHand(poseName, mirror = false, { sync = true } = {}) {
   if (!handGeos.has(poseName) && !sync) return buildHandLegacy(poseName, mirror);
-  const g = new THREE.Group();
   let geo = buildHandGeometry(poseName);
   if (mirror) geo = mirrorGeometry(geo);
   const hand = new THREE.Mesh(geo, handMaterial());
   // a viewmodel this small cannot be resolved by the sun's shadow map (it only produces acne)
   hand.castShadow = false;
   hand.receiveShadow = false;
-  g.add(hand);
-  // sleeve (lofted fabric) from the old builder
+  return hand;
+}
+
+// Forearm + sleeve (arm frame) and upper-arm sleeve (upper frame) meshes.
+export function buildArm() {
   const M = materials();
-  const [sl, cuff] = sleeve();
-  for (const [sg, mat] of [
-    [sl, M.sleeve],
-    [cuff, M.cuff],
-  ]) {
-    const sm = new THREE.Mesh(mirror ? mirrorGeometry(sg) : sg, mat);
-    sm.receiveShadow = false;
-    g.add(sm);
-  }
-  return g;
+  const arm = new THREE.Group();
+  const fa = new THREE.Mesh(forearm(), handMaterial());
+  arm.add(fa);
+  const [sl, cuff, elbow] = sleeve();
+  arm.add(new THREE.Mesh(sl, M.sleeve), new THREE.Mesh(cuff, M.cuff), new THREE.Mesh(elbow, M.sleeve));
+  const upper = new THREE.Group();
+  upper.add(new THREE.Mesh(upperSleeve(), M.sleeve));
+  upper.position.set(0, 0, FOREARM);
+  arm.add(upper);
+  arm.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = false;
+      o.receiveShadow = false;
+    }
+  });
+  return { arm, upper };
 }
 
 export function buildHandLegacy(poseName, mirror = false) {
   const pose = POSES[poseName] || POSES.relax;
   const M = materials();
   const g = new THREE.Group();
-  const skin = [palm(), forearm()];
+  const skin = [palm()];
   const nails = [];
   for (const [name, f] of Object.entries(FINGERS)) {
-    const { pts, tipDir } = fingerPoints(f, pose.fingers[name]);
+    const wrap = pose.wrap && !(pose.trigger && name === 'index');
+    const pts = wrap ? wrapFingerPoints(f, pose.wrap) : fingerPoints(f, pose.trigger && name === 'index' ? pose.trigger : pose.fingers[name]).pts;
     skin.push(tubeFromJoints(pts, f.r * 1.05, f.r * 0.82));
-    nails.push(nail(f, pts, tipDir));
+    nails.push(nail(f, pts));
   }
   // thumb: rotates out of the palm plane
   {
-    const [yaw, j1, j2] = pose.thumb;
-    const dir = V(0.75, -0.35, -0.55).normalize().applyAxisAngle(V(0, 0, 1), -yaw * 0.6).applyAxisAngle(V(0, 1, 0), yaw * 0.45);
-    const pts = [THUMB.base.clone().add(V(-0.012, 0.004, 0.02)), THUMB.base.clone()];
-    let p = THUMB.base.clone(),
-      d = dir.clone();
-    const axis = d.clone().cross(V(0, 1, 0)).normalize();
-    for (let j = 0; j < 3; j++) {
-      if (j > 0) d.applyAxisAngle(axis, -(j === 1 ? j1 : j2) * 1.1);
-      p = p.clone().addScaledVector(d, THUMB.len[j]);
-      pts.push(p.clone());
+    const pts = [THUMB.base.clone().add(V(-0.012, 0.004, 0.02))];
+    if (pose.wrap) pts.push(...wrapThumbPoints(pose.wrap));
+    else {
+      const [yaw, j1, j2] = pose.thumb;
+      const dir = V(0.75, -0.35, -0.55).normalize().applyAxisAngle(V(0, 0, 1), -yaw * 0.6).applyAxisAngle(V(0, 1, 0), yaw * 0.45);
+      pts.push(THUMB.base.clone());
+      let p = THUMB.base.clone(),
+        d = dir.clone();
+      const axis = d.clone().cross(V(0, 1, 0)).normalize();
+      for (let j = 0; j < 3; j++) {
+        if (j > 0) d.applyAxisAngle(axis, -(j === 1 ? j1 : j2) * 1.1);
+        p = p.clone().addScaledVector(d, THUMB.len[j]);
+        pts.push(p.clone());
+      }
     }
     skin.push(tubeFromJoints(pts, THUMB.r * 1.25, THUMB.r * 0.9));
-    nails.push(nail(THUMB, pts, d));
+    nails.push(nail(THUMB, pts));
   }
   const mergeMesh = (list, mat) => {
     const geos = list.map((x) => {
@@ -277,11 +331,12 @@ export function buildHandLegacy(poseName, mirror = false) {
   };
   g.add(mergeMesh(skin, M.skin));
   g.add(mergeMesh(nails, M.nail));
-  g.add(mergeMesh(sleeve(), M.sleeve));
   return g;
 }
 
-// Hand rig with cached poses; positions itself in camera space.
+// Two-armed viewmodel rig. Each side is a hand frame (positioned in camera space by the caller)
+// holding the posed hand mesh, with a forearm hinged at the wrist and an upper arm hinged at the
+// elbow; solveArm() bends them toward the shoulder so arms always come from the body.
 export class Hands {
   constructor(camera) {
     this.camera = camera;
@@ -291,13 +346,20 @@ export class Hands {
     this.right = new THREE.Group();
     this.left = new THREE.Group();
     this.root.add(this.right, this.left);
+    this.rig = {};
+    for (const side of ['right', 'left']) {
+      const holder = new THREE.Group();
+      const { arm, upper } = buildArm();
+      arm.position.copy(WRIST);
+      this[side].add(holder, arm);
+      this.rig[side] = { holder, arm, upper };
+    }
     this.cur = { right: null, left: null };
     this.setPose('right', 'relax');
     this.setPose('left', 'carry');
     this.left.visible = false;
     this._listener = (pose) => this.onSculpted(pose);
     handListeners.add(this._listener);
-    this.bob = 0;
   }
 
   meshFor(pose, mirror) {
@@ -321,10 +383,68 @@ export class Hands {
 
   setPose(side, pose) {
     if (this.cur[side] === pose) return;
-    const grp = side === 'right' ? this.right : this.left;
-    grp.clear();
+    const holder = this.rig[side].holder;
+    holder.clear();
     // the base model is a left hand (thumb on +X with the back of the hand up); mirror it for the right
-    grp.add(this.meshFor(pose, side === 'right'));
+    holder.add(this.meshFor(pose, side === 'right'));
     this.cur[side] = pose;
   }
+
+  // Places a hand frame in camera space.
+  place(side, pos, quat) {
+    this[side].position.copy(pos);
+    this[side].quaternion.copy(quat);
+  }
+
+  // Two-bone IK in camera space: the elbow sits where an upper arm from `shoulder` meets a
+  // forearm from the wrist, bent toward `pole`; the wrist only bends within its range.
+  solveArm(side, shoulder, pole) {
+    const grp = this[side];
+    const { arm, upper } = this.rig[side];
+    const q = grp.quaternion;
+    const W = _v1.copy(WRIST).applyQuaternion(q).add(grp.position);
+    const a = UPPER,
+      b = FOREARM;
+    const u = _v2.copy(W).sub(shoulder);
+    let d = u.length();
+    u.multiplyScalar(1 / Math.max(d, 1e-6));
+    d = Math.min(Math.max(d, Math.abs(a - b) + 0.02), a + b - 0.002);
+    const x = (a * a - b * b + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, a * a - x * x));
+    const v = _v3.copy(pole).addScaledVector(u, -pole.dot(u));
+    if (v.lengthSq() < 1e-8) v.set(0, -1, 0);
+    v.normalize();
+    const E = _v4.copy(shoulder).addScaledVector(u, x).addScaledVector(v, h);
+    // forearm toward the elbow, limited to the wrist's range
+    const qi = _q1.copy(q).invert();
+    const dl = E.sub(W).applyQuaternion(qi).normalize();
+    const qa = _q2.setFromUnitVectors(_Z, dl);
+    const ang = 2 * Math.acos(Math.min(1, Math.abs(qa.w)));
+    if (ang > MAX_BEND) {
+      _q3.copy(qa);
+      qa.copy(_qI).slerp(_q3, MAX_BEND / ang);
+    }
+    arm.quaternion.copy(qa);
+    // upper arm from where the forearm ends toward the shoulder
+    const armQ = _q3.copy(q).multiply(qa);
+    const Ea = _v4.set(0, 0, b).applyQuaternion(armQ).add(W);
+    const du = _v2.copy(shoulder).sub(Ea).applyQuaternion(armQ.invert()).normalize();
+    upper.quaternion.setFromUnitVectors(_Z, du);
+  }
+
+  // Straight wrist and elbow (for hands placed without a body, e.g. on the inspection stand).
+  resetArm(side) {
+    this.rig[side].arm.quaternion.identity();
+    this.rig[side].upper.quaternion.identity();
+  }
 }
+
+const _Z = new THREE.Vector3(0, 0, 1);
+const _qI = new THREE.Quaternion();
+const _v1 = new THREE.Vector3(),
+  _v2 = new THREE.Vector3(),
+  _v3 = new THREE.Vector3(),
+  _v4 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion(),
+  _q2 = new THREE.Quaternion(),
+  _q3 = new THREE.Quaternion();

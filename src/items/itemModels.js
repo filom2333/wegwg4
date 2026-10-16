@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { latheY, roundedBox, tubeAlong, loftSections, superSection } from '../gfx/geom.js';
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
+import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -60,9 +61,22 @@ function centered(group) {
   const b = new THREE.Box3().setFromObject(group);
   const c = b.getCenter(new THREE.Vector3());
   for (const ch of group.children) ch.position.sub(c);
+  for (const k of ['grip', 'grip2']) if (group.userData[k]) group.userData[k].p.sub(c);
+  if (group.userData.muzzle) group.userData.muzzle.sub(c);
   group.userData.size = b.getSize(new THREE.Vector3());
   return group;
 }
+
+// Declares where a hand closes on the model (model space, before centring): `cls` is the hold
+// (wrap/palm/side/tool/pistol/rifle), `pose` the hand pose, `thumb` the direction the thumb side
+// of the fist points along the handle, `back` the direction the back of the hand faces.
+function grip(g, cls, pose, p, thumb, back, which = 'grip') {
+  g.userData[which] = { cls, pose, p, thumb: thumb.clone().normalize(), back: back.clone().normalize() };
+  return g;
+}
+const UP = V(0, 1, 0),
+  RIGHT = V(1, 0, 0),
+  DOWN = V(0, -1, 0);
 
 // ------------------------------------------------------------------ containers
 export function jerryCan(color = 'red') {
@@ -93,6 +107,7 @@ export function jerryCan(color = 'red') {
   spout.translate(0, 0.205, 0.13);
   g.add(mesh(spout, M.darkSteel));
   g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 6).rotateZ(Math.PI / 2).translate(0, 0.25, 0.1), M.darkSteel));
+  grip(g, 'side', 'wrap12', V(0, 0.28, -0.05), V(0, 0, 1), V(-1, 0, 0));
   return centered(g);
 }
 
@@ -135,6 +150,7 @@ export function waterBottle() {
     c.fillText('SPRING WATER 1.5L', 14, 44);
   });
   g.add(mesh(new THREE.CylinderGeometry(0.0435, 0.0435, 0.07, 28, 1, true).translate(0, 0.14, 0), label, false));
+  grip(g, 'wrap', 'wrap40', V(0, 0.13, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -157,6 +173,7 @@ export function sodaCan(brand = 0) {
   g.add(mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.1, 24, 1, true).translate(0, 0.06, 0), m));
   g.add(mesh(latheY([[0.0, 0.0], [0.026, 0.0], [0.033, 0.01], [0.033, 0.011]], 24), M.steel));
   g.add(mesh(latheY([[0.033, 0.109], [0.03, 0.118], [0.028, 0.12], [0.0, 0.118]], 24), M.steel));
+  grip(g, 'wrap', 'wrap33', V(0, 0.058, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -175,6 +192,7 @@ export function cannedFood(kind = 'beans') {
   });
   g.add(mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.1, 24, 1, true).translate(0, 0.055, 0), m));
   for (const y of [0, 0.11]) g.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.006, 24).translate(0, y + 0.003, 0), M.steel));
+  grip(g, 'wrap', 'wrap40', V(0, 0.056, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -206,6 +224,7 @@ export function snackBag(kind = 'chips') {
   }, { roughness: 0.3, metalness: 0.4 });
   g.add(mesh(geo, m));
   for (const y of [-0.115, 0.115]) g.add(mesh(new THREE.BoxGeometry(0.16, 0.012, 0.012).translate(0, y, 0), m));
+  grip(g, 'palm', 'palm', V(0.045, 0.06, -0.02), RIGHT, V(0, 0, -1));
   return centered(g);
 }
 
@@ -215,6 +234,7 @@ export function sponge() {
   const scour = cached('scourMat', () => new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 1 }));
   g.add(mesh(roundedBox(0.12, 0.035, 0.075, 0.012, 3).translate(0, 0.0175, 0), m));
   g.add(mesh(roundedBox(0.12, 0.01, 0.075, 0.004, 2).translate(0, 0.04, 0), scour));
+  grip(g, 'palm', 'palm', V(0.03, 0, 0.012), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -236,6 +256,7 @@ export function sprayPaint() {
   g.add(mesh(latheY([[0.0, 0.0], [0.03, 0.0], [0.033, 0.005]], 24), M.steel));
   g.add(mesh(latheY([[0.033, 0.165], [0.02, 0.185], [0.012, 0.19], [0.0, 0.19]], 24), M.steel));
   g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.015, 10).translate(0, 0.197, 0), M.rubber));
+  grip(g, 'wrap', 'wrap33', V(0, 0.075, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -253,6 +274,7 @@ export function cigarettes() {
     c.fillText('FILTERS · 20', 18, 135);
   }, { roughness: 0.6 });
   g.add(mesh(roundedBox(0.055, 0.085, 0.022, 0.003, 1).translate(0, 0.0425, 0), lab));
+  grip(g, 'palm', 'palm', V(0.012, 0.03, -0.011), RIGHT, V(0, 0, -1));
   return centered(g);
 }
 
@@ -269,6 +291,7 @@ export function coffee() {
   g.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.11, 24, 1, true).translate(0, 0.06, 0), lab));
   g.add(mesh(latheY([[0.0, 0.0], [0.04, 0.0], [0.04, 0.005]], 24), M.steel));
   g.add(mesh(latheY([[0.04, 0.115], [0.036, 0.122], [0.0, 0.12]], 24), M.steel));
+  grip(g, 'wrap', 'wrap40', V(0, 0.058, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -320,6 +343,7 @@ export function note() {
   geo.computeVertexNormals();
   geo.rotateX(-Math.PI / 2);
   g.add(mesh(geo, mat, false));
+  grip(g, 'palm', 'palm', V(0.035, 0, 0.03), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -335,8 +359,9 @@ export function chocolate() {
   const geo = roundedBox(0.16, 0.012, 0.06, 0.004, 2);
   const p = geo.attributes.position,
     uv = geo.attributes.uv;
-  for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / 0.16 + 0.5, p.getZ(i) / 0.06 + 0.5);
+  for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / 0.16 + 0.5, -p.getZ(i) / 0.06 + 0.5);
   g.add(mesh(geo, m));
+  grip(g, 'palm', 'palm', V(0.04, -0.006, 0.01), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -355,6 +380,7 @@ export function mre() {
     c.fillText('MENU No. 14  BEEF STEW', 8, 90);
   });
   g.add(mesh(new THREE.PlaneGeometry(0.22, 0.11).rotateX(-Math.PI / 2).translate(0, 0.026, 0), m, false));
+  grip(g, 'palm', 'palm', V(0.07, -0.025, 0.03), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -369,6 +395,7 @@ export function medkit() {
   ])
     g.add(mesh(new THREE.BoxGeometry(w, 0.002, d).translate(0, 0.046, 0), M.redPaint));
   g.add(mesh(tubeAlong([V(-0.04, 0.045, -0.1), V(-0.04, 0.07, -0.13), V(0.04, 0.07, -0.13), V(0.04, 0.045, -0.1)], 0.008, 6), M.rubber));
+  grip(g, 'side', 'wrap12', V(0, 0.068, -0.125), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
@@ -377,6 +404,7 @@ export function bandage() {
   const M = itemMats();
   g.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 20).rotateZ(Math.PI / 2), M.white));
   g.add(mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.072, 12).rotateZ(Math.PI / 2), M.cardboard));
+  grip(g, 'wrap', 'wrap33', V(0, 0, 0), RIGHT, UP);
   return centered(g);
 }
 
@@ -385,6 +413,7 @@ export function pillBottle() {
   const g = new THREE.Group();
   g.add(mesh(latheY([[0, 0], [0.025, 0], [0.026, 0.07], [0, 0.07]], 18), M.glassAmber, false));
   g.add(mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.02, 18).translate(0, 0.08, 0), M.capWhite));
+  grip(g, 'wrap', 'wrap24', V(0, 0.035, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -405,6 +434,7 @@ export function oilBottle() {
     c.fillText('OIL 1L', 18, 122);
   });
   g.add(mesh(new THREE.PlaneGeometry(0.1, 0.15).translate(0, 0.1, 0.0352), m, false));
+  grip(g, 'wrap', 'wrap33', V(0.025, 0.1, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -414,6 +444,7 @@ export function coolantJug() {
   g.add(mesh(roundedBox(0.16, 0.28, 0.1, 0.025, 3).translate(0, 0.14, 0), M.greenPlastic));
   g.add(mesh(tubeAlong([V(0.03, 0.27, 0), V(0.07, 0.31, 0), V(0.075, 0.2, 0)], 0.012, 6), M.greenPlastic));
   g.add(mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14).translate(-0.04, 0.295, 0), M.capWhite));
+  grip(g, 'wrap', 'wrap12', V(0.072, 0.25, 0), UP, RIGHT);
   return centered(g);
 }
 
@@ -426,6 +457,7 @@ export function waterJug() {
   g.add(fill);
   g.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 16).translate(0, 0.315, 0), M.capBlue));
   g.add(mesh(tubeAlong([V(-0.06, 0.3, 0), V(-0.03, 0.34, 0), V(0.03, 0.34, 0), V(0.06, 0.3, 0)], 0.01, 6), M.capBlue));
+  grip(g, 'side', 'wrap12', V(0, 0.34, 0), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
@@ -437,6 +469,7 @@ export function repairKit() {
   g.add(mesh(roundedBox(0.385, 0.01, 0.185, 0.004, 1).translate(0, 0.1, 0), M.darkSteel));
   g.add(mesh(tubeAlong([V(-0.08, 0.14, 0), V(-0.08, 0.19, 0), V(0.08, 0.19, 0), V(0.08, 0.14, 0)], 0.01, 6), M.darkSteel));
   for (const x of [-0.15, 0.15]) g.add(mesh(new THREE.BoxGeometry(0.03, 0.03, 0.02).translate(x, 0.1, 0.095), M.steel));
+  grip(g, 'side', 'wrap12', V(0, 0.19, 0), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
@@ -460,6 +493,7 @@ export function wrench() {
   g.add(mesh(hg, M.steel));
   const ring = new THREE.TorusGeometry(0.024, 0.009, 8, 20).rotateX(Math.PI / 2).translate(-0.17, 0, 0);
   g.add(mesh(ring, M.steel));
+  grip(g, 'tool', 'wrap12', V(-0.075, 0, 0), RIGHT, UP);
   return centered(g);
 }
 
@@ -469,6 +503,7 @@ export function extinguisher() {
   g.add(mesh(latheY([[0, 0], [0.06, 0.0], [0.065, 0.02], [0.065, 0.36], [0.05, 0.4], [0.02, 0.42], [0, 0.42]], 24), M.redPaint));
   g.add(mesh(roundedBox(0.03, 0.06, 0.12, 0.008, 2).translate(0, 0.46, 0.02), M.darkSteel));
   g.add(mesh(tubeAlong([V(0, 0.44, -0.03), V(0, 0.4, -0.09), V(0, 0.2, -0.08), V(0, 0.12, -0.075)], 0.01, 6), M.rubber));
+  grip(g, 'side', 'grip', V(0, 0.455, 0.02), V(0, 0, 1), V(-1, 0, 0));
   return centered(g);
 }
 
@@ -485,6 +520,7 @@ export function lantern() {
   }
   g.add(mesh(latheY([[0.0, 0.19], [0.07, 0.19], [0.05, 0.23], [0.015, 0.25], [0, 0.25]], 20), M.jerryGreen));
   g.add(mesh(new THREE.TorusGeometry(0.06, 0.004, 6, 20, Math.PI).translate(0, 0.25, 0), M.darkSteel));
+  grip(g, 'side', 'wrap12', V(0, 0.31, 0), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
@@ -523,11 +559,17 @@ export function revolver() {
   g.add(mesh(new THREE.TorusGeometry(0.016, 0.003, 6, 16, Math.PI * 1.3).rotateY(Math.PI / 2).translate(0, 0.006, 0.0), M.blued));
   g.add(mesh(roundedBox(0.004, 0.018, 0.005, 0.0015, 1).translate(0, 0.008, -0.002), M.steel));
   // grip (walnut) angled back
-  const grip = roundedBox(0.026, 0.085, 0.034, 0.01, 3);
-  grip.rotateX(-0.35);
-  grip.translate(0, -0.025, -0.045);
-  g.add(mesh(grip, M.walnut));
+  const stocks = roundedBox(0.026, 0.085, 0.034, 0.01, 3);
+  stocks.rotateX(0.35);
+  stocks.translate(0, -0.024, -0.052);
+  g.add(mesh(stocks, M.walnut));
+  // butt cap
+  g.add(mesh(roundedBox(0.027, 0.006, 0.036, 0.002, 1).rotateX(0.35).translate(0, -0.064, -0.067), M.blued));
   g.userData.muzzle = V(0, 0.045, 0.18);
+  grip(g, 'pistol', 'pistol', V(0, -0.022, -0.054), V(0, Math.cos(0.35), Math.sin(0.35)), V(-1, 0, 0.35));
+  // support hand cupped round the shooting hand (aimed only)
+  grip(g, 'pistol', 'wrap33', V(0.028, -0.04, -0.045), V(0, Math.cos(0.35), Math.sin(0.35)), V(1, -0.5, 0.35), 'grip2');
+  g.userData.grip2.aimOnly = true;
   return g;
 }
 
@@ -549,6 +591,8 @@ export function shotgun() {
   g.add(mesh(loftSections(secs, { capStart: true, capEnd: true }), M.walnut));
   g.add(mesh(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI * 1.3).rotateY(Math.PI / 2).translate(0, -0.005, 0.02), M.blued));
   g.userData.muzzle = V(0, 0.04, 0.63);
+  grip(g, 'rifle', 'pistol', V(0, -0.004, -0.08), V(0, 0.9, -0.42), V(-1, 0, 0.35));
+  grip(g, 'rifle', 'wrap24', V(0, 0.012, 0.27), V(0, 0, 1), V(0.15, -1, 0), 'grip2');
   return g;
 }
 
@@ -568,6 +612,185 @@ export function ammoBox(kind = '38') {
     uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / 0.12 + 0.5, (p.getY(i) + p.getZ(i)) / 0.12 + 0.5);
   g.add(mesh(geo, m));
+  grip(g, 'palm', 'palm', V(0.02, -0.025, 0.01), RIGHT, DOWN);
+  return centered(g);
+}
+
+// ------------------------------------------------------------------ music
+// Album artwork painted on a canvas: a motif per style in the album's colours.
+export function drawCover(c, w, h, al) {
+  const [bg, a, b] = al.colors;
+  const gr = c.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, bg);
+  gr.addColorStop(1, shade(bg, al.style === 'ambient' || al.style === 'country' ? -0.12 : 0.18));
+  c.fillStyle = gr;
+  c.fillRect(0, 0, w, h);
+  c.save();
+  const cx = w / 2;
+  switch (al.style) {
+    case 'synthwave': {
+      // striped sun over a grid
+      const sg = c.createLinearGradient(0, h * 0.18, 0, h * 0.62);
+      sg.addColorStop(0, b);
+      sg.addColorStop(1, a);
+      c.fillStyle = sg;
+      c.beginPath();
+      c.arc(cx, h * 0.45, w * 0.26, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = bg;
+      for (let k = 0; k < 6; k++) c.fillRect(0, h * (0.47 + k * 0.035), w, 3 + k * 1.6);
+      c.strokeStyle = a;
+      c.lineWidth = 2;
+      for (let k = 0; k < 8; k++) {
+        const y = h * 0.66 + Math.pow(k / 8, 1.8) * h * 0.34;
+        c.beginPath();
+        c.moveTo(0, y);
+        c.lineTo(w, y);
+        c.stroke();
+      }
+      for (let k = -8; k <= 8; k++) {
+        c.beginPath();
+        c.moveTo(cx + k * 6, h * 0.66);
+        c.lineTo(cx + k * 60, h);
+        c.stroke();
+      }
+      break;
+    }
+    case 'rock': {
+      // a coiled rattlesnake made of arcs and a lightning-bolt road
+      c.strokeStyle = a;
+      c.lineWidth = 10;
+      for (let k = 0; k < 4; k++) {
+        c.beginPath();
+        c.arc(cx, h * 0.5, w * (0.08 + k * 0.07), k * 0.9, k * 0.9 + Math.PI * 1.5);
+        c.stroke();
+      }
+      c.fillStyle = b;
+      c.beginPath();
+      c.moveTo(cx + 18, h * 0.12);
+      c.lineTo(cx - 10, h * 0.5);
+      c.lineTo(cx + 8, h * 0.5);
+      c.lineTo(cx - 16, h * 0.88);
+      c.lineTo(cx + 26, h * 0.42);
+      c.lineTo(cx + 6, h * 0.42);
+      c.closePath();
+      c.fill();
+      break;
+    }
+    case 'country': {
+      // road to the horizon under a big moon
+      c.fillStyle = b;
+      c.globalAlpha = 0.85;
+      c.beginPath();
+      c.arc(w * 0.7, h * 0.28, w * 0.11, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = 1;
+      c.fillStyle = a;
+      c.fillRect(0, h * 0.58, w, h * 0.42);
+      c.fillStyle = shade(a, -0.3);
+      c.beginPath();
+      c.moveTo(cx - 4, h * 0.58);
+      c.lineTo(cx + 4, h * 0.58);
+      c.lineTo(cx + w * 0.3, h);
+      c.lineTo(cx - w * 0.3, h);
+      c.closePath();
+      c.fill();
+      c.fillStyle = '#f2e6b8';
+      for (let k = 0; k < 5; k++) {
+        const y0 = h * 0.6 + Math.pow(k / 5, 1.6) * h * 0.4;
+        c.fillRect(cx - 1 - k, y0, 2 + k * 2, 4 + k * 4);
+      }
+      break;
+    }
+    case 'ambient': {
+      // heat shimmer bands over a white flat
+      for (let k = 0; k < 14; k++) {
+        c.fillStyle = k % 2 ? a : b;
+        c.globalAlpha = 0.12 + (k / 14) * 0.25;
+        const y = h * 0.35 + k * h * 0.035;
+        c.beginPath();
+        c.moveTo(0, y);
+        for (let x = 0; x <= w; x += 8) c.lineTo(x, y + Math.sin(x * 0.05 + k) * 3);
+        c.lineTo(w, y + 6);
+        c.lineTo(0, y + 6);
+        c.fill();
+      }
+      c.globalAlpha = 1;
+      break;
+    }
+    case 'blues': {
+      // neon guitar sign in a dark window
+      c.strokeStyle = a;
+      c.lineWidth = 6;
+      c.shadowColor = a;
+      c.shadowBlur = 16;
+      c.beginPath();
+      c.ellipse(cx - 10, h * 0.6, w * 0.13, h * 0.11, 0.4, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(cx + 10, h * 0.52);
+      c.lineTo(cx + w * 0.3, h * 0.2);
+      c.stroke();
+      c.shadowBlur = 0;
+      break;
+    }
+    case 'lofi': {
+      // a motel window at night with a crescent moon
+      c.fillStyle = shade(bg, 0.25);
+      c.fillRect(w * 0.2, h * 0.18, w * 0.6, h * 0.5);
+      c.fillStyle = a;
+      c.beginPath();
+      c.arc(w * 0.62, h * 0.34, 18, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = shade(bg, 0.25);
+      c.beginPath();
+      c.arc(w * 0.66, h * 0.31, 16, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = shade(bg, -0.3);
+      c.lineWidth = 6;
+      c.strokeRect(w * 0.2, h * 0.18, w * 0.6, h * 0.5);
+      c.beginPath();
+      c.moveTo(cx, h * 0.18);
+      c.lineTo(cx, h * 0.68);
+      c.stroke();
+      c.fillStyle = b;
+      c.fillRect(w * 0.14, h * 0.74, w * 0.72, 6);
+      break;
+    }
+  }
+  c.restore();
+  // type
+  c.fillStyle = al.style === 'ambient' || al.style === 'country' ? '#1d1d1f' : '#f4efe4';
+  c.font = `bold ${Math.round(h * 0.075)}px Georgia`;
+  c.textAlign = 'left';
+  c.fillText(al.artist.toUpperCase(), w * 0.07, h * 0.1);
+  c.font = `italic ${Math.round(h * 0.06)}px Georgia`;
+  c.fillText(al.title, w * 0.07, h * 0.93);
+}
+
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.max(0, Math.min(255, Math.round(v + (k > 0 ? (255 - v) * k : v * k))));
+  return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => f(v).toString(16).padStart(2, '0')).join('');
+}
+
+// CD in its jewel case; `album` indexes ALBUMS.
+export function cdCase(album = 0) {
+  const al = ALBUMS[album % ALBUMS.length];
+  const g = new THREE.Group();
+  const cover = labelMat('cd' + al.id, 256, 256, (c, w, h) => drawCover(c, w, h, al), { roughness: 0.25 });
+  const plastic = cached('cdPlastic', () => new THREE.MeshPhysicalMaterial({ color: 0xe8eef2, roughness: 0.08, transmission: 0.6, transparent: true, opacity: 0.55, thickness: 0.002 }));
+  const tray = cached('cdTray', () => new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.5 }));
+  // case 142 x 125 x 10 mm; cover insert on top (+Y), tray underneath
+  g.add(mesh(roundedBox(0.142, 0.0085, 0.125, 0.0015, 1), tray));
+  const top = new THREE.PlaneGeometry(0.136, 0.12);
+  top.rotateX(-Math.PI / 2);
+  top.translate(0.002, 0.0045, 0);
+  g.add(mesh(top, cover, false));
+  g.add(mesh(roundedBox(0.142, 0.002, 0.125, 0.0008, 1).translate(0, 0.0052, 0), plastic, false));
+  // hinge strip
+  g.add(mesh(new THREE.BoxGeometry(0.008, 0.0095, 0.125).translate(-0.067, 0, 0), tray));
+  grip(g, 'palm', 'palm', V(0.03, -0.004, 0.02), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -598,4 +821,5 @@ export const MODEL_BUILDERS = {
   revolver,
   shotgun,
   ammoBox,
+  cdCase,
 };

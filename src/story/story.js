@@ -179,7 +179,7 @@ export class Story {
     const km = this.km();
     // radio broadcasts while the radio plays
     const car = g.car;
-    if (car && car.radioOn && g.player.seat && car.ignition) {
+    if (car && car.radioOn && g.player.seat && car.ignition && !(car.stereo && car.stereo.mode === 'cd')) {
       this.radioT -= dt;
       if (this.radioT <= 0) {
         this.radioT = 45 + Math.random() * 40;
