@@ -90,10 +90,10 @@ export function serializeGame(g) {
       quat: [cq.x, cq.y, cq.z, cq.w],
       fuel: car.fuel,
       oil: car.oil,
-      coolant: car.coolant,
+      model: 'beetle',
       battery: car.battery,
       engineCondition: car.engineCondition,
-      radiatorCondition: car.radiatorCondition,
+      fanbeltCondition: car.fanbeltCondition,
       odometer: car.odometer,
       trip: car.trip,
       dirt: car.dirt,
@@ -129,20 +129,23 @@ export function applySave(g, d) {
   if (d.env.weather) g.env.setWeather(d.env.weather, true);
   // car
   const c = d.car;
-  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'radiatorCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined) car[k] = c[k];
+  for (const k of ['fuel', 'oil', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined) car[k] = c[k];
+  // saves from before the Beetle describe another car's parts: keep its fluids, not its layout
+  const sameModel = c.model === 'beetle';
   if (c.paintColor) {
     car.paintColor = c.paintColor;
     g.carMats.paint.color.setHex(c.paintColor);
   }
-  for (const [id, st] of Object.entries(c.parts || {})) {
+  for (const [id, st] of Object.entries(sameModel ? c.parts || {} : {})) {
     if (!car.parts[id]) continue;
     if (!!car.parts[id].installed !== st.installed) car.setInstalled(id, st.installed);
     car.parts[id].condition = st.condition;
   }
-  for (const [id, t] of Object.entries(c.open || {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
+  for (const [id, t] of Object.entries(sameModel ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
   car.rebuildColliders();
   // items
   for (const s of d.items || []) {
+    if (s.part && !car.model.parts[s.part]) continue;
     const pos = new THREE.Vector3(s.pos[0] - o.x, s.pos[1], s.pos[2] - o.z);
     const q = new THREE.Quaternion(...s.quat);
     const it = s.part ? g.items.spawnPart(s.part, pos, q, s.state) : g.items.spawn(s.id, pos, q, s.state, { sleep: !s.stowed });

@@ -3,14 +3,39 @@
 
 import { SimplexNoise, hash01, clamp, smoothstep, lerp } from '../core/noise.js';
 
-export const BIOMES = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland'];
+export const BIOMES = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland', 'prairie', 'forest', 'taiga', 'tundra'];
 export const BIOME_INFO = {
   scrub: { name: 'Sagebrush steppe', ground: [0.56, 0.47, 0.36] },
   dunes: { name: 'Dune sea', ground: [0.8, 0.64, 0.44] },
   badlands: { name: 'Red badlands', ground: [0.66, 0.38, 0.24] },
   saltflat: { name: 'Salt flats', ground: [0.86, 0.84, 0.8] },
   highland: { name: 'Stone highlands', ground: [0.5, 0.47, 0.43] },
+  prairie: { name: 'Grass prairie', ground: [0.52, 0.53, 0.36] },
+  forest: { name: 'Pine forest', ground: [0.42, 0.42, 0.32] },
+  taiga: { name: 'Snowy taiga', ground: [0.86, 0.88, 0.92] },
+  tundra: { name: 'Frozen tundra', ground: [0.84, 0.86, 0.9] },
 };
+const DESERT = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland'];
+const SNOWY = ['taiga', 'tundra'];
+// Biomes appear by distance north along Route 9: desert first, then grass and pine country,
+// then snow toward Haven. Weights per biome at a distance in km.
+function biomeOdds(km) {
+  const ramp = (a, b, v0, v1) => v0 + (v1 - v0) * clamp((km - a) / (b - a), 0, 1);
+  const desert = km < 7 ? 1 : ramp(7, 70, 1, 0.12);
+  return {
+    scrub: desert * 1.1,
+    dunes: desert,
+    badlands: desert,
+    saltflat: desert * 0.6,
+    highland: desert * 0.9 + ramp(30, 80, 0, 0.25),
+    prairie: km < 6 ? 0 : ramp(6, 20, 0.3, 1.1) - ramp(70, 120, 0, 0.5),
+    forest: km < 9 ? 0 : ramp(9, 30, 0.3, 1.2),
+    taiga: km < 26 ? 0 : ramp(26, 75, 0.25, 1.1),
+    tundra: km < 40 ? 0 : ramp(40, 95, 0.2, 0.7),
+  };
+}
+export const RIVER_SPACING = 4300;
+export const LAKE_CELL = 1700;
 
 export const ROAD = { halfWidth: 3.6, shoulder: 1.6, laneMark: 0.12 };
 const BIOME_CELL = 2600;
@@ -32,6 +57,12 @@ export const POI_INFO = {
   ruins: { offset: [18, 40], pad: 16 },
   camp: { offset: [16, 30], pad: 12 },
   wreck: { offset: [6, 9], pad: 6 },
+  farm: { offset: [34, 52], pad: 36 },
+  cabin: { offset: [22, 36], pad: 16 },
+  church: { offset: [22, 34], pad: 22 },
+  sawmill: { offset: [28, 44], pad: 30 },
+  lodge: { offset: [28, 44], pad: 30 },
+  lookout: { offset: [24, 40], pad: 12 },
 };
 
 const POI_TABLE = {
@@ -76,6 +107,48 @@ const POI_TABLE = {
     ['trailers', 0.8],
     ['outpost', 0.6],
   ],
+  prairie: [
+    ['gasStation', 2.6],
+    ['farm', 2.6],
+    ['house', 1.6],
+    ['houses', 1.4],
+    ['church', 1.0],
+    ['diner', 1.0],
+    ['motel', 0.8],
+    ['waterTower', 0.8],
+    ['wreck', 0.9],
+    ['trailers', 0.5],
+  ],
+  forest: [
+    ['gasStation', 2.4],
+    ['cabin', 2.6],
+    ['sawmill', 1.4],
+    ['lookout', 1.0],
+    ['house', 1.2],
+    ['church', 0.6],
+    ['camp', 1.0],
+    ['motel', 0.8],
+    ['wreck', 0.8],
+  ],
+  taiga: [
+    ['gasStation', 2.6],
+    ['cabin', 2.4],
+    ['lodge', 1.6],
+    ['sawmill', 1.0],
+    ['lookout', 0.8],
+    ['church', 0.6],
+    ['outpost', 0.8],
+    ['wreck', 0.8],
+  ],
+  tundra: [
+    ['gasStation', 2.8],
+    ['outpost', 1.4],
+    ['cabin', 1.4],
+    ['lodge', 1.0],
+    ['radioTower', 1.0],
+    ['ruins', 0.8],
+    ['wreck', 1.0],
+  ],
   highland: [
     ['gasStation', 2.4],
     ['house', 1.8],
@@ -108,13 +181,35 @@ export class WorldGen {
     while (start > 0 && !this._cells.has(start)) start--;
     for (let j = start + 1; j < k; j++) this._cellCached(j);
     const prev = k - 1 > 0 ? this._cellCached(k - 1) : 'scrub';
-    let b;
-    let tries = 0;
-    do {
-      b = BIOMES[Math.floor(hash01(this.seed, k, 91 + tries) * BIOMES.length)];
-      tries++;
-    } while (b === prev && tries < 6);
-    return b;
+    const odds = biomeOdds((k * BIOME_CELL) / 1000);
+    // no jump straight from sand to snow (or back): something green or stony in between
+    const desertPrev = DESERT.includes(prev) && prev !== 'highland',
+      snowPrev = SNOWY.includes(prev);
+    let tot = 0;
+    const list = [];
+    for (const b of BIOMES) {
+      let w = odds[b] || 0;
+      if (b === prev) w = 0;
+      if (desertPrev && SNOWY.includes(b)) w = 0;
+      if (snowPrev && DESERT.includes(b) && b !== 'highland') w = 0;
+      if (w > 0) {
+        list.push([b, w]);
+        tot += w;
+      }
+    }
+    if (!list.length) return 'scrub';
+    let r = hash01(this.seed, k, 91) * tot;
+    for (const [b, w] of list) {
+      r -= w;
+      if (r <= 0) return b;
+    }
+    return list[list.length - 1][0];
+  }
+
+  // How snowy the ground is at (x, z): 0..1 (snow biomes, plus high ground in the north).
+  snowAt(x, z, bw) {
+    bw = bw || this.biomeWeights(x, z);
+    return clamp(bw.taiga + bw.tundra, 0, 1);
   }
 
   // Weights per biome at (x, z): object { biome: w }
@@ -205,9 +300,10 @@ export class WorldGen {
     const seg = Math.floor(z / 900);
     const h = hash01(this.seed, seg, 17);
     const biome = this._cellCached(Math.floor(z / BIOME_CELL));
-    const dirt = seg > 2 && h < (biome === 'badlands' || biome === 'highland' ? 0.16 : 0.06);
+    const dirt = seg > 2 && h < (biome === 'badlands' || biome === 'highland' || biome === 'forest' ? 0.16 : 0.06);
     const wear = clamp(0.25 + 0.6 * hash01(this.seed, seg, 23) + 0.15 * this.nA.noise2(z * 0.01, 1.7), 0, 1);
-    return { dirt, wear };
+    const snow = this.snowAt(this.roadX(z), z);
+    return { dirt, wear, snow };
   }
 
   // ---------------------------------------------------------------- terrain
@@ -241,6 +337,26 @@ export class WorldGen {
         const r2 = 1 - Math.abs(n.noise2(x * 0.009 + 5, z * 0.009));
         return r * r * 26 + r2 * r2 * 7 + n.noise2(x * 0.03, z * 0.03) * 0.6 - 10;
       }
+      case 'prairie':
+        // long gentle swells
+        return n.noise2(x * 0.0024 + 7, z * 0.0024) * 7 + n.noise2(x * 0.008, z * 0.008 + 3) * 1.6 + n.noise2(x * 0.04, z * 0.04) * 0.15;
+      case 'forest': {
+        // wooded hills with soft ridges
+        const r = 1 - Math.abs(n.noise2(x * 0.004 + 3, z * 0.004 - 2));
+        return r * r * 16 + n.noise2(x * 0.012, z * 0.012) * 3 + n.noise2(x * 0.05, z * 0.05) * 0.3 - 6;
+      }
+      case 'taiga': {
+        // mountains that rise away from the road valley
+        const away = smoothstep(40, 380, Math.abs(x - this.roadX(z)));
+        const r = 1 - Math.abs(n.noise2(x * 0.0022 - 9, z * 0.0022 + 4));
+        const r2 = 1 - Math.abs(n.noise2(x * 0.0068, z * 0.0068 + 8));
+        return (r * r * 46 + r2 * r2 * 10) * (0.25 + 0.75 * away) + n.noise2(x * 0.02, z * 0.02) * 0.8 - 8;
+      }
+      case 'tundra': {
+        // open, gently rolling, with frost hummocks
+        const hum = Math.max(0, n.noise2(x * 0.09, z * 0.09)) * 0.45;
+        return n.noise2(x * 0.003 + 1, z * 0.003) * 4 + n.noise2(x * 0.011, z * 0.011) * 1.1 + hum;
+      }
       default: {
         // scrub: rolling hills
         return n.noise2(x * 0.004, z * 0.004) * 5 + n.noise2(x * 0.011, z * 0.011) * 1.6 + n.noise2(x * 0.05, z * 0.05) * 0.25;
@@ -256,8 +372,161 @@ export class WorldGen {
     return this.macroHeight(x, z) + d;
   }
 
-  // Final ground height with road corridor and flattened POI pads.
+  // ---------------------------------------------------------------- water
+  // Rivers cross the road every few kilometres, meandering across the whole map. In the desert most
+  // are dry washes. Returns null or { k, zr (crossing z on the road), w (half width), dry }.
+  river(k) {
+    if (!this._rivers) this._rivers = new Map();
+    if (this._rivers.has(k)) return this._rivers.get(k);
+    let res = null;
+    if (k > 0) {
+      const z = k * RIVER_SPACING + (hash01(this.seed, k, 301) - 0.5) * 1400;
+      const b = this._cellCached(Math.floor(z / BIOME_CELL));
+      const desert = DESERT.includes(b);
+      // keep clear of the homestead and of the ends of biome cells' POI slots is not needed
+      const w = desert ? 5 + hash01(this.seed, k, 302) * 4 : 7 + hash01(this.seed, k, 302) * 7;
+      res = { k, z0: z, w, dry: desert && hash01(this.seed, k, 303) < 0.75, frozen: SNOWY.includes(b), phase: hash01(this.seed, k, 304) * 100 };
+      res.zr = this.riverZ(res, this.roadX(z));
+      // the road crossing point: iterate to where the river meets the road line
+      for (let i = 0; i < 10; i++) res.zr = this.riverZ(res, this.roadX(res.zr));
+      res.level = this.roadY(res.zr) - (res.dry ? 2.2 : 4.2);
+    }
+    this._rivers.set(k, res);
+    return res;
+  }
+
+  riverZ(r, x) {
+    const n = this.nA;
+    return r.z0 + n.noise2(x * 0.0021 + r.phase, 1.3) * 160 + n.noise2(x * 0.0075 + r.phase, 4.1) * 30;
+  }
+
+  riversNear(z, range = 2) {
+    const k0 = Math.round(z / RIVER_SPACING);
+    const out = [];
+    for (let k = k0 - range; k <= k0 + range; k++) {
+      const r = this.river(k);
+      if (r) out.push(r);
+    }
+    return out;
+  }
+
+  // Nearest river at (x, z): distance across it, its water level there and the record.
+  riverAt(x, z) {
+    let best = null;
+    for (const r of this.riversNear(z, 1)) {
+      // meanders stay within ~190 m of the river's nominal line
+      if (Math.abs(z - r.z0) > 230 + r.w * 2) continue;
+      const zc = this.riverZ(r, x);
+      const e = 2;
+      const slope = (this.riverZ(r, x + e) - this.riverZ(r, x - e)) / (2 * e);
+      const d = Math.abs(z - zc) / Math.sqrt(1 + slope * slope);
+      if (best && d >= best.d) continue;
+      // water level follows the land away from the road, and sits under the bridge near it
+      const away = smoothstep(60, 500, Math.abs(x - this.roadX(zc)));
+      const far = this.macroHeight(x, zc) - (r.dry ? 2.2 : 3.6);
+      best = { d, r, level: lerp(r.level, far, away), zc };
+    }
+    return best;
+  }
+
+  // Lakes beside the road in green and snowy country.
+  lake(k) {
+    if (!this._lakes) this._lakes = new Map();
+    if (this._lakes.has(k)) return this._lakes.get(k);
+    let res = null;
+    if (k > 1) {
+      const z = k * LAKE_CELL + (hash01(this.seed, k, 401) - 0.5) * 600;
+      const b = this._cellCached(Math.floor(z / BIOME_CELL));
+      const p = { forest: 0.55, taiga: 0.5, tundra: 0.45, prairie: 0.35, highland: 0.15 }[b] || 0;
+      if (hash01(this.seed, k, 402) < p) {
+        const side = hash01(this.seed, k, 403) < 0.5 ? -1 : 1;
+        const rx = 45 + hash01(this.seed, k, 404) * 70;
+        const rz = rx * (0.7 + hash01(this.seed, k, 405) * 0.9);
+        const off = rx + 35 + hash01(this.seed, k, 406) * 160;
+        const cx = this.roadX(z) + side * off;
+        res = { k, x: cx, z, rx, rz, rot: hash01(this.seed, k, 407) * Math.PI, frozen: SNOWY.includes(b), phase: hash01(this.seed, k, 408) * 50 };
+        res.level = this.macroHeight(cx, z) + this.biomeDetail(b, cx, z) * 0.4 - 1.2;
+      }
+    }
+    this._lakes.set(k, res);
+    return res;
+  }
+
+  lakesNear(z, range = 1) {
+    const k0 = Math.round(z / LAKE_CELL);
+    const out = [];
+    for (let k = k0 - range; k <= k0 + range; k++) {
+      const l = this.lake(k);
+      if (l) out.push(l);
+    }
+    return out;
+  }
+
+  // Normalised elliptical distance from a lake's centre (1 = shoreline), with a wobbly shore.
+  lakeDist(l, x, z) {
+    const dx = x - l.x,
+      dz = z - l.z;
+    const c = Math.cos(l.rot),
+      s = Math.sin(l.rot);
+    const u = (dx * c - dz * s) / l.rx,
+      v = (dx * s + dz * c) / l.rz;
+    const a = Math.atan2(v, u);
+    const wob = 1 + 0.16 * Math.sin(a * 3 + l.phase) + 0.08 * Math.sin(a * 7 + l.phase * 2);
+    return Math.hypot(u, v) / wob;
+  }
+
+  // Water surface at (x, z) if any: { level, frozen, kind, depth }.
+  waterAt(x, z) {
+    const rv = this.riverAt(x, z);
+    if (rv && !rv.r.dry && rv.d < rv.r.w) return { level: rv.level, frozen: rv.r.frozen, kind: 'river' };
+    for (const l of this.lakesNear(z, 1)) if (Math.abs(z - l.z) < Math.max(l.rx, l.rz) * 1.3 && this.lakeDist(l, x, z) < 1) return { level: l.level, frozen: l.frozen, kind: 'lake' };
+    return null;
+  }
+
+  // Final ground height with road corridor, flattened POI pads, river valleys and lake basins.
   height(x, z) {
+    let h = this.baseHeight(x, z);
+    // river valley: banks slope down to a bed below the water line
+    const rv = this.riverAt(x, z);
+    if (rv) {
+      const w = rv.r.w,
+        bank = 12 + w * 0.6;
+      if (rv.d < w + bank) {
+        const t = smoothstep(w + bank, w * 0.6, rv.d);
+        const bed = rv.level - (rv.r.dry ? 0.6 : 1.8) * (1 - (Math.min(rv.d, w) / w) ** 2) + (rv.d > w ? 0.35 : 0);
+        h = lerp(h, Math.min(h, bed), t);
+      }
+    }
+    // lake basins
+    for (const l of this.lakesNear(z, 1)) {
+      if (Math.abs(z - l.z) > Math.max(l.rx, l.rz) * 1.9 || Math.abs(x - l.x) > Math.max(l.rx, l.rz) * 1.9) continue;
+      const d = this.lakeDist(l, x, z);
+      if (d < 1.5) {
+        const t = smoothstep(1.5, 0.92, d);
+        const bed = l.level - 2.8 * Math.max(0, 1 - d * d) + Math.max(0, d - 1) * 2.0 + 0.25;
+        h = lerp(h, Math.min(h, bed), t);
+      }
+    }
+    return h;
+  }
+
+  // Road deck height over a bridge (the road keeps its own profile across the water).
+  roadSurfaceY(x, z) {
+    const rv = this.riverAt(x, z);
+    if (rv && rv.d < rv.r.w + 12 + rv.r.w * 0.6) return this.roadY(z) - Math.max(0, Math.abs(x - this.roadX(z)) - ROAD.halfWidth) * 0.07;
+    return this.height(x, z);
+  }
+
+  // Bridge on the road near z, if any: { r, z0, z1 } span along the road.
+  bridgeNear(z) {
+    for (const r of this.riversNear(z, 1)) {
+      const span = r.w + 12 + r.w * 0.6 + 4;
+      if (Math.abs(z - r.zr) < span + 200) return { r, z0: r.zr - span, z1: r.zr + span };
+    }
+    return null;
+  }
+
+  baseHeight(x, z) {
     const rx = this.roadX(z);
     const dx = Math.abs(x - rx);
     const roadY = this.roadY(z);
@@ -375,33 +644,55 @@ export class WorldGen {
     return [-hx / l, (2 * e) / l, -hz / l];
   }
 
-  // Ground material weights: [sand, dirt, rock, salt] and road/shoulder masks.
+  // Ground material weights: [sand, dirt, rock, salt, grass, snow, forest floor].
   groundMaterial(x, z, nrmY, bw) {
     bw = bw || this.biomeWeights(x, z);
     const slope = 1 - nrmY;
-    let sand = bw.dunes + bw.scrub * 0.25 + bw.badlands * 0.1;
-    let dirt = bw.scrub * 0.75 + bw.badlands * 0.55 + bw.highland * 0.45;
-    let rock = bw.highland * 0.55 + bw.badlands * 0.35;
-    let salt = bw.saltflat;
     const n = this.nC.noise2(x * 0.02, z * 0.02) * 0.5 + 0.5;
+    const n2 = this.nB.noise2(x * 0.045 + 3, z * 0.045) * 0.5 + 0.5;
+    let sand = bw.dunes + bw.scrub * 0.25 + bw.badlands * 0.1;
+    let dirt = bw.scrub * 0.75 + bw.badlands * 0.55 + bw.highland * 0.45 + bw.prairie * 0.12 + bw.forest * 0.15;
+    let rock = bw.highland * 0.55 + bw.badlands * 0.35 + bw.taiga * 0.05;
+    let salt = bw.saltflat;
+    let grass = bw.prairie * 0.9 + bw.forest * 0.3 + bw.tundra * 0.18 * n2 + bw.highland * 0.05;
+    let snow = bw.taiga * 0.9 + bw.tundra * (0.85 - 0.25 * n2);
+    let forest = bw.forest * 0.65 + bw.taiga * 0.12;
     sand *= 0.7 + 0.6 * n;
     dirt *= 1.3 - 0.6 * n;
+    grass *= 0.75 + 0.5 * n2;
+    forest *= 0.7 + 0.6 * (1 - n2);
     rock += smoothstep(0.05, 0.2, slope) * 3;
     salt *= 1 - smoothstep(0.015, 0.06, slope);
-    const s = sand + dirt + rock + salt + 1e-6;
-    return [sand / s, dirt / s, rock / s, salt / s];
+    // snow slides off steep rock; grass thins on slopes
+    snow *= 1 - smoothstep(0.18, 0.45, slope) * 0.85;
+    grass *= 1 - smoothstep(0.12, 0.3, slope) * 0.8;
+    // wet shores: sand and mud at rivers and lakes
+    const rv = this.riverAt(x, z);
+    if (rv && rv.d < rv.r.w + 10) {
+      const t = smoothstep(rv.r.w + 10, rv.r.w, rv.d);
+      sand += t * (rv.r.dry ? 2 : 1.2);
+      dirt += t * 0.8;
+      grass *= 1 - t * 0.6;
+      snow *= 1 - t * (rv.r.frozen ? 0.2 : 0.8);
+    }
+    const s = sand + dirt + rock + salt + grass + snow + forest + 1e-6;
+    return [sand / s, dirt / s, rock / s, salt / s, grass / s, snow / s, forest / s];
   }
 
   // Surface type for tyres / footsteps.
   surfaceAt(x, z) {
     const rx = this.roadX(z);
     const dx = Math.abs(x - rx);
-    if (dx < ROAD.halfWidth) return this.roadInfo(z).dirt ? 'gravel' : 'asphalt';
-    if (dx < ROAD.halfWidth + ROAD.shoulder) return 'gravel';
+    if (dx < ROAD.halfWidth) {
+      const ri = this.roadInfo(z);
+      if (ri.snow > 0.55) return 'snowRoad';
+      return ri.dirt ? 'gravel' : 'asphalt';
+    }
+    if (dx < ROAD.halfWidth + ROAD.shoulder) return this.roadInfo(z).snow > 0.5 ? 'snow' : 'gravel';
     const bw = this.biomeWeights(x, z);
     const n = this.normal(x, z, 1.0);
     const m = this.groundMaterial(x, z, n[1], bw);
     const best = m.indexOf(Math.max(...m));
-    return ['sand', 'dirt', 'rock', 'salt'][best];
+    return ['sand', 'dirt', 'rock', 'salt', 'grass', 'snow', 'dirt'][best];
   }
 }

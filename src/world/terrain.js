@@ -63,6 +63,7 @@ export class Terrain {
     g.setAttribute('position', new THREE.BufferAttribute(d.position, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(d.normal, 3));
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4));
+    g.setAttribute('matB', new THREE.BufferAttribute(d.mat2, 4));
     g.setAttribute('tint', new THREE.BufferAttribute(d.tint, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
     g.setIndex(new THREE.BufferAttribute(d.index, 1));
@@ -215,6 +216,7 @@ export class Terrain {
     const pos = new Float32Array((nz + 1) * na * 3);
     const uv = new Float32Array((nz + 1) * na * 2);
     const road = new Float32Array((nz + 1) * na * 4);
+    const env = new Float32Array((nz + 1) * na * 2);
     const ox = gen.roadX(z0),
       oz = z0;
     for (let j = 0; j <= nz; j++) {
@@ -224,11 +226,14 @@ export class Terrain {
       const px = dz,
         pz = -dx; // perpendicular
       const info = gen.roadInfo(z);
+      const br = gen.bridgeNear(z);
+      const onBridge = br && Math.abs(z - br.r.zr) < br.r.w + 12 + br.r.w * 0.6 + 4 ? 1 : 0;
       for (let i = 0; i < na; i++) {
         const a = across[i];
         const x = rx + px * a,
           zz = z + pz * a;
-        let y = gen.height(x, zz) + 0.012;
+        // over a river the road keeps its own profile: the bridge deck
+        let y = gen.roadSurfaceY(x, zz) + 0.012;
         if (Math.abs(a) > W / 2 + 0.01) y -= 0.3;
         const k2 = j * na + i;
         pos[k2 * 3] = x - ox;
@@ -240,6 +245,8 @@ export class Terrain {
         road[k2 * 4 + 1] = info.dirt ? 1 : 0;
         road[k2 * 4 + 2] = W;
         road[k2 * 4 + 3] = 1;
+        env[k2 * 2] = info.snow || 0;
+        env[k2 * 2 + 1] = onBridge;
       }
     }
     const idx = [];
@@ -255,6 +262,7 @@ export class Terrain {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setAttribute('road', new THREE.BufferAttribute(road, 4));
+    g.setAttribute('env', new THREE.BufferAttribute(env, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
     g.computeBoundingSphere();

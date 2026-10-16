@@ -18,8 +18,10 @@ export function createTerrainMaterial(tex) {
         '#include <common>',
         `#include <common>
 attribute vec4 mat;
+attribute vec4 matB;
 attribute vec3 tint;
 varying vec4 vMat;
+varying vec4 vMat2;
 varying vec3 vTint;
 varying vec2 vWuv;
 varying vec3 vWN;
@@ -29,6 +31,7 @@ varying float vViewDist;`
         '#include <begin_vertex>',
         `#include <begin_vertex>
 vMat = mat;
+vMat2 = matB;
 vTint = tint;
 vWuv = uv;
 vWN = normalize(mat3(modelMatrix) * normal);`
@@ -48,6 +51,7 @@ uniform sampler2DArray uNrm;
 uniform float uWet;
 uniform float uScale;
 varying vec4 vMat;
+varying vec4 vMat2;
 varying vec3 vTint;
 varying vec2 vWuv;
 varying vec3 vWN;
@@ -72,36 +76,61 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
 {
   vec2 uvN = vWuv * uScale;
   vec2 uvF = vWuv * uScale * 0.21 + 0.37;
+  // explicit gradients so layers can be skipped per pixel without mip seams
+  vec2 dxN = dFdx(uvN), dyN = dFdy(uvN), dxF = dFdx(uvF), dyF = dFdy(uvF);
   float farT = smoothstep(18.0, 70.0, vViewDist);
-  vec4 s0 = layerSample(0.0, uvN, uvF, farT);
-  vec4 s1 = layerSample(1.0, uvN * 0.8, uvF, farT);
-  vec4 s2 = layerSample(2.0, uvN * 0.6, uvF * 0.8, farT);
-  vec4 s3 = layerSample(3.0, uvN * 0.5, uvF, farT);
-  // height-based blending
-  vec4 w = vMat * vec4(s0.a, s1.a, s2.a, s3.a) * 1.0 + vMat * 0.001;
-  w = pow(w + 0.08, vec4(6.0));
-  w /= dot(w, vec4(1.0));
-  vec3 alb = s0.rgb * w.x + s1.rgb * w.y + s2.rgb * w.z + s3.rgb * w.w;
+  float wt[7];
+  wt[0] = vMat.x; wt[1] = vMat.y; wt[2] = vMat.z; wt[3] = vMat.w;
+  wt[4] = vMat2.x; wt[5] = vMat2.y; wt[6] = vMat2.z;
+  // texture-array layer, near and far tiling per ground type:
+  // sand, dirt, rock, salt, grass, snow, forest floor
+  const float LIDX[7] = float[7](0.0, 1.0, 2.0, 3.0, 6.0, 7.0, 8.0);
+  const float SN[7] = float[7](1.0, 0.8, 0.6, 0.5, 0.9, 0.42, 0.85);
+  const float SF[7] = float[7](1.0, 1.0, 0.8, 1.0, 1.0, 0.7, 1.0);
+  const float RO[7] = float[7](0.96, 0.93, 0.82, 0.78, 0.9, 0.62, 0.93);
+  vec4 smp[7];
+  float w[7];
+  float tot = 0.0;
+  for (int i = 0; i < 7; i++) {
+    smp[i] = vec4(0.0);
+    w[i] = 0.0;
+    if (wt[i] > 0.004) {
+      vec4 a = textureGrad(uAlb, vec3(uvN * SN[i], LIDX[i]), dxN * SN[i], dyN * SN[i]);
+      vec4 b = textureGrad(uAlb, vec3(uvF * SF[i], LIDX[i]), dxF * SF[i], dyF * SF[i]);
+      smp[i] = mix(a, b, farT);
+      // height-based blending: the taller texture wins at transitions
+      w[i] = pow(wt[i] * smp[i].a + wt[i] * 0.001 + 0.08, 6.0);
+      tot += w[i];
+    }
+  }
+  vec3 alb = vec3(0.0);
+  vec3 nt = vec3(0.0);
+  gRough = 0.0;
+  for (int i = 0; i < 7; i++) {
+    if (w[i] <= 0.0) continue;
+    float k = w[i] / tot;
+    alb += smp[i].rgb * k;
+    vec3 na = textureGrad(uNrm, vec3(uvN * SN[i], LIDX[i]), dxN * SN[i], dyN * SN[i]).xyz * 2.0 - 1.0;
+    vec3 nb = textureGrad(uNrm, vec3(uvF * SF[i], LIDX[i]), dxF * SF[i], dyF * SF[i]).xyz * 2.0 - 1.0;
+    nt += normalize(mix(na, nb, farT)) * k;
+    gRough += RO[i] * k;
+  }
+  float wSand = w[0] / tot, wDirt = w[1] / tot, wRock = w[2] / tot, wSalt = w[3] / tot, wSnow = w[5] / tot;
   // biome tint (normalised) mostly on dirt and rock
   float lum = max(dot(vTint, vec3(0.333)), 0.01);
   vec3 tintN = vTint / lum;
-  alb *= mix(vec3(1.0), tintN, 0.55 * (w.y + w.z) + 0.25 * w.x);
+  alb *= mix(vec3(1.0), tintN, (0.55 * (wDirt + wRock) + 0.25 * wSand) * (1.0 - wSnow));
   // macro brightness variation
   float macro = texture(uAlb, vec3(vWuv * 0.0021 + 0.5, 1.0)).a;
   float macro2 = texture(uAlb, vec3(vWuv * 0.0007, 0.0)).a;
-  alb *= 0.82 + 0.3 * macro + 0.12 * (macro2 - 0.5);
-  // wetness darkens porous ground
-  alb *= mix(1.0, 0.62, uWet * (1.0 - w.w * 0.6));
+  alb *= mix(0.82 + 0.3 * macro + 0.12 * (macro2 - 0.5), 0.95 + 0.08 * macro, wSnow);
+  // wetness darkens porous ground (not snow or salt)
+  alb *= mix(1.0, 0.62, uWet * (1.0 - wSalt * 0.6) * (1.0 - wSnow));
   diffuseColor.rgb = alb;
   float nFar = 1.0 - farT * 0.6;
-  vec3 n0 = layerNormal(0.0, uvN, uvF, farT);
-  vec3 n1 = layerNormal(1.0, uvN * 0.8, uvF, farT);
-  vec3 n2 = layerNormal(2.0, uvN * 0.6, uvF * 0.8, farT);
-  vec3 n3 = layerNormal(3.0, uvN * 0.5, uvF, farT);
-  gNrmT = normalize(n0 * w.x + n1 * w.y + n2 * w.z + n3 * w.w);
+  gNrmT = normalize(nt);
   gNrmT.xy *= nFar;
-  gRough = 0.96 * w.x + 0.93 * w.y + 0.82 * w.z + 0.78 * w.w;
-  gRough = mix(gRough, 0.35, uWet * 0.8);
+  gRough = mix(gRough, 0.35, uWet * 0.8 * (1.0 - wSnow));
 }`
       )
       .replace(
@@ -122,7 +151,7 @@ roughnessFactor = gRough;`
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v1';
+  mat.customProgramCacheKey = () => 'terrain-v2';
   return mat;
 }
 
@@ -142,7 +171,9 @@ export function createRoadMaterial(tex) {
         '#include <common>',
         `#include <common>
 attribute vec4 road;
+attribute vec2 env;
 varying vec4 vRoad;
+varying vec2 vEnv;
 varying vec2 vRuv;
 varying vec3 vWN;
 varying float vViewDist;`
@@ -151,6 +182,7 @@ varying float vViewDist;`
         '#include <begin_vertex>',
         `#include <begin_vertex>
 vRoad = road;
+vEnv = env;
 vRuv = uv;
 vWN = normalize(mat3(modelMatrix) * normal);`
       )
@@ -164,6 +196,7 @@ uniform sampler2DArray uAlb;
 uniform sampler2DArray uNrm;
 uniform float uWet;
 varying vec4 vRoad;
+varying vec2 vEnv;
 varying vec2 vRuv;
 varying vec3 vWN;
 varying float vViewDist;
@@ -220,7 +253,23 @@ float rFbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*rNoise(p); p*
   float sh = smoothstep(halfRoad, halfRoad + 0.3, abs(across));
   vec3 shoulder = mix(grav.rgb, grav.rgb * 0.8 + sand.rgb * 0.35, smoothstep(halfRoad + 0.5, W * 0.5, abs(across)));
   col = mix(col, shoulder, sh);
-  col *= mix(1.0, 0.58, uWet);
+  // winter: packed snow over the lanes with darker wheel tracks, banks of snow on the shoulders
+  float snow = vEnv.x;
+  float bridge = vEnv.y;
+  if (snow > 0.01) {
+    vec4 sn = texture(uAlb, vec3(wuv * 0.45, 7.0));
+    float tracksS = smoothstep(0.55, 0.15, abs(abs(across) - 1.85));
+    float cover = snow * clamp(0.95 - tracksS * 0.55 + (rFbm(vec2(across * 0.7, along * 0.12)) - 0.5) * 0.6, 0.0, 1.0);
+    cover = max(cover, snow * sh);
+    vec3 packedS = mix(sn.rgb, sn.rgb * vec3(0.78, 0.8, 0.84), tracksS * 0.6);
+    col = mix(col, packedS, clamp(cover, 0.0, 1.0));
+  }
+  // bridge deck: concrete with expansion joints
+  if (bridge > 0.5) {
+    float joint = 1.0 - smoothstep(0.04, 0.08, abs(fract(along / 9.0) - 0.5) * 9.0 - 4.4);
+    col = mix(col, col * 0.55, joint * onRoad);
+  }
+  col *= mix(1.0, 0.58, uWet * (1.0 - snow * 0.5));
   diffuseColor.rgb = col;
   vec3 na = texture(uNrm, vec3(wuv, 5.0)).xyz * 2.0 - 1.0;
   vec3 ng = texture(uNrm, vec3(wuv * 2.6, 4.0)).xyz * 2.0 - 1.0;
@@ -245,6 +294,6 @@ float rFbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*rNoise(p); p*
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'road-v1';
+  mat.customProgramCacheKey = () => 'road-v2';
   return mat;
 }

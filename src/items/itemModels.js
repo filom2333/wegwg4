@@ -779,7 +779,7 @@ export function cdCase(album = 0) {
   const al = ALBUMS[album % ALBUMS.length];
   const g = new THREE.Group();
   const cover = labelMat('cd' + al.id, 256, 256, (c, w, h) => drawCover(c, w, h, al), { roughness: 0.25 });
-  const plastic = cached('cdPlastic', () => new THREE.MeshPhysicalMaterial({ color: 0xe8eef2, roughness: 0.08, transmission: 0.6, transparent: true, opacity: 0.55, thickness: 0.002 }));
+  const plastic = cached('cdPlastic', () => new THREE.MeshStandardMaterial({ color: 0xe8eef2, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.32, depthWrite: false }));
   const tray = cached('cdTray', () => new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.5 }));
   // case 142 x 125 x 10 mm; cover insert on top (+Y), tray underneath
   g.add(mesh(roundedBox(0.142, 0.0085, 0.125, 0.0015, 1), tray));

@@ -5,9 +5,9 @@ import { albumName } from '../audio/music/albums.js';
 
 export const ITEMS = {
   jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
-  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water: drinkable, or top up the radiator.' },
+  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
   waterBottle: { name: 'Water bottle', model: ['waterBottle'], mass: 0.05, liquid: { type: 'water', cap: 1.5, density: 1 }, drinkable: true, hold: 'hand', desc: 'Drink to quench thirst.' },
-  waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable, also works as coolant.' },
+  waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable.' },
   sodaCan: { name: 'Soda', model: ['sodaCan'], mass: 0.36, consume: { water: 22, food: 6, energy: 4 }, hold: 'hand', desc: 'Sugary, fizzy, warm.', variants: 3 },
   cannedBeans: { name: 'Canned beans', model: ['cannedFood', 'beans'], mass: 0.45, consume: { food: 34, water: -2 }, hold: 'hand' },
   cannedMeat: { name: 'Corned beef', model: ['cannedFood', 'meat'], mass: 0.38, consume: { food: 40, water: -6 }, hold: 'hand' },
@@ -22,7 +22,7 @@ export const ITEMS = {
   painkillers: { name: 'Painkillers', model: ['pillBottle'], mass: 0.06, consume: { health: 18 }, hold: 'hand' },
   oilBottle: { name: 'Motor oil', model: ['oilBottle'], mass: 0.15, liquid: { type: 'oil', cap: 1, density: 0.88 }, hold: 'hand', desc: 'Pour into the oil filler with the hood open.' },
   coolantJug: { name: 'Coolant', model: ['coolantJug'], mass: 0.2, liquid: { type: 'coolant', cap: 2, density: 1.07 }, hold: 'hand', desc: 'Pour into the coolant reservoir.' },
-  repairKit: { name: 'Repair kit', model: ['repairKit'], mass: 3.2, charges: 2, bulky: true, hold: 'side', desc: 'Use on the engine bay to repair the engine and radiator.' },
+  repairKit: { name: 'Repair kit', model: ['repairKit'], mass: 3.2, charges: 2, bulky: true, hold: 'side', desc: 'Use on the engine to patch it up.' },
   tyreKit: { name: 'Tyre repair kit', model: ['repairKit'], mass: 1.2, charges: 2, hold: 'hand', desc: 'Use on a wheel to fix a puncture.' },
   wrench: { name: 'Wrench', model: ['wrench'], mass: 0.6, melee: { damage: 22, range: 1.7 }, hold: 'tool' },
   extinguisher: { name: 'Fire extinguisher', model: ['extinguisher'], mass: 4.5, charges: 1, bulky: true, hold: 'side', desc: 'Puts out an engine fire.' },
@@ -128,7 +128,7 @@ export const LOOT = {
   ],
   storage: [
     ['oilBottle', 3],
-    ['coolantJug', 2],
+    ['part:fanbelt', 1.2],
     ['jerryCan', 1.2],
     ['waterJug', 1.4],
     ['tyreKit', 0.8],
@@ -154,7 +154,7 @@ export const LOOT = {
     ['jerky', 2],
     ['cannedBeans', 2],
     ['oilBottle', 1.5],
-    ['coolantJug', 1],
+    ['part:fanbelt', 0.5],
     ['waterBottle', 2],
   ],
   drinks: [

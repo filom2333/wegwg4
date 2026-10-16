@@ -283,6 +283,16 @@ export class ItemSystem {
         }
       }
       const wp = spot.pos.clone().applyMatrix4(inst.root.matrixWorld);
+      if (id.startsWith('part:')) {
+        // spare car parts on shelves: used, but serviceable
+        const part = id.slice(5);
+        if (!this.game.car || !this.game.car.model.parts[part]) return;
+        const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), lrnd() * Math.PI * 2);
+        const it = this.spawnPart(part, wp.clone().add(V(0, 0.08, 0)), q, { condition: 0.55 + lrnd() * 0.45 });
+        it.poiKey = key;
+        it.spot = i;
+        return;
+      }
       const st = initialState(id, lrnd);
       const mesh = this.buildMesh(id, st);
       const h = mesh.userData.size.y;

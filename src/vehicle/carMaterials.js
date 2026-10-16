@@ -16,7 +16,11 @@ export function weatheringUniforms(opts = {}) {
 
 // Injects weathering into a MeshStandard/Physical material. Positions/normals in object space.
 export function applyWeathering(mat, uniforms, { rustColor = true, strength = 1 } = {}) {
-  mat.onBeforeCompile = (shader) => {
+  const own = (k) => Object.prototype.hasOwnProperty.call(mat, k);
+  const prev = own('onBeforeCompile') ? mat.onBeforeCompile : null;
+  const prevKey = own('customProgramCacheKey') ? mat.customProgramCacheKey : null;
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev.call(mat, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;\nvarying vec3 vObjN;')
@@ -72,7 +76,7 @@ material.clearcoat *= (1.0 - max(wRustMask, max(wDirtMask * 0.8, wDustMask * 0.7
       );
     }
   };
-  mat.customProgramCacheKey = () => 'weather' + (rustColor ? 1 : 0) + strength;
+  mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + 'weather' + (rustColor ? 1 : 0) + strength;
   return mat;
 }
 

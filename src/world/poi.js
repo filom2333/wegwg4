@@ -294,8 +294,9 @@ export class POIManager {
     const paints = [0x6d7a7f, 0x7a2e24, 0x2f4a5c, 0xb9b2a0, 0x4b5a3a, 0x8b6d3c];
     // (clone() deep-copies userData through JSON, so the shared material comes from the prototype)
     const base = this.wreckProto.userData.paint;
-    const pm = base.clone();
-    pm.color.setHex(paints[Math.floor(rnd() * paints.length)]);
+    const hex = paints[Math.floor(rnd() * paints.length)];
+    const pm = base.userData.make ? base.userData.make(hex) : base.clone();
+    pm.color.setHex(hex);
     w.traverse((o) => {
       if (o.isMesh && o.material === base) o.material = pm;
     });
@@ -303,7 +304,7 @@ export class POIManager {
     // collider (box)
     const c = V(x, tilt > 1 ? 0.88 : 0.7, z);
     const qq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot, tilt, 'YXZ'));
-    const desc = RAPIER.ColliderDesc.cuboid(0.86, 0.5, 2.2).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
+    const desc = RAPIER.ColliderDesc.cuboid(0.78, 0.55, 2.0).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
     const col = this.game.physics.world.createCollider(desc, inst.body);
     this.game.physics.setOwner(col, { kind: 'wreck', surface: 'metal', poi: inst });
     inst.loot.push({ pos: V(x, 0.6, z).applyMatrix4(new THREE.Matrix4()), kind: 'wreck', wreck: true });
@@ -431,35 +432,3 @@ export class POIManager {
 }
 
 // Build a low-detail wreck prototype from a coarse body (no glass, rusty paint, some panels missing).
-export function makeWreckPrototype(bodyResult, carMats) {
-  const M = archMaterials();
-  const g = new THREE.Group();
-  const paint = applyWeathering(
-    new THREE.MeshStandardMaterial({ color: 0x7a6a5a, roughness: 0.75, metalness: 0.2 }),
-    weatheringUniforms({ dirt: 0.9, dust: 0.8, rust: 0.75, fade: 0.8 })
-  );
-  const skip = new Set(['windshield', 'rearglass', 'glass_FL', 'glass_FR', 'glass_RL', 'glass_RR', 'glass_QL', 'glass_QR', 'hood']);
-  for (const [id, p] of Object.entries(bodyResult.panels)) {
-    if (skip.has(id)) continue;
-    const mats = carMats.slots.map((m) => (m === carMats.slots[0] ? paint : m));
-    const mesh = new THREE.Mesh(p.geometry, mats);
-    mesh.userData.shared = true;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    g.add(mesh);
-  }
-  // flat tyres / rims as dark discs
-  for (const [x, z] of [
-    [0.745, 1.3],
-    [-0.745, 1.3],
-    [0.745, -1.3],
-    [-0.745, -1.3],
-  ]) {
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.19, 18).rotateZ(Math.PI / 2), M.rubber);
-    t.position.set(x, 0.27, z);
-    t.userData.shared = true;
-    g.add(t);
-  }
-  g.userData.paint = paint;
-  return g;
-}

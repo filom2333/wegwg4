@@ -38,11 +38,15 @@ You need a desktop browser with WebGL2. Click the canvas to capture the mouse; E
 
 ## What is in it
 
-- **Car**: a procedural 2010-era sedan (implicit-surface body, trimmed panels with real gaps,
-  glass, lamps, mirrors, interior with live gauges, engine bay, chassis). 30 parts can be removed
-  and installed; parts depend on each other (no doors before the shell, no air filter before the
-  engine). Heavy parts (engine, body shell) are dragged along the ground rather than carried.
-  Fuel, oil, coolant, battery charge, engine temperature and condition, tyre wear are simulated.
+- **Car**: a 1960s Volkswagen Beetle (1600 flat-four at the back, four-speed transaxle, rear
+  drive, torsion bar suspension). The model is split into 31 removable parts: body shell, two
+  doors, front and engine lids, four bolt-on fenders, bumpers, headlights and tail lights, seats,
+  steering wheel, engine, air cleaner, fan belt, muffler, battery, fuel tank, spare wheel and the
+  wheels, down to the platform chassis. Parts depend on each other (no headlight before its
+  fender, no air cleaner before the engine) and open lids are needed to reach what is under them.
+  Pedals, gear lever, handbrake and wipers move; the speedometer (with fuel gauge) and the
+  generator and oil lamps work. Fuel, oil, battery charge, fan belt wear, oil temperature, engine
+  condition and tyre wear are simulated; the engine is air cooled, so a snapped fan belt cooks it.
 - **Driving**: raycast suspension with springs, dampers, anti-roll and bump stops; a combined-slip
   tyre model with surface grip (asphalt, gravel, dirt, sand, salt) and rain; ABS, traction control,
   automatic or manual gearbox. Rollovers need a real cause (kerbs, slopes, excessive speed).
@@ -70,6 +74,14 @@ You need a desktop browser with WebGL2. Click the canvas to capture the mouse; E
   camera cuts and a procedural theme, new game (difficulty, ready-to-drive or build-it-first,
   seed), settings, statistics, pause, journal, death screen, save/load with autosave. The
   Multiplayer button is a placeholder only: there is no networking.
+
+## Credits
+
+The car is based on ["Beetle/Fusca (Version 1)"](https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e)
+by [soujagah](https://sketchfab.com/soujagah), licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). It was converted with
+`tools/beetle/import.py` (scaled to real size, split into parts, glass separated, paint masks
+built for repainting, textures resized and recompressed). Everything else is generated in code.
 
 ## Inspection stand
 

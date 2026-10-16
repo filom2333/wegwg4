@@ -210,9 +210,9 @@ export class UI {
       const p = el('div', 'ui-panel', s);
       el('h2', 'ui-h', p, 'Credits');
       const body = el('div', 'ui-body', p);
-      body.innerHTML = `<p class="ui-sub">Everything you see and hear is generated in code at load time: the car, the land, the buildings, the people and the music. No models, no textures, no recordings.</p>
+      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time. The car is a 1960s Beetle based on <a href="https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e" target="_blank" rel="noopener">"Beetle/Fusca (Version 1)"</a> by soujagah, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY-4.0</a>, split into parts and re-textured for repainting.</p>
         <div class="ui-cols">
-          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div></div>
+          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div><div class="ui-stat"><span>Car model</span><span>soujagah (CC-BY-4.0)</span></div></div>
           <div><div class="ui-label">Inspired by</div><div class="ui-stat"><span>Road trips</span><span>The Long Drive</span></div><div class="ui-stat"><span>Dust</span><span>Route 66, 89, 95</span></div></div>
         </div>`;
       const a = el('div', 'ui-actions', p);
@@ -627,10 +627,10 @@ export class UI {
       el('div', 'ui-label', b, 'The car');
       meter(b, `Fuel · ${car.fuel.toFixed(1)} of ${car.fuelCap} l`, car.fuel / car.fuelCap, 0.15);
       meter(b, `Oil · ${car.oil.toFixed(1)} l`, car.oil / car.oilCap, 0.3);
-      meter(b, `Coolant · ${car.coolant.toFixed(1)} l`, car.coolant / car.coolantCap, 0.3);
       meter(b, 'Battery', car.battery, 0.2);
       meter(b, 'Engine', car.isInstalled('engine') ? car.engineCondition : 0, 0.35);
-      meter(b, 'Radiator', car.isInstalled('radiator') ? car.radiatorCondition : 0, 0.35);
+      meter(b, 'Fan belt', car.isInstalled('fanbelt') ? car.fanbeltCondition : 0, 0.3);
+      meter(b, `Engine temp · ${Math.round(car.engineTemp)}°C`, 1 - Math.max(0, Math.min(1, (car.engineTemp - 90) / 40)), 0.4);
       const tyres = car.dyn.wheels.filter((w) => w.installed);
       const tc = tyres.length ? tyres.reduce((m, w) => Math.min(m, car.parts[w.id].condition ?? 1), 1) : 0;
       meter(b, `Worst tyre · ${tyres.length} fitted`, tc, 0.25);

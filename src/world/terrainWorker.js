@@ -14,7 +14,7 @@ self.onmessage = (e) => {
   }
   if (msg.type === 'tile') {
     const t = buildTerrainTile(gen, msg.x0, msg.z0, msg.size, msg.N, true);
-    const transfer = [t.position.buffer, t.normal.buffer, t.mat.buffer, t.tint.buffer, t.uv.buffer, t.index.buffer, t.heights.buffer];
+    const transfer = [t.position.buffer, t.normal.buffer, t.mat.buffer, t.mat2.buffer, t.tint.buffer, t.uv.buffer, t.index.buffer, t.heights.buffer];
     self.postMessage({ type: 'tile', id: msg.id, data: t }, transfer);
   }
 };

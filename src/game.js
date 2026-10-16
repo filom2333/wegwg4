@@ -10,10 +10,9 @@ import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
-import { POIManager, makeWreckPrototype } from './world/poi.js';
-import { buildCarBody } from './vehicle/body/carBody.js';
-import { createCarMaterials } from './vehicle/carMaterials.js';
-import { buildFullCarModel } from './vehicle/carModel.js';
+import { POIManager } from './world/poi.js';
+import { loadBeetleAsset, buildBeetleModel, buildBeetleWreck } from './vehicle/beetle/beetleModel.js';
+import { createBeetleMaterials } from './vehicle/beetle/beetleMaterials.js';
 import { Car } from './vehicle/car.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
@@ -27,6 +26,8 @@ import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
 import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
+import { Water } from './world/water.js';
+import { Bridges } from './world/bridges.js';
 import { PARTS } from './vehicle/carParts.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
@@ -72,7 +73,7 @@ export class Game {
       crashes: 0,
       daysSurvived: 1,
     };
-    this.systems = [];
+    this.systems = [new Water(), new Bridges()];
     window.addEventListener('resize', () => this.renderer.resize());
     input.attach(canvas);
     this.__input = input;
@@ -137,10 +138,10 @@ export class Game {
     this.effects = new Effects(this);
     onProgress('Building the car', 0.35);
     await tick();
-    this.carBody = buildCarBody({ res: settings.data.quality === 'low' ? 0.034 : 0.028 });
-    this.carMats = createCarMaterials({ color: 0xa8502c });
-    this.carModel = buildFullCarModel(this.carBody, this.carMats);
-    this.pois.setWreckPrototype(makeWreckPrototype(buildCarBody({ res: 0.08, lowDetail: true }), this.carMats));
+    const carAsset = await loadBeetleAsset(this.renderer.renderer);
+    this.carMats = createBeetleMaterials(carAsset.textures, { color: 0xa8502c });
+    this.carModel = buildBeetleModel(carAsset, this.carMats);
+    this.pois.setWreckPrototype(buildBeetleWreck(carAsset));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ || load) {
@@ -161,7 +162,7 @@ export class Game {
     });
     this.car.dyn.automatic = settings.data.transmission !== 'manual';
     this.car.storage = {
-      trunk: new Container('trunk', 'Trunk', 18, { capacity: 160, bulky: true }),
+      trunk: new Container('trunk', 'Front trunk', 14, { capacity: 120, bulky: true }),
       glovebox: new Container('glovebox', 'Glovebox', 6, { capacity: 5 }),
     };
     const py = spawn.y !== undefined ? spawn.y : this.gen.height(spawn.x, spawn.z) + 0.3;
@@ -171,6 +172,12 @@ export class Game {
     else if (start === 'parts' && !this.startZ) this.setupUnassembled();
     else this.spawnStarterItems();
     this.lastFocus = this.focusPoint().clone();
+    // world systems (water, bridges) exist before anything settles onto them
+    for (const sys of this.systems) {
+      if (sys.init) await sys.init(this);
+      sys.update && sys.update(0);
+    }
+    this.systemsReady = true;
     // let the car settle on its springs and loose things come to rest before anyone looks
     onProgress('Settling', 0.95);
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
@@ -186,7 +193,6 @@ export class Game {
       this.car.lightsOn = 1;
       this.car.dyn.automatic = true;
     }
-    for (const s of this.systems) s.init && (await s.init(this));
     onProgress('Ready', 1);
     this.running = true;
   }
@@ -382,8 +388,8 @@ export class Game {
   // "Build it first": a rolling chassis in the garage, everything else laid out in the yard.
   setupUnassembled() {
     const car = this.car;
-    const keep = new Set(['chassis', 'fuelflap', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
-    const order = ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'bumper_F', 'bumper_R', 'fender_L', 'fender_R', 'door_FL', 'door_FR', 'door_RL', 'door_RR', 'hood', 'trunk', 'airfilter', 'battery', 'radiator', 'exhaust', 'fueltank', 'engine', 'body'];
+    const keep = new Set(['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
+    const order = ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'bumper_F', 'bumper_R', 'fender_FL', 'fender_FR', 'fender_RL', 'fender_RR', 'door_FL', 'door_FR', 'hood', 'trunk', 'spare', 'airfilter', 'fanbelt', 'battery', 'exhaust', 'fueltank', 'engine', 'body'];
     for (const id of order) if (car.parts[id] && car.isInstalled(id) && !keep.has(id)) car.setInstalled(id, false);
     car.fuel = 6;
     car.battery = 0.7;
@@ -409,14 +415,14 @@ export class Game {
     // lay thin panels on their faces the way someone would put them down
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
-      door_RL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
-      door_RR: [0, 0, -Math.PI / 2],
-      fender_L: [0, 0, Math.PI / 2],
-      fender_R: [0, 0, -Math.PI / 2],
+      fender_FL: [0, 0, Math.PI / 2],
+      fender_FR: [0, 0, -Math.PI / 2],
+      fender_RL: [0, 0, Math.PI / 2],
+      fender_RR: [0, 0, -Math.PI / 2],
       bumper_F: [-Math.PI / 2, 0, 0],
       bumper_R: [Math.PI / 2, 0, 0],
-      radiator: [-Math.PI / 2, 0, 0],
+      spare: [0, 0, Math.PI / 2],
       steeringWheel: [-0.45, 0, 0],
     };
     for (const [id, x, y, z, a] of spots) {

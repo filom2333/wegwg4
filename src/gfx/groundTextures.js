@@ -1,5 +1,5 @@
 // Procedural, tileable ground textures packed into 2D texture arrays:
-// layer 0 sand, 1 dirt, 2 rock, 3 salt crust, 4 gravel, 5 asphalt.
+// layer 0 sand, 1 dirt, 2 rock, 3 salt crust, 4 gravel, 5 asphalt, 6 grass, 7 snow, 8 forest floor.
 // Albedo array stores height in alpha (used for height-based blending); normal array is RGB.
 
 import * as THREE from 'three';
@@ -186,9 +186,123 @@ const GEN = {
       return [t, t, t * 0.98, h];
     };
   },
+  grass(seed) {
+    // meadow: dense blades leaning with the wind, mixed green and straw, darker gaps at the roots
+    const L = lattices(seed, 8, 5);
+    const B = lattices(seed + 3, 128, 2);
+    const C = lattices(seed + 4, 16, 3);
+    const rnd = mulberry32(seed + 9);
+    // blade strokes splatted into a height buffer
+    const hb = new Float32Array(S * S);
+    const cb = new Float32Array(S * S);
+    for (let i = 0; i < 26000; i++) {
+      let x = rnd() * S,
+        y = rnd() * S;
+      const len = 6 + rnd() * 16;
+      const a = -Math.PI / 2 + (rnd() - 0.5) * 0.9;
+      const dx = Math.cos(a),
+        dy = Math.sin(a);
+      const shade = rnd();
+      for (let t = 0; t < len; t++) {
+        const xi = ((Math.floor(x) % S) + S) % S,
+          yi = ((Math.floor(y) % S) + S) % S;
+        const k = yi * S + xi;
+        const h = t / len;
+        if (h > hb[k]) {
+          hb[k] = h * (0.7 + 0.3 * shade);
+          cb[k] = shade;
+        }
+        x += dx;
+        y += dy;
+      }
+    }
+    return (x, y) => {
+      const k = y * S + x;
+      const macro = fbmT(L, x, y, 5, 8);
+      const dry = clamp01((fbmT(C, x, y, 3, 16) - 0.45) * 2.2);
+      const fine = fbmT(B, x, y, 2, 128);
+      const h = clamp01(hb[k] * 0.85 + 0.15 * fine);
+      const t = 0.55 + 0.45 * h + 0.12 * (macro - 0.5);
+      const g = [0.36, 0.48, 0.2];
+      const st = [0.66, 0.6, 0.36];
+      const m = clamp01(dry * 0.8 + cb[k] * 0.25);
+      return [(g[0] + (st[0] - g[0]) * m) * t, (g[1] + (st[1] - g[1]) * m) * t, (g[2] + (st[2] - g[2]) * m) * t, h];
+    };
+  },
+  snow(seed) {
+    // wind-packed snow: soft drifts, fine sastrugi ripples, cold blue in the hollows
+    const L = lattices(seed, 4, 6);
+    const R = lattices(seed + 2, 16, 3);
+    const G = lattices(seed + 5, 128, 2);
+    return (x, y) => {
+      const n = fbmT(L, x, y, 6, 4);
+      const warp = (fbmT(R, x, y, 3, 16) - 0.5) * 50;
+      const rip = 0.5 + 0.5 * Math.sin(((x + warp) / S) * Math.PI * 2 * 14);
+      const g = fbmT(G, x, y, 2, 128);
+      const drift = fbmT(L, x * 0.5, y * 0.5, 3, 4);
+      const h = clamp01(0.6 * n + 0.25 * drift + 0.06 * rip * rip + 0.12 * g);
+      const t = 0.9 + 0.1 * h;
+      const blue = (1 - h) * 0.06;
+      return [0.93 * t - blue, 0.95 * t - blue * 0.6, 0.99 * t, h];
+    };
+  },
+  forest(seed) {
+    // pine floor: a mat of brown needles, twigs, cones and patches of moss
+    const L = lattices(seed, 8, 5);
+    const M = lattices(seed + 2, 16, 3);
+    const rnd = mulberry32(seed + 7);
+    const hb = new Float32Array(S * S);
+    const cb = new Float32Array(S * S);
+    const stroke = (n, lenA, lenB, hBase, col) => {
+      for (let i = 0; i < n; i++) {
+        let x = rnd() * S,
+          y = rnd() * S;
+        const len = lenA + rnd() * (lenB - lenA);
+        const a = rnd() * Math.PI * 2;
+        const dx = Math.cos(a),
+          dy = Math.sin(a);
+        const hh = hBase + rnd() * 0.25;
+        for (let t = 0; t < len; t++) {
+          const xi = ((Math.floor(x) % S) + S) % S,
+            yi = ((Math.floor(y) % S) + S) % S;
+          const k = yi * S + xi;
+          if (hh > hb[k]) {
+            hb[k] = hh;
+            cb[k] = col + rnd() * 0.2;
+          }
+          x += dx;
+          y += dy;
+        }
+      }
+    };
+    stroke(30000, 5, 12, 0.35, 0.0); // needles
+    stroke(90, 14, 40, 0.6, 0.15); // twigs
+    const V = makeVoronoi(seed + 11, 22);
+    return (x, y) => {
+      const k = y * S + x;
+      const macro = fbmT(L, x, y, 5, 8);
+      const moss = clamp01((fbmT(M, x, y, 3, 16) - 0.55) * 3);
+      const [f1, , id] = V(x, y);
+      const cone = id > 0.93 ? clamp01(1 - f1 * 3.2) : 0;
+      const h = clamp01(Math.max(hb[k], cone * 0.9) * 0.8 + 0.2 * macro);
+      const t = 0.6 + 0.5 * h + 0.15 * (macro - 0.5);
+      let r = (0.36 + cb[k] * 0.12) * t,
+        g = (0.27 + cb[k] * 0.08) * t,
+        b = (0.17 + cb[k] * 0.05) * t;
+      if (cone > 0) {
+        r = 0.42 * t;
+        g = 0.28 * t;
+        b = 0.16 * t;
+      }
+      r += (0.28 * t - r) * moss;
+      g += (0.36 * t - g) * moss;
+      b += (0.16 * t - b) * moss;
+      return [r, g, b, h];
+    };
+  },
 };
 
-export const LAYERS = ['sand', 'dirt', 'rock', 'salt', 'gravel', 'asphalt'];
+export const LAYERS = ['sand', 'dirt', 'rock', 'salt', 'gravel', 'asphalt', 'grass', 'snow', 'forest'];
 
 export function buildGroundTextures(seed = 7) {
   const n = LAYERS.length;
@@ -209,7 +323,7 @@ export function buildGroundTextures(seed = 7) {
         hbuf[y * S + x] = h;
       }
     }
-    const strength = { sand: 2.2, dirt: 4.5, rock: 7, salt: 3.5, gravel: 4, asphalt: 3 }[name];
+    const strength = { sand: 2.2, dirt: 4.5, rock: 7, salt: 3.5, gravel: 4, asphalt: 3, grass: 3.5, snow: 2.4, forest: 4 }[name];
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const hx = hbuf[y * S + ((x + 1) % S)] - hbuf[y * S + ((x - 1 + S) % S)];

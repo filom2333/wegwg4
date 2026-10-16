@@ -9,6 +9,7 @@ import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { PARTS, PART_FAMILY } from '../vehicle/carParts.js';
 import { HOTSPOTS, SEATS } from '../vehicle/car.js';
+import { CONTROLS, DRIVER } from '../vehicle/beetle/spec.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
@@ -130,7 +131,7 @@ export class Interaction {
     const seated = !!this.game.player.seat;
     for (const [id, part] of Object.entries(car.model.parts)) {
       if (seated) break;
-      if (!car.isInstalled(id) || id === 'body' || id === 'chassis' || id === 'fuelflap') continue;
+      if (!car.isInstalled(id) || id === 'body' || id === 'chassis') continue;
       if (!part.bbox || part.bbox.isEmpty()) continue;
       inv.copy(this.partMatrix(car, id)).invert();
       tmpRay.origin.copy(origin).applyMatrix4(inv);
@@ -150,7 +151,7 @@ export class Interaction {
     let hs = null;
     for (const h of HOTSPOTS) {
       if (!car.isInstalled(h.part)) continue;
-      if (h.hood && car.isInstalled('hood') && car.model.parts.hood.openT < 0.5) continue;
+      if (h.lid && !car.lidOpen(h.lid)) continue;
       if (h.inside && !this.game.player.seat) continue;
       const toC = h.pos.clone().sub(lo);
       const t = toC.dot(ld);
@@ -320,7 +321,6 @@ export class Interaction {
       const h = t.hotspot.id;
       if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank')) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
-      if ((type === 'coolant' || type === 'water') && h === 'coolant') return { kind: 'car', sys: 'coolant', label: 'Top up coolant' };
     }
     if (t.kind === 'pump' && type === 'fuel') return { kind: 'pump', label: 'Fill from pump' };
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
@@ -357,7 +357,7 @@ export class Interaction {
         if (this.removing && this.removing.part === id) info.progress = this.removing.t / this.removeTime(id);
         if (id === 'engine') info.sub = `Condition ${Math.round(car.engineCondition * 100)}% · ${Math.round(car.engineTemp)}°C`;
         if (id === 'battery') info.sub = `Charge ${Math.round(car.battery * 100)}%`;
-        if (id === 'radiator') info.sub = `Condition ${Math.round(car.radiatorCondition * 100)}% · coolant ${car.coolant.toFixed(1)} l`;
+        if (id === 'fanbelt') info.sub = `Condition ${Math.round(car.fanbeltCondition * 100)}%${car.fanbeltCondition < 0.25 ? ' · cracked, replace soon' : ''}`;
         if (id === 'fueltank') info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
         if (id.startsWith('wheel')) {
           const w = car.dyn.wheels.find((x) => x.id === id);
@@ -371,13 +371,9 @@ export class Interaction {
         if (h.id === 'fuel') {
           info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
           info.bar = car.fuel / car.fuelCap;
-          prompts.push(['E', car.model.parts.fuelflap.openT > 0.5 ? 'Close flap' : 'Open flap']);
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
           info.bar = car.oil / car.oilCap;
-        } else if (h.id === 'coolant') {
-          info.sub = `${car.coolant.toFixed(1)} / ${car.coolantCap} l`;
-          info.bar = car.coolant / car.coolantCap;
         } else if (h.id === 'battery') {
           info.sub = `Charge ${Math.round(car.battery * 100)}%`;
           info.bar = car.battery;
@@ -386,6 +382,9 @@ export class Interaction {
           prompts.push(['E', car.ignition ? 'Ignition off' : 'Ignition on'], ['I', 'Hold to start']);
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
+          prompts.push(['E', 'Switch']);
+        } else if (h.id === 'wipers') {
+          info.sub = car.wipers ? 'On' : 'Off';
           prompts.push(['E', 'Switch']);
         } else if (h.id === 'radio') {
           const st = car.stereo;
@@ -487,9 +486,9 @@ export class Interaction {
       case 'hotspot': {
         if (viaMouse) return;
         const h = t.hotspot.id;
-        if (h === 'fuel') car.toggleOpen('fuelflap');
         if (h === 'ignition') car.setIgnition(!car.ignition);
         if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
+        if (h === 'wipers') car.wipers = !car.wipers;
         if (h === 'radio') {
           car.radioOn = !car.radioOn;
           g.audio && g.audio.setRadio(car.radioOn);
@@ -942,10 +941,8 @@ export class Interaction {
     const t = this.target;
     const car = g.car;
     if (it.id === 'repairKit' && t && (t.kind === 'part' || t.kind === 'hotspot')) {
-      const hoodOpen = !car.isInstalled('hood') || car.model.parts.hood.openT > 0.5;
-      if (!hoodOpen) return g.hud && g.hud.toast('Open the hood first');
+      if (!car.lidOpen('hood')) return g.hud && g.hud.toast('Open the engine lid first');
       car.engineCondition = Math.min(1, car.engineCondition + 0.35);
-      car.radiatorCondition = Math.min(1, car.radiatorCondition + 0.4);
       car.fire = 0;
       it.state.charges--;
       g.audio && g.audio.play('ratchet');
@@ -1008,16 +1005,11 @@ export class Interaction {
     }
     if (tgt.kind === 'car') {
       if (tgt.sys === 'fuel') {
-        if (car.model.parts.fuelflap.openT < 0.5) return g.hud && g.hud.toast('Open the fuel flap');
         amount = Math.min(amount, car.fuelCap - car.fuel);
         car.fuel += amount;
       } else if (tgt.sys === 'oil') {
         amount = Math.min(amount, car.oilCap + 0.3 - car.oil);
         car.oil += amount;
-      } else if (tgt.sys === 'coolant') {
-        amount = Math.min(amount, car.coolantCap - car.coolant);
-        car.coolant += amount;
-        if (s.liquidType === 'water') car.radiatorCondition = Math.max(0, car.radiatorCondition - amount * 0.002);
       }
       if (tgt.sys === 'fuel') car.updateMass();
     } else if (tgt.kind === 'pump') {
@@ -1194,7 +1186,7 @@ export class Interaction {
     car.parts[slot].condition = cond;
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
-    if (slot === 'radiator' && it.state.coolant !== undefined) car.coolant = it.state.coolant;
+    if (slot === 'fanbelt') car.fanbeltCondition = cond;
     if (slot === 'engine' && it.state.oil !== undefined) car.oil = it.state.oil;
     const w = car.dyn.wheels.find((x) => x.id === slot);
     if (w) w.flat = cond < 0.02;
@@ -1223,10 +1215,7 @@ export class Interaction {
       state.fuel = car.fuel;
       car.fuel = 0;
     }
-    if (id === 'radiator') {
-      state.coolant = car.coolant;
-      car.coolant = 0;
-    }
+    if (id === 'fanbelt') state.condition = car.fanbeltCondition;
     if (id === 'engine') {
       state.oil = car.oil;
     }
@@ -1293,12 +1282,14 @@ export class Interaction {
 
   // Car-space point of a driver control.
   controlPoint(car, target) {
-    const col = car.model.steeringColumn;
-    if (target === 'key') return (col && col.userData.ignitionPos ? col.userData.ignitionPos.clone() : V(0.31, 0.88, 0.35)).add(V(0, 0.0, -0.02));
-    if (target === 'stalk') return V(0.37 - 0.13, 0.955, 0.37);
-    if (target === 'shifter') return V(0, 0.64, 0.23);
-    if (target === 'horn') return V(0.37, 0.935, 0.255).addScaledVector(V(0, 0.36, -0.933).normalize(), 0.05);
-    return V(0, 0, 0);
+    if (target === 'shifter' && car.model.gearLever) {
+      // the knob moves with the lever
+      const lv = car.model.gearLever;
+      lv.updateMatrix();
+      return lv.userData.top.clone().sub(lv.position).applyQuaternion(lv.quaternion).add(lv.position).add(V(0, 0.01, 0));
+    }
+    const p = CONTROLS[target];
+    return p ? p.clone() : V(0, 0, 0);
   }
 
   // Shoulders and elbow pole directions of the seated driver, in camera space (fixed to the
@@ -1310,7 +1301,7 @@ export class Interaction {
     for (const side of ['right', 'left']) {
       // car space: +X is the car's left
       const sg = side === 'left' ? 1 : -1;
-      const S = car.root.localToWorld(V(0.37 + 0.2 * sg, 0.93, -0.38)).sub(cam.position).applyQuaternion(inv);
+      const S = car.root.localToWorld(DRIVER.shoulder.clone().add(V(DRIVER.shoulderHalf * sg, 0, 0))).sub(cam.position).applyQuaternion(inv);
       const pole = V(0.35 * sg, -1, 0.1).transformDirection(car.root.matrixWorld).applyQuaternion(inv);
       out[side] = { shoulder: S, pole };
     }
@@ -1331,9 +1322,10 @@ export class Interaction {
     const camQ = cam.quaternion;
     const inv = camQ.clone().invert();
     const toCam = (wp) => wp.clone().sub(cam.position).applyQuaternion(inv);
-    const R = 0.188;
-    // hands ride with the rim up to about 80 degrees each way, then slide along it
-    const turn = clamp(wheelObj.rotation.z, -1.4, 1.4);
+    const R = DRIVER.rimRadius;
+    // hands ride with the rim up to about 50 degrees each way, then slide along it (the arms
+    // would cross over the wheel beyond that)
+    const turn = clamp(wheelObj.rotation.z, -0.85, 0.85);
     sw.updateMatrixWorld(true);
     const pivotW = sw.matrixWorld;
     const arms = this.driverArms(car);

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GEN } from './synth.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
+import { POINTS as CAR_POINTS } from '../vehicle/beetle/spec.js';
 
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
@@ -16,6 +17,11 @@ const STEP_SURF = {
   wood: { cut: 1400, grains: 6, spread: 0.02, body: 0.9, bodyF: 95 },
   metal: { cut: 5000, grains: 5, spread: 0.02, body: 0.6, bodyF: 320 },
   salt: { cut: 5200, grains: 40, spread: 0.1, body: 0.15 },
+  // soft squeaky crunch of packed snow, a swish through grass, needles underfoot in the forest
+  snow: { cut: 2400, grains: 55, spread: 0.16, body: 0.35, bodyF: 260 },
+  snowRoad: { cut: 2600, grains: 40, spread: 0.12, body: 0.3, bodyF: 300 },
+  grass: { cut: 3600, grains: 34, spread: 0.18, body: 0.08 },
+  ice: { cut: 4200, grains: 6, spread: 0.02, body: 0.5, bodyF: 420 },
 };
 
 export class AudioSystem {
@@ -410,7 +416,7 @@ export class AudioSystem {
     // ---- car
     if (car) {
       const p = car.root.position;
-      const ep = V3.set(0, 0.7, 1.5).applyMatrix4(car.root.matrixWorld);
+      const ep = V3.copy(CAR_POINTS.engine).applyMatrix4(car.root.matrixWorld);
       this.carPanner.positionX.value = ep.x;
       this.carPanner.positionY.value = ep.y;
       this.carPanner.positionZ.value = ep.z;
