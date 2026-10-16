@@ -661,17 +661,22 @@ export class WorldGen {
     dirt *= 1.3 - 0.6 * n;
     grass *= 0.75 + 0.5 * n2;
     forest *= 0.7 + 0.6 * (1 - n2);
-    rock += smoothstep(0.05, 0.2, slope) * 3;
+    // bare rock shows on steep ground, but sand dunes stay sand and green country turns to
+    // earth first and only to rock on real cliffs
+    const green = bw.prairie + bw.forest + bw.taiga + bw.tundra;
+    const steep = smoothstep(0.05, 0.2, slope) * (1 - bw.dunes * 0.92);
+    rock += steep * 3 * (1 - green * 0.75) + smoothstep(0.3, 0.5, slope) * 2 * green;
+    dirt += steep * 1.6 * green;
     salt *= 1 - smoothstep(0.015, 0.06, slope);
     // snow slides off steep rock; grass thins on slopes
-    snow *= 1 - smoothstep(0.18, 0.45, slope) * 0.85;
+    snow *= 1 - smoothstep(0.3, 0.6, slope) * 0.8;
     grass *= 1 - smoothstep(0.12, 0.3, slope) * 0.8;
     // wet shores: sand and mud at rivers and lakes
     const rv = this.riverAt(x, z);
     if (rv && rv.d < rv.r.w + 10) {
       const t = smoothstep(rv.r.w + 10, rv.r.w, rv.d);
-      sand += t * (rv.r.dry ? 2 : 1.2);
-      dirt += t * 0.8;
+      sand += t * (rv.r.dry ? 2 : 1.2) * (1 - green * 0.85);
+      dirt += t * (0.8 + green * 0.9);
       grass *= 1 - t * 0.6;
       snow *= 1 - t * (rv.r.frozen ? 0.2 : 0.8);
     }

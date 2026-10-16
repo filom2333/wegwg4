@@ -203,9 +203,11 @@ export class Game {
       return { x: d.player.pos[0], y: d.player.pos[1], z: d.player.pos[2], yaw: d.player.yaw, carX: d.car.pos[0], carY: d.car.pos[1] - 0.05, carZ: d.car.pos[2], carQuat: d.car.quat, carYaw: 0 };
     }
     if (this.startZ) {
-      const z = 6 + this.startZ;
+      // never start on a bridge (the land under it is the river bed): step back along the road
+      let z = 6 + this.startZ;
+      for (let i = 0; i < 40 && this.gen.bridgeNear(z) && Math.abs(this.gen.roadSurfaceY(this.gen.roadX(z), z) - this.gen.height(this.gen.roadX(z), z)) > 0.3; i++) z -= 15;
       const rx = this.gen.roadX(z);
-      return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carYaw: 0 };
+      return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carY: this.gen.roadSurfaceY(rx + 2.0, z + 1), carYaw: 0 };
     }
     // homestead: car inside the garage, player at the garage door
     const inst = this.pois.ensureLoaded(0);
@@ -636,7 +638,7 @@ export class Game {
 
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = settings.data.fov;
+    cam.fov = this.debugFov || settings.data.fov;
     cam.far = 6000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;

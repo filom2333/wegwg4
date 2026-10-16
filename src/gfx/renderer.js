@@ -114,7 +114,9 @@ export class Renderer {
     // only the visible silhouette: hidden edges drew every part behind the selection through the body
     this.outline.hiddenEdgeColor.set(0x000000);
     this.composer.addPass(this.outline);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.35, 0.5, 0.92);
+    // threshold well above sunlit diffuse surfaces (snow, salt and white sand are ~1.5 in the
+    // linear HDR buffer): only lamps, the sun's glint and fire bloom
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.4, 0.5, 2.2);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
