@@ -58,13 +58,22 @@ export function anchorQ(thumb, wrist) {
   return frameQ(t, back);
 }
 
+// The same for either hand. The left hand's frame is the mirror image, so its back of the hand is
+// the other cross product; with anchorQ alone a left wrist would point away from its elbow.
+export function anchorQFor(side, thumb, wrist) {
+  if (side === 'right') return anchorQ(thumb, wrist);
+  const t = thumb.clone().normalize();
+  return frameQ(t, wrist.clone().normalize().cross(t));
+}
+
 // Where the right hand holds each kind of item in view (camera space: +X right, +Y up, -Z ahead).
 // wrap: bottles and cans upright; palm: flat things lying on the open palm; side: carried by a
 // handle, hanging from the fist; tool: a handle held upright like a torch.
 export const ANCHORS = {
   wrap: { p: V(0.15, -0.19, -0.4), q: anchorQ(V(-0.12, 1, 0.2), V(0.45, -0.25, 0.85)) },
   palm: { p: V(0.1, -0.2, -0.4), q: anchorQ(V(1, 0.15, 0), V(0.25, -0.45, 0.85)) },
-  side: { p: V(0.17, -0.28, -0.43), q: anchorQ(V(-1, 0, 0.1), V(0.25, -0.1, 0.95)) },
+  // held up a little so the can or lantern hanging from the fist stays in view
+  side: { p: V(0.19, -0.17, -0.47), q: anchorQ(V(-1, 0, 0.1), V(0.25, -0.1, 0.95)) },
   tool: { p: V(0.18, -0.21, -0.38), q: anchorQ(V(-0.15, 0.95, -0.25), V(0.4, -0.05, 0.9)) },
 };
 
