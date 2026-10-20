@@ -9,6 +9,7 @@ import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
+import { fitMatrix } from '../vehicle/swap.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
@@ -1150,11 +1151,10 @@ export class Interaction {
   partFit(it) {
     const car = this.game.car;
     if (!car) return null;
-    // parts only fit the kind of car they came off
-    if (carType(it.state.carType).id !== car.type.id) return null;
+    // a part fits the slot of the same name on any car (or any slot of its family)
     const F = car.type.PART_FAMILY;
     const fam = F[it.part];
-    const slots = fam ? Object.keys(F).filter((k) => F[k] === fam && !car.isInstalled(k)) : [it.part];
+    const slots = (fam ? Object.keys(F).filter((k) => F[k] === fam && !car.isInstalled(k)) : [it.part]).filter((k) => car.model.parts[k] && car.PARTS[k]);
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     let best = null;
@@ -1194,9 +1194,13 @@ export class Interaction {
       this.ghostFor = fit.slot;
       this.game.worldGroup.add(mesh);
     }
-    const c = car.model.parts[fit.slot].bbox.getCenter(V(0, 0, 0));
+    const sp = car.model.parts[fit.slot];
+    const box = sp.nativeBox || sp.bbox;
+    const c = box.getCenter(V(0, 0, 0));
     // wheels share geometry; slot centre differs
     const m = this.partMatrix(car, fit.slot).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+    const from = carType(it.state.carType).id;
+    if (from !== car.type.id && !car.model.wheels?.[fit.slot]) m.multiply(fitMatrix(fit.slot, this.ghost.userData.size, box.getSize(V(0, 0, 0))));
     if (car.type.PART_FAMILY[it.part] && it.part !== fit.slot) {
       const src = car.model.parts[it.part].bbox.getCenter(V(0, 0, 0));
       // mirrored side: rotate 180° about Y for opposite-side wheels
@@ -1225,9 +1229,11 @@ export class Interaction {
     this.dragging = false;
     g.player.carryMass = 0;
     g.items.destroy(it);
-    car.setInstalled(slot, true);
+    car.setInstalled(slot, true, carType(it.state.carType).id);
     car.owned = true;
     if (it.state.color !== undefined) car.paintPart(slot, it.state.color);
+    // a foreign panel keeps the paint of the car it came from (its own material otherwise)
+    else if (car.parts[slot].from) car.paintPart(slot, carType(car.parts[slot].from).defaultColor);
     car.parts[slot].condition = cond;
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
@@ -1252,8 +1258,9 @@ export class Interaction {
       s = V(0, 0, 0);
     m.decompose(pos, q, s);
     if (mp.hinge) car.model.setOpen(id, 0);
-    const state = { condition: car.parts[id].condition, carType: car.type.id };
+    const state = { condition: car.parts[id].condition, carType: car.parts[id].from || car.type.id };
     if (car.partColors && car.partColors[id] !== undefined) state.color = car.partColors[id];
+    else if (car.paintable(id)) state.color = car.mats.color.getHex();
     if (id === 'battery') {
       state.charge = car.battery;
     }

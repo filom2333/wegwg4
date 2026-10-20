@@ -429,8 +429,10 @@ export class AudioSystem {
     // ---- car
     if (car) {
       const p = car.root.position;
-      if (car.type !== this.carType) this.setCarType(car.type);
-      const S = car.type.sound;
+      // the voice is the engine's: a swapped engine sounds like the car it came from
+      const ET = car.engineType || car.type;
+      if (ET !== this.carType) this.setCarType(ET);
+      const S = ET.sound;
       const ep = V3.copy(car.type.POINTS.engine).applyMatrix4(car.root.matrixWorld);
       this.carPanner.positionX.value = ep.x;
       this.carPanner.positionY.value = ep.y;

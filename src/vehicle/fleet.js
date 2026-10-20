@@ -35,6 +35,8 @@ export class Fleet {
     const type = carType(typeId);
     const asset = this.assets[type.id];
     const mats = type.materials(asset, { color: color ?? type.defaultColor });
+    // paint stays paint on whatever car the part ends up on
+    for (const m of mats.paintables || []) m.userData.paint = true;
     const model = type.build(asset, mats);
     return { type, mats, model };
   }
@@ -48,6 +50,11 @@ export class Fleet {
       this.templates[typeId] = { model, root: model.root };
     }
     return this.templates[typeId];
+  }
+
+  // A model of a type to take part meshes from (never altered, so its parts are all native).
+  modelOf(typeId) {
+    return this.template(typeId).model;
   }
 
   // A car at a local position. opts: color, poiKey, owned, state (saved car state).
@@ -302,7 +309,7 @@ export function serializeCar(car, o) {
   const cp = car.root.position,
     cq = car.root.quaternion;
   const parts = {};
-  for (const [id, st] of Object.entries(car.parts)) parts[id] = { installed: !!st.installed, condition: st.condition ?? 1 };
+  for (const [id, st] of Object.entries(car.parts)) parts[id] = { installed: !!st.installed, condition: st.condition ?? 1, from: st.from || null };
   return {
     pos: [cp.x + o.x, cp.y, cp.z + o.z],
     quat: [cq.x, cq.y, cq.z, cq.w],
@@ -335,7 +342,7 @@ export function applyCarState(car, c, g) {
   }
   for (const [id, st] of Object.entries(same ? c.parts || {} : {})) {
     if (!car.parts[id]) continue;
-    if (!!car.parts[id].installed !== st.installed) car.setInstalled(id, st.installed);
+    if (!!car.parts[id].installed !== st.installed || (st.from || null) !== (car.parts[id].from || null)) car.setInstalled(id, st.installed, st.from || null);
     car.parts[id].condition = st.condition;
   }
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);

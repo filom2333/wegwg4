@@ -475,6 +475,7 @@ export class BeetleModel {
 // Builds the complete visual model (all parts installed) with rest-pose bounding boxes.
 export function buildBeetleModel(asset, mats) {
   const m = new BeetleModel(asset, mats);
+  m.type = { SPEC };
   m.root.updateMatrixWorld(true);
   const box = new THREE.Box3();
   const inv = new THREE.Matrix4().copy(m.root.matrixWorld).invert();

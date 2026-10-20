@@ -7,6 +7,8 @@ import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
+import { setPartSource, applyEngine } from './swap.js';
+import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -123,7 +125,13 @@ export class Car {
     return { ok: true };
   }
 
-  setInstalled(id, on) {
+  // from: the car type the part came off (another type's part fits the same slot)
+  setInstalled(id, on, from = null) {
+    const own = this.type.id;
+    const src = on ? from || own : this.parts[id].from || own;
+    if (on && (src !== (this.parts[id].from || own)) && id !== 'steeringWheel') setPartSource(this, id, this.game.fleet ? this.game.fleet.modelOf(src) : null, src);
+    this.parts[id].from = on && src !== own ? src : null;
+    if (id === 'engine' && on) applyEngine(this, carType(src));
     this.parts[id].installed = on;
     this.model.setInstalled(id, on);
     const w = this.dyn.wheels.find((x) => x.id === id);
@@ -147,7 +155,7 @@ export class Car {
     mp.inner.traverse((o) => {
       if (!o.isMesh) return;
       const base = o.userData.baseMat || o.material;
-      if (!P.has(base)) return;
+      if (!P.has(base) && !base.userData.paint) return;
       o.userData.baseMat = base;
       let m = own.get(base);
       if (!m) {
@@ -172,7 +180,8 @@ export class Car {
     if (!mp || !P) return false;
     let ok = false;
     mp.inner.traverse((o) => {
-      if (o.isMesh && P.has(o.userData.baseMat || o.material)) ok = true;
+      const base = o.isMesh && (o.userData.baseMat || o.material);
+      if (base && (P.has(base) || base.userData.paint)) ok = true;
     });
     return ok;
   }
@@ -188,7 +197,7 @@ export class Car {
     const c = new THREE.Vector3();
     for (const [id, st] of Object.entries(this.parts)) {
       if (!st.installed || !this.PARTS[id]) continue;
-      const mass = this.PARTS[id].mass;
+      const mass = (st.from ? carType(st.from).PARTS[id] || this.PARTS[id] : this.PARTS[id]).mass;
       const b = this.model.parts[id].bbox;
       if (!b || b.isEmpty()) continue;
       b.getCenter(c);
@@ -539,10 +548,11 @@ export class Car {
       const oilFrac = clamp(this.oil / this.oilCap, 0, 1);
       const heat = 6 + powerKw * 0.55;
       let coolingCap;
-      if (this.type.cooling === 'water') {
+      if ((this.engineType || this.type).cooling === 'water') {
         // the belt turns the water pump; the radiator needs coolant and air (an electric fan
         // cuts in when hot and the battery can run it)
-        const coolFrac = this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
+        // a water-cooled engine swapped into a car without a radiator slot brought its own
+        const coolFrac = !this.parts.radiator ? 1 : this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
         const pump = belt > 0.02 ? 1 : 0.15;
         const fanOn = this.engineTemp > 96 && this.isInstalled('battery') && this.battery > 0.05;
         coolingCap = pump * Math.pow(coolFrac, 0.6) * (0.6 + Math.min(1, d.speed / 20) * 0.45 + (fanOn ? 0.4 : 0)) * (0.7 + 0.3 * oilFrac);

@@ -98,7 +98,9 @@ export class ItemSystem {
   buildPartMesh(partId, typeId = null) {
     const g0 = this.game;
     const tid = carType(typeId || (g0.car && g0.car.type.id)).id;
-    const car = g0.car && g0.car.type.id === tid ? g0.car : g0.fleet.cars.find((c) => c.type.id === tid) || g0.fleet.template(tid);
+    let car = g0.car && g0.car.type.id === tid ? g0.car : g0.fleet.cars.find((c) => c.type.id === tid) || g0.fleet.template(tid);
+    // a slot holding another car's part no longer shows this type's own
+    if (car.model.parts[partId].foreign) car = g0.fleet.template(tid);
     const src = car.model.parts[partId];
     const g = new THREE.Group();
     const bbox = src.bbox;
