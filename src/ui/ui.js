@@ -27,6 +27,9 @@ const MENU_SHOTS = [
   { src: 'menu/forest.webp', move: 'in', origin: '52% 62%' },
   { src: 'menu/taiga.webp', move: 'right', origin: '40% 64%' },
   { src: 'menu/night.webp', move: 'in', origin: '50% 52%' },
+  { src: 'menu/dunes.webp', move: 'right', origin: '40% 55%' },
+  { src: 'menu/mesas.webp', move: 'out', origin: '55% 50%' },
+  { src: 'menu/valley.webp', move: 'left', origin: '60% 55%' },
 ];
 const SLIDE_SECONDS = 9;
 
