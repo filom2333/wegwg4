@@ -48,7 +48,7 @@ Tell Danny the road is fine in the daytime. Just don't stop at night.`,
     id: 'n05',
     title: 'Note under a windscreen wiper',
     by: 'R.',
-    text: `Car died here. Radiator split clean through. If you have coolant, top up before the dunes — mine boiled in twenty minutes.
+    text: `Car died here. Fan belt let go and the engine cooked itself in twenty minutes. Carry a spare belt before the dunes.
 
 I'm walking to the next station. It's maybe ten kilometres. I've done worse.
 

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { makeCanvas, canvasTexture, cached, normalFromHeight } from '../../gfx/textures.js';
 import { mulberry32, SimplexNoise } from '../../core/noise.js';
-import { applyWeathering, weatheringUniforms } from '../../vehicle/carMaterials.js';
+import { applyWeathering, weatheringUniforms } from '../../vehicle/weathering.js';
 
 const PX = 256; // pixels per texture
 
@@ -366,7 +366,63 @@ const TEX_METRES = {
 
 let MATS = null;
 
+// Token mode (inside the POI worker): materials are stand-ins naming what to use, resolved to
+// real materials on the main thread by resolveMaterial().
+let TOKENS = false;
+const tokenCache = {};
+const tokenProxy = new Proxy({}, { get: (_, name) => (typeof name === 'string' ? (tokenCache[name] = tokenCache[name] || { __mat: name }) : undefined) });
+export function useMaterialTokens(on) {
+  TOKENS = on;
+}
+export function resolveMaterial(t) {
+  if (!t || t.isMaterial) return t;
+  if (t.__mat) return archMaterials()[t.__mat];
+  if (t.__sign) return signMaterial(...t.__sign);
+  if (t.__std) return stdMat(t.__std, t.physical);
+  return archMaterials().trimWhite;
+}
+
+// Plain coloured materials made on the fly by builders, shared by identical parameters.
+const stdCache = new Map();
+export function stdMat(params, physical = false) {
+  if (TOKENS) return { __std: params, physical };
+  const key = JSON.stringify(params) + physical;
+  let m = stdCache.get(key);
+  if (!m) {
+    m = physical ? new THREE.MeshPhysicalMaterial(params) : new THREE.MeshStandardMaterial(params);
+    stdCache.set(key, m);
+  }
+  return m;
+}
+
+// Small landscape paintings for picture frames (a handful, shared).
+function paintingMaterial(i) {
+  const c = makeCanvas(64, 48);
+  const ctx = c.getContext('2d');
+  const r = mulberry32(911 + i * 37);
+  const g = ctx.createLinearGradient(0, 0, 0, 48);
+  const skies = ['#87a7c4', '#c9a27a', '#9fb7c9', '#d8b48a', '#7f97b0', '#b7c4cf'];
+  g.addColorStop(0, skies[i % skies.length]);
+  g.addColorStop(0.55, '#e3c79a');
+  g.addColorStop(1, '#a87b50');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 48);
+  ctx.fillStyle = ['#7a4f35', '#5d6b4a', '#6d5a4a', '#4f5f6f'][i % 4];
+  ctx.beginPath();
+  ctx.moveTo(0, 30);
+  ctx.lineTo(20, 18 + r() * 8);
+  ctx.lineTo(40, 26);
+  ctx.lineTo(64, 20 + r() * 6);
+  ctx.lineTo(64, 48);
+  ctx.lineTo(0, 48);
+  ctx.fill();
+  const tex = canvasTexture(c, { wrap: false });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 });
+}
+
 export function archMaterials() {
+  if (TOKENS) return tokenProxy;
   if (MATS) return MATS;
   const tex = (k, n = 2) => texPair(k, TEX_METRES[k], P[k], { normal: n });
   const wthr = weatheringUniforms({ dirt: 0.5, dust: 0.35, rust: 0, fade: 0.1 });
@@ -461,12 +517,15 @@ export function archMaterials() {
     cardboard: new THREE.MeshStandardMaterial({ color: 0xa88458, roughness: 0.95 }),
     asphalt: std('concrete', { roughness: 0.95, color: 0x55524e }),
   };
+  for (let i = 0; i < 6; i++) MATS['painting' + i] = paintingMaterial(i);
   return MATS;
 }
 
 // Text-bearing sign material (cached by text)
-export function signMaterial(lines, { w = 512, h = 256, bg = '#e8e2d2', fg = '#1d1d1d', border = '#1d1d1d', font = 'Arial', weight = 'bold', worn = 0.3 } = {}) {
-  return cached('sign:' + JSON.stringify(lines) + bg + fg, () => {
+export function signMaterial(lines, opts = {}) {
+  if (TOKENS) return { __sign: [lines, opts] };
+  const { w = 512, h = 256, bg = '#e8e2d2', fg = '#1d1d1d', border = '#1d1d1d', font = 'Arial', weight = 'bold', worn = 0.3, repeatX = false } = opts;
+  return cached('sign:' + JSON.stringify(lines) + bg + fg + repeatX, () => {
     const c = makeCanvas(w, h);
     const ctx = c.getContext('2d');
     ctx.fillStyle = bg;
@@ -502,6 +561,7 @@ export function signMaterial(lines, { w = 512, h = 256, bg = '#e8e2d2', fg = '#1
       ctx.fill();
     }
     const tex = canvasTexture(c, { wrap: false });
+    if (repeatX) tex.wrapS = THREE.RepeatWrapping;
     return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, metalness: 0.1 });
   });
 }

@@ -7,13 +7,22 @@ import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
-import { PARTS, PART_FAMILY } from '../vehicle/carParts.js';
-import { HOTSPOTS, SEATS } from '../vehicle/car.js';
+import { carType } from '../vehicle/types.js';
+import { paintOf } from '../vehicle/paints.js';
+import { fitMatrix } from '../vehicle/swap.js';
+import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate } from '../vehicle/plates.js';
+import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
+
+
+// Part table entry of a part item (it remembers which kind of car it came off).
+function partDefOf(it) {
+  return carType(it.state && it.state.carType).PARTS[it.part] || { label: it.part, mass: 10 };
+}
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const REACH = 2.6;
@@ -130,7 +139,7 @@ export class Interaction {
     const seated = !!this.game.player.seat;
     for (const [id, part] of Object.entries(car.model.parts)) {
       if (seated) break;
-      if (!car.isInstalled(id) || id === 'body' || id === 'chassis' || id === 'fuelflap') continue;
+      if (!car.isInstalled(id) || id === 'body' || id === 'chassis') continue;
       if (!part.bbox || part.bbox.isEmpty()) continue;
       inv.copy(this.partMatrix(car, id)).invert();
       tmpRay.origin.copy(origin).applyMatrix4(inv);
@@ -148,9 +157,9 @@ export class Interaction {
     const lo = origin.clone().applyMatrix4(cinv);
     const ld = dir.clone().transformDirection(cinv);
     let hs = null;
-    for (const h of HOTSPOTS) {
+    for (const h of car.type.HOTSPOTS) {
       if (!car.isInstalled(h.part)) continue;
-      if (h.hood && car.isInstalled('hood') && car.model.parts.hood.openT < 0.5) continue;
+      if (h.lid && !car.lidOpen(h.lid)) continue;
       if (h.inside && !this.game.player.seat) continue;
       const toC = h.pos.clone().sub(lo);
       const t = toC.dot(ld);
@@ -161,7 +170,7 @@ export class Interaction {
     // seats via door opening: choose the seat closest to the ray if a door is open/missing
     let seat = null;
     if (!this.game.player.seat) {
-      for (const [name, s] of Object.entries(SEATS)) {
+      for (const [name, s] of Object.entries(car.type.SEATS)) {
         const door = s.door;
         const doorOpen = !car.isInstalled(door) || car.model.parts[door].openT > 0.6;
         if (!doorOpen || !car.isInstalled(s.part)) continue;
@@ -172,13 +181,28 @@ export class Interaction {
         if (dd < 0.32 && (!seat || dd < seat.dd)) seat = { kind: 'seat', seat: name, dist: t, dd };
       }
     }
+    // plates bolted on: in front of whatever they cover
+    const pl = !seated && plateUnderRay(car, origin, dir, maxDist);
+    if (pl) list.push({ id: 'plate', plate: pl.plate, d: pl.dist - 0.03, vol: 0 });
+    // bolt-on accessories
+    if (!seated)
+      for (const [mount, a] of Object.entries(car.accessories || {})) {
+        tmpRay.origin.copy(origin).applyMatrix4(cinv);
+        tmpRay.direction.copy(dir).transformDirection(cinv);
+        const hitP = tmpRay.intersectBox(a.box, tmpV);
+        if (!hitP) continue;
+        const d = hitP.clone().applyMatrix4(car.root.matrixWorld).distanceTo(origin);
+        if (d > maxDist) continue;
+        const sz = a.box.getSize(V(0, 0, 0));
+        list.push({ id: mount, acc: true, d, vol: sz.x * sz.y * sz.z });
+      }
     list.sort((a, b) => a.d - b.d);
     let pick = null;
     if (list.length) {
       pick = list[0];
       for (const c of list) if (c.d - list[0].d < 0.15 && c.vol < pick.vol) pick = c;
     }
-    let best = pick ? { kind: 'part', part: pick.id, dist: pick.d } : null;
+    let best = pick ? (pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
     if (seat && (!best || seat.dist < best.dist + 0.4)) best = seat;
     if (hs && (!best || hs.dist < best.dist + 0.25)) best = hs;
     return best;
@@ -204,13 +228,36 @@ export class Interaction {
       const def = it.def;
       if (it.part) {
         const fit = this.partFit(it);
-        info = { title: it.name, sub: `${PARTS[it.part].mass} kg` };
+        info = { title: it.name, sub: `${partDefOf(it).mass} kg` };
         if (fit) {
           this.showGhost(it, fit.ok);
-          if (fit.ok) prompts.push(['E', 'Install ' + PARTS[fit.slot].label.toLowerCase()]);
+          if (fit.ok) prompts.push(['E', 'Install ' + this.game.car.PARTS[fit.slot].label.toLowerCase()]);
           else prompts.push(['', fit.reason]);
           if (fit.ok && !blocked && input.wasPressed('interact')) this.install(it, fit.slot);
         } else this.hideGhost();
+      } else if (def && def.plate) {
+        info = this.heldInfo(it);
+        const spot = this.plateFit(it);
+        if (spot) {
+          this.showPlateGhost(it, spot);
+          prompts.push(['E', `Bolt to the ${(this.game.car.PARTS[spot.part] || { label: spot.part }).label.toLowerCase()}`], ['Wheel', 'Turn it']);
+          if (!blocked && input.wasPressed('interact')) this.boltHeldPlate(it, spot);
+        } else {
+          this.hideGhost();
+          prompts.push(['', 'Aim at any part of a car to bolt it on']);
+        }
+      } else if (def && def.accessory) {
+        const fit = this.accessoryFit(it);
+        info = this.heldInfo(it);
+        if (fit) {
+          this.showAccessoryGhost(it, fit.ok);
+          if (fit.ok) prompts.push(['E', `Fit to the ${MOUNT_LABEL[fit.mount]}`]);
+          else prompts.push(['', fit.reason]);
+          if (fit.ok && !blocked && input.wasPressed('interact')) this.fitHeldAccessory(it);
+        } else {
+          this.hideGhost();
+          prompts.push(['', `Take it to a car to fit it to the ${MOUNT_LABEL[ACCESSORIES[def.accessory].mount]}`]);
+        }
       } else {
         this.hideGhost();
         info = this.heldInfo(it);
@@ -230,7 +277,12 @@ export class Interaction {
       }
     } else {
       this.hideGhost();
-      if (t) {
+      if (this.carTipped()) {
+        info = { title: 'Overturned', sub: 'On its side or roof', progress: this.righting > 0 ? Math.min(1, this.righting / 0.4) : undefined };
+        prompts.push([kn('interact'), 'Push it back onto its wheels (hold)']);
+        if (!blocked) this.updateRighting(dt);
+      } else if (t) {
+        this.righting = 0;
         const r = this.describeTarget(t);
         info = r.info;
         prompts.push(...r.prompts);
@@ -297,7 +349,12 @@ export class Interaction {
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
-    if (def.paint) out.push(['LMB', 'Repaint the car']);
+    if (def.paint) {
+      const car = this.game.car;
+      if (t && t.kind === 'part' && car && car.paintable(t.part)) out.push(['LMB', `Paint the ${car.PARTS[t.part].label.toLowerCase()} (hold)`]);
+      else if (t && t.kind === 'plate') out.push(['LMB', `Paint the ${PLATES[t.plate.id].name.toLowerCase()} (hold)`]);
+      else out.push(['', 'Aim at a body panel to paint it']);
+    }
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.liquid) {
       const tgt = this.pourTarget(it, t);
@@ -320,7 +377,7 @@ export class Interaction {
       const h = t.hotspot.id;
       if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank')) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
-      if ((type === 'coolant' || type === 'water') && h === 'coolant') return { kind: 'car', sys: 'coolant', label: 'Top up coolant' };
+      if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
     if (t.kind === 'pump' && type === 'fuel') return { kind: 'pump', label: 'Fill from pump' };
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
@@ -335,7 +392,7 @@ export class Interaction {
       case 'item': {
         const it = t.item;
         if (it.part) {
-          info = { title: it.name, sub: `Car part · ${PARTS[it.part].mass} kg` };
+          info = { title: it.name, sub: `${carType(it.state.carType).short} part · ${partDefOf(it).mass} kg` };
         } else info = this.heldInfo(it);
         prompts.push(['E', 'Pick up']);
         if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
@@ -346,7 +403,7 @@ export class Interaction {
       case 'part': {
         const id = t.part;
         const st = car.parts[id];
-        const def = PARTS[id];
+        const def = car.PARTS[id];
         const cond = st ? Math.round(st.condition * 100) : 100;
         info = { title: def.label, sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
         const mp = car.model.parts[id];
@@ -355,10 +412,13 @@ export class Interaction {
         if (rem.ok) prompts.push(['R', 'Remove (hold)']);
         else if (!mp.hinge) prompts.push(['', rem.reason]);
         if (this.removing && this.removing.part === id) info.progress = this.removing.t / this.removeTime(id);
+        if (this.spraying && this.spraying.part === id && this.spraying.need) info.progress = this.spraying.t / this.spraying.need;
+        if (car.partColors && car.partColors[id]) info.sub += ' · repainted';
         if (id === 'engine') info.sub = `Condition ${Math.round(car.engineCondition * 100)}% · ${Math.round(car.engineTemp)}°C`;
         if (id === 'battery') info.sub = `Charge ${Math.round(car.battery * 100)}%`;
-        if (id === 'radiator') info.sub = `Condition ${Math.round(car.radiatorCondition * 100)}% · coolant ${car.coolant.toFixed(1)} l`;
+        if (id === 'fanbelt') info.sub = `Condition ${Math.round(car.fanbeltCondition * 100)}%${car.fanbeltCondition < 0.25 ? ' · cracked, replace soon' : ''}`;
         if (id === 'fueltank') info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
+        if (id === 'radiator') info.sub = `Condition ${cond}% · coolant ${car.coolant.toFixed(1)} / ${car.coolantCap} l`;
         if (id.startsWith('wheel')) {
           const w = car.dyn.wheels.find((x) => x.id === id);
           info.sub = `Tyre ${cond}%${w && w.flat ? ' · flat' : ''}`;
@@ -371,12 +431,11 @@ export class Interaction {
         if (h.id === 'fuel') {
           info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
           info.bar = car.fuel / car.fuelCap;
-          prompts.push(['E', car.model.parts.fuelflap.openT > 0.5 ? 'Close flap' : 'Open flap']);
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
           info.bar = car.oil / car.oilCap;
         } else if (h.id === 'coolant') {
-          info.sub = `${car.coolant.toFixed(1)} / ${car.coolantCap} l`;
+          info.sub = `${car.coolant.toFixed(1)} / ${car.coolantCap} l · ${Math.round(car.engineTemp)}°C`;
           info.bar = car.coolant / car.coolantCap;
         } else if (h.id === 'battery') {
           info.sub = `Charge ${Math.round(car.battery * 100)}%`;
@@ -387,6 +446,9 @@ export class Interaction {
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
           prompts.push(['E', 'Switch']);
+        } else if (h.id === 'wipers') {
+          info.sub = car.wipers ? 'On' : 'Off';
+          prompts.push(['E', 'Switch']);
         } else if (h.id === 'radio') {
           const st = car.stereo;
           info.title = 'Stereo';
@@ -395,6 +457,35 @@ export class Interaction {
           if (st.disc >= 0) prompts.push(['LMB', st.mode === 'cd' ? 'Next track' : 'Play the CD'], ['R', 'Eject disc']);
           else if (car.radioOn) prompts.push(['', 'Hold a CD and click to put it in']);
         }
+        break;
+      }
+      case 'plate': {
+        const pl = t.plate;
+        const d = PLATES[pl.id];
+        info = { title: d.name, sub: `${d.mass} kg · bolted to the ${(car.PARTS[pl.part] || { label: pl.part }).label.toLowerCase()}` };
+        prompts.push(['R', 'Unbolt (hold)']);
+        if (this.removing && this.removing.plate === pl) info.progress = this.removing.t / 1.2;
+        if (this.spraying && this.spraying.key === pl && this.spraying.need) info.progress = this.spraying.t / this.spraying.need;
+        if (pl.state.color !== undefined) info.sub += ' · painted';
+        break;
+      }
+      case 'accessory': {
+        const a = car.accessories[t.mount];
+        const def = ACCESSORIES[a.id];
+        info = { title: def.label, sub: `${def.mass} kg on the ${MOUNT_LABEL[t.mount]}` };
+        if (def.storage && car.storage.roofbox) {
+          info.sub += ` · ${Math.round(car.storage.roofbox.weight())} / ${def.storage.capacity} kg inside`;
+          prompts.push(['E', 'Open']);
+        }
+        if (def.cargo) {
+          const n = car.attached.filter((x) => x.stowed && x.stowed.zone === t.mount).length;
+          if (n) info.sub += ` · ${n} strapped on`;
+          else prompts.push(['', 'Drop things on it to strap them down']);
+        }
+        const rem = canRemoveAccessory(car, t.mount);
+        if (rem.ok) prompts.push(['R', 'Take off (hold)']);
+        else prompts.push(['', rem.reason]);
+        if (this.removing && this.removing.acc === t.mount) info.progress = this.removing.t / 1.6;
         break;
       }
       case 'seat':
@@ -408,7 +499,7 @@ export class Interaction {
       case 'pump': {
         const st = t.pump.inst.state;
         info = { title: 'Fuel pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
-        const carNear = car && car.worldPointOf(HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
+        const carNear = car && car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
         if (st.fuel > 0.5 && carNear) prompts.push(['E', this.game.refuel && this.game.refuel.active ? 'Stop refuelling' : 'Refuel the car']);
         else if (st.fuel > 0.5) prompts.push(['', 'Bring the car closer or use a jerry can']);
         break;
@@ -422,7 +513,7 @@ export class Interaction {
   }
 
   removeTime(id) {
-    const m = PARTS[id].mass;
+    const m = this.game.car.PARTS[id].mass;
     return 0.6 + Math.min(3, m / 25);
   }
 
@@ -437,6 +528,28 @@ export class Interaction {
         if (Math.floor((this.removing.t - dt) / 0.45) !== Math.floor(this.removing.t / 0.45)) g.audio && g.audio.play('ratchet');
         if (this.removing.t >= this.removeTime(id)) {
           this.remove(id);
+          this.removing = null;
+        }
+      }
+      return;
+    }
+    if (t.kind === 'plate' && input.isDown('reload')) {
+      if (!this.removing || this.removing.plate !== t.plate) this.removing = { plate: t.plate, t: 0 };
+      this.removing.t += dt;
+      if (Math.floor((this.removing.t - dt) / 0.3) !== Math.floor(this.removing.t / 0.3)) g.audio && g.audio.play('ratchet');
+      if (this.removing.t >= 1.2) {
+        this.unboltPlate(t.plate);
+        this.removing = null;
+      }
+      return;
+    }
+    if (t.kind === 'accessory' && input.isDown('reload')) {
+      if (canRemoveAccessory(car, t.mount).ok) {
+        if (!this.removing || this.removing.acc !== t.mount) this.removing = { acc: t.mount, t: 0 };
+        this.removing.t += dt;
+        if (Math.floor((this.removing.t - dt) / 0.45) !== Math.floor(this.removing.t / 0.45)) g.audio && g.audio.play('ratchet');
+        if (this.removing.t >= 1.6) {
+          this.takeOffAccessory(t.mount);
           this.removing = null;
         }
       }
@@ -487,9 +600,9 @@ export class Interaction {
       case 'hotspot': {
         if (viaMouse) return;
         const h = t.hotspot.id;
-        if (h === 'fuel') car.toggleOpen('fuelflap');
         if (h === 'ignition') car.setIgnition(!car.ignition);
         if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
+        if (h === 'wipers') car.wipers = !car.wipers;
         if (h === 'radio') {
           car.radioOn = !car.radioOn;
           g.audio && g.audio.setRadio(car.radioOn);
@@ -497,11 +610,16 @@ export class Interaction {
         g.audio && g.audio.play('click');
         break;
       }
+      case 'accessory': {
+        if (viaMouse) return;
+        if (car.storage.roofbox && t.mount === 'roof') g.ui && g.ui.inventory.show('roofbox');
+        break;
+      }
       case 'seat': {
         if (viaMouse) return;
         g.player.enterSeat(car, t.seat);
         g.audio && g.audio.play('seat');
-        const door = SEATS[t.seat].door;
+        const door = car.type.SEATS[t.seat].door;
         if (car.isInstalled(door) && car.model.parts[door].openT > 0.5) setTimeout(() => car.toggleOpen(door), 350);
         break;
       }
@@ -512,7 +630,7 @@ export class Interaction {
       case 'pump': {
         if (viaMouse) return;
         if (g.refuel && g.refuel.active) g.refuel.active = false;
-        else if (car.worldPointOf(HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5 && t.pump.inst.state.fuel > 0.5) g.refuel = { active: true, pump: t.pump };
+        else if (car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5 && t.pump.inst.state.fuel > 0.5) g.refuel = { active: true, pump: t.pump };
         break;
       }
       case 'npc':
@@ -525,9 +643,9 @@ export class Interaction {
   pick(it) {
     const g = this.game;
     // heavy parts (engine, body shell) are dragged along the ground rather than carried
-    this.dragging = !!(it.part && PARTS[it.part].mass > 60);
+    this.dragging = !!(it.part && partDefOf(it).mass > 60);
     if (this.dragging) {
-      g.hud && g.hud.toast(`${it.name} · ${PARTS[it.part].mass} kg · too heavy to lift, dragging`);
+      g.hud && g.hud.toast(`${it.name} · ${partDefOf(it).mass} kg · too heavy to lift, dragging`);
       this.dragYaw0 = g.player.yaw;
       this.dragQ0 = it.mesh.quaternion.clone();
     }
@@ -540,7 +658,7 @@ export class Interaction {
     this.userRotated = false;
     this.hangAng = 0;
     this.hangVel = 0;
-    this.holdDist = it.part ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
+    this.holdDist = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55 ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
     g.audio && g.audio.play('pickup', { mass: it.mass });
@@ -705,7 +823,8 @@ export class Interaction {
       const qy = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), input.mouse.dy * 0.008);
       this.holdRot.premultiply(qx).premultiply(qy);
     }
-    if (input.mouse.wheel && !weapon) this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, 0.5, it.part ? 3 : 1.6);
+    if (input.mouse.wheel && def && def.plate && this.plateAim) this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
+    else if (input.mouse.wheel && !weapon) this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, 0.5, it.part ? 3 : 1.6);
     this.aim = lerp(this.aim, weapon && input.mouseDown(2) ? 1 : 0, Math.min(1, dt * 10));
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
@@ -795,7 +914,44 @@ export class Interaction {
             this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
           }
         }
-      } else if (input.mousePressed(0)) this.useHeld();
+      } else if (def.paint) this.updateSpray(it, dt);
+      else if (input.mousePressed(0)) this.useHeld();
+    }
+  }
+
+  // Holding LMB on a panel with a spray can: a mist of colour, then the panel takes the paint.
+  updateSpray(it, dt) {
+    const g = this.game;
+    const car = g.car;
+    const t = this.target;
+    const plate = t && t.kind === 'plate' && (t.dist || 0) < 2.6 ? t.plate : null;
+    const ok = plate || (t && t.kind === 'part' && car && car.paintable(t.part) && (t.dist || 0) < 2.6);
+    if (!input.mouseDown(0) || !ok) {
+      this.spraying = null;
+      return;
+    }
+    const key = plate || t.part;
+    if (!this.spraying || this.spraying.key !== key) this.spraying = { part: plate ? null : t.part, key, t: 0 };
+    const S = this.spraying;
+    const b = plate ? null : car.model.parts[t.part].bbox;
+    const sz = plate ? V(PLATES[plate.id].w, 0.01, PLATES[plate.id].l) : b.getSize(V(0, 0, 0));
+    // big panels take longer: about a second per square metre of face
+    const need = 0.7 + Math.min(3, sz.x * sz.z + sz.y * Math.max(sz.x, sz.z)) * 0.8;
+    S.t += dt;
+    S.need = need;
+    this.useAnim = Math.max(this.useAnim, 0.7);
+    const P = paintOf(it.state.variant);
+    const nozzle = (it.mesh.userData.muzzle || V(0, 0.1, 0)).clone().applyMatrix4(it.mesh.matrixWorld);
+    const aim = plate ? plate.mesh.getWorldPosition(V(0, 0, 0)) : car.worldPointOf(b.getCenter(V(0, 0, 0)));
+    g.effects && g.effects.sprayMist && g.effects.sprayMist(nozzle, aim, P.hex, dt);
+    if (S.t >= need) {
+      if (plate) paintPlate(plate, P.hex);
+      else car.paintPart(t.part, P.hex);
+      car.owned = true;
+      it.state.charges = (it.state.charges ?? it.def.charges ?? 1) - 1;
+      g.hud && g.hud.toast(`${plate ? PLATES[plate.id].name : car.PARTS[t.part].label} painted ${P.name.toLowerCase()}${it.state.charges > 0 ? ` · can ${Math.round((it.state.charges / it.def.charges) * 100)}% full` : ' · the can is empty'}`);
+      this.spraying = null;
+      if (it.state.charges <= 0) this.consumeHeld();
     }
   }
 
@@ -890,19 +1046,6 @@ export class Interaction {
       this.consumeHeld();
       return;
     }
-    if (def.paint) {
-      const car = g.car;
-      if (!car || car.root.position.distanceTo(p.position) > 4) return g.hud && g.hud.toast('Stand next to the car');
-      const palette = [0xa8502c, 0x2f4a5c, 0x6d7a7f, 0x7a2e24, 0x4b5a3a, 0xb9b2a0, 0x1f1f22, 0xc8a14a];
-      const cur = g.carMats.paint.color.getHex();
-      const i = (palette.findIndex((c) => Math.abs(c - cur) < 0x10) + 1) % palette.length;
-      g.carMats.paint.color.setHex(palette[i]);
-      car.paintColor = palette[i];
-      g.audio && g.audio.play('pour');
-      g.hud && g.hud.toast('New coat of paint');
-      this.consumeHeld();
-      return;
-    }
     if (def.ammo) {
       this.ammo[def.ammo.type] = (this.ammo[def.ammo.type] || 0) + def.ammo.count;
       g.hud && g.hud.toast(`+${def.ammo.count} ${def.ammo.type === '38' ? '.38' : '12 ga'} in pouch`);
@@ -942,10 +1085,8 @@ export class Interaction {
     const t = this.target;
     const car = g.car;
     if (it.id === 'repairKit' && t && (t.kind === 'part' || t.kind === 'hotspot')) {
-      const hoodOpen = !car.isInstalled('hood') || car.model.parts.hood.openT > 0.5;
-      if (!hoodOpen) return g.hud && g.hud.toast('Open the hood first');
+      if (!car.lidOpen('hood')) return g.hud && g.hud.toast(`Open the ${car.type.lids.hood} first`);
       car.engineCondition = Math.min(1, car.engineCondition + 0.35);
-      car.radiatorCondition = Math.min(1, car.radiatorCondition + 0.4);
       car.fire = 0;
       it.state.charges--;
       g.audio && g.audio.play('ratchet');
@@ -1008,7 +1149,6 @@ export class Interaction {
     }
     if (tgt.kind === 'car') {
       if (tgt.sys === 'fuel') {
-        if (car.model.parts.fuelflap.openT < 0.5) return g.hud && g.hud.toast('Open the fuel flap');
         amount = Math.min(amount, car.fuelCap - car.fuel);
         car.fuel += amount;
       } else if (tgt.sys === 'oil') {
@@ -1017,7 +1157,6 @@ export class Interaction {
       } else if (tgt.sys === 'coolant') {
         amount = Math.min(amount, car.coolantCap - car.coolant);
         car.coolant += amount;
-        if (s.liquidType === 'water') car.radiatorCondition = Math.max(0, car.radiatorCondition - amount * 0.002);
       }
       if (tgt.sys === 'fuel') car.updateMass();
     } else if (tgt.kind === 'pump') {
@@ -1118,8 +1257,10 @@ export class Interaction {
   partFit(it) {
     const car = this.game.car;
     if (!car) return null;
-    const fam = PART_FAMILY[it.part];
-    const slots = fam ? Object.keys(PART_FAMILY).filter((k) => PART_FAMILY[k] === fam && !car.isInstalled(k)) : [it.part];
+    // a part fits the slot of the same name on any car (or any slot of its family)
+    const F = car.type.PART_FAMILY;
+    const fam = F[it.part];
+    const slots = (fam ? Object.keys(F).filter((k) => F[k] === fam && !car.isInstalled(k)) : [it.part]).filter((k) => car.model.parts[k] && car.PARTS[k]);
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     let best = null;
@@ -1147,7 +1288,7 @@ export class Interaction {
     if (!fit) return this.hideGhost();
     if (!this.ghost || this.ghostFor !== fit.slot) {
       this.hideGhost();
-      const mesh = this.game.items.buildPartMesh(it.part);
+      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType);
       mesh.traverse((o) => {
         if (o.isMesh) {
           o.material = this.ghostMat;
@@ -1159,10 +1300,14 @@ export class Interaction {
       this.ghostFor = fit.slot;
       this.game.worldGroup.add(mesh);
     }
-    const c = car.model.parts[fit.slot].bbox.getCenter(V(0, 0, 0));
+    const sp = car.model.parts[fit.slot];
+    const box = sp.nativeBox || sp.bbox;
+    const c = box.getCenter(V(0, 0, 0));
     // wheels share geometry; slot centre differs
     const m = this.partMatrix(car, fit.slot).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
-    if (PART_FAMILY[it.part] && it.part !== fit.slot) {
+    const from = carType(it.state.carType).id;
+    if (from !== car.type.id && !car.model.wheels?.[fit.slot]) m.multiply(fitMatrix(fit.slot, this.ghost.userData.size, box.getSize(V(0, 0, 0))));
+    if (car.type.PART_FAMILY[it.part] && it.part !== fit.slot) {
       const src = car.model.parts[it.part].bbox.getCenter(V(0, 0, 0));
       // mirrored side: rotate 180° about Y for opposite-side wheels
       if (Math.sign(src.x) !== Math.sign(c.x)) m.multiply(new THREE.Matrix4().makeRotationY(Math.PI));
@@ -1175,6 +1320,7 @@ export class Interaction {
   hideGhost() {
     if (this.ghost) {
       this.ghost.parent && this.ghost.parent.remove(this.ghost);
+      if (this.ghost.userData.ownGeometry) this.ghost.traverse((o) => o.isMesh && o.geometry.dispose());
       this.ghost = null;
       this.ghostFor = null;
     }
@@ -1190,17 +1336,21 @@ export class Interaction {
     this.dragging = false;
     g.player.carryMass = 0;
     g.items.destroy(it);
-    car.setInstalled(slot, true);
+    car.setInstalled(slot, true, carType(it.state.carType).id);
+    car.owned = true;
+    if (it.state.color !== undefined) car.paintPart(slot, it.state.color);
+    // a foreign panel keeps the paint of the car it came from (its own material otherwise)
+    else if (car.parts[slot].from) car.paintPart(slot, carType(car.parts[slot].from).defaultColor);
     car.parts[slot].condition = cond;
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
-    if (slot === 'radiator' && it.state.coolant !== undefined) car.coolant = it.state.coolant;
+    if (slot === 'fanbelt') car.fanbeltCondition = cond;
     if (slot === 'engine' && it.state.oil !== undefined) car.oil = it.state.oil;
     const w = car.dyn.wheels.find((x) => x.id === slot);
     if (w) w.flat = cond < 0.02;
     g.stats.partsInstalled++;
     g.audio && g.audio.play('install', { at: car.worldPointOf(car.model.parts[slot].bbox.getCenter(V(0, 0, 0))) });
-    g.hud && g.hud.toast(`${PARTS[slot].label} installed`);
+    g.hud && g.hud.toast(`${car.PARTS[slot].label} installed`);
     g.onPartInstalled && g.onPartInstalled(slot);
   }
 
@@ -1215,7 +1365,9 @@ export class Interaction {
       s = V(0, 0, 0);
     m.decompose(pos, q, s);
     if (mp.hinge) car.model.setOpen(id, 0);
-    const state = { condition: car.parts[id].condition };
+    const state = { condition: car.parts[id].condition, carType: car.parts[id].from || car.type.id };
+    if (car.partColors && car.partColors[id] !== undefined) state.color = car.partColors[id];
+    else if (car.paintable(id)) state.color = car.mats.color.getHex();
     if (id === 'battery') {
       state.charge = car.battery;
     }
@@ -1223,18 +1375,185 @@ export class Interaction {
       state.fuel = car.fuel;
       car.fuel = 0;
     }
-    if (id === 'radiator') {
-      state.coolant = car.coolant;
-      car.coolant = 0;
-    }
+    if (id === 'fanbelt') state.condition = car.fanbeltCondition;
     if (id === 'engine') {
       state.oil = car.oil;
     }
     car.setInstalled(id, false);
+    car.owned = true;
     const it = g.items.spawnPart(id, pos, q, state);
     g.audio && g.audio.play('remove', { at: pos });
-    if (PARTS[id].mass <= 60) this.pick(it);
-    else g.hud && g.hud.toast(`${PARTS[id].label} removed — too heavy to carry`);
+    if (car.PARTS[id].mass <= 60) this.pick(it);
+    else g.hud && g.hud.toast(`${car.PARTS[id].label} removed — too heavy to carry`);
+  }
+
+  // ------------------------------------------------------------------ plates
+  plateFit(it) {
+    const car = this.game.car;
+    this.plateAim = null;
+    if (!car || this.game.player.seat) return null;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
+    const d = PLATES[it.def.plate];
+    const spot = plateSpot(car, this.cam.position, dir, 2.6, this.plateSpin || 0, right, d);
+    this.plateAim = spot;
+    return spot;
+  }
+
+  showPlateGhost(it, spot) {
+    const key = 'plate:' + it.def.plate;
+    if (!this.ghost || this.ghostFor !== key) {
+      this.hideGhost();
+      const g = plateModel(it.def.plate, it.state.variant || 0);
+      g.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = this.ghostMat;
+        o.castShadow = false;
+        o.renderOrder = 5;
+      });
+      this.ghost = g;
+      this.ghostFor = key;
+      this.game.worldGroup.add(g);
+    }
+    plateWorldMatrix(it.def.plate, spot).decompose(this.ghost.position, this.ghost.quaternion, this.ghost.scale);
+  }
+
+  boltHeldPlate(it, spot) {
+    const g = this.game;
+    const car = g.car;
+    const mp = car.model.parts[spot.part];
+    const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(plateWorldMatrix(it.def.plate, spot));
+    this.hideGhost();
+    this.held = null;
+    g.player.carryMass = 0;
+    g.items.destroy(it);
+    attachPlate(car, { id: it.def.plate, state: { ...it.state }, part: spot.part, local });
+    car.owned = true;
+    g.audio && g.audio.play('install', { at: spot.point });
+    g.hud && g.hud.toast(`${PLATES[it.def.plate].name} bolted on · ${PLATES[it.def.plate].mass} kg`);
+  }
+
+  unboltPlate(plate) {
+    const g = this.game;
+    const car = g.car;
+    const pos = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      s = V(0, 0, 0);
+    plate.mesh.matrixWorld.decompose(pos, q, s);
+    detachPlate(car, plate);
+    const it = g.items.spawn(plate.id, pos, q, { ...plate.state });
+    g.audio && g.audio.play('remove', { at: pos });
+    this.pick(it);
+  }
+
+  // ------------------------------------------------------------------ righting a car
+  // The current car lying on its side or roof, right in front of you.
+  carTipped() {
+    const car = this.game.car;
+    if (!car || this.game.player.seat) return false;
+    const q = car.root.quaternion;
+    if (1 - 2 * (q.x * q.x + q.z * q.z) > 0.5 || car.dyn.speed > 2) return false;
+    const S = car.type.SPEC;
+    const box = new THREE.Box3(V(-S.halfWidth, 0, S.rearTip), V(S.halfWidth, S.roofY, S.frontTip));
+    const inv = new THREE.Matrix4().copy(car.root.matrixWorld).invert();
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    tmpRay.origin.copy(this.cam.position).applyMatrix4(inv);
+    tmpRay.direction.copy(dir).transformDirection(inv);
+    const hit = tmpRay.intersectBox(box, tmpV);
+    return !!hit && hit.distanceTo(tmpRay.origin) < 3.2;
+  }
+
+  // Shoulder against the roof: the car rolls back over toward its wheels while E is held.
+  updateRighting(dt) {
+    const g = this.game;
+    const car = g.car;
+    if (!input.isDown('interact')) {
+      this.righting = 0;
+      return;
+    }
+    const before = this.righting || 0;
+    this.righting = before + dt;
+    if (Math.floor(before / 0.7) !== Math.floor(this.righting / 0.7)) g.audio && g.audio.play('land', { at: car.root.position, volume: 0.35 });
+    if (this.righting < 0.4) return;
+    const b = car.dyn.body;
+    const up = V(0, 1, 0).applyQuaternion(car.root.quaternion);
+    const axis = up.clone().cross(V(0, 1, 0));
+    // flat on its roof: roll it over the long axis, away from where you stand
+    if (axis.lengthSq() < 0.01) {
+      const toCar = car.root.position.clone().sub(g.player.position).setY(0);
+      axis.copy(V(0, 1, 0).cross(toCar)).negate();
+    }
+    axis.normalize().multiplyScalar(1.5);
+    const lv = b.linvel();
+    b.setAngvel({ x: axis.x, y: axis.y, z: axis.z }, true);
+    if (up.y < 0.4) b.setLinvel({ x: lv.x * 0.9, y: Math.max(lv.y, 0.7), z: lv.z * 0.9 }, true);
+  }
+
+  // ------------------------------------------------------------------ accessories
+  // Holding a rack, box or bar near a car with that mount free.
+  accessoryFit(it) {
+    const car = this.game.car;
+    if (!car || !car.type.MOUNTS) return null;
+    const def = ACCESSORIES[it.def.accessory];
+    const f = car.type.MOUNTS[def.mount];
+    if (!f) return null;
+    const c = def.mount === 'roof' ? V(0, f.top, f.z) : def.mount === 'front' ? V(0, (f.y0 + f.y1) / 2, f.z) : V(0, f.y, f.z - f.d / 2);
+    if (car.worldPointOf(c).distanceTo(this.cam.position) > 2.8) return null;
+    const where = MOUNT_LABEL[def.mount];
+    if (car.accessories && car.accessories[def.mount]) return { ok: false, mount: def.mount, reason: `There is already something on the ${where}` };
+    if (def.mount === 'roof' && !car.isInstalled('body')) return { ok: false, mount: def.mount, reason: 'Needs the body shell to bolt on to' };
+    if (this.game.player.seat) return { ok: false, mount: def.mount, reason: 'Get out of the car first' };
+    return { ok: true, mount: def.mount };
+  }
+
+  showAccessoryGhost(it, ok) {
+    const car = this.game.car;
+    const key = `acc:${it.def.accessory}:${car.id}`;
+    if (!this.ghost || this.ghostFor !== key) {
+      this.hideGhost();
+      const g = buildAccessory(it.def.accessory, car);
+      g.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = false;
+        o.renderOrder = 5;
+      });
+      g.userData.ownGeometry = true;
+      this.ghost = g;
+      this.ghostFor = key;
+      car.root.add(g);
+    }
+    const mat = ok ? this.ghostMat : this.ghostBad;
+    this.ghost.traverse((o) => o.isMesh && (o.material = mat));
+  }
+
+  fitHeldAccessory(it) {
+    const g = this.game;
+    const car = g.car;
+    const def = ACCESSORIES[it.def.accessory];
+    this.hideGhost();
+    this.held = null;
+    g.player.carryMass = 0;
+    g.items.destroy(it);
+    const a = fitAccessory(car, it.def.accessory);
+    car.owned = true;
+    g.audio && g.audio.play('install', { at: car.worldPointOf(a.center) });
+    g.hud && g.hud.toast(`${def.label} fitted · ${def.mass} kg on the ${MOUNT_LABEL[def.mount]}`);
+  }
+
+  takeOffAccessory(mount) {
+    const g = this.game;
+    const car = g.car;
+    const a = car.accessories[mount];
+    const def = ACCESSORIES[a.id];
+    // whatever was strapped to it comes loose
+    for (const it of [...car.attached]) if (it.stowed && it.stowed.zone === mount) g.items.unstow(it, true);
+    const pos = car.worldPointOf(a.center);
+    removeAccessory(car, mount);
+    car.owned = true;
+    const it = g.items.spawn(a.id, pos, car.root.quaternion.clone(), {});
+    g.audio && g.audio.play('remove', { at: pos });
+    this.pick(it);
+    g.hud && g.hud.toast(`${def.label} taken off`);
   }
 
   // ------------------------------------------------------------------ stowing in the car
@@ -1248,7 +1567,7 @@ export class Interaction {
         continue;
       }
       const lp = it.mesh.position.clone().applyMatrix4(inv);
-      const inside = Math.abs(lp.x) < 0.72 && lp.y > 0.22 && lp.y < 1.35 && lp.z > -2.15 && lp.z < 0.85;
+      const inside = !!cargoZone(car, lp, it.size);
       const v = it.body.linvel();
       const cv = car.dyn.body.linvel();
       const rel = Math.hypot(v.x - cv.x, v.y - cv.y, v.z - cv.z);
@@ -1293,12 +1612,14 @@ export class Interaction {
 
   // Car-space point of a driver control.
   controlPoint(car, target) {
-    const col = car.model.steeringColumn;
-    if (target === 'key') return (col && col.userData.ignitionPos ? col.userData.ignitionPos.clone() : V(0.31, 0.88, 0.35)).add(V(0, 0.0, -0.02));
-    if (target === 'stalk') return V(0.37 - 0.13, 0.955, 0.37);
-    if (target === 'shifter') return V(0, 0.64, 0.23);
-    if (target === 'horn') return V(0.37, 0.935, 0.255).addScaledVector(V(0, 0.36, -0.933).normalize(), 0.05);
-    return V(0, 0, 0);
+    if (target === 'shifter' && car.model.gearLever) {
+      // the knob moves with the lever
+      const lv = car.model.gearLever;
+      lv.updateMatrix();
+      return lv.userData.top.clone().sub(lv.position).applyQuaternion(lv.quaternion).add(lv.position).add(V(0, 0.01, 0));
+    }
+    const p = car.type.CONTROLS[target];
+    return p ? p.clone() : V(0, 0, 0);
   }
 
   // Shoulders and elbow pole directions of the seated driver, in camera space (fixed to the
@@ -1310,7 +1631,8 @@ export class Interaction {
     for (const side of ['right', 'left']) {
       // car space: +X is the car's left
       const sg = side === 'left' ? 1 : -1;
-      const S = car.root.localToWorld(V(0.37 + 0.2 * sg, 0.93, -0.38)).sub(cam.position).applyQuaternion(inv);
+      const D = car.type.DRIVER;
+      const S = car.root.localToWorld(D.shoulder.clone().add(V(D.shoulderHalf * sg, 0, 0))).sub(cam.position).applyQuaternion(inv);
       const pole = V(0.35 * sg, -1, 0.1).transformDirection(car.root.matrixWorld).applyQuaternion(inv);
       out[side] = { shoulder: S, pole };
     }
@@ -1331,9 +1653,10 @@ export class Interaction {
     const camQ = cam.quaternion;
     const inv = camQ.clone().invert();
     const toCam = (wp) => wp.clone().sub(cam.position).applyQuaternion(inv);
-    const R = 0.188;
-    // hands ride with the rim up to about 80 degrees each way, then slide along it
-    const turn = clamp(wheelObj.rotation.z, -1.4, 1.4);
+    const R = car.type.DRIVER.rimRadius;
+    // hands ride with the rim up to about 50 degrees each way, then slide along it (the arms
+    // would cross over the wheel beyond that)
+    const turn = clamp(wheelObj.rotation.z, -0.85, 0.85);
     sw.updateMatrixWorld(true);
     const pivotW = sw.matrixWorld;
     const arms = this.driverArms(car);

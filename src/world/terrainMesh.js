@@ -19,6 +19,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
   const pos = new Float32Array(vCount * 3);
   const nrm = new Float32Array(vCount * 3);
   const mat = new Float32Array(vCount * 4); // sand, dirt, rock, salt
+  const mat2 = new Float32Array(vCount * 4); // grass, snow, forest floor, -
   const tint = new Float32Array(vCount * 3);
   const uv = new Float32Array(vCount * 2);
   const bw = {};
@@ -53,6 +54,9 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
       mat[k * 4 + 1] = m[1];
       mat[k * 4 + 2] = m[2];
       mat[k * 4 + 3] = m[3];
+      mat2[k * 4] = m[4];
+      mat2[k * 4 + 1] = m[5];
+      mat2[k * 4 + 2] = m[6];
       let r = 0,
         g = 0,
         b = 0;
@@ -103,6 +107,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
         pos[k * 3 + 2] = pos[src * 3 + 2];
         nrm.set(nrm.subarray(src * 3, src * 3 + 3), k * 3);
         mat.set(mat.subarray(src * 4, src * 4 + 4), k * 4);
+        mat2.set(mat2.subarray(src * 4, src * 4 + 4), k * 4);
         tint.set(tint.subarray(src * 3, src * 3 + 3), k * 3);
         uv.set(uv.subarray(src * 2, src * 2 + 2), k * 2);
       }
@@ -122,6 +127,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
     position: pos,
     normal: nrm,
     mat,
+    mat2,
     tint,
     uv,
     index: new Uint32Array(idx),

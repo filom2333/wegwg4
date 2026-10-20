@@ -2,6 +2,7 @@
 // darkening) and a shared wind-sway material.
 
 import * as THREE from 'three';
+import { RENDER_CAPS } from '../gfx/caps.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, SimplexNoise } from '../core/noise.js';
 import { NOISE_GLSL } from '../gfx/glsl.js';
@@ -22,7 +23,6 @@ function colorize(geo, fn) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return geo;
 }
-
 function clean(g) {
   const n = g.index ? g.toNonIndexed() : g;
   for (const k of Object.keys(n.attributes)) if (!['position', 'normal', 'color'].includes(k)) n.deleteAttribute(k);
@@ -71,56 +71,20 @@ function branch(points, r0, r1, radial = 5) {
   g.computeVertexNormals();
   return g;
 }
-
-// ------------------------------------------------------------------ species
-export function sagebrush(seed) {
-  const rnd = mulberry32(seed);
-  const noise = new SimplexNoise(seed);
-  const parts = [];
-  const R = 0.45 + rnd() * 0.35;
-  const H = 0.5 + rnd() * 0.35;
-  const base = [0.4 + rnd() * 0.06, 0.4 + rnd() * 0.05, 0.3];
-  // woody stems
-  for (let i = 0; i < 7; i++) {
-    const a = rnd() * Math.PI * 2;
-    const r = R * (0.3 + rnd() * 0.5);
-    const pts = [V(0, -0.05, 0), V(Math.cos(a) * r * 0.3, H * 0.3, Math.sin(a) * r * 0.3), V(Math.cos(a) * r * 0.8, H * (0.55 + rnd() * 0.3), Math.sin(a) * r * 0.8)];
-    parts.push(colorize(branch(pts, 0.025, 0.008, 4), () => [0.26, 0.2, 0.15]));
-  }
-  // foliage clumps
-  const n = 14 + Math.floor(rnd() * 8);
-  for (let i = 0; i < n; i++) {
-    const a = rnd() * Math.PI * 2;
-    const rr = Math.sqrt(rnd()) * R * 0.85;
-    const y = H * (0.35 + rnd() * 0.6) * (1 - (rr / R) * 0.4);
-    const s = 0.12 + rnd() * 0.12;
-    const b = blob(s, s * 0.8, s, 1, rnd, 0.3, noise);
-    b.translate(Math.cos(a) * rr, y, Math.sin(a) * rr);
-    const tint = 0.85 + rnd() * 0.3;
-    parts.push(
-      colorize(b, (v) => {
-        const ao = 0.55 + 0.45 * Math.min(1, (v.y / H) * 1.1);
-        return [base[0] * tint * ao, base[1] * tint * ao, base[2] * tint * ao];
-      })
-    );
-  }
-  return merge(parts);
-}
-
-export function grassTuft(seed) {
+export function grassTuft(seed, { blades: nBlades = 0, height = 1, base = null, tip = null, spread = 1 } = {}) {
   const rnd = mulberry32(seed);
   const pos = [],
     col = [];
-  const blades = 26 + Math.floor(rnd() * 18);
-  const H = 0.3 + rnd() * 0.3;
+  const blades = nBlades || 18 + Math.floor(rnd() * 12);
+  const H = (0.3 + rnd() * 0.3) * height;
   const dry = rnd();
   for (let i = 0; i < blades; i++) {
     const a = rnd() * Math.PI * 2;
     const lean = 0.15 + rnd() * 0.45;
     const h = H * (0.6 + rnd() * 0.6);
     const w = 0.012 + rnd() * 0.008;
-    const bx = Math.cos(a) * 0.04 * rnd(),
-      bz = Math.sin(a) * 0.04 * rnd();
+    const bx = Math.cos(a) * 0.04 * spread * rnd(),
+      bz = Math.sin(a) * 0.04 * spread * rnd();
     const tx = bx + Math.cos(a) * h * lean,
       tz = bz + Math.sin(a) * h * lean;
     const px = -Math.sin(a) * w,
@@ -140,8 +104,8 @@ export function grassTuft(seed) {
       [0, 2, 3],
       [3, 2, 4],
     ];
-    const cBase = [0.36, 0.32, 0.2],
-      cTip = dry > 0.4 ? [0.86, 0.76, 0.5] : [0.66, 0.64, 0.4];
+    const cBase = base || [0.36, 0.32, 0.2],
+      cTip = tip ? tip.map((c) => c * (0.88 + 0.24 * rnd())) : dry > 0.4 ? [0.86, 0.76, 0.5] : [0.66, 0.64, 0.4];
     for (const t of tris)
       for (const k of t) {
         pos.push(...pts[k]);
@@ -162,6 +126,101 @@ export function grassTuft(seed) {
     const l = Math.hypot(nx, ny, nz);
     n.setXYZ(i, nx / l, ny / l, nz / l);
   }
+  return g;
+}
+
+// Textured grass clump: three crossed cards around the stem point carrying a painted clump
+// (grey, tinted per vertex). Normals point up so the cards light like the ground under them.
+export function grassClump(seed, { height = 0.7, width = 0.9, tint = [0.6, 0.62, 0.36], cards = 3 } = {}) {
+  const rnd = mulberry32(seed);
+  const pos = [],
+    nor = [],
+    uv = [],
+    col = [],
+    idx = [];
+  const h = height * (0.75 + rnd() * 0.5),
+    w = width * (0.8 + rnd() * 0.4);
+  const a0 = rnd() * Math.PI;
+  for (let c = 0; c < cards; c++) {
+    const a = a0 + (c / cards) * Math.PI + (rnd() - 0.5) * 0.3;
+    const dx = Math.cos(a) * w * 0.5,
+      dz = Math.sin(a) * w * 0.5;
+    const lean = (rnd() - 0.5) * 0.25 * h;
+    const lx = -Math.sin(a) * lean,
+      lz = Math.cos(a) * lean;
+    const base = pos.length / 3;
+    const v = 0.85 + rnd() * 0.3;
+    const quad = [
+      [-dx, 0, -dz, 0, 0],
+      [dx, 0, dz, 1, 0],
+      [dx + lx, h, dz + lz, 1, 1],
+      [-dx + lx, h, -dz + lz, 0, 1],
+    ];
+    for (const [x, y, z, u, t] of quad) {
+      pos.push(x, y, z);
+      nor.push(x * 0.7, 0.75, z * 0.7);
+      uv.push(u, t);
+      col.push(tint[0] * v, tint[1] * v, tint[2] * v);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.normalizeNormals();
+  return g;
+}
+
+// Fern: fronds arching out from the crown, each a bent strip carrying the frond texture.
+export function fernClump(seed, { tint = [1, 1, 1] } = {}) {
+  const rnd = mulberry32(seed);
+  const pos = [],
+    nor = [],
+    uv = [],
+    col = [],
+    idx = [];
+  const n = 7 + Math.floor(rnd() * 4);
+  const L = 0.7 + rnd() * 0.45;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
+    const dx = Math.cos(a),
+      dz = Math.sin(a);
+    const px = -dz,
+      pz = dx;
+    const rise = 0.55 + rnd() * 0.35;
+    const len = L * (0.75 + rnd() * 0.4);
+    const w = len * 0.42;
+    const seg = 4;
+    const base = pos.length / 3;
+    const v = 0.85 + rnd() * 0.3;
+    for (let k = 0; k <= seg; k++) {
+      const t = k / seg;
+      // arch: up, then out and down at the tip
+      const r = Math.sin(t * Math.PI * 0.5) * len * 0.9;
+      const y = Math.sin(t * Math.PI * 0.85) * len * rise * 0.6;
+      const roll = 0.25;
+      for (const sx of [-0.5, 0.5]) {
+        pos.push(r * dx + px * sx * w, y + sx * w * roll * 0.3, r * dz + pz * sx * w);
+        nor.push(dx * 0.2, 1, dz * 0.2);
+        uv.push(sx + 0.5, t);
+        col.push(tint[0] * v, tint[1] * v, tint[2] * v);
+      }
+    }
+    for (let k = 0; k < seg; k++) {
+      const a0 = base + k * 2;
+      idx.push(a0, a0 + 1, a0 + 3, a0, a0 + 3, a0 + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.normalizeNormals();
   return g;
 }
 
@@ -250,7 +309,7 @@ export function joshuaTree(seed) {
     parts.push(colorize(branch([p, mid, end], r, r * 0.78, 6), () => bark));
     if (depth <= 0) {
       // spiky leaf cluster
-      const n = 26;
+      const n = 18;
       for (let i = 0; i < n; i++) {
         const u = rnd() * 2 - 1,
           th = rnd() * Math.PI * 2;
@@ -300,13 +359,14 @@ export function deadTree(seed) {
   return merge(parts);
 }
 
-export function rock(seed, kind = 'boulder') {
+export function rock(seed, kind = 'boulder', { lod = 0 } = {}) {
   const rnd = mulberry32(seed);
   const noise = new SimplexNoise(seed);
   let g;
-  if (kind === 'slab') g = blob(1, 0.35, 0.8, 3, rnd, 0.25, noise);
+  const d = lod ? 1 : 2;
+  if (kind === 'slab') g = blob(1, 0.35, 0.8, d, rnd, 0.25, noise);
   else if (kind === 'pebble') g = blob(1, 0.6, 0.85, 1, rnd, 0.25, noise);
-  else g = blob(1, 0.75 + rnd() * 0.3, 0.9, 3, rnd, 0.32, noise);
+  else g = blob(1, 0.75 + rnd() * 0.3, 0.9, d, rnd, 0.32, noise);
   // flatten the bottom, facet the top a little
   const p = g.attributes.position;
   const v = new THREE.Vector3();
@@ -351,13 +411,107 @@ export function hoodoo(seed) {
   return { geometry: merge(parts), height: y + 0.6, radius: 1.4 };
 }
 
+// ------------------------------------------------------------------ green and snowy country
+export function flowers(seed, palette = [[0.62, 0.32, 0.72]]) {
+  const rnd = mulberry32(seed);
+  const parts = [];
+  const n = 7 + Math.floor(rnd() * 5);
+  for (let i = 0; i < n; i++) {
+    const x = (rnd() - 0.5) * 0.5,
+      z = (rnd() - 0.5) * 0.5;
+    const h = 0.25 + rnd() * 0.3;
+    const stem = new THREE.PlaneGeometry(0.012, h, 1, 1);
+    stem.translate(x, h / 2, z);
+    stem.rotateY(rnd() * Math.PI);
+    parts.push(colorize(stem, () => [0.22, 0.34, 0.12]));
+    const head = new THREE.OctahedronGeometry(0.03 + rnd() * 0.02, 0);
+    head.scale(1, 0.6, 1);
+    head.translate(x, h, z);
+    const c = palette[Math.floor(rnd() * palette.length)];
+    parts.push(colorize(head, () => c.map((v) => v * (0.85 + rnd() * 0.3))));
+  }
+  return merge(parts);
+}
+
+// Cut stump with a pale face and growth rings.
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+export function stump(seed, { snow = 0 } = {}) {
+  const rnd = mulberry32(seed);
+  const r = 0.22 + rnd() * 0.16,
+    h = 0.3 + rnd() * 0.35;
+  const g = new THREE.CylinderGeometry(r * 0.95, r * 1.25, h, 9, 1, false);
+  g.translate(0, h / 2 - 0.04, 0);
+  const n = g.toNonIndexed();
+  n.computeVertexNormals();
+  const nr = n.attributes.normal;
+  return colorize(n, (v, i) => {
+    if (nr.getY(i) > 0.6) {
+      if (snow > 0) return [0.86, 0.88, 0.92];
+      const rr = Math.hypot(v.x, v.z) / r;
+      const ring = 0.5 + 0.5 * Math.sin(rr * 30);
+      return [0.55 + 0.1 * ring, 0.42 + 0.08 * ring, 0.28];
+    }
+    return [0.26, 0.2, 0.15];
+  });
+}
+
+// Fallen log lying along X.
+export function fallenLog(seed, { snow = 0 } = {}) {
+  const rnd = mulberry32(seed);
+  const L = 2.2 + rnd() * 2.6,
+    r = 0.16 + rnd() * 0.12;
+  const g = new THREE.CylinderGeometry(r * 0.85, r, L, 8, 3, false);
+  g.rotateZ(Math.PI / 2);
+  g.translate(0, r * 0.8, 0);
+  const n = g.toNonIndexed();
+  n.computeVertexNormals();
+  const nr = n.attributes.normal;
+  const noise = new SimplexNoise(seed);
+  return colorize(n, (v, i) => {
+    const end = Math.abs(nr.getX(i)) > 0.7;
+    if (end) return [0.5, 0.38, 0.24];
+    if (snow > 0 && nr.getY(i) > 0.45) return [0.86, 0.88, 0.92];
+    const m = 0.75 + 0.25 * noise.noise3(v.x * 3, v.y * 8, v.z * 8);
+    const moss = nr.getY(i) > 0.3 && snow === 0 ? 0.4 : 0;
+    return lerp3([0.3 * m, 0.23 * m, 0.17 * m], [0.24, 0.3, 0.12], moss);
+  });
+}
+export function reeds(seed) {
+  return grassTuft(seed, { blades: 22, height: 3.2, base: [0.25, 0.28, 0.14], tip: [0.62, 0.58, 0.3], spread: 3 });
+}
+
 // ------------------------------------------------------------------ materials
-export function createFloraMaterial({ sway = 0, roughness = 0.9 } = {}) {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: sway > 0 ? THREE.DoubleSide : THREE.FrontSide });
+export function createFloraMaterial({ sway = 0, roughness = 0.9, snow = false, doubleSide = null, map = null, alphaTest = 0 } = {}) {
+  const two = doubleSide ?? sway > 0;
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: two ? THREE.DoubleSide : THREE.FrontSide, map, alphaTest, alphaToCoverage: alphaTest > 0 && RENDER_CAPS.msaa > 0 });
   m.userData.uniforms = { uTime: { value: 0 }, uWind: { value: 0.3 } };
-  if (sway > 0) {
+  if (sway > 0 || snow || map) {
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, m.userData.uniforms);
+      // cards: the up-pointing normals hold on back faces too
+      if (map) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize( vNormal );');
+      if (snow) {
+        // snow lies on whatever faces up: the true facet normal from screen derivatives, turned
+        // toward the viewer, so the underside of a branch stays green
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;')
+          .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSnowWP = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;\nfloat gSnow;')
+          .replace(
+            '#include <color_fragment>',
+            `#include <color_fragment>
+{
+  vec3 fn = normalize(cross(dFdx(vSnowWP), dFdy(vSnowWP)));
+  if (dot(fn, cameraPosition - vSnowWP) < 0.0) fn = -fn;
+  gSnow = smoothstep(0.18, 0.55, fn.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.93), gSnow * 0.92);
+}`
+          )
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.75, gSnow);');
+      }
+      if (!(sway > 0)) return;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform float uWind;`)
         .replace(
@@ -373,12 +527,12 @@ export function createFloraMaterial({ sway = 0, roughness = 0.9 } = {}) {
 }`
         );
     };
-    m.customProgramCacheKey = () => 'sway' + sway;
+    m.customProgramCacheKey = () => 'sway' + sway + (snow ? 's' : '') + (map ? 'm' : '');
   }
   return m;
 }
 
-export function createRockMaterial(tex) {
+export function createRockMaterial(tex, { snow = false } = {}) {
   // rock: vertex colour * biome tint (instance colour) * triplanar rock texture from the ground array
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 });
   m.userData.uniforms = { uAlb: { value: tex.albedo }, uNrm: { value: tex.normal } };
@@ -410,10 +564,11 @@ varying vec3 vRN;`
   vec3 p = vRP * 0.45;
   vec3 c = texture(uAlb, vec3(p.yz, 2.0)).rgb * w.x + texture(uAlb, vec3(p.xz, 2.0)).rgb * w.y + texture(uAlb, vec3(p.xy, 2.0)).rgb * w.z;
   diffuseColor.rgb *= c * 1.9;
+  ${snow ? 'float sn = smoothstep(0.45, 0.75, normalize(vRN).y + (c.r - 0.3) * 0.4); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.9, 0.94), sn);' : ''}
 }`
       );
   };
-  m.customProgramCacheKey = () => 'rocktri';
+  m.customProgramCacheKey = () => 'rocktri' + (snow ? 's' : '');
   return m;
 }
 

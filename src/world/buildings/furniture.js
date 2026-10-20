@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { roundedBox, latheY, loftSections, superSection, tubeAlong } from '../../gfx/geom.js';
-import { archMaterials } from './materials.js';
+import { archMaterials, stdMat } from './materials.js';
 import { mulberry32 } from '../../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -21,7 +21,8 @@ class Item {
     return geo;
   }
   rbox(w, h, d, x, y, z, mat, r = 0.01, rotY = 0) {
-    const g = roundedBox(w, h, d, r, 2);
+    // one bevel row: the rounding on furniture is a few millimetres
+    const g = roundedBox(w, h, d, r, 1);
     if (rotY) g.rotateY(rotY);
     g.translate(x, y, z);
     return this.add(g, mat);
@@ -209,7 +210,7 @@ export function dresser(rnd) {
   // mirror
   if (rnd() < 0.6) {
     it.rbox(w * 0.7, 0.7, 0.03, 0, 1.25, -0.2, wood, 0.01);
-    it.rbox(w * 0.7 - 0.08, 0.62, 0.005, 0, 1.25, -0.183, new THREE.MeshStandardMaterial({ color: 0x9aa3a6, metalness: 1, roughness: 0.08 }), 0.004);
+    it.rbox(w * 0.7 - 0.08, 0.62, 0.005, 0, 1.25, -0.183, stdMat({ color: 0x9aa3a6, metalness: 1, roughness: 0.08 }), 0.004);
   }
   it.col(w, 0.85, 0.48, 0, 0.42, 0);
   it.lootAt(0.2, 0.86, 0, 'small');
@@ -469,7 +470,7 @@ export function stoveUnit(rnd, w = 0.6) {
 export function fridge(rnd) {
   const M = archMaterials();
   const it = new Item([0.72, 1.75, 0.7]);
-  const body = rnd() < 0.7 ? M.metalWhite : new THREE.MeshStandardMaterial({ color: 0xc9d1b0, roughness: 0.4, metalness: 0.2 });
+  const body = rnd() < 0.7 ? M.metalWhite : stdMat({ color: 0xc9d1b0, roughness: 0.4, metalness: 0.2 });
   it.rbox(0.7, 1.7, 0.66, 0, 0.87, -0.02, body, 0.04);
   it.rbox(0.68, 0.48, 0.04, 0, 1.45, 0.31, body, 0.02);
   it.rbox(0.68, 1.14, 0.04, 0, 0.63, 0.31, body, 0.02);
@@ -503,7 +504,7 @@ export function washbasin(rnd) {
   it.add(tubeAlong([V(0, 0.84, -0.18), V(0, 0.95, -0.18), V(0, 0.96, -0.1)], 0.01, 8), M.metal);
   // mirror cabinet
   it.rbox(0.5, 0.6, 0.12, 0, 1.45, -0.16, M.trimWhite, 0.01);
-  it.rbox(0.46, 0.56, 0.005, 0, 1.45, -0.098, new THREE.MeshStandardMaterial({ color: 0xa0a8aa, metalness: 1, roughness: 0.05 }), 0.004);
+  it.rbox(0.46, 0.56, 0.005, 0, 1.45, -0.098, stdMat({ color: 0xa0a8aa, metalness: 1, roughness: 0.05 }), 0.004);
   it.col(0.55, 0.85, 0.45, 0, 0.42, 0);
   it.lootAt(0, 1.45, -0.16, 'medicine');
   return it;
@@ -674,7 +675,7 @@ export function shopCounter(rnd) {
 export function boothSeat(rnd) {
   const M = archMaterials();
   const it = new Item([1.2, 1.1, 1.6]);
-  const vinyl = new THREE.MeshPhysicalMaterial({ color: rnd() < 0.5 ? 0x8a2020 : 0x2b5a6b, roughness: 0.4, clearcoat: 0.3 });
+  const vinyl = stdMat({ color: rnd() < 0.5 ? 0x8a2020 : 0x2b5a6b, roughness: 0.4, clearcoat: 0.3 }, true);
   for (const s of [-1, 1]) {
     it.rbox(1.2, 0.45, 0.5, 0, 0.225, s * 0.55, vinyl, 0.05);
     it.rbox(1.2, 0.6, 0.16, 0, 0.75, s * 0.74, vinyl, 0.06);
@@ -691,7 +692,7 @@ export function boothSeat(rnd) {
 export function stool(rnd) {
   const M = archMaterials();
   const it = new Item([0.4, 0.75, 0.4]);
-  it.add(latheY([[0, 0.72], [0.18, 0.72], [0.19, 0.68], [0.17, 0.64], [0, 0.64]], 16), new THREE.MeshPhysicalMaterial({ color: 0x8a2020, roughness: 0.4, clearcoat: 0.3 }));
+  it.add(latheY([[0, 0.72], [0.18, 0.72], [0.19, 0.68], [0.17, 0.64], [0, 0.64]], 16), stdMat({ color: 0x8a2020, roughness: 0.4, clearcoat: 0.3 }, true));
   const p = new THREE.CylinderGeometry(0.03, 0.03, 0.64, 10);
   p.translate(0, 0.32, 0);
   it.add(p, M.metal);
@@ -791,31 +792,11 @@ export function pictureFrame(rnd) {
   const w = 0.35 + rnd() * 0.3,
     h = 0.28 + rnd() * 0.2;
   it.rbox(w, h, 0.025, 0, 0, 0, M.woodDark, 0.005);
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 48;
-  const ctx = c.getContext('2d');
-  // tiny landscape painting
-  const g = ctx.createLinearGradient(0, 0, 0, 48);
-  g.addColorStop(0, '#87a7c4');
-  g.addColorStop(0.55, '#e3c79a');
-  g.addColorStop(1, '#a87b50');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 48);
-  ctx.fillStyle = '#7a4f35';
-  ctx.beginPath();
-  ctx.moveTo(0, 30);
-  ctx.lineTo(20, 18 + rnd() * 8);
-  ctx.lineTo(40, 26);
-  ctx.lineTo(64, 20);
-  ctx.lineTo(64, 48);
-  ctx.lineTo(0, 48);
-  ctx.fill();
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  // one of a few shared paintings (the random draw keeps the generator's sequence)
+  const pick = Math.floor(rnd() * 6);
   const pg = new THREE.PlaneGeometry(w - 0.05, h - 0.05);
   pg.translate(0, 0, 0.0135);
-  it.add(pg, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }));
+  it.add(pg, M['painting' + pick]);
   return it;
 }
 
@@ -853,11 +834,7 @@ export const FURNITURE = {
 // Place a furniture Item into a Builder at (x, y, z) rotated by rotY.
 export function place(builder, item, x, y, z, rotY = 0) {
   const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, y, z);
-  for (const [g, mat] of item.parts) {
-    const gg = g.clone();
-    gg.applyMatrix4(m);
-    builder.add(gg, mat);
-  }
+  for (const [g, mat] of item.parts) builder.add(g, mat, m);
   const q = new THREE.Vector3();
   for (const c of item.cols) {
     q.set(...c.c).applyMatrix4(m);

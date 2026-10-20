@@ -1,13 +1,14 @@
 import { albumName } from '../audio/music/albums.js';
+import { paintOf } from '../vehicle/paints.js';
 
 // Item catalogue: physical properties, contents and what using the item does.
 // Liquids are tracked in litres; food values are in need points (0-100 scale).
 
 export const ITEMS = {
   jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
-  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water: drinkable, or top up the radiator.' },
+  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
   waterBottle: { name: 'Water bottle', model: ['waterBottle'], mass: 0.05, liquid: { type: 'water', cap: 1.5, density: 1 }, drinkable: true, hold: 'hand', desc: 'Drink to quench thirst.' },
-  waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable, also works as coolant.' },
+  waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable.' },
   sodaCan: { name: 'Soda', model: ['sodaCan'], mass: 0.36, consume: { water: 22, food: 6, energy: 4 }, hold: 'hand', desc: 'Sugary, fizzy, warm.', variants: 3 },
   cannedBeans: { name: 'Canned beans', model: ['cannedFood', 'beans'], mass: 0.45, consume: { food: 34, water: -2 }, hold: 'hand' },
   cannedMeat: { name: 'Corned beef', model: ['cannedFood', 'meat'], mass: 0.38, consume: { food: 40, water: -6 }, hold: 'hand' },
@@ -22,7 +23,7 @@ export const ITEMS = {
   painkillers: { name: 'Painkillers', model: ['pillBottle'], mass: 0.06, consume: { health: 18 }, hold: 'hand' },
   oilBottle: { name: 'Motor oil', model: ['oilBottle'], mass: 0.15, liquid: { type: 'oil', cap: 1, density: 0.88 }, hold: 'hand', desc: 'Pour into the oil filler with the hood open.' },
   coolantJug: { name: 'Coolant', model: ['coolantJug'], mass: 0.2, liquid: { type: 'coolant', cap: 2, density: 1.07 }, hold: 'hand', desc: 'Pour into the coolant reservoir.' },
-  repairKit: { name: 'Repair kit', model: ['repairKit'], mass: 3.2, charges: 2, bulky: true, hold: 'side', desc: 'Use on the engine bay to repair the engine and radiator.' },
+  repairKit: { name: 'Repair kit', model: ['repairKit'], mass: 3.2, charges: 2, bulky: true, hold: 'side', desc: 'Use on the engine to patch it up.' },
   tyreKit: { name: 'Tyre repair kit', model: ['repairKit'], mass: 1.2, charges: 2, hold: 'hand', desc: 'Use on a wheel to fix a puncture.' },
   wrench: { name: 'Wrench', model: ['wrench'], mass: 0.6, melee: { damage: 22, range: 1.7 }, hold: 'tool' },
   extinguisher: { name: 'Fire extinguisher', model: ['extinguisher'], mass: 4.5, charges: 1, bulky: true, hold: 'side', desc: 'Puts out an engine fire.' },
@@ -32,11 +33,25 @@ export const ITEMS = {
   ammo38: { name: '.38 cartridges', model: ['ammoBox', '38'], mass: 0.15, stack: 6, ammo: { type: '38', count: 12 }, hold: 'hand', desc: 'Use to put them in your pouch.' },
   ammo12: { name: '12 ga shells', model: ['ammoBox', '12'], mass: 0.4, stack: 6, ammo: { type: '12', count: 8 }, hold: 'hand' },
   sponge: { name: 'Sponge', model: ['sponge'], mass: 0.03, clean: true, hold: 'hand', desc: 'Hold LMB on the car to wash off the dust.' },
-  sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 1, hold: 'hand', desc: 'Use on the car to give it a new colour.' },
+  sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 5, variants: 15, hold: 'hand', desc: 'Aim at a car part and hold LMB to paint it. Enough for about five panels.' },
   cigarettes: { name: 'Cigarettes', model: ['cigarettes'], mass: 0.03, consume: { energy: 6, food: -3, water: -5, smoke: true }, charges: 5, hold: 'hand', desc: 'Calms the nerves. Makes you thirsty.' },
   coffee: { name: 'Canned coffee', model: ['coffee'], mass: 0.3, consume: { energy: 28, water: 6, food: 2 }, hold: 'hand', desc: 'Keeps you awake on long drives.' },
   cd: { name: 'CD', model: ['cdCase'], mass: 0.1, disc: true, hold: 'hand', variants: 6, desc: 'Put it in the car stereo (look at the radio, LMB).' },
   note: { name: 'Note', model: ['note'], mass: 0.01, readable: true, hold: 'hand', desc: 'Someone left this for whoever came next.' },
+  // bolt-on car accessories (see vehicle/accessories.js) and ballast
+  roofRack: { name: 'Roof rack', model: ['accessory', 'roofRack'], mass: 14, accessory: 'roofRack', bulky: true, hold: 'side', desc: 'Fits any car roof. Strap cargo on top; it raises the centre of gravity.' },
+  roofBox: { name: 'Roof box', model: ['accessory', 'roofBox'], mass: 17, accessory: 'roofBox', bulky: true, hold: 'side', desc: 'A 50 kg boot that clamps on the roof. High weight rolls easier.' },
+  bullBar: { name: 'Bull bar', model: ['accessory', 'bullBar'], mass: 26, accessory: 'bullBar', bulky: true, hold: 'side', desc: 'Bolts across the nose and takes the worst of a head-on hit. Heavy on the front axle.' },
+  rearRack: { name: 'Rear carrier', model: ['accessory', 'rearRack'], mass: 11, accessory: 'rearRack', bulky: true, hold: 'side', desc: 'A hitch tray behind the bumper for cans and crates.' },
+  // sheets and boards that bolt on anywhere (see vehicle/plates.js)
+  steelPlate: { name: 'Steel plate', model: ['plate', 'steelPlate'], mass: 8.5, plate: 'steelPlate', bulky: true, hold: 'side', desc: 'Bolt it anywhere on a car. Steel over the nose or tail takes some of a crash.' },
+  steelSheet: { name: 'Steel sheet', model: ['plate', 'steelSheet'], mass: 15.5, plate: 'steelSheet', bulky: true, hold: 'side', desc: 'A big sheet of steel: armour for a window or a whole end of the car.' },
+  plank: { name: 'Plank', model: ['plate', 'plank'], mass: 2.3, plate: 'plank', bulky: true, hold: 'side', desc: 'Bolt it to the car: a step, a shelf, a ramp, a fence.' },
+  plankWide: { name: 'Wide board', model: ['plate', 'plankWide'], mass: 2.8, plate: 'plankWide', bulky: true, hold: 'side', desc: 'A scaffold board. Bolts on anywhere.' },
+  plywood: { name: 'Plywood sheet', model: ['plate', 'plywood'], mass: 3.4, plate: 'plywood', bulky: true, hold: 'side', desc: 'Light and wide: board up a broken window, build a roof deck.' },
+  plasticPanel: { name: 'Plastic panel', model: ['plate', 'plasticPanel'], mass: 1.7, plate: 'plasticPanel', bulky: true, variants: 5, hold: 'side', desc: 'Light, keeps the rain and dust out. Bolts on anywhere.' },
+  plasticSheet: { name: 'Plastic sheet', model: ['plate', 'plasticSheet'], mass: 3.2, plate: 'plasticSheet', bulky: true, variants: 5, hold: 'side', desc: 'A big light panel. Bolts on anywhere.' },
+  sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
   meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
 };
 
@@ -127,8 +142,10 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['plank', 0.6],
+    ['plasticPanel', 0.6],
     ['oilBottle', 3],
-    ['coolantJug', 2],
+    ['part:fanbelt', 1.2],
     ['jerryCan', 1.2],
     ['waterJug', 1.4],
     ['tyreKit', 0.8],
@@ -154,7 +171,7 @@ export const LOOT = {
     ['jerky', 2],
     ['cannedBeans', 2],
     ['oilBottle', 1.5],
-    ['coolantJug', 1],
+    ['part:fanbelt', 0.5],
     ['waterBottle', 2],
   ],
   drinks: [
@@ -189,11 +206,28 @@ export const LOOT = {
     ['jerky', 1],
   ],
   ruin: [
+    ['plank', 1],
+    ['plywood', 0.6],
+    ['steelPlate', 0.3],
     ['ammo38', 0.6],
     ['jerky', 1],
     ['waterBottle', 1],
   ],
+  gear: [
+    ['steelPlate', 0.9],
+    ['steelSheet', 0.5],
+    ['plywood', 0.8],
+    ['plank', 1],
+    ['plasticSheet', 0.5],
+    ['roofRack', 1],
+    ['roofBox', 0.6],
+    ['bullBar', 0.7],
+    ['rearRack', 0.8],
+    ['sandbag', 1.4],
+    ['jerryCan', 0.5],
+  ],
   wreck: [
+    ['steelPlate', 0.4],
     ['cd', 0.9],
     ['jerryCan', 1.2],
     ['oilBottle', 1],
@@ -203,7 +237,7 @@ export const LOOT = {
 };
 
 // spawn chance per spot kind (before difficulty multiplier)
-export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.55, tools: 0.6, shop: 0.5, drinks: 0.5, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45 };
+export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.55, tools: 0.6, shop: 0.5, drinks: 0.5, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45, gear: 0.75 };
 
 export function initialState(id, rnd) {
   const d = ITEMS[id];
@@ -232,5 +266,6 @@ export function itemLabel(id, state = {}) {
   const d = ITEMS[id];
   if (!d) return id;
   if (d.disc) return 'CD: ' + albumName(state.variant || 0);
+  if (d.paint) return 'Spray paint · ' + paintOf(state.variant).name;
   return d.name;
 }

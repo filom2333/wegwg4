@@ -44,21 +44,30 @@ export function latheY(profile, segments = 48, phiStart = 0, phiLength = Math.PI
 export function roundedBox(w, h, d, r = 0.01, seg = 3) {
   r = Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4);
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1);
-  const pos = g.attributes.position;
-  const v = new THREE.Vector3();
+  const a = g.attributes.position.array;
   const hw = w / 2 - r,
     hh = h / 2 - r,
     hd = d / 2 - r;
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const c = new THREE.Vector3(
-      THREE.MathUtils.clamp(v.x, -hw, hw),
-      THREE.MathUtils.clamp(v.y, -hh, hh),
-      THREE.MathUtils.clamp(v.z, -hd, hd)
-    );
-    const d0 = v.clone().sub(c);
-    if (d0.lengthSq() > 1e-12) d0.normalize().multiplyScalar(r);
-    pos.setXYZ(i, c.x + d0.x, c.y + d0.y, c.z + d0.z);
+  for (let i = 0; i < a.length; i += 3) {
+    const x = a[i],
+      y = a[i + 1],
+      z = a[i + 2];
+    const cx = x < -hw ? -hw : x > hw ? hw : x,
+      cy = y < -hh ? -hh : y > hh ? hh : y,
+      cz = z < -hd ? -hd : z > hd ? hd : z;
+    let dx = x - cx,
+      dy = y - cy,
+      dz = z - cz;
+    const l2 = dx * dx + dy * dy + dz * dz;
+    if (l2 > 1e-12) {
+      const k = r / Math.sqrt(l2);
+      dx *= k;
+      dy *= k;
+      dz *= k;
+    }
+    a[i] = cx + dx;
+    a[i + 1] = cy + dy;
+    a[i + 2] = cz + dz;
   }
   g.computeVertexNormals();
   return g;

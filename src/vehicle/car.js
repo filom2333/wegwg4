@@ -1,76 +1,25 @@
 // The drivable car: visual model + physics + part installation state + vehicle systems
-// (fuel, oil, coolant, battery, engine temperature and condition, tyres) + lights.
+// (fuel, oil, battery, engine temperature and condition, fan belt, tyres) + lights.
 
 import * as THREE from 'three';
 import { ALBUMS } from '../audio/music/albums.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
-import { PARTS, dependentsOf } from './carParts.js';
-import { SPEC } from './body/shape.js';
-import { setNeedle, DRIVER } from './parts/interior.js';
-import { clamp, lerp } from '../core/noise.js';
+import { dependentsOf, lidOf } from './partUtils.js';
+import { setNeedle } from './gauges.js';
+import { setPartSource, applyEngine } from './swap.js';
+import { accessoryMass, ACCESSORIES } from './accessories.js';
+import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
+import { carType } from './types.js';
+import { clamp } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-// Compound collision boxes: [partRequired, center, halfExtents, {rotX, tag, closedOnly}]
-const BOXES = [
-  ['chassis', [0, 0.2, 0.1], [0.5, 0.04, 2.05]],
-  ['body', [0, 0.25, -0.12], [0.76, 0.035, 1.08], { tag: 'floor' }],
-  ['body', [0.8, 0.33, -0.05], [0.07, 0.1, 0.9]],
-  ['body', [-0.8, 0.33, -0.05], [0.07, 0.1, 0.9]],
-  ['body', [0, 0.58, 1.55], [0.8, 0.31, 0.62], { tag: 'bay' }],
-  ['body', [0, 0.78, 0.72], [0.76, 0.2, 0.24], { tag: 'dash' }],
-  ['body', [0, 1.425, -0.25], [0.66, 0.035, 0.66], { tag: 'roof' }],
-  ['body', [0, 1.17, 0.66], [0.7, 0.02, 0.46], { rotX: -0.97, tag: 'windshield' }],
-  ['body', [0, 1.2, -1.2], [0.68, 0.02, 0.34], { rotX: 1.06, tag: 'rearglass' }],
-  ['body', [0, 0.66, -1.27], [0.72, 0.36, 0.03], { tag: 'partition' }],
-  ['body', [0, 0.43, -1.78], [0.66, 0.02, 0.45], { tag: 'trunkFloor' }],
-  ['body', [0.76, 0.72, -1.78], [0.1, 0.3, 0.45]],
-  ['body', [-0.76, 0.72, -1.78], [0.1, 0.3, 0.45]],
-  ['body', [0, 0.62, -2.2], [0.8, 0.3, 0.06], { tag: 'rearPanel' }],
-  ['body', [0.74, 1.12, -0.12], [0.06, 0.28, 0.06]],
-  ['body', [-0.74, 1.12, -0.12], [0.06, 0.28, 0.06]],
-  ['door_FL', [0.82, 0.66, 0.36], [0.06, 0.34, 0.46], { closedOnly: true }],
-  ['door_FR', [-0.82, 0.66, 0.36], [0.06, 0.34, 0.46], { closedOnly: true }],
-  ['door_RL', [0.82, 0.66, -0.55], [0.06, 0.34, 0.42], { closedOnly: true }],
-  ['door_RR', [-0.82, 0.66, -0.55], [0.06, 0.34, 0.42], { closedOnly: true }],
-  ['door_FL', [0.72, 1.18, 0.25], [0.04, 0.17, 0.4], { closedOnly: true }],
-  ['door_FR', [-0.72, 1.18, 0.25], [0.04, 0.17, 0.4], { closedOnly: true }],
-  ['door_RL', [0.72, 1.18, -0.5], [0.04, 0.17, 0.33], { closedOnly: true }],
-  ['door_RR', [-0.72, 1.18, -0.5], [0.04, 0.17, 0.33], { closedOnly: true }],
-  ['hood', [0, 0.9, 1.6], [0.78, 0.02, 0.55], { closedOnly: true }],
-  ['trunk', [0, 1.02, -1.92], [0.68, 0.03, 0.32], { closedOnly: true }],
-  ['bumper_F', [0, 0.5, 2.1], [0.84, 0.24, 0.12]],
-  ['bumper_R', [0, 0.52, -2.2], [0.84, 0.22, 0.08]],
-  ['seat_FL', [0.37, 0.48, -0.14], [0.24, 0.06, 0.24], { tag: 'seat' }],
-  ['seat_FR', [-0.37, 0.48, -0.14], [0.24, 0.06, 0.24], { tag: 'seat' }],
-  ['seat_FL', [0.37, 0.8, -0.42], [0.24, 0.3, 0.06], { rotX: 0.35 }],
-  ['seat_FR', [-0.37, 0.8, -0.42], [0.24, 0.3, 0.06], { rotX: 0.35 }],
-  ['seat_R', [0, 0.43, -0.9], [0.62, 0.06, 0.24], { tag: 'seat' }],
-  ['engine', [-0.08, 0.55, 1.5], [0.36, 0.22, 0.2], { tag: 'engine' }],
-];
-
-export const SEATS = {
-  driver: { pos: V(0.37, 1.165, -0.34), door: 'door_FL', part: 'seat_FL', exit: V(1.4, 0.0, 0.0) },
-  passenger: { pos: V(-0.37, 1.13, -0.3), door: 'door_FR', part: 'seat_FR', exit: V(-1.4, 0.0, 0.0) },
-  rearL: { pos: V(0.34, 1.08, -1.0), door: 'door_RL', part: 'seat_R', exit: V(1.4, 0.0, -0.9) },
-  rearR: { pos: V(-0.34, 1.08, -1.0), door: 'door_RR', part: 'seat_R', exit: V(-1.4, 0.0, -0.9) },
-};
-
-// Hotspots for interactions (car space), with the part that must be present.
-export const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(-0.87, 0.86, -1.63), r: 0.18, part: 'fueltank', needs: 'fuelflap' },
-  { id: 'oil', label: 'Oil filler', pos: V(0.04, 0.84, 1.55), r: 0.12, part: 'engine', hood: true },
-  { id: 'coolant', label: 'Coolant reservoir', pos: V(-0.5, 0.79, 1.22), r: 0.12, part: 'radiator', hood: true },
-  { id: 'battery', label: 'Battery', pos: V(0.36, 0.84, 1.72), r: 0.16, part: 'battery', hood: true },
-  { id: 'ignition', label: 'Ignition', pos: V(0.31, 0.88, 0.35), r: 0.08, part: 'steeringWheel', inside: true },
-  { id: 'lights', label: 'Light switch', pos: V(0.62, 0.87, 0.56), r: 0.06, part: 'body', inside: true },
-  { id: 'radio', label: 'Radio', pos: V(0, 0.86, 0.49), r: 0.1, part: 'body', inside: true },
-];
-
+// type: a car type (see types.js) with its spec, part table and model; model: its scene graph.
 export class Car {
-  constructor(game, model, opts = {}) {
+  constructor(game, type, model, opts = {}) {
     this.game = game;
+    this.type = type;
     this.model = model;
     this.root = model.root;
     game.worldGroup.add(this.root);
@@ -80,15 +29,16 @@ export class Car {
     }
     // systems
     this.fuel = opts.fuel ?? 22; // litres
-    this.fuelCap = 50;
-    this.oil = opts.oil ?? 3.4; // litres
-    this.oilCap = 3.6;
-    this.coolant = opts.coolant ?? 4.6;
-    this.coolantCap = 5;
+    this.fuelCap = type.fuelCap;
+    this.oilCap = type.oilCap;
+    this.oil = opts.oil ?? type.oilCap * 0.94; // litres
+    // water-cooled engines: litres of coolant in the radiator circuit
+    this.coolantCap = type.coolantCap || 0;
+    this.coolant = opts.coolant ?? this.coolantCap * 0.9;
     this.battery = opts.battery ?? 0.85;
     this.engineTemp = 22;
     this.engineCondition = opts.engineCondition ?? 0.85;
-    this.radiatorCondition = 0.9;
+    this.fanbeltCondition = opts.fanbeltCondition ?? 0.8;
     this.odometer = opts.odometer ?? 184213;
     this.trip = 0;
     this.lightsOn = 0; // 0 off, 1 low, 2 high
@@ -111,12 +61,8 @@ export class Car {
     this.dyn = new VehicleDynamics(game.physics, {
       position: pos,
       quaternion: q,
-      hardpoints: [
-        { id: 'wheel_FL', x: SPEC.trackHalf, z: SPEC.axleF, steer: true, drive: true },
-        { id: 'wheel_FR', x: -SPEC.trackHalf, z: SPEC.axleF, steer: true, drive: true },
-        { id: 'wheel_RL', x: SPEC.trackHalf, z: SPEC.axleR },
-        { id: 'wheel_RR', x: -SPEC.trackHalf, z: SPEC.axleR },
-      ],
+      hardpoints: type.HARDPOINTS,
+      params: type.DYNAMICS,
     });
     this.dyn.surfaceAt = (p, collider) => {
       const owner = game.physics.ownerOf(collider);
@@ -140,40 +86,118 @@ export class Car {
   }
 
   // ---------------------------------------------------------------- parts
+  get PARTS() {
+    return this.type.PARTS;
+  }
+
   isInstalled(id) {
     return !!(this.parts[id] && this.parts[id].installed);
   }
 
   canInstall(id) {
-    const def = PARTS[id];
+    const def = this.PARTS[id];
     if (!def || this.isInstalled(id)) return { ok: false, reason: 'Already installed' };
-    for (const r of def.requires) if (!this.isInstalled(r)) return { ok: false, reason: `Needs ${PARTS[r].label.toLowerCase()} first` };
-    if (def.needsHoodOpen && this.isInstalled('hood') && this.model.parts.hood.openT < 0.5) return { ok: false, reason: 'Open the hood first' };
+    for (const r of def.requires) if (!this.isInstalled(r)) return { ok: false, reason: `Needs ${this.PARTS[r].label.toLowerCase()} first` };
+    const lid = this.lidBlocking(id);
+    if (lid) return { ok: false, reason: lid };
     return { ok: true };
   }
 
+  // Reason text if the lid a part is reached through is closed.
+  lidBlocking(id) {
+    const lid = lidOf(this.PARTS, id);
+    if (!lid || !this.isInstalled(lid) || this.model.parts[lid].openT >= 0.5) return null;
+    return `Open the ${this.type.lids[lid] || lid} first`;
+  }
+
+  // Is a lid open (or gone)?
+  lidOpen(lid) {
+    return !this.isInstalled(lid) || this.model.parts[lid].openT > 0.5;
+  }
+
   canRemove(id) {
-    const def = PARTS[id];
+    const def = this.PARTS[id];
     if (!def || def.fixed) return { ok: false, reason: 'Cannot be removed' };
     if (!this.isInstalled(id)) return { ok: false, reason: 'Not installed' };
-    const deps = dependentsOf(id).filter((d) => this.isInstalled(d) && !PARTS[d].fixed);
-    if (deps.length) return { ok: false, reason: `Remove ${PARTS[deps[0]].label.toLowerCase()} first` };
-    if (def.needsHoodOpen && this.isInstalled('hood') && this.model.parts.hood.openT < 0.5) return { ok: false, reason: 'Open the hood first' };
+    const deps = dependentsOf(this.PARTS, id).filter((d) => this.isInstalled(d) && !this.PARTS[d].fixed);
+    if (deps.length) return { ok: false, reason: `Remove ${this.PARTS[deps[0]].label.toLowerCase()} first` };
+    const lid = this.lidBlocking(id);
+    if (lid) return { ok: false, reason: lid };
     if (this.game.player && this.game.player.seat) return { ok: false, reason: 'Get out of the car first' };
     return { ok: true };
   }
 
-  setInstalled(id, on) {
+  // from: the car type the part came off (another type's part fits the same slot)
+  setInstalled(id, on, from = null) {
+    // plates bolted to a part come loose with it
+    if (!on && this.plates) for (const p of this.plates.filter((x) => x.part === id)) this.dropPlate(p);
+    const own = this.type.id;
+    const src = on ? from || own : this.parts[id].from || own;
+    if (on && (src !== (this.parts[id].from || own)) && id !== 'steeringWheel') setPartSource(this, id, this.game.fleet ? this.game.fleet.modelOf(src) : null, src);
+    this.parts[id].from = on && src !== own ? src : null;
+    if (id === 'engine' && on) applyEngine(this, carType(src));
     this.parts[id].installed = on;
     this.model.setInstalled(id, on);
     const w = this.dyn.wheels.find((x) => x.id === id);
     if (w) w.installed = on;
     if (id === 'engine') this.dyn.engineInstalled = on;
     if (id === 'steeringWheel') this.dyn.steeringInstalled = on;
-    if (id === 'body') for (const f of ['fuelflap']) this.model.setInstalled(f, on);
     if ((id === 'engine' || id === 'battery' || id === 'fueltank') && !on) this.setIgnition(false);
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  dropPlate(p) {
+    const w = new THREE.Matrix4().copy(p.mesh.matrixWorld);
+    const pos = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      sc = V(0, 0, 0);
+    w.decompose(pos, q, sc);
+    detachPlate(this, p);
+    if (this.game.items && PLATES[p.id]) this.game.items.spawn(p.id, pos.addScaledVector(V(0, 1, 0).applyQuaternion(q), 0.05), q, { ...p.state });
+  }
+
+  // Spray paint on one part: its painted surfaces get their own material (same shader, own
+  // colour). Returns false if nothing on the part takes paint.
+  paintPart(id, hex) {
+    const mp = this.model.parts[id];
+    const P = this.model.mats.paintables;
+    if (!mp || !P || !P.size) return false;
+    this.partMats = this.partMats || {};
+    const own = (this.partMats[id] = this.partMats[id] || new Map());
+    let any = false;
+    mp.inner.traverse((o) => {
+      if (!o.isMesh) return;
+      const base = o.userData.baseMat || o.material;
+      if (!P.has(base) && !base.userData.paint) return;
+      o.userData.baseMat = base;
+      let m = own.get(base);
+      if (!m) {
+        m = base.clone();
+        m.onBeforeCompile = base.onBeforeCompile;
+        m.customProgramCacheKey = base.customProgramCacheKey;
+        m.color = new THREE.Color();
+        own.set(base, m);
+      }
+      m.color.setHex(hex);
+      o.material = m;
+      any = true;
+    });
+    if (any) (this.partColors = this.partColors || {})[id] = hex;
+    return any;
+  }
+
+  // Can a spray can do anything to this part?
+  paintable(id) {
+    const mp = this.model.parts[id];
+    const P = this.model.mats.paintables;
+    if (!mp || !P) return false;
+    let ok = false;
+    mp.inner.traverse((o) => {
+      const base = o.isMesh && (o.userData.baseMat || o.material);
+      if (base && (P.has(base) || base.userData.paint)) ok = true;
+    });
+    return ok;
   }
 
   // Bounding box of a part in car space (rest pose).
@@ -186,34 +210,52 @@ export class Car {
     const com = new THREE.Vector3();
     const c = new THREE.Vector3();
     for (const [id, st] of Object.entries(this.parts)) {
-      if (!st.installed || !PARTS[id]) continue;
-      const mass = PARTS[id].mass;
+      if (!st.installed || !this.PARTS[id]) continue;
+      const mass = (st.from ? carType(st.from).PARTS[id] || this.PARTS[id] : this.PARTS[id]).mass;
       const b = this.model.parts[id].bbox;
       if (!b || b.isEmpty()) continue;
       b.getCenter(c);
       com.addScaledVector(c, mass);
       m += mass;
     }
+    // the shell's mass sits lower than its bounding box (sills, floor pan, glass is light)
+    com.y -= 0.05 * m;
     // fuel
     const fuelMass = this.isInstalled('fueltank') ? this.fuel * 0.74 : 0;
-    com.addScaledVector(V(0, 0.2, -0.98), fuelMass);
+    com.addScaledVector(V(...this.type.fuelCom), fuelMass);
     m += fuelMass;
     // driver
     if (this.game.player && this.game.player.seat) {
-      com.addScaledVector(SEATS[this.game.player.seat].pos.clone().setY(0.6), 80);
+      com.addScaledVector(this.type.SEATS[this.game.player.seat].pos.clone().setY(0.6), 80);
       m += 80;
     }
+    // whatever is bolted on, strapped down or packed in
+    m += accessoryMass(this, com);
+    m += plateMass(this, com);
+    for (const it of this.attached || []) {
+      if (!it.stowed) continue;
+      com.addScaledVector(it.stowed.rest, it.mass);
+      m += it.mass;
+    }
+    const packed = this.packedMass();
+    com.addScaledVector(V(...(this.type.trunk.com || [0, 0.6, 0])), packed.trunk);
+    if (packed.roofbox) com.addScaledVector(this.accessories.roof.center, packed.roofbox);
+    m += packed.trunk + packed.roofbox;
+    this.packed = packed.trunk + packed.roofbox;
     com.multiplyScalar(1 / Math.max(1, m));
-    // pull COM a little lower: shell mass sits low in sills and floor
-    com.y = Math.min(com.y, 0.55);
     this.totalMass = m;
-    this.dyn.setMassProperties({ mass: Math.max(m, 120), com });
+    this.dyn.setMassProperties({ mass: Math.max(m, 120), com, size: V(...this.type.massSize) });
+  }
+
+  packedMass() {
+    const S = this.storage || {};
+    return { trunk: (S.trunk ? S.trunk.weight() : 0) + (S.glovebox ? S.glovebox.weight() : 0), roofbox: S.roofbox ? S.roofbox.weight() : 0 };
   }
 
   rebuildColliders() {
     const list = [];
     this.colliderParts = [];
-    for (const [part, c, h, o = {}] of BOXES) {
+    for (const [part, c, h, o = {}] of this.type.BOXES) {
       if (!this.isInstalled(part)) continue;
       if (o.closedOnly && this.model.parts[part].openT > 0.08) continue;
       list.push({ part, c, h, o });
@@ -232,6 +274,7 @@ export class Car {
       this.game.physics.setOwner(col, { kind: 'car', car: this, part: b.part, tag: b.o.tag || null });
       dyn.colliders.push(col);
     }
+    if (this.plates && this.plates.length) plateColliders(this);
   }
 
   // ---------------------------------------------------------------- doors etc.
@@ -321,11 +364,11 @@ export class Car {
     return { a: 'FM', b: '98.1  HAVEN', t: s.disc >= 0 ? 'CD IN' : '' };
   }
 
-  // Trunk storage is reachable standing behind the car with the lid up (or gone).
+  // The luggage space under the front lid is reachable standing at the nose with the lid up.
   canReachTrunk(eye) {
     if (!this.isInstalled('body')) return false;
     if (this.isInstalled('trunk') && this.model.parts.trunk.openT < 0.6) return false;
-    return this.worldPointOf(new THREE.Vector3(0, 0.85, -2.05)).distanceTo(eye) < 1.9;
+    return this.worldPointOf(this.type.POINTS.frontTrunk).distanceTo(eye) < 1.9;
   }
 
   worldPointOf(local) {
@@ -339,50 +382,47 @@ export class Car {
   // ---------------------------------------------------------------- lights
   setupLights() {
     const M = this.model.mats;
-    const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.62, 0.55, 1.3);
-    head.position.set(0, 0.74, 2.05);
+    // one spot between the round headlamps does the beam; a wide dim fill lights the verge
+    const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
+    const L = this.type.lights;
+    head.position.set(...L.head);
     head.target.position.set(0, 0.0, 14);
     head.castShadow = true;
     head.shadow.mapSize.set(1024, 1024);
     head.shadow.camera.near = 0.3;
-    head.shadow.camera.far = 70;
+    head.shadow.camera.far = 60;
     head.shadow.bias = -0.0008;
     head.shadow.normalBias = 0.03;
+    // the beam's shadow map only needs redrawing while the car moves
+    head.shadow.autoUpdate = true;
     this.root.add(head, head.target);
     this.headLight = head;
-    // a wide, dim fill so the roadside isn't pitch black
-    const fill = new THREE.SpotLight(0xffe9d0, 0, 28, 1.15, 0.9, 1.6);
-    fill.position.set(0, 0.7, 2.1);
+    const fill = new THREE.SpotLight(0xffe9d0, 0, 26, 1.15, 0.9, 1.6);
+    fill.position.set(L.head[0], L.head[1], L.head[2] + 0.08);
     fill.target.position.set(0, 0, 8);
     this.root.add(fill, fill.target);
     this.headFill = fill;
     const tail = new THREE.PointLight(0xff2010, 0, 6, 2);
-    tail.position.set(0, 0.85, -2.45);
+    tail.position.copy(this.type.POINTS.tailLights).add(V(0, 0, -0.35));
     this.root.add(tail);
     this.tailLight = tail;
-    const reverse = new THREE.SpotLight(0xffffff, 0, 12, 0.9, 0.8, 1.8);
-    reverse.position.set(0, 0.8, -2.35);
+    const reverse = new THREE.SpotLight(0xffffff, 0, 10, 0.9, 0.8, 1.8);
+    reverse.position.set(...L.reverse);
     reverse.target.position.set(0, 0, -8);
     this.root.add(reverse, reverse.target);
     this.reverseLight = reverse;
     const cabin = new THREE.PointLight(0xffeccc, 0, 2.6, 1.5);
-    cabin.position.set(0, 1.3, -0.1);
+    cabin.position.copy(this.type.POINTS.dome).add(V(0, -0.08, 0));
     this.root.add(cabin);
     this.cabinLamp = cabin;
-    // emissive materials (cloned so this car owns them)
     this.emissive = {
-      lens: M.slots[10],
-      red: M.lensRed,
-      amber: M.lensAmber,
-      bulb: M.bulb,
-      projector: M.projector,
-      drl: M.drl,
-      redChrome: M.redChrome,
-      dome: this.model.interiorMats.domeLens,
-      gauge: this.model.interiorMats.gauge,
-      needle: this.model.interiorMats.needle,
-      display: this.model.interiorMats.display,
-      brake3: this.model.interiorMats.brakeLight,
+      head: M.headLens,
+      tail: M.tailLens,
+      gauge: M.gauge,
+      needle: M.needle,
+      display: M.display,
+      dome: M.domeLens,
+      lamps: this.model.cluster ? this.model.cluster.userData.lamps : {},
     };
   }
 
@@ -393,27 +433,30 @@ export class Car {
     const leftH = this.isInstalled('headlight_L'),
       rightH = this.isInstalled('headlight_R');
     const hcount = (leftH ? 1 : 0) + (rightH ? 1 : 0);
+    // 6-volt-era lamps: a little dimmer and yellower at idle with a weak battery
     const dim = clamp(this.battery * 3, 0.2, 1) * (this.dyn.engine.running ? 1 : 0.8);
-    this.headLight.intensity = on ? (hiBeam ? 260 : 150) * (hcount / 2) * dim : 0;
-    this.headLight.distance = hiBeam ? 120 : 70;
-    this.headLight.angle = hiBeam ? 0.5 : 0.62;
+    this.headLight.intensity = on ? (hiBeam ? 230 : 135) * (hcount / 2) * dim : 0;
+    this.headLight.distance = hiBeam ? 110 : 65;
+    this.headLight.angle = hiBeam ? 0.5 : 0.6;
     this.headLight.target.position.y = hiBeam ? 0.6 : 0.0;
-    this.headLight.position.x = leftH && !rightH ? 0.55 : rightH && !leftH ? -0.55 : 0;
-    this.headFill.intensity = on ? 30 * (hcount / 2) * dim : 0;
+    const hx = this.type.lights.headX;
+    this.headLight.position.x = leftH && !rightH ? hx : rightH && !leftH ? -hx : 0;
+    this.headLight.castShadow = on;
+    this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
-    e.bulb.emissiveIntensity = on ? 6 : 0;
-    e.projector.emissiveIntensity = on ? 3 : 0;
-    e.drl.emissiveIntensity = powered && (this.ignition || on) ? 2.2 : 0;
-    const tailOn = on || braking;
-    e.redChrome.emissiveIntensity = tailOn && powered ? (braking ? 4 : 1.5) : 0;
-    e.red.emissiveIntensity = powered ? (braking ? 1.4 : on ? 0.5 : 0) : 0;
-    e.brake3.emissiveIntensity = powered && braking ? 3 : 0;
-    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.8 : 0) : 0;
-    this.reverseLight.intensity = powered && reversing ? 18 : 0;
-    e.lens.emissive = e.lens.emissive || new THREE.Color();
-    // dashboard backlight
-    e.gauge.emissiveIntensity = powered && this.ignition ? (on ? 1.4 : 0.8) : 0.25;
-    e.needle.emissiveIntensity = powered && this.ignition ? 1.5 : 0;
+    e.head.emissiveIntensity = on ? (hiBeam ? 3.2 : 2.2) * dim : 0;
+    // tail lamps and brake lights share the bulb housings
+    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
+    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : 0) : 0;
+    this.reverseLight.intensity = powered && reversing ? 12 : 0;
+    // instrument lighting and warning lamps
+    const ign = powered && this.ignition;
+    e.gauge.emissiveIntensity = ign ? (on ? 0.9 : 0.35) : 0.04;
+    e.needle.emissiveIntensity = ign && on ? 0.9 : 0;
+    const running = this.dyn.engine.running;
+    const charging = running && this.isInstalled('fanbelt') && this.fanbeltCondition > 0.02;
+    if (e.lamps.gen) e.lamps.gen.emissiveIntensity = ign && !charging ? 2.4 : 0;
+    if (e.lamps.oil) e.lamps.oil.emissiveIntensity = ign && (!running || this.oil < 0.6) ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
     if (powered && this.radioOn) this.drawStereo(e.display);
     else if (this._stereoKey && this._stereoKey !== 'off') {
@@ -423,8 +466,8 @@ export class Car {
       c.fillRect(0, 0, 256, 56);
       this._stereoTex.needsUpdate = true;
     }
-    // cabin lamp: on while a front door is open or toggled
-    const doorOpen = ['door_FL', 'door_FR', 'door_RL', 'door_RR'].some((d) => this.isInstalled(d) && this.model.parts[d].openT > 0.2);
+    // dome lamp: on while a door is open or switched on
+    const doorOpen = ['door_FL', 'door_FR', 'door_RL', 'door_RR'].some((d) => this.model.parts[d] && this.isInstalled(d) && this.model.parts[d].openT > 0.2);
     const cabinOn = powered && (this.cabinLight || doorOpen);
     this.cabinLamp.intensity = cabinOn ? 2.2 : 0;
     e.dome.emissiveIntensity = cabinOn ? 2 : 0;
@@ -480,6 +523,21 @@ export class Car {
       }
     }
     if (collidersDirty) this.rebuildColliders();
+    // what is packed in the boot changes the mass distribution
+    this.massCheck = (this.massCheck || 0) + dt;
+    if (this.massCheck > 0.5) {
+      this.massCheck = 0;
+      const pk = this.packedMass();
+      if (Math.abs(pk.trunk + pk.roofbox - (this.packed || 0)) > 0.3) this.updateMass();
+    }
+    // on its side or roof the engine starves of oil and stalls, and the tank breather weeps fuel
+    const upY = 1 - 2 * (this.root.quaternion.x ** 2 + this.root.quaternion.z ** 2);
+    this.inverted = upY < 0.3 ? (this.inverted || 0) + dt : 0;
+    if (this.inverted > 2.5 && d.engine.running) {
+      d.engine.running = false;
+      d.onStall && d.onStall();
+    }
+    if (this.inverted > 0 && this.isInstalled('fueltank')) this.fuel = Math.max(0, this.fuel - dt * 0.03);
 
     // controls -> dynamics
     const running = d.engine.running;
@@ -534,13 +592,36 @@ export class Car {
       this.fuel -= burn;
       if (this.game.stats) this.game.stats.fuelUsed += burn;
       this.oil = Math.max(0, this.oil - (0.004 + powerKw * 0.00006) * (dt / 60) * diff.wear * (this.engineCondition < 0.5 ? 2 : 1));
-      // engine temperature
-      const coolantFrac = this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
-      const coolingCap = coolantFrac * this.radiatorCondition * (0.6 + Math.min(1, d.speed / 15) * 0.6 + 0.25); // fan
+      const belt = this.isInstalled('fanbelt') ? this.fanbeltCondition : 0;
+      const oilFrac = clamp(this.oil / this.oilCap, 0, 1);
       const heat = 6 + powerKw * 0.55;
-      const target = 88 + Math.max(0, heat - coolingCap * 70) * 1.6 + (env ? (env.daylight * 6) : 0);
+      let coolingCap;
+      if ((this.engineType || this.type).cooling === 'water') {
+        // the belt turns the water pump; the radiator needs coolant and air (an electric fan
+        // cuts in when hot and the battery can run it)
+        // a water-cooled engine swapped into a car without a radiator slot brought its own
+        const coolFrac = !this.parts.radiator ? 1 : this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
+        const pump = belt > 0.02 ? 1 : 0.15;
+        const fanOn = this.engineTemp > 96 && this.isInstalled('battery') && this.battery > 0.05;
+        coolingCap = pump * Math.pow(coolFrac, 0.6) * (0.6 + Math.min(1, d.speed / 20) * 0.45 + (fanOn ? 0.4 : 0)) * (0.7 + 0.3 * oilFrac);
+        // boiling over loses coolant
+        if (this.engineTemp > 112) this.coolant = Math.max(0, this.coolant - dt * 0.004 * (this.engineTemp - 112));
+      } else {
+        // air cooled by the belt-driven fan, the oil carries the heat
+        const fan = belt > 0.02 ? clamp(0.35 + rpm / 3600, 0, 1.6) * (0.6 + 0.4 * belt) : 0;
+        coolingCap = (fan * 0.85 + Math.min(1, d.speed / 25) * 0.15) * (0.55 + 0.45 * oilFrac);
+      }
+      const target = (this.type.cooling === 'water' ? 86 : 82) + Math.max(0, heat - coolingCap * 30) * 2.2 + (env ? env.daylight * 6 : 0);
       this.engineTemp += (target - this.engineTemp) * Math.min(1, dt * 0.05);
-      if (this.engineTemp > 108 && coolantFrac > 0) this.coolant = Math.max(0, this.coolant - dt * 0.002 * (this.engineTemp - 108));
+      // the belt wears with use and snaps when it is gone
+      if (belt > 0) {
+        this.fanbeltCondition = Math.max(0, this.fanbeltCondition - dt * 0.0000025 * (rpm / 3000) * diff.wear * (this.engineTemp > 115 ? 3 : 1));
+        if (this.fanbeltCondition < 0.02 && belt >= 0.02) {
+          this.fanbeltCondition = 0;
+          this.game.hud && this.game.hud.toast('Fan belt snapped');
+          this.game.audio && this.game.audio.play('hitMetal', { at: this.worldPointOf(this.type.POINTS.engine) });
+        }
+      }
       // wear & damage
       let wear = 0.0000012 * (1 + powerKw / 40) * diff.wear;
       if (this.engineTemp > 115) wear += 0.00025 * (this.engineTemp - 115) * diff.wear;
@@ -548,8 +629,8 @@ export class Car {
       if (!this.isInstalled('airfilter')) wear += 0.000004 * (1 + (env ? env.w.dust * 20 : 0));
       if (env && env.w.dust > 0.3 && this.isInstalled('airfilter')) wear += 0.0000015 * env.w.dust;
       this.engineCondition = Math.max(0, this.engineCondition - wear * dt);
-      // battery charges while running
-      if (this.isInstalled('battery')) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
+      // the generator charges the battery while the belt turns it
+      if (this.isInstalled('battery') && belt > 0.02) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
       // misfires / backfires at low condition
       if (this.engineCondition < 0.35 && Math.random() < dt * (0.35 - this.engineCondition) * 3) {
         this.game.effects && this.game.effects.backfire(this);
@@ -595,12 +676,14 @@ export class Car {
     const surf = (d.wheels[0] && d.wheels[0].surface) || 'asphalt';
     if (spd > 2) this.dirt = Math.min(1, this.dirt + dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
     if (env2 && env2.w.rain > 0.3) this.dirt = Math.max(0.05, this.dirt - dt * 0.004 * env2.w.rain);
-    const wu = this.game.carMats && this.game.carMats.weather;
+    const wu = this.model.mats && this.model.mats.weather;
     if (wu && wu.uDirt) wu.uDirt.value = this.dirt;
     // wipers
     if (this.wipers && this.isInstalled('battery') && this.battery > 0.03) this.wiperPhase += dt * 2.4;
     else if (this.wiperPhase % (Math.PI * 2) > 0.05) this.wiperPhase += dt * 2.4;
     this.updateLights(d.controls.brake > 0.1 && hasDriver, d.gear === 0 && running);
+    if (this.model.setGearLever) this.model.setGearLever(d.gear, dt);
+    if (this.model.setHandbrake) this.model.setHandbrake(d.controls.handbrake > 0.3 || (!hasDriver && !running), dt);
     this.syncVisual();
   }
 
@@ -613,13 +696,25 @@ export class Car {
     const front = dirLocal.z < -0.5; // pushed backwards => hit the front
     const rear = dirLocal.z > 0.5;
     const dmg = (severity - 2.2) * 0.04 * (this.game.difficulty ? this.game.difficulty.damage : 1);
+    // what sits behind each bumper depends on the layout (type.crash: 'tank' or 'engine')
+    const hit = (what, absorb) => {
+      if (what === 'tank') {
+        if (this.isInstalled('fueltank') && dmg * absorb > 0.08) this.fuel = Math.max(0, this.fuel - dmg * absorb * 25);
+      } else {
+        this.engineCondition = Math.max(0, this.engineCondition - dmg * absorb * 0.7);
+        // a front-engined car's radiator goes first
+        if (this.isInstalled('radiator') && dmg * absorb > 0.05) {
+          this.parts.radiator.condition = Math.max(0, this.parts.radiator.condition - dmg * absorb * 2);
+          this.coolant = Math.max(0, this.coolant - dmg * absorb * 6);
+        }
+      }
+    };
     if (front) {
-      const absorb = this.isInstalled('bumper_F') ? 0.5 : 1;
-      if (this.isInstalled('radiator')) this.radiatorCondition = Math.max(0, this.radiatorCondition - dmg * absorb * 1.2);
-      this.engineCondition = Math.max(0, this.engineCondition - dmg * absorb * 0.6);
-      for (const h of ['headlight_L', 'headlight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
-      this.coolant = Math.max(0, this.coolant - dmg * 4 * (this.radiatorCondition < 0.4 ? 1 : 0));
+      const bar = this.accessories && this.accessories.front && ACCESSORIES[this.accessories.front.id].guard;
+      hit(this.type.crash.front, (this.isInstalled('bumper_F') ? 0.5 : 1) * (bar ? 1 - bar : 1) * plateArmour(this, 'front'));
+      for (const h of ['headlight_L', 'headlight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * (bar ? 0.8 : 2));
     } else if (rear) {
+      hit(this.type.crash.rear, (this.isInstalled('bumper_R') ? 0.5 : 1) * plateArmour(this, 'rear'));
       for (const h of ['taillight_L', 'taillight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
     }
     this.lastImpact = { severity, time: performance.now() };
@@ -669,16 +764,16 @@ export class Car {
     if (needles) {
       const powered = this.ignition && this.isInstalled('battery') && this.battery > 0.03;
       const spd = Math.abs(this.dyn.forwardSpeed) * 3.6;
-      setNeedle(needles, 'speed', spd / 220);
-      setNeedle(needles, 'rpm', this.dyn.engine.rpm / 8000);
+      setNeedle(needles, 'speed', spd / this.type.SPEEDO_MAX);
       setNeedle(needles, 'fuel', powered ? this.fuel / this.fuelCap : 0);
-      setNeedle(needles, 'temp', powered ? clamp((this.engineTemp - 40) / 90, 0, 1) : 0);
+      setNeedle(needles, 'rpm', powered ? this.dyn.engine.rpm / 8000 : 0);
     }
-    // pedals
+    // pedals (floor hinged: pressing tips the pad forward)
     if (this.model.pedals) {
       const pd = this.model.pedals.userData.pedals;
-      pd.gas.rotation.x = -this.dyn.controls.throttle * 0.3;
-      pd.brake.rotation.x = -this.dyn.controls.brake * 0.25;
+      pd.gas.rotation.x = this.dyn.controls.throttle * 0.32;
+      pd.brake.rotation.x = this.dyn.controls.brake * 0.28;
+      if (pd.clutch) pd.clutch.rotation.x = (1 - this.dyn.clutch) * 0.3 * (this.dyn.engine.running ? 1 : 0);
     }
   }
 
@@ -692,7 +787,7 @@ export class Car {
 
   // World transform of a seat camera.
   seatWorld(seat) {
-    return SEATS[seat].pos.clone().applyMatrix4(this.root.matrixWorld);
+    return this.type.SEATS[seat].pos.clone().applyMatrix4(this.root.matrixWorld);
   }
 
   dispose() {
@@ -701,4 +796,3 @@ export class Car {
   }
 }
 
-export { DRIVER };

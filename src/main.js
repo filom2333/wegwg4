@@ -33,6 +33,7 @@ async function boot() {
       startZ: +(params.get('z') || 0),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
+      car: params.get('car') || 'beetle',
       onProgress: (t, p) => console.log('load', t, p),
     });
     if (!params.get('manual')) game.start();
@@ -48,6 +49,7 @@ async function boot() {
       seed: +(params.get('seed') || 1234),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
+      car: params.get('car') || 'beetle',
       time: 8.2,
       weather: 'clear',
       load,

@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
+import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
 import { buildGroundTextures } from './gfx/groundTextures.js';
 import { createTerrainMaterial, createRoadMaterial } from './gfx/terrainMaterial.js';
@@ -10,15 +11,14 @@ import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
-import { POIManager, makeWreckPrototype } from './world/poi.js';
-import { buildCarBody } from './vehicle/body/carBody.js';
-import { createCarMaterials } from './vehicle/carMaterials.js';
-import { buildFullCarModel } from './vehicle/carModel.js';
-import { Car } from './vehicle/car.js';
+import { loadTreeTextures } from './world/trees.js';
+import { POIManager } from './world/poi.js';
+import { Fleet } from './vehicle/fleet.js';
+import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
-import { Inventory, Container } from './items/inventory.js';
+import { Inventory } from './items/inventory.js';
 import { ITEMS, initialState } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
@@ -27,7 +27,8 @@ import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
 import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
-import { PARTS } from './vehicle/carParts.js';
+import { Water } from './world/water.js';
+import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
@@ -48,7 +49,7 @@ export class Game {
     this.scene.add(this.worldGroup);
     this.renderer.setupComposer(this.scene);
     // first-person eye (aim, reach, viewmodel); the rendered camera follows it or orbits in 3rd person
-    this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 6000);
+    this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 7000);
     this.origin = { x: 0, z: 0 };
     this.clock = new THREE.Clock();
     this.running = false;
@@ -72,21 +73,25 @@ export class Game {
       crashes: 0,
       daysSurvived: 1,
     };
-    this.systems = [];
+    this.systems = [new Water(), new Bridges()];
     window.addEventListener('resize', () => this.renderer.resize());
     input.attach(canvas);
     this.__input = input;
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
       start = load.startMode;
       time = load.env.time;
       weather = load.env.weather;
+      carChoice = load.startCar || 'beetle';
     }
+    // the car the run starts with; the other types turn up along the road
+    this.startCarType = carType(carChoice).id;
+    this.settingsTransmission = settings.data.transmission;
     this.load = load;
     this.attract = attract;
     this.startZ = startZ;
@@ -120,8 +125,9 @@ export class Game {
       origin: this.origin,
       quality: settings.data.quality,
     });
+    const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
-    this.scatter = new Scatter(this, this.groundTex);
+    this.scatter = new Scatter(this, this.groundTex, await treeTex);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);
@@ -135,12 +141,11 @@ export class Game {
     this.hud = new HUD(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
-    onProgress('Building the car', 0.35);
+    onProgress('Building the cars', 0.35);
     await tick();
-    this.carBody = buildCarBody({ res: settings.data.quality === 'low' ? 0.034 : 0.028 });
-    this.carMats = createCarMaterials({ color: 0xa8502c });
-    this.carModel = buildFullCarModel(this.carBody, this.carMats);
-    this.pois.setWreckPrototype(makeWreckPrototype(buildCarBody({ res: 0.08, lowDetail: true }), this.carMats));
+    this.fleet = new Fleet(this);
+    await this.fleet.preload(this.renderer.renderer);
+    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ || load) {
@@ -154,16 +159,19 @@ export class Game {
     await this.waitForTerrain(spawn.x, spawn.z);
     // places right around the spawn must exist before the car and player are dropped in
     if (load) for (let i = 0; i < 4; i++) this.pois.update(spawn.x, spawn.z);
-    const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
-    this.car = new Car(this, this.carModel, {
-      position: new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z),
-      quaternion: spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw),
-    });
-    this.car.dyn.automatic = settings.data.transmission !== 'manual';
-    this.car.storage = {
-      trunk: new Container('trunk', 'Trunk', 18, { capacity: 160, bulky: true }),
-      glovebox: new Container('glovebox', 'Glovebox', 6, { capacity: 5 }),
-    };
+    if (load && load.fleet) this.fleet.restore(load.fleet);
+    else {
+      // the starting car (saves from before the fleet had a single "car" record)
+      const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
+      const car = this.fleet.create(load && load.car ? load.car.model || 'beetle' : this.startCarType, new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z), spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw), {
+        owned: true,
+        color: carType(this.startCarType).defaultColor,
+        state: load ? load.car : null,
+      });
+      this.fleet.setCurrent(car);
+    }
+    // cars waiting at the places already streamed in
+    for (const inst of this.pois.loaded.values()) this.fleet.onPoiLoaded(inst);
     const py = spawn.y !== undefined ? spawn.y : this.gen.height(spawn.x, spawn.z) + 0.3;
     this.player = new Player(this, new THREE.Vector3(spawn.x - this.origin.x, py, spawn.z - this.origin.z));
     this.player.yaw = spawn.yaw;
@@ -171,10 +179,17 @@ export class Game {
     else if (start === 'parts' && !this.startZ) this.setupUnassembled();
     else this.spawnStarterItems();
     this.lastFocus = this.focusPoint().clone();
+    // world systems (water, bridges) exist before anything settles onto them
+    for (const sys of this.systems) {
+      if (sys.init) await sys.init(this);
+      sys.update && sys.update(0);
+    }
+    this.systemsReady = true;
     // let the car settle on its springs and loose things come to rest before anyone looks
     onProgress('Settling', 0.95);
+    this.fleet.wake();
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
-    this.car.syncVisual();
+    this.fleet.syncVisual();
     this.items.update();
     this.hud.show(!attract);
     if (attract) {
@@ -186,7 +201,6 @@ export class Game {
       this.car.lightsOn = 1;
       this.car.dyn.automatic = true;
     }
-    for (const s of this.systems) s.init && (await s.init(this));
     onProgress('Ready', 1);
     this.running = true;
   }
@@ -194,12 +208,15 @@ export class Game {
   spawnPoint() {
     if (this.load) {
       const d = this.load;
-      return { x: d.player.pos[0], y: d.player.pos[1], z: d.player.pos[2], yaw: d.player.yaw, carX: d.car.pos[0], carY: d.car.pos[1] - 0.05, carZ: d.car.pos[2], carQuat: d.car.quat, carYaw: 0 };
+      const c = d.car || { pos: d.player.pos, quat: [0, 0, 0, 1] };
+      return { x: d.player.pos[0], y: d.player.pos[1], z: d.player.pos[2], yaw: d.player.yaw, carX: c.pos[0], carY: c.pos[1] - 0.05, carZ: c.pos[2], carQuat: c.quat, carYaw: 0 };
     }
     if (this.startZ) {
-      const z = 6 + this.startZ;
+      // never start on a bridge (the land under it is the river bed): step back along the road
+      let z = 6 + this.startZ;
+      for (let i = 0; i < 40 && this.gen.bridgeNear(z) && Math.abs(this.gen.roadSurfaceY(this.gen.roadX(z), z) - this.gen.height(this.gen.roadX(z), z)) > 0.3; i++) z -= 15;
       const rx = this.gen.roadX(z);
-      return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carYaw: 0 };
+      return { x: rx + 6.5, z: z - 2, yaw: -Math.PI / 2 + 0.4, carX: rx + 2.0, carZ: z + 1, carY: this.gen.roadSurfaceY(rx + 2.0, z + 1), carYaw: 0 };
     }
     // homestead: car inside the garage, player at the garage door
     const inst = this.pois.ensureLoaded(0);
@@ -260,11 +277,10 @@ export class Game {
     this.effects && this.effects.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
-    this.car.syncVisual();
+    this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
     this.scatter.update(f2.x + this.origin.x, f2.z + this.origin.z);
-    this.car && this.car.prevPos.set(this.car.prevPos.x - dx, this.car.prevPos.y, this.car.prevPos.z - dz);
   }
 
   focusPoint() {
@@ -315,14 +331,15 @@ export class Game {
         void seat;
       }
     }
-    // car controls
+    // car controls (for the current car); every car near the player is simulated
+    this.fleet.updateCurrent();
     let controls = null;
     if (this.attract) controls = this.attractControls(dt);
     else if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
-    this.car.update(dt, controls);
+    this.fleet.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
     this.physics.update(dt);
-    this.car.syncVisual();
+    this.fleet.syncVisual();
     this.items.update(dt);
     if (this.attract) {
       this.updateAttractCamera(dt);
@@ -382,8 +399,9 @@ export class Game {
   // "Build it first": a rolling chassis in the garage, everything else laid out in the yard.
   setupUnassembled() {
     const car = this.car;
-    const keep = new Set(['chassis', 'fuelflap', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
-    const order = ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'bumper_F', 'bumper_R', 'fender_L', 'fender_R', 'door_FL', 'door_FR', 'door_RL', 'door_RR', 'hood', 'trunk', 'airfilter', 'battery', 'radiator', 'exhaust', 'fueltank', 'engine', 'body'];
+    const keep = new Set(['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
+    // taken apart in reverse assembly order
+    const order = [...car.type.ASSEMBLY_ORDER].reverse();
     for (const id of order) if (car.parts[id] && car.isInstalled(id) && !keep.has(id)) car.setInstalled(id, false);
     car.fuel = 6;
     car.battery = 0.7;
@@ -409,14 +427,17 @@ export class Game {
     // lay thin panels on their faces the way someone would put them down
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
-      door_RL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
+      door_RL: [0, 0, Math.PI / 2],
       door_RR: [0, 0, -Math.PI / 2],
-      fender_L: [0, 0, Math.PI / 2],
-      fender_R: [0, 0, -Math.PI / 2],
+      hood: [Math.PI, 0, 0],
+      fender_FL: [0, 0, Math.PI / 2],
+      fender_FR: [0, 0, -Math.PI / 2],
+      fender_RL: [0, 0, Math.PI / 2],
+      fender_RR: [0, 0, -Math.PI / 2],
       bumper_F: [-Math.PI / 2, 0, 0],
       bumper_R: [Math.PI / 2, 0, 0],
-      radiator: [-Math.PI / 2, 0, 0],
+      spare: [0, 0, Math.PI / 2],
       steeringWheel: [-0.45, 0, 0],
     };
     for (const [id, x, y, z, a] of spots) {
@@ -563,7 +584,7 @@ export class Game {
     if (!r || !r.active) return;
     const car = this.car;
     const st = r.pump.inst.state;
-    const filler = car.worldPointOf(new THREE.Vector3(-0.87, 0.86, -1.63));
+    const filler = car.worldPointOf(car.type.HOTSPOTS.find((h) => h.id === 'fuel').pos);
     if (filler.distanceTo(r.pump.world) > 6 || st.fuel <= 0.01 || car.fuel >= car.fuelCap - 0.01 || this.player.position.distanceTo(r.pump.world) > 6) {
       r.active = false;
       this.hud.toast(car.fuel >= car.fuelCap - 0.01 ? 'Tank full' : st.fuel <= 0.01 ? 'The pump is dry' : 'Refuelling stopped');
@@ -575,7 +596,11 @@ export class Game {
   }
 
   itemName(id) {
-    if (id.startsWith('part:')) return PARTS[id.slice(5)].label;
+    if (id.startsWith('part:')) {
+      const part = id.slice(5);
+      const t = (this.car && this.car.PARTS[part] ? this.car.type : CAR_TYPE_LIST.find((x) => x.PARTS[part])) || CAR_TYPE_LIST[0];
+      return t.PARTS[part] ? t.PARTS[part].label : part;
+    }
     return ITEMS[id] ? ITEMS[id].name : id;
   }
 
@@ -630,8 +655,8 @@ export class Game {
 
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = settings.data.fov;
-    cam.far = 6000;
+    cam.fov = this.debugFov || verticalFov(settings.data.hfov, cam.aspect);
+    cam.far = 7000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;
     this.eyeCam.aspect = cam.aspect;
@@ -639,12 +664,23 @@ export class Game {
     this.env.sky.mesh.position.copy(cam.position);
     for (const s of this.systems) s.preRender && s.preRender(dt);
     if (this.interaction && !this.attract) this.interaction.updateView(0);
+    // headless tests: a function placing the camera after the player's view is set
+    if (this.debugView) this.debugView(cam);
     const gr = this.env && this.env.grade;
     if (gr) {
       const u = this.renderer.grade.uniforms;
       u.uWarm.value = gr.warm;
       u.uNight.value = gr.night;
       u.uOvercast.value = gr.overcast;
+    }
+    // the sun: glare and shafts on screen, warm haze toward it
+    if (this.env) {
+      const E = this.env;
+      cam.updateMatrixWorld();
+      const up = E.sunDir.y;
+      const clear = (1 - E.w.overcast * 0.9) * (1 - E.w.dust * 0.6) * (1 - E.w.rain * 0.8);
+      this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
+      updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
     }
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
     this.renderer.render(dt);
@@ -664,6 +700,12 @@ export class Game {
     this.render(0.016);
     return true;
   }
+}
+
+// Vertical camera FOV for a horizontal one (degrees); narrow windows keep a sane vertical angle.
+function verticalFov(hfov, aspect) {
+  const h = THREE.MathUtils.degToRad(hfov || 90);
+  return Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / Math.max(aspect, 1.2))));
 }
 
 function tick() {

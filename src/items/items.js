@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass, itemLabel } from './itemDefs.js';
 import { MODEL_BUILDERS } from './itemModels.js';
-import { PARTS } from '../vehicle/carParts.js';
+import { carType } from '../vehicle/types.js';
+import { cargoZone, cargoDeck } from '../vehicle/accessories.js';
 import { mulberry32 } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -31,12 +32,12 @@ export class Item {
   }
 
   get name() {
-    if (this.part) return PARTS[this.part].label;
+    if (this.part) return (carType(this.state.carType).PARTS[this.part] || { label: this.part }).label;
     return itemLabel(this.id, this.state);
   }
 
   get mass() {
-    if (this.part) return PARTS[this.part].mass;
+    if (this.part) return (carType(this.state.carType).PARTS[this.part] || { mass: 10 }).mass;
     return itemMass(this.id, this.state);
   }
 
@@ -57,31 +58,50 @@ export class ItemSystem {
   }
 
   // ------------------------------------------------------------------ creation
+  // Item models are built once per kind/variant and cloned: clones share geometry and materials
+  // (only a lantern's glow gets its own material, since its brightness follows the item's state).
   buildMesh(id, state = {}) {
     const d = ITEMS[id];
-    const [fn, ...args] = d.model;
-    const extra = d.variants ? [state.variant || 0] : [];
-    const g = MODEL_BUILDERS[fn](...args, ...extra);
-    if (!g.userData.size) {
-      const b = new THREE.Box3().setFromObject(g);
-      const c = b.getCenter(V(0, 0, 0));
-      for (const ch of g.children) ch.position.sub(c);
-      if (g.userData.muzzle) g.userData.muzzle.sub(c);
-      for (const k of ['grip', 'grip2']) if (g.userData[k]) g.userData[k].p.sub(c);
-      g.userData.size = b.getSize(V(0, 0, 0));
-    }
-    g.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
+    const variant = d.variants ? state.variant || 0 : null;
+    const key = variant === null ? id : id + ':' + variant;
+    this.protos = this.protos || new Map();
+    let proto = this.protos.get(key);
+    if (!proto) {
+      const [fn, ...args] = d.model;
+      proto = MODEL_BUILDERS[fn](...args, ...(variant === null ? [] : [variant]));
+      if (!proto.userData.size) {
+        const b = new THREE.Box3().setFromObject(proto);
+        const c = b.getCenter(V(0, 0, 0));
+        for (const ch of proto.children) ch.position.sub(c);
+        if (proto.userData.muzzle) proto.userData.muzzle.sub(c);
+        for (const k of ['grip', 'grip2']) if (proto.userData[k]) proto.userData[k].p.sub(c);
+        proto.userData.size = b.getSize(V(0, 0, 0));
       }
-    });
+      proto.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+          o.userData.shared = true;
+        }
+      });
+      this.protos.set(key, proto);
+    }
+    const g = proto.clone();
+    // clone() copies userData through JSON, which turns vectors into plain objects
+    g.userData = cloneUserData(proto.userData);
+    const glow = g.getObjectByName('glow');
+    if (glow && glow.material) glow.material = glow.material.clone();
     return g;
   }
 
-  // Mesh for a removed car part: shares the car's geometry.
-  buildPartMesh(partId) {
-    const car = this.game.car;
+  // Mesh for a removed car part: shares the geometry of a car of its type (the current car if
+  // it is one, else any in the fleet, else the type's template model).
+  buildPartMesh(partId, typeId = null) {
+    const g0 = this.game;
+    const tid = carType(typeId || (g0.car && g0.car.type.id)).id;
+    let car = g0.car && g0.car.type.id === tid ? g0.car : g0.fleet.cars.find((c) => c.type.id === tid) || g0.fleet.template(tid);
+    // a slot holding another car's part no longer shows this type's own
+    if (car.model.parts[partId].foreign) car = g0.fleet.template(tid);
     const src = car.model.parts[partId];
     const g = new THREE.Group();
     const bbox = src.bbox;
@@ -127,7 +147,8 @@ export class ItemSystem {
   }
 
   spawnPart(partId, pos, quat = new THREE.Quaternion(), state = {}) {
-    const mesh = this.buildPartMesh(partId);
+    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'beetle';
+    const mesh = this.buildPartMesh(partId, state.carType);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
     this.group.add(mesh);
     this.items.add(it);
@@ -194,8 +215,10 @@ export class ItemSystem {
     const col = this.game.physics.world.createCollider(cd, car.dyn.body);
     this.game.physics.setOwner(col, it.ownerTag);
     // car-space state for the cargo simulation: it rests where it was put down
-    it.stowed = { car, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
+    const zone = cargoZone(car, p, it.size) || 'cabin';
+    it.stowed = { car, zone, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
     car.attached.push(it);
+    car.owned = true; // a car with your things in it stays where you left it
     car.updateMass();
     it.poiKey = null;
   }
@@ -283,6 +306,16 @@ export class ItemSystem {
         }
       }
       const wp = spot.pos.clone().applyMatrix4(inst.root.matrixWorld);
+      if (id.startsWith('part:')) {
+        // spare car parts on shelves: used, but serviceable
+        const part = id.slice(5);
+        if (!this.game.car || !this.game.car.model.parts[part]) return;
+        const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), lrnd() * Math.PI * 2);
+        const it = this.spawnPart(part, wp.clone().add(V(0, 0.08, 0)), q, { condition: 0.55 + lrnd() * 0.45 });
+        it.poiKey = key;
+        it.spot = i;
+        return;
+      }
       const st = initialState(id, lrnd);
       const mesh = this.buildMesh(id, st);
       const h = mesh.userData.size.y;
@@ -359,6 +392,8 @@ export class ItemSystem {
     const f = V(0, -9.81, 0).sub(cs.a).applyQuaternion(qi);
     const MU_S = 0.7,
       MU_K = 0.45;
+    const tipped = 1 - 2 * (car.root.quaternion.x ** 2 + car.root.quaternion.z ** 2) < 0.2;
+    const loose = [];
     for (const it of car.attached) {
       const s = it.stowed;
       if (!s || !s.rest) continue;
@@ -416,13 +451,24 @@ export class ItemSystem {
           }
         }
       }
-      const inTrunk = s.rest.z < -1.3;
-      const roof = inTrunk ? 0.95 : 1.25;
-      if (s.p.y > roof) {
-        s.p.y = roof;
-        if (s.v.y > 0) s.v.y *= -0.3;
+      const sp = car.type.SPEC;
+      if (s.zone === 'cabin') {
+        const inTrunk = s.rest.z < sp.axleR - 0.1 || s.rest.z > sp.axleF - 0.2;
+        const roof = inTrunk ? 0.95 : sp.roofY - 0.3;
+        if (s.p.y > roof) {
+          s.p.y = roof;
+          if (s.v.y > 0) s.v.y *= -0.3;
+        }
+        s.p.x = Math.max(-(sp.halfWidth - 0.13), Math.min(sp.halfWidth - 0.13, s.p.x));
+      } else {
+        // strapped down: it shifts a little in the straps, and comes off when the car goes over
+        const deck = cargoDeck(car, s.zone);
+        if (deck) s.p.x = Math.max(-deck.hw, Math.min(deck.hw, s.p.x));
+        if (tipped) {
+          loose.push(it);
+          continue;
+        }
       }
-      s.p.x = Math.max(-0.66, Math.min(0.66, s.p.x));
       // orientation: spins while sliding, tumbles in the air
       if (!s.flat) s.flat = s.q.clone().premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -new THREE.Euler().setFromQuaternion(s.q, 'YXZ').y, 0, 'YXZ')));
       if (s.air) {
@@ -438,6 +484,11 @@ export class ItemSystem {
         s.collider.setTranslationWrtParent({ x: s.p.x, y: s.p.y, z: s.p.z });
         s.collider.setRotationWrtParent({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w });
       }
+    }
+    for (const it of loose) {
+      this.unstow(it, true);
+      const cv = body.linvel();
+      it.body && it.body.setLinvel({ x: cv.x + (Math.random() - 0.5), y: cv.y + 1, z: cv.z + (Math.random() - 0.5) }, true);
     }
   }
 
@@ -485,8 +536,19 @@ export class ItemSystem {
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);
       it.mesh.getWorldQuaternion(q);
-      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: !!it.stowed, poi: it.poiKey, spot: it.spot });
+      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, poi: it.poiKey, spot: it.spot });
     }
     return out;
   }
+}
+
+function cloneUserData(v) {
+  if (v && v.isVector3) return v.clone();
+  if (Array.isArray(v)) return v.map(cloneUserData);
+  if (v && typeof v === 'object' && v.constructor === Object) {
+    const o = {};
+    for (const k in v) o[k] = cloneUserData(v[k]);
+    return o;
+  }
+  return v;
 }

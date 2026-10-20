@@ -19,13 +19,17 @@ function magic(x, B, C, E) {
 export const SURFACES = {
   asphalt: { mu: 1.0, roll: 0.012, wetMu: 0.72, noise: 0.15, dust: 0.05 },
   concrete: { mu: 0.95, roll: 0.012, wetMu: 0.7, noise: 0.15, dust: 0.05 },
-  gravel: { mu: 0.72, roll: 0.03, wetMu: 0.62, noise: 0.6, dust: 0.6 },
-  dirt: { mu: 0.75, roll: 0.025, wetMu: 0.5, noise: 0.4, dust: 0.8 },
-  sand: { mu: 0.6, roll: 0.06, wetMu: 0.6, noise: 0.35, dust: 1.0 },
-  grass: { mu: 0.7, roll: 0.03, wetMu: 0.45, noise: 0.3, dust: 0.2 },
+  gravel: { mu: 0.72, roll: 0.03, wetMu: 0.62, noise: 0.6, dust: 0.6, trip: 0.35 },
+  dirt: { mu: 0.75, roll: 0.025, wetMu: 0.5, noise: 0.4, dust: 0.8, trip: 0.9 },
+  sand: { mu: 0.6, roll: 0.06, wetMu: 0.6, noise: 0.35, dust: 1.0, trip: 1.4 },
+  grass: { mu: 0.7, roll: 0.03, wetMu: 0.45, noise: 0.3, dust: 0.2, trip: 0.8 },
   rock: { mu: 0.85, roll: 0.02, wetMu: 0.6, noise: 0.5, dust: 0.2 },
   salt: { mu: 0.8, roll: 0.015, wetMu: 0.5, noise: 0.2, dust: 0.4 },
   wood: { mu: 0.7, roll: 0.015, wetMu: 0.5, noise: 0.4, dust: 0.0 },
+  // winter: packed snow on the road, loose snow off it, and lake / river ice
+  snowRoad: { mu: 0.5, roll: 0.02, wetMu: 0.45, noise: 0.25, dust: 0.0, snow: 0.6 },
+  snow: { mu: 0.42, roll: 0.07, wetMu: 0.4, noise: 0.3, dust: 0.0, snow: 1.0, trip: 0.9 },
+  ice: { mu: 0.14, roll: 0.008, wetMu: 0.1, noise: 0.1, dust: 0.0 },
 };
 
 // Engine torque curve (N·m at full throttle) for a 1.6 l 16V.
@@ -42,12 +46,12 @@ const TORQUE_CURVE = [
   [6800, 100],
   [7200, 60],
 ];
-function torqueAt(rpm) {
+function torqueAt(rpm, curve = TORQUE_CURVE) {
   if (rpm <= 0) return 0;
-  for (let i = 1; i < TORQUE_CURVE.length; i++) {
-    if (rpm <= TORQUE_CURVE[i][0]) {
-      const [r0, t0] = TORQUE_CURVE[i - 1],
-        [r1, t1] = TORQUE_CURVE[i];
+  for (let i = 1; i < curve.length; i++) {
+    if (rpm <= curve[i][0]) {
+      const [r0, t0] = curve[i - 1],
+        [r1, t1] = curve[i];
       return t0 + ((t1 - t0) * (rpm - r0)) / (r1 - r0);
     }
   }
@@ -66,7 +70,10 @@ export const DEFAULT_PARAMS = {
   wheelRadius: 0.316,
   wheelInertia: 1.1,
   maxSteer: (34 * Math.PI) / 180,
-  brakeTorque: 1900, // per front wheel, rear gets 60 %
+  wheelbase: 2.6,
+  track: 1.49,
+  brakeTorque: 1900, // per front wheel
+  brakeRear: 0.6, // rear share of the front brake torque
   handbrakeTorque: 1600,
   // drivetrain
   gears: [-3.42, 0, 3.64, 1.95, 1.36, 1.03, 0.82],
@@ -76,6 +83,9 @@ export const DEFAULT_PARAMS = {
   engineInertia: 0.16,
   engineFriction: 0.0045, // N·m per rpm
   clutchMaxTorque: 320,
+  torqueCurve: TORQUE_CURVE,
+  shiftUp: [2600, 2800], // automatic: upshift rpm at zero throttle, extra at full throttle
+  shiftDown: [1400, 600],
   drag: 0.5 * 1.2 * 0.33 * 2.1,
   driveEfficiency: 0.9,
   tyre: {
@@ -156,9 +166,10 @@ export class VehicleDynamics {
     this.surfaceAt = opts.surfaceAt || (() => 'asphalt');
     this.setMassProperties(opts.massProps || { mass: 1150, com: new THREE.Vector3(0, 0.52, 0.2) });
     if (opts.colliders) this.setColliders(opts.colliders);
-    this._preStep = (dt) => this.step(dt);
+    // a parked car (body disabled) gets no suspension forces: they would pile up as velocity
+    this._preStep = (dt) => this.body.isEnabled() && this.step(dt);
     physics.beforeStep.push(this._preStep);
-    this._postStep = () => this.postStep();
+    this._postStep = () => this.body.isEnabled() && this.postStep();
     physics.afterStep.push(this._postStep);
   }
 
@@ -250,8 +261,8 @@ export class VehicleDynamics {
     const dS = target - this.steerSmoothed;
     this.steerSmoothed += Math.max(-rate * dt, Math.min(rate * dt, dS));
     // Ackermann
-    const wb = 2.6,
-      tw = 1.49;
+    const wb = p.wheelbase,
+      tw = p.track;
     for (const w of this.wheels) {
       if (!w.steer) {
         w.steerAngle = 0;
@@ -314,6 +325,9 @@ export class VehicleDynamics {
     for (const w of this.wheels) w.arb = 0;
     antiRoll('wheel_FL', 'wheel_FR', p.arbF);
     antiRoll('wheel_RL', 'wheel_RR', p.arbR);
+    // rolled far over, the ground's reaction (along its normal) takes over from the strut axis;
+    // along the strut it would always push the car back onto its wheels, even past tipping point
+    const tilt = Math.min(1, Math.max(0, (0.9 - up.y) / 0.25));
     for (const w of this.wheels) {
       w.load = 0;
       if (!w.contact) continue;
@@ -325,7 +339,8 @@ export class VehicleDynamics {
       // only the component along the contact normal supports the car
       const ndot = Math.max(0.2, w.contactNormal.dot(up));
       w.load = F * ndot;
-      impulses.push([up.clone().multiplyScalar(F * dt), w.contactPoint.clone().addScaledVector(up, 0.05)]);
+      const dir = tilt > 0 ? up.clone().lerp(w.contactNormal, tilt).normalize() : up;
+      impulses.push([dir.clone().multiplyScalar(F * dt), w.contactPoint.clone().addScaledVector(up, 0.05)]);
     }
 
     // ---- tyres + drivetrain (sub-stepped) ----
@@ -385,7 +400,7 @@ export class VehicleDynamics {
         this.tcsCut = (this.tcsCut || 0) + (cut - (this.tcsCut || 0)) * 0.2;
         throttle *= 1 - 0.85 * this.tcsCut;
       }
-      const Te = e.running && this.engineInstalled ? torqueAt(Math.max(rpm, 500)) * throttle * this.powerScale : 0;
+      const Te = e.running && this.engineInstalled ? torqueAt(Math.max(rpm, 500), p.torqueCurve) * throttle * this.powerScale : 0;
       // the torque curve is net at the flywheel; internal friction shows up as engine braking off-throttle
       const Tf = (p.engineFriction * Math.max(rpm, 0) + (e.running ? 8 : 18) * (rpm > 50 ? 1 : 0)) * (e.running ? 1 - throttle * 0.95 : 1);
       e.torqueOut = Te;
@@ -408,7 +423,7 @@ export class VehicleDynamics {
         if (!w.installed) continue;
         let Tdrive = 0;
         if (w.drive && driven.length) Tdrive = (Tc * ratio * p.driveEfficiency) / driven.length;
-        let Tbrake = c.brake * p.brakeTorque * (w.front ? 1 : 0.6);
+        let Tbrake = c.brake * p.brakeTorque * (w.front ? 1 : p.brakeRear);
         let Fx = 0,
           Fy = 0;
         if (w.contact && w.load > 0) {
@@ -432,6 +447,10 @@ export class VehicleDynamics {
             Fx = D * fLong * (sx / sl);
             Fy = -D * fLat * (sy / sl) * 1.0;
           }
+          // sliding sideways the tyre ploughs into soft ground (or a flat's rim into anything) and
+          // trips: the side force grows past what the tread alone could hold, low at the contact
+          const trip = Math.max(surf.trip || 0, w.flat ? 0.8 : 0);
+          if (trip && Math.abs(alpha) > 0.35) Fy *= 1 + trip * Math.min(1.8, Math.max(0, (Math.abs(w.vLat) - 2.5) / 6.5));
           // rolling resistance
           Fx -= Math.sign(w.vLong) * Math.min(Math.abs(w.vLong) * 2, 1) * surf.roll * Fz;
           w.skid = Math.max(0, Math.min(1, (sl - 1.2) / 2.5)) * Math.min(1, Math.hypot(w.vLong, w.vLat) / 3);
@@ -489,8 +508,8 @@ export class VehicleDynamics {
       w.longForce = Fx;
       w.latForce = Fy;
       const F = w.f.clone().multiplyScalar(Fx).addScaledVector(w.s, Fy);
-      // apply slightly above the contact point (reduces roll jacking from the tyre model)
-      const at = w.contactPoint.clone().addScaledVector(up, 0.08);
+      // at the contact patch: the whole height of the centre of mass is the lever that rolls the car
+      const at = w.contactPoint.clone().addScaledVector(up, 0.02);
       impulses.push([F.multiplyScalar(dt), at]);
     }
     // aerodynamic drag
@@ -537,9 +556,9 @@ export class VehicleDynamics {
     }
     if (this.gear === 0) return; // reverse handled by controller
     const top = this.p.gears.length - 1;
-    const upRpm = 2600 + 2800 * c.throttle;
+    const upRpm = this.p.shiftUp[0] + this.p.shiftUp[1] * c.throttle;
     if (rpm > upRpm && this.gear < top && this.clutch > 0.9) this.shift(1);
-    else if (rpm < 1400 + 600 * c.throttle && this.gear > 2) this.shift(-1);
+    else if (rpm < this.p.shiftDown[0] + this.p.shiftDown[1] * c.throttle && this.gear > 2) this.shift(-1);
   }
 
   surfaces(name) {

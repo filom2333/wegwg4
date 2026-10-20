@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { Builder } from './builder.js';
-import { archMaterials, signMaterial } from './materials.js';
+import { archMaterials, signMaterial, stdMat } from './materials.js';
 import * as FUR from './furniture.js';
 import { place } from './furniture.js';
 import { latheY, tubeAlong, roundedBox, loftSections, superSection } from '../../gfx/geom.js';
@@ -118,6 +118,8 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true } = {}) {
   stain.translate(0.2, y + 0.012, 0.3);
   b.add(stain, M.blackMatte);
   b.carSpot = { x: 0, z: 0.4, rot: 0 };
+  // bigger kit leaning by the side wall: racks, bars, sandbags
+  b.loot.push({ pos: [x0 + 1.3, y + 0.02, 0.2], kind: 'gear' });
   return { builder: b, footprint: { w: w + 1, d: d + 1 } };
 }
 
@@ -152,7 +154,7 @@ export function buildGasStation(rnd) {
     ['NOMAD OIL', '#3c6e3a'],
   ];
   const [brandName, brandCol] = brands[Math.floor(rnd() * brands.length)];
-  const brand = new THREE.MeshStandardMaterial({ color: brandCol, roughness: 0.55, metalness: 0.2 });
+  const brand = stdMat({ color: brandCol, roughness: 0.55, metalness: 0.2 });
   // forecourt
   b.box(0, 0.05, 2, 26, 0.1, 20, M.concrete, { surface: 'concrete' });
   // canopy
@@ -425,34 +427,21 @@ export function buildWindmill(rnd) {
     }
   }
   b.collider(0, H / 2, 0, base * 2, H, base * 2, 0, 'metal');
-  // head + rotor (animated object)
-  const rotor = new THREE.Group();
+  // head (static) and rotor: a sub-builder turning about its hub (animated)
+  const rotor = b.sub('rotor', [0, H + 0.3, 0.45], { kind: 'spin', speed: 1.6 });
   const blades = 18;
-  const mat = M.metalWhite;
   for (let i = 0; i < blades; i++) {
     const bl = new THREE.BoxGeometry(0.22, 1.3, 0.02);
     bl.translate(0, 0.95, 0);
     bl.rotateY(0.35);
-    const m = new THREE.Mesh(bl, mat);
-    m.rotation.z = (i / blades) * Math.PI * 2;
-    m.castShadow = true;
-    rotor.add(m);
+    bl.rotateZ((i / blades) * Math.PI * 2);
+    rotor.add(bl, M.metalWhite);
   }
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.025, 6, 32), M.metal);
-  rotor.add(ring);
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 12).rotateX(Math.PI / 2), M.metal);
-  rotor.add(hub);
-  rotor.position.set(0, H + 0.3, 0.45);
-  const head = new THREE.Group();
-  head.add(rotor);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.9, 1.4), M.metalWhite);
-  tail.position.set(0, H + 0.4, -1.4);
-  head.add(tail);
-  head.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.9).translate(0, H + 0.3, 0), M.metal));
-  head.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2).rotateX(Math.PI / 2).translate(0, H + 0.4, -0.7), M.metal));
-  b.extra.push(head);
-  b.animated = b.animated || [];
-  b.animated.push({ obj: rotor, kind: 'spin', speed: 1.6 });
+  rotor.add(new THREE.TorusGeometry(1.25, 0.025, 6, 32), M.metal);
+  rotor.add(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 12).rotateX(Math.PI / 2), M.metal);
+  b.add(new THREE.BoxGeometry(0.02, 0.9, 1.4).translate(0, H + 0.4, -1.4), M.metalWhite);
+  b.add(new THREE.BoxGeometry(0.4, 0.4, 0.9).translate(0, H + 0.3, 0), M.metal);
+  b.add(new THREE.CylinderGeometry(0.03, 0.03, 2.2).rotateX(Math.PI / 2).translate(0, H + 0.4, -0.7), M.metal);
   // water tank + trough
   const tank = latheY([[0, 0], [1.6, 0], [1.6, 1.4], [1.62, 1.45], [0, 1.45]], 32);
   tank.translate(3.2, 0, 0.5);
@@ -503,9 +492,7 @@ export function buildWaterTower(rnd) {
   for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 2);
   band.translate(0, H + 2.4, 0);
   const town = ['ASHFORK', 'RED MESA', 'DRY CREEK', 'SALTON', 'GRAYSTONE'][Math.floor(rnd() * 5)];
-  const sm = signMaterial([town], { w: 1024, h: 128, bg: '#e6e2d8', fg: '#2e4a66', border: null, worn: 0.6 });
-  sm.map.wrapS = THREE.RepeatWrapping;
-  b.add(band, sm);
+  b.add(band, signMaterial([town], { w: 1024, h: 128, bg: '#e6e2d8', fg: '#2e4a66', border: null, worn: 0.6, repeatX: true }));
   // walkway ring + ladder
   b.add(new THREE.TorusGeometry(R + 0.5, 0.04, 6, 40).rotateX(Math.PI / 2).translate(0, H + 1.4, 0), M.metal);
   for (let i = 0; i < 12; i++) {

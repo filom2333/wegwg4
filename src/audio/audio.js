@@ -16,6 +16,11 @@ const STEP_SURF = {
   wood: { cut: 1400, grains: 6, spread: 0.02, body: 0.9, bodyF: 95 },
   metal: { cut: 5000, grains: 5, spread: 0.02, body: 0.6, bodyF: 320 },
   salt: { cut: 5200, grains: 40, spread: 0.1, body: 0.15 },
+  // soft squeaky crunch of packed snow, a swish through grass, needles underfoot in the forest
+  snow: { cut: 2400, grains: 55, spread: 0.16, body: 0.35, bodyF: 260 },
+  snowRoad: { cut: 2600, grains: 40, spread: 0.12, body: 0.3, bodyF: 300 },
+  grass: { cut: 3600, grains: 34, spread: 0.18, body: 0.08 },
+  ice: { cut: 4200, grains: 6, spread: 0.02, body: 0.5, bodyF: 420 },
 };
 
 export class AudioSystem {
@@ -162,14 +167,8 @@ export class AudioSystem {
     const carBus = c.createGain();
     carBus.connect(cabin).connect(pan).connect(this.sfx);
     this.carBus = carBus;
-    // engine harmonics
-    const real = new Float32Array(16),
-      imag = new Float32Array(16);
-    const amps = [0, 1, 0.55, 0.42, 0.3, 0.26, 0.18, 0.15, 0.1, 0.09, 0.06, 0.05, 0.04, 0.03, 0.02, 0.02];
-    for (let i = 1; i < 16; i++) imag[i] = amps[i] * (i % 2 ? 1 : 0.8);
-    const wave = c.createPeriodicWave(real, imag);
+    // engine: an oscillator at the firing frequency with the car type's harmonic recipe
     const eng = c.createOscillator();
-    eng.setPeriodicWave(wave);
     const sub = c.createOscillator();
     sub.type = 'triangle';
     const engF = c.createBiquadFilter();
@@ -191,7 +190,8 @@ export class AudioSystem {
     shaper.connect(engF).connect(engG).connect(carBus);
     eng.start();
     sub.start();
-    this.loops.engine = { osc: eng, sub, f: engF, g: engG };
+    this.loops.engine = { osc: eng, sub, f: engF, g: engG, subG, shaper };
+    this.setCarType({ sound: { harmonics: [0, 1, 0.55, 0.42, 0.3, 0.26, 0.18, 0.15, 0.1, 0.09, 0.06, 0.05, 0.04, 0.03, 0.02, 0.02], odd: 1, even: 0.8, sub: 0.5, drive: 2.2 } });
     // intake / exhaust noise
     const n = mkNoise(this.buffers.brown, carBus, 'bandpass', 300, 1.2);
     this.loops.intake = n;
@@ -216,6 +216,8 @@ export class AudioSystem {
     ps.connect(pg).connect(this.sfx);
     ps.start();
     this.loops.pour = { g: pg };
+    // spray can hiss
+    this.loops.spray = mkNoise(this.buffers.white, this.sfx, 'highpass', 3800, 0.7);
     // radio
     const rf = c.createBiquadFilter();
     rf.type = 'bandpass';
@@ -367,6 +369,23 @@ export class AudioSystem {
   }
 
   // ------------------------------------------------------------------ update
+  // Engine voice of a car type: harmonic recipe, sub-octave mix and how hard the shaper drives.
+  setCarType(type) {
+    if (!this.ctx || !this.loops || !this.loops.engine) return;
+    this.carType = type;
+    const S = type.sound;
+    const c = this.ctx;
+    const real = new Float32Array(16),
+      imag = new Float32Array(16);
+    for (let i = 1; i < 16; i++) imag[i] = (S.harmonics[i] || 0) * (i % 2 ? S.odd : S.even);
+    const e = this.loops.engine;
+    e.osc.setPeriodicWave(c.createPeriodicWave(real, imag));
+    e.subG.gain.value = S.sub;
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) curve[i] = Math.tanh(((i / 1023) * 2 - 1) * S.drive);
+    e.shaper.curve = curve;
+  }
+
   update(dt) {
     if (!this.ready) return;
     const g = this.game;
@@ -410,7 +429,11 @@ export class AudioSystem {
     // ---- car
     if (car) {
       const p = car.root.position;
-      const ep = V3.set(0, 0.7, 1.5).applyMatrix4(car.root.matrixWorld);
+      // the voice is the engine's: a swapped engine sounds like the car it came from
+      const ET = car.engineType || car.type;
+      if (ET !== this.carType) this.setCarType(ET);
+      const S = ET.sound;
+      const ep = V3.copy(car.type.POINTS.engine).applyMatrix4(car.root.matrixWorld);
       this.carPanner.positionX.value = ep.x;
       this.carPanner.positionY.value = ep.y;
       this.carPanner.positionZ.value = ep.z;
@@ -420,15 +443,15 @@ export class AudioSystem {
       const rpm = Math.max(0, d.engine.rpm);
       const running = d.engine.running;
       const load = running ? clamp(d.controls.throttle * (0.4 + 0.6 * Math.min(1, rpm / 4000)), 0, 1) : 0;
-      const fire = (rpm / 60) * 2;
+      const fire = (rpm / 60) * S.fires;
       const e = this.loops.engine;
       set(e.osc.frequency, Math.max(8, fire), now, 0.03);
       set(e.sub.frequency, Math.max(4, fire / 2), now, 0.03);
       const exhaustMissing = !car.isInstalled('exhaust');
-      set(e.f.frequency, 180 + rpm * 0.18 + load * 900 + (exhaustMissing ? 1200 : 0), now, 0.04);
+      set(e.f.frequency, S.tone + rpm * S.toneRpm + load * 900 + (exhaustMissing ? 1200 : 0), now, 0.04);
       const rough = car.engineCondition < 0.4 ? (Math.random() - 0.5) * 0.25 * (0.4 - car.engineCondition) * 2 : 0;
-      set(e.g.gain, running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) : 0, now, 0.05);
-      set(this.loops.intake.g.gain, running ? 0.05 + load * 0.25 : 0, now);
+      set(e.g.gain, running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0, now, 0.05);
+      set(this.loops.intake.g.gain, running ? (0.05 + load * 0.25) * S.intake : 0, now);
       set(this.loops.intake.f.frequency, 200 + rpm * 0.25, now);
       set(this.loops.starter.g.gain, car.cranking > 0 && !running ? 0.5 : 0, now, 0.02);
       // tyres
@@ -458,6 +481,7 @@ export class AudioSystem {
     // pour
     this.pourT = Math.max(0, (this.pourT || 0) - dt);
     set(this.loops.pour.g.gain, this.pourT > 0 ? 0.35 : 0, now, 0.04);
+    set(this.loops.spray.g.gain, g.interaction && g.interaction.spraying ? 0.22 : 0, now, 0.03);
     if (g.interaction && g.interaction.pouring) this.pourT = 0.12;
     // ---- CD player (replaces the radio while a disc plays)
     if (car) car.stereoState = this.updateCd(car, dt, seated);

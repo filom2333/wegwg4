@@ -7,8 +7,8 @@ import { ROAD } from './worldGen.js';
 
 const ROOT = 2048;
 const MIN_TILE = 64;
-const VIEW_RADIUS = 3200;
-const SEG = 64; // road segment length (m along z)
+const VIEW_RADIUS = 5600; // far enough to see the mountain ranges
+const SEG = 128; // road segment length (m along z): fewer, longer road meshes = fewer draw calls
 const COLLIDER_TILE = 48;
 const COLLIDER_RADIUS = 110;
 
@@ -29,7 +29,9 @@ export class Terrain {
     this.roadSegs = new Map();
     this.colliders = new Map();
     this.nextId = 1;
-    this.viewRadius = quality === 'low' ? 1800 : VIEW_RADIUS;
+    this.viewRadius = quality === 'low' ? 3000 : VIEW_RADIUS;
+    // the far edge fades into the haze instead of ending against the sky
+    if (terrainMaterial.userData.uniforms) terrainMaterial.userData.uniforms.uFadeFar.value = this.viewRadius;
     this.ready = false;
     this.worker = new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.onWorker(e.data);
@@ -63,6 +65,7 @@ export class Terrain {
     g.setAttribute('position', new THREE.BufferAttribute(d.position, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(d.normal, 3));
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4));
+    g.setAttribute('matB', new THREE.BufferAttribute(d.mat2, 4));
     g.setAttribute('tint', new THREE.BufferAttribute(d.tint, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
     g.setIndex(new THREE.BufferAttribute(d.index, 1));
@@ -189,10 +192,13 @@ export class Terrain {
       if (Math.hypot(rx - px, z + SEG / 2 - pz) > this.viewRadius) continue;
       want.add(k);
     }
-    let built = 0;
+    // building a segment samples the road profile ~900 times: spread the work over frames
+    // (everything at once only while the road near the player is still missing)
+    const t0 = performance.now();
+    const urgent = !this.roadSegs.has(k0);
     for (const k of [...want].sort((a, b) => Math.abs(a - k0) - Math.abs(b - k0))) {
       if (this.roadSegs.has(k)) continue;
-      if (built++ > 6) break;
+      if (!urgent && performance.now() - t0 > 2.5) break;
       this.roadSegs.set(k, this.buildRoadSegment(k));
     }
     for (const [k, m] of this.roadSegs) {
@@ -215,6 +221,7 @@ export class Terrain {
     const pos = new Float32Array((nz + 1) * na * 3);
     const uv = new Float32Array((nz + 1) * na * 2);
     const road = new Float32Array((nz + 1) * na * 4);
+    const env = new Float32Array((nz + 1) * na * 2);
     const ox = gen.roadX(z0),
       oz = z0;
     for (let j = 0; j <= nz; j++) {
@@ -224,11 +231,14 @@ export class Terrain {
       const px = dz,
         pz = -dx; // perpendicular
       const info = gen.roadInfo(z);
+      const br = gen.bridgeNear(z);
+      const onBridge = br && Math.abs(z - br.r.zr) < br.r.w + 12 + br.r.w * 0.6 + 4 ? 1 : 0;
       for (let i = 0; i < na; i++) {
         const a = across[i];
         const x = rx + px * a,
           zz = z + pz * a;
-        let y = gen.height(x, zz) + 0.012;
+        // over a river the road keeps its own profile: the bridge deck
+        let y = gen.roadSurfaceY(x, zz) + 0.012;
         if (Math.abs(a) > W / 2 + 0.01) y -= 0.3;
         const k2 = j * na + i;
         pos[k2 * 3] = x - ox;
@@ -240,6 +250,8 @@ export class Terrain {
         road[k2 * 4 + 1] = info.dirt ? 1 : 0;
         road[k2 * 4 + 2] = W;
         road[k2 * 4 + 3] = 1;
+        env[k2 * 2] = info.snow || 0;
+        env[k2 * 2 + 1] = onBridge;
       }
     }
     const idx = [];
@@ -255,6 +267,7 @@ export class Terrain {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setAttribute('road', new THREE.BufferAttribute(road, 4));
+    g.setAttribute('env', new THREE.BufferAttribute(env, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
     g.computeBoundingSphere();

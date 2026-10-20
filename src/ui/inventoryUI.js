@@ -83,6 +83,8 @@ export class InventoryUI {
     if (car && car.storage) {
       if (p.seat) out.push(car.storage.glovebox);
       if (!p.seat && car.canReachTrunk && car.canReachTrunk(g.interaction.cam.position)) out.push(car.storage.trunk);
+      const box = car.storage.roofbox && car.accessories && car.accessories.roof;
+      if (box && !p.seat && car.worldPointOf(box.center).distanceTo(g.interaction.cam.position) < 2.3) out.push(car.storage.roofbox);
     }
     out.push(this.nearby());
     return out;
