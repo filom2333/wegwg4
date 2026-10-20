@@ -3,6 +3,7 @@
 // alpha-tested, scene-lit material. Four triangles stand in for hundreds.
 
 import * as THREE from 'three';
+import { RENDER_CAPS } from './caps.js';
 
 const TILE_W = 128,
   TILE_H = 256;
@@ -262,6 +263,7 @@ export function createImpostorMaterial(texture) {
   return new THREE.MeshStandardMaterial({
     map: texture,
     alphaTest: 0.42,
+    alphaToCoverage: RENDER_CAPS.msaa > 0,
     side: THREE.DoubleSide,
     roughness: 0.92,
     metalness: 0,

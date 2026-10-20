@@ -39,6 +39,61 @@ export const LAKE_CELL = 1700;
 
 export const ROAD = { halfWidth: 3.6, shoulder: 1.6, laneMark: 0.12 };
 const BIOME_CELL = 2600;
+
+// Value noise with its analytic derivatives: [value -1..1, d/dx, d/dy].
+const _nd = [0, 0, 0];
+function latticeHash(ix, iy, seed) {
+  let h = Math.imul(ix, 0x27d4eb2d) ^ Math.imul(iy, 0x165667b1) ^ seed;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 2147483648 - 1;
+}
+function noised(x, y, seed) {
+  const ix = Math.floor(x),
+    iy = Math.floor(y);
+  const fx = x - ix,
+    fy = y - iy;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10),
+    uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const dux = 30 * fx * fx * (fx * (fx - 2) + 1),
+    duy = 30 * fy * fy * (fy * (fy - 2) + 1);
+  const a = latticeHash(ix, iy, seed),
+    b = latticeHash(ix + 1, iy, seed),
+    c = latticeHash(ix, iy + 1, seed),
+    d = latticeHash(ix + 1, iy + 1, seed);
+  const k1 = b - a,
+    k2 = c - a,
+    k4 = a - b - c + d;
+  _nd[0] = a + k1 * ux + k2 * uy + k4 * ux * uy;
+  _nd[1] = dux * (k1 + k4 * uy);
+  _nd[2] = duy * (k2 + k4 * ux);
+  return _nd;
+}
+
+// Mountain relief: fBm whose every octave is damped where the octaves below are steep. Ridges
+// stay sharp, valley floors smooth out and gullies run down the flanks, the way water and frost
+// shape real ranges. Returns about 0..1.
+function erodedFbm(x, y, seed, octaves = 9) {
+  let a = 0,
+    b = 0.5,
+    dx = 0,
+    dy = 0,
+    px = x,
+    py = y;
+  for (let i = 0; i < octaves; i++) {
+    const n = noised(px, py, seed + i * 1013);
+    dx += n[1];
+    dy += n[2];
+    a += (b * (n[0] * 0.5 + 0.5)) / (1 + dx * dx + dy * dy);
+    b *= 0.5;
+    // rotate and double: no octave lines up with the one below
+    const qx = 1.6 * px - 1.2 * py,
+      qy = 1.2 * px + 1.6 * py;
+    px = qx;
+    py = qy;
+  }
+  return a;
+}
 export const POI_SPACING = 620;
 
 export const POI_INFO = {
@@ -307,50 +362,70 @@ export class WorldGen {
   }
 
   // ---------------------------------------------------------------- terrain
-  biomeDetail(b, x, z) {
+  // Ground shape per biome. dx: distance from the road. The country along the road is mostly calm
+  // (plains, long swells, washes); the bolder shapes (dune fields, mesas, wooded hills) stand
+  // further back, and how hilly it gets changes from region to region.
+  biomeDetail(b, x, z, dx = Math.abs(x - this.roadX(z))) {
     const n = this.nB,
       m = this.nC;
+    const back = smoothstep(60, 520, dx);
+    const hilly = smoothstep(-0.25, 0.45, this.nA.noise2(z * 0.00009 + 4, x * 0.00009 - 2));
+    // dry washes draining across the plain toward the road (shallow, meandering)
+    const wash = () => {
+      const w = Math.abs(n.noise2(x * 0.0006 + m.noise2(x * 0.003, z * 0.003) * 0.25, z * 0.0019 + 5));
+      return -1.3 * (1 - smoothstep(0.0, 0.045, w));
+    };
     switch (b) {
       case 'dunes': {
-        // transverse dunes elongated across the prevailing wind (+x), with a sharper lee side
-        const u = x * 0.0075 + m.noise2(x * 0.002, z * 0.002) * 1.5;
-        const v = z * 0.0042;
-        const r = n.noise2(u, v);
-        const dune = Math.pow(Math.max(0, 1 - Math.abs(r)), 2.2) * 11 + n.noise2(x * 0.02, z * 0.02) * 0.8;
-        return dune + 2 * n.noise2(x * 0.0015, z * 0.0015);
+        // sand sheet by the road, an erg further out: transverse dunes across the wind (+x) with a
+        // long gentle windward slope and a short steep slip face, broken into crescents
+        const sheet = n.noise2(x * 0.0012, z * 0.0012) * 1.6 + n.noise2(x * 0.006, z * 0.006) * 0.25;
+        const field = smoothstep(-0.05, 0.35, m.noise2(x * 0.00032 + 11, z * 0.00032)) * smoothstep(110, 420, dx);
+        if (field <= 0) return sheet;
+        const lambda = 130;
+        const warp = m.noise2(x * 0.0009, z * 0.0017) * 38 + n.noise2(x * 0.00035, z * 0.0004) * 150;
+        const ph = (x + warp) / lambda;
+        const saw = ph - Math.floor(ph);
+        const prof = saw < 0.76 ? Math.pow(saw / 0.76, 1.35) : 0.5 + 0.5 * Math.cos(((saw - 0.76) / 0.24) * Math.PI);
+        const crest = smoothstep(-0.45, 0.2, n.noise2(x * 0.0018 + 3, z * 0.0024));
+        const H = 6 + 13 * (m.noise2(x * 0.0009 + 7, z * 0.0009) * 0.5 + 0.5);
+        const draa = (n.noise2(x * 0.0007 + 9, z * 0.0007) * 0.5 + 0.5) * 9;
+        return sheet + field * (prof * crest * H + draa);
       }
       case 'badlands': {
+        // flats and washes by the road; mesas and buttes with terraced cliffs further back
+        const flat = n.noise2(x * 0.0013, z * 0.0013) * 2.2 + wash();
         const mm = n.noise2(x * 0.0021 + 11, z * 0.0021 - 4) + 0.35 * n.noise2(x * 0.006, z * 0.006);
-        let h = smoothstep(0.25, 0.42, mm) * 32;
-        // terraces
-        const step = 5.5;
+        let h = smoothstep(0.28, 0.42, mm) * 34;
+        const step = 6.5;
         const tq = Math.floor(h / step);
         const fr = h / step - tq;
-        h = (tq + smoothstep(0.55, 1.0, fr)) * step;
+        h = (tq + smoothstep(0.6, 1.0, fr)) * step;
         const gully = Math.abs(n.noise2(x * 0.01, z * 0.01)) * 2.2;
-        return h + 3 * n.noise2(x * 0.004, z * 0.004) - gully;
+        return flat + Math.max(0, h - gully) * smoothstep(140, 600, dx);
       }
       case 'saltflat':
         return n.noise2(x * 0.003, z * 0.003) * 0.35;
       case 'highland': {
-        const r = 1 - Math.abs(n.noise2(x * 0.0035, z * 0.0035));
-        const r2 = 1 - Math.abs(n.noise2(x * 0.009 + 5, z * 0.009));
-        return r * r * 26 + r2 * r2 * 7 + n.noise2(x * 0.03, z * 0.03) * 0.6 - 10;
+        // high desert plateau: long swells, rocky knolls and a butte now and then
+        const swell = n.noise2(x * 0.0011 + 2, z * 0.0011) * 6 + n.noise2(x * 0.004, z * 0.004) * 1.2;
+        const knoll = Math.pow(Math.max(0, n.noise2(x * 0.0045 + 5, z * 0.0045) - 0.35) / 0.65, 1.6) * 22;
+        return swell + wash() + knoll * back * (0.4 + 0.6 * hilly);
       }
       case 'prairie':
         // long gentle swells
-        return n.noise2(x * 0.0024 + 7, z * 0.0024) * 7 + n.noise2(x * 0.008, z * 0.008 + 3) * 1.6 + n.noise2(x * 0.04, z * 0.04) * 0.15;
+        return (n.noise2(x * 0.0018 + 7, z * 0.0018) * 7 + n.noise2(x * 0.007, z * 0.007 + 3) * 1.4) * (0.45 + 0.55 * back) + n.noise2(x * 0.04, z * 0.04) * 0.15;
       case 'forest': {
-        // wooded hills with soft ridges
-        const r = 1 - Math.abs(n.noise2(x * 0.004 + 3, z * 0.004 - 2));
-        return r * r * 16 + n.noise2(x * 0.012, z * 0.012) * 3 + n.noise2(x * 0.05, z * 0.05) * 0.3 - 6;
+        // wooded hills with soft ridges, a broad valley along the road
+        const r = 1 - Math.abs(n.noise2(x * 0.0032 + 3, z * 0.0032 - 2));
+        return (r * r * 18 * (0.3 + 0.7 * hilly) - 5) * (0.25 + 0.75 * back) + n.noise2(x * 0.012, z * 0.012) * 2.2 + n.noise2(x * 0.05, z * 0.05) * 0.3;
       }
       case 'taiga': {
-        // mountains that rise away from the road valley
-        const away = smoothstep(40, 380, Math.abs(x - this.roadX(z)));
+        // hills that rise away from the road valley
+        const away = smoothstep(40, 380, dx);
         const r = 1 - Math.abs(n.noise2(x * 0.0022 - 9, z * 0.0022 + 4));
         const r2 = 1 - Math.abs(n.noise2(x * 0.0068, z * 0.0068 + 8));
-        return (r * r * 46 + r2 * r2 * 10) * (0.25 + 0.75 * away) + n.noise2(x * 0.02, z * 0.02) * 0.8 - 8;
+        return (r * r * 40 + r2 * r2 * 8) * (0.2 + 0.8 * away) + n.noise2(x * 0.02, z * 0.02) * 0.8 - 8;
       }
       case 'tundra': {
         // open, gently rolling, with frost hummocks
@@ -358,8 +433,10 @@ export class WorldGen {
         return n.noise2(x * 0.003 + 1, z * 0.003) * 4 + n.noise2(x * 0.011, z * 0.011) * 1.1 + hum;
       }
       default: {
-        // scrub: rolling hills
-        return n.noise2(x * 0.004, z * 0.004) * 5 + n.noise2(x * 0.011, z * 0.011) * 1.6 + n.noise2(x * 0.05, z * 0.05) * 0.25;
+        // scrub: open desert plain sloping gently off the ranges, washes, low hills further out
+        const plain = n.noise2(x * 0.0011, z * 0.0011) * 3.5 + n.noise2(x * 0.004, z * 0.004) * 0.6 + n.noise2(x * 0.05, z * 0.05) * 0.12;
+        const hills = Math.pow(1 - Math.abs(n.noise2(x * 0.0024 + 9, z * 0.0024)), 2.5) * 16;
+        return plain + wash() + hills * back * hilly;
       }
     }
   }
@@ -368,7 +445,8 @@ export class WorldGen {
   naturalHeight(x, z, bw) {
     bw = bw || this.biomeWeights(x, z, this._bw || (this._bw = {}));
     let d = 0;
-    for (const b of BIOMES) if (bw[b] > 0.001) d += bw[b] * this.biomeDetail(b, x, z);
+    const dx = Math.abs(x - this.roadX(z));
+    for (const b of BIOMES) if (bw[b] > 0.001) d += bw[b] * this.biomeDetail(b, x, z, dx);
     return this.macroHeight(x, z) + d + this.mountain(x, z, bw);
   }
 
@@ -386,30 +464,21 @@ export class WorldGen {
     if (range <= 0) return 0;
     let mask = smoothstep(start, start + 1000, dx) * range;
     for (const rv of this.riversNear(z, 1)) {
-      if (Math.abs(z - rv.z0) > 1200) continue;
-      mask *= smoothstep(rv.w + 40, rv.w + 520, Math.abs(z - this.riverZ(rv, x)));
+      if (Math.abs(z - rv.z0) > 1600) continue;
+      mask *= smoothstep(rv.w + 60, rv.w + 1100, Math.abs(z - this.riverZ(rv, x)));
     }
     if (mask <= 0.001) return 0;
-    // broad massifs carry the height; ridged noise on them makes crests, spurs and gullies (the
-    // coordinates are warped so the ridges wander instead of lining up)
-    const wx = x + n.noise2(x * 0.0004 + 41, z * 0.0004) * 420,
-      wz = z + n.noise2(x * 0.0004, z * 0.0004 - 23) * 420;
-    const mass = smoothstep(-0.65, 0.45, n.noise2(wx * 0.00021 + 3, wz * 0.00021 - 1));
-    let f = 0.0007,
-      a = 1,
-      sum = 0,
-      w = 1;
-    for (let o = 0; o < 5; o++) {
-      let r = 1 - Math.abs(n.noise2(wx * f + o * 13.1, wz * f - o * 7.7));
-      r = r * r * w;
-      w = Math.min(1, r * 1.6);
-      sum += r * a;
-      f *= 2.07;
-      a *= 0.47;
-    }
+    // ranges run with the road (long belts across the land, like basin-and-range country); the
+    // eroded fBm on them makes the crests, spurs and gullies, flat between the ranges
+    const belt = n.noise2(x * 0.00034 + 3, z * 0.00011 - 1) + 0.3 * n.noise2(x * 0.0009 + 7, z * 0.0007);
+    const k = smoothstep(-0.2, 0.45, belt) * mask;
+    if (k <= 0.001) return 0;
+    const e = erodedFbm(x * 0.00052, z * 0.00052, this.seed | 0);
+    const relief = Math.min(1.35, Math.pow(e / 0.45, 1.6));
     bw = bw || this.biomeWeights(x, z);
-    const amp = bw.scrub * 620 + bw.dunes * 480 + bw.badlands * 650 + bw.saltflat * 780 + bw.highland * 950 + bw.prairie * 420 + bw.forest * 720 + bw.taiga * 1050 + bw.tundra * 560;
-    return mass * (0.3 + 0.7 * mass) * (0.3 + 0.7 * (sum / 1.5)) * amp * 1.35 * mask;
+    const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 80;
+    // foothills where the belt thins out, full height in its middle
+    return relief * amp * k * k * (3 - 2 * k);
   }
 
   // ---------------------------------------------------------------- water
@@ -758,10 +827,12 @@ export class WorldGen {
     // mountains: bare rock high up, snow on the tops (lower in the north)
     const mh = this.mountain(x, z, bw);
     if (mh > 40) {
-      const desert = bw.dunes + bw.scrub + bw.badlands + bw.saltflat;
-      rock += smoothstep(120, 300, mh) * (1.5 + desert);
-      grass *= 1 - smoothstep(180, 380, mh) * 0.85;
-      forest *= 1 - smoothstep(250, 450, mh);
+      const desert = bw.dunes + bw.scrub + bw.badlands + bw.saltflat + bw.highland;
+      // desert ranges are bare rock; green ones are wooded to the tree line
+      rock += smoothstep(120, 300, mh) * desert * 2.5 + smoothstep(330, 520, mh) * green * 2.2;
+      forest += smoothstep(60, 180, mh) * (bw.forest + bw.taiga) * (1 - smoothstep(330, 480, mh)) * 1.4;
+      grass *= 1 - smoothstep(260, 460, mh) * 0.85;
+      forest *= 1 - smoothstep(380, 520, mh);
       const line = 420 + desert * 160 - (bw.taiga + bw.tundra) * 200;
       snow += smoothstep(line - 30, line + 70, mh + n * 40) * 4;
     }

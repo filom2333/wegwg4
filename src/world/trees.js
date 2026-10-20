@@ -6,6 +6,7 @@
 // Greenheck (MIT).
 
 import * as THREE from 'three';
+import { RENDER_CAPS } from '../gfx/caps.js';
 import { mulberry32 } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -380,7 +381,7 @@ export function treeMaterials(T, { bark = 'pine', leaf = 'pine', tint = 0xffffff
   const b = new THREE.MeshStandardMaterial({ map: T.bark[bark].map, normalMap: T.bark[bark].normal, roughness: 0.95, metalness: 0 });
   b.normalScale.set(1.2, 1.2);
   treeShader(b, { sway, snow, leaf: false });
-  const l = new THREE.MeshStandardMaterial({ map: leaf ? T.leaf[leaf] : null, color: tint, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.82, metalness: 0 });
+  const l = new THREE.MeshStandardMaterial({ map: leaf ? T.leaf[leaf] : null, color: tint, alphaTest: 0.42, alphaToCoverage: RENDER_CAPS.msaa > 0, side: THREE.DoubleSide, roughness: 0.82, metalness: 0 });
   treeShader(l, { sway, snow, leaf: true, sat });
   return [b, l];
 }

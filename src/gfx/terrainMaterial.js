@@ -25,6 +25,7 @@ varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
 varying vec2 vWuv;
+varying float vWy;
 varying vec3 vWN;
 varying float vViewDist;`
       )
@@ -35,6 +36,7 @@ vMat = mat;
 vMat2 = matB;
 vTint = tint;
 vWuv = uv;
+vWy = position.y;
 vWN = normalize(mat3(modelMatrix) * normal);`
       )
       .replace(
@@ -56,10 +58,25 @@ varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
 varying vec2 vWuv;
+varying float vWy;
 varying vec3 vWN;
 varying float vViewDist;
 vec3 gNrmT;
 float gRough;
+float gRockW;
+// value noise with derivatives on a lattice that wraps every P cells (the world uv wraps at 2048 m,
+// so P = 2048 / cell size keeps it seamless)
+float tHash(vec2 i){ vec2 p = fract(i * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+vec3 tNoised(vec2 p, float P) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  vec2 i1 = mod(i + 1.0, P);
+  i = mod(i, P);
+  float a = tHash(i), b = tHash(vec2(i1.x, i.y)), c = tHash(vec2(i.x, i1.y)), d = tHash(i1);
+  float k1 = b - a, k2 = c - a, k4 = a - b - c + d;
+  return vec3(a + k1 * u.x + k2 * u.y + k4 * u.x * u.y, du * (vec2(k1, k2) + k4 * u.yx));
+}
 
 vec4 layerSample(float L, vec2 uvNear, vec2 uvFar, float farT) {
   vec4 a = texture(uAlb, vec3(uvNear, L));
@@ -81,6 +98,12 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   // explicit gradients so layers can be skipped per pixel without mip seams
   vec2 dxN = dFdx(uvN), dyN = dFdy(uvN), dxF = dFdx(uvF), dyF = dFdy(uvF);
   float farT = smoothstep(18.0, 70.0, vViewDist);
+  // steep ground: dirt and rock are also projected from the side, so cliffs are not smeared
+  vec3 Nw = normalize(vWN);
+  float side = smoothstep(0.8, 0.5, Nw.y);
+  vec2 uvSN = (abs(Nw.x) > abs(Nw.z) ? vec2(vWuv.y, vWy) : vec2(vWuv.x, vWy)) * uScale;
+  vec2 uvSF = uvSN * 0.21 + 0.37;
+  vec2 dxSN = dFdx(uvSN), dySN = dFdy(uvSN), dxSF = dFdx(uvSF), dySF = dFdy(uvSF);
   float wt[7];
   wt[0] = vMat.x; wt[1] = vMat.y; wt[2] = vMat.z; wt[3] = vMat.w;
   wt[4] = vMat2.x; wt[5] = vMat2.y; wt[6] = vMat2.z;
@@ -100,6 +123,11 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
       vec4 a = textureGrad(uAlb, vec3(uvN * SN[i], LIDX[i]), dxN * SN[i], dyN * SN[i]);
       vec4 b = textureGrad(uAlb, vec3(uvF * SF[i], LIDX[i]), dxF * SF[i], dyF * SF[i]);
       smp[i] = mix(a, b, farT);
+      if ((i == 1 || i == 2) && side > 0.01) {
+        vec4 sa = textureGrad(uAlb, vec3(uvSN * SN[i], LIDX[i]), dxSN * SN[i], dySN * SN[i]);
+        vec4 sb = textureGrad(uAlb, vec3(uvSF * SF[i], LIDX[i]), dxSF * SF[i], dySF * SF[i]);
+        smp[i] = mix(smp[i], mix(sa, sb, farT), side);
+      }
       // height-based blending: the taller texture wins at transitions
       w[i] = pow(wt[i] * smp[i].a + wt[i] * 0.001 + 0.08, 6.0);
       tot += w[i];
@@ -118,6 +146,15 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
     gRough += RO[i] * k;
   }
   float wSand = w[0] / tot, wDirt = w[1] / tot, wRock = w[2] / tot, wSalt = w[3] / tot, wSnow = w[5] / tot;
+  gRockW = wRock;
+  // sedimentary layering in exposed rock: bands of slightly different tone, warped and tilted
+  {
+    vec3 sn = tNoised(vWuv / 64.0, 32.0);
+    float band = sin((vWy + sn.x * 9.0 + vWuv.x * 0.004) * 0.62) * 0.5 + 0.5;
+    float band2 = sin((vWy + sn.x * 4.0) * 2.1) * 0.5 + 0.5;
+    vec3 strata = mix(vec3(0.86, 0.8, 0.76), vec3(1.1, 1.02, 0.92), band) * (0.92 + 0.08 * band2);
+    alb *= mix(vec3(1.0), strata, wRock * (1.0 - wSnow) * 0.9);
+  }
   // biome tint (normalised) mostly on dirt and rock
   float lum = max(dot(vTint, vec3(0.333)), 0.01);
   vec3 tintN = vTint / lum;
@@ -156,11 +193,22 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(uFadeFar * 0.7, uF
   vec3 B = normalize(cross(T, N));
   vec3 nw = normalize(T * gNrmT.x + B * gNrmT.y + N * max(gNrmT.z, 0.2));
   nw = normalize(mix(N, nw, 1.0 - smoothstep(60.0, 200.0, vViewDist) * 0.7));
+  // relief the mesh is too coarse to carry far away: spurs and gullies on the mountains, gentle
+  // rolls on the plains
+  {
+    vec3 m1 = tNoised(vWuv / 32.0, 64.0);
+    vec3 m2 = tNoised(vWuv / 128.0, 16.0);
+    vec3 m3 = tNoised(vWuv / 8.0, 256.0);
+    float far = smoothstep(40.0, 700.0, vViewDist);
+    float rough = 0.25 + 0.75 * gRockW;
+    vec2 g = (m1.yz / 32.0 * 3.5 + m2.yz / 128.0 * 14.0) * rough * (0.35 + 0.65 * far) + m3.yz / 8.0 * 0.5 * rough * (1.0 - far);
+    nw = normalize(nw - vec3(g.x, 0.0, g.y) + N * dot(vec3(g.x, 0.0, g.y), N));
+  }
   normal = normalize((viewMatrix * vec4(nw, 0.0)).xyz);
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v3';
+  mat.customProgramCacheKey = () => 'terrain-v4';
   return mat;
 }
 

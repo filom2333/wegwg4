@@ -3,6 +3,7 @@
 // Albedo array stores height in alpha (used for height-based blending); normal array is RGB.
 
 import * as THREE from 'three';
+import { RENDER_CAPS } from './caps.js';
 import { mulberry32 } from '../core/noise.js';
 
 const S = 512;
@@ -137,16 +138,38 @@ const GEN = {
     };
   },
   rock(seed) {
+    // weathered bedrock: fine layering, irregular joints at two scales (warped, broken up so no
+    // tiling pattern shows), pitting and pale lichen
     const L = lattices(seed, 4, 6);
-    const V = makeVoronoi(seed + 7, 5);
+    const W = lattices(seed + 3, 3, 3);
+    const G = lattices(seed + 5, 32, 2);
+    const V = makeVoronoi(seed + 7, 7);
+    const V2 = makeVoronoi(seed + 19, 19);
     return (x, y) => {
       const n = fbmT(L, x, y, 6, 4);
-      const strata = 0.5 + 0.5 * Math.sin(((y + n * 70) / S) * Math.PI * 2 * 9);
-      const [f1, f2] = V(x, y);
-      const frac = 1 - clamp01((f2 - f1) * 10);
-      const h = 0.45 * n + 0.35 * strata - 0.45 * Math.pow(frac, 4) + 0.2;
-      const t = 0.65 + 0.35 * n + 0.15 * strata - 0.3 * Math.pow(frac, 3);
-      return [0.62 * t, 0.56 * t, 0.5 * t, clamp01(h)];
+      const g = fbmT(G, x, y, 2, 32);
+      const wx = (fbmT(W, x, y, 3, 3) - 0.5) * 140,
+        wy = (fbmT(W, y + 37, x, 3, 3) - 0.5) * 140;
+      const px = (((x + wx) % S) + S) % S,
+        py = (((y + wy) % S) + S) % S;
+      const [a1, a2] = V(px, py);
+      const [b1, b2] = V2(px, py);
+      // joints: only some cell edges open up, and they wander
+      const j1 = (1 - clamp01((a2 - a1) * 26)) * clamp01((fbmT(W, x + 91, y, 3, 3) - 0.38) * 3);
+      const j2 = (1 - clamp01((b2 - b1) * 40)) * clamp01((n - 0.45) * 3) * 0.6;
+      const layer = 0.5 + 0.5 * Math.sin(((y + n * 90 + g * 6) / S) * Math.PI * 2 * 14);
+      const pit = clamp01((0.32 - g) * 6);
+      const lichen = clamp01((fbmT(G, x + 200, y, 2, 32) - 0.66) * 6) * clamp01((n - 0.4) * 4);
+      const crack = Math.max(j1, j2);
+      const h = clamp01(0.22 + 0.48 * n + 0.18 * layer + 0.12 * g - 0.55 * crack * crack - 0.15 * pit);
+      const t = 0.7 + 0.32 * (n - 0.5) + 0.1 * layer + 0.08 * (g - 0.5) - 0.32 * crack - 0.1 * pit;
+      let r = 0.6 * t,
+        gg = 0.55 * t,
+        b = 0.5 * t;
+      r += (0.72 - r) * lichen * 0.5;
+      gg += (0.7 - gg) * lichen * 0.5;
+      b += (0.6 - b) * lichen * 0.45;
+      return [r, gg, b, h];
     };
   },
   salt(seed) {
@@ -348,7 +371,7 @@ export function buildGroundTextures(seed = 7) {
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.magFilter = THREE.LinearFilter;
     t.generateMipmaps = true;
-    t.anisotropy = 8;
+    t.anisotropy = RENDER_CAPS.aniso;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.needsUpdate = true;
     return t;

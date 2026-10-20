@@ -2,6 +2,7 @@
 // darkening) and a shared wind-sway material.
 
 import * as THREE from 'three';
+import { RENDER_CAPS } from '../gfx/caps.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32, SimplexNoise } from '../core/noise.js';
 import { NOISE_GLSL } from '../gfx/glsl.js';
@@ -483,7 +484,7 @@ export function reeds(seed) {
 // ------------------------------------------------------------------ materials
 export function createFloraMaterial({ sway = 0, roughness = 0.9, snow = false, doubleSide = null, map = null, alphaTest = 0 } = {}) {
   const two = doubleSide ?? sway > 0;
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: two ? THREE.DoubleSide : THREE.FrontSide, map, alphaTest });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: two ? THREE.DoubleSide : THREE.FrontSide, map, alphaTest, alphaToCoverage: alphaTest > 0 && RENDER_CAPS.msaa > 0 });
   m.userData.uniforms = { uTime: { value: 0 }, uWind: { value: 0.3 } };
   if (sway > 0 || snow || map) {
     m.onBeforeCompile = (shader) => {

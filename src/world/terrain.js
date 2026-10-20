@@ -136,7 +136,7 @@ export class Terrain {
       const key = this.key(t);
       if (this.tiles.has(key) || !this.wanted.has(key)) continue;
       const id = this.nextId++;
-      const N = t.size <= MIN_TILE ? 64 : t.size >= ROOT ? 24 : 32;
+      const N = t.size <= MIN_TILE ? 64 : 32;
       this.pending.set(id, { ...t, key, N });
       this.inflight++;
       this.worker.postMessage({ type: 'tile', id, x0: t.x0, z0: t.z0, size: t.size, N });

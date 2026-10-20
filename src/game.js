@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
+import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
 import { buildGroundTextures } from './gfx/groundTextures.js';
 import { createTerrainMaterial, createRoadMaterial } from './gfx/terrainMaterial.js';
@@ -671,6 +672,15 @@ export class Game {
       u.uWarm.value = gr.warm;
       u.uNight.value = gr.night;
       u.uOvercast.value = gr.overcast;
+    }
+    // the sun: glare and shafts on screen, warm haze toward it
+    if (this.env) {
+      const E = this.env;
+      cam.updateMatrixWorld();
+      const up = E.sunDir.y;
+      const clear = (1 - E.w.overcast * 0.9) * (1 - E.w.dust * 0.6) * (1 - E.w.rain * 0.8);
+      this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
+      updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
     }
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
     this.renderer.render(dt);
