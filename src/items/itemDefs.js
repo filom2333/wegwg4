@@ -43,6 +43,14 @@ export const ITEMS = {
   roofBox: { name: 'Roof box', model: ['accessory', 'roofBox'], mass: 17, accessory: 'roofBox', bulky: true, hold: 'side', desc: 'A 50 kg boot that clamps on the roof. High weight rolls easier.' },
   bullBar: { name: 'Bull bar', model: ['accessory', 'bullBar'], mass: 26, accessory: 'bullBar', bulky: true, hold: 'side', desc: 'Bolts across the nose and takes the worst of a head-on hit. Heavy on the front axle.' },
   rearRack: { name: 'Rear carrier', model: ['accessory', 'rearRack'], mass: 11, accessory: 'rearRack', bulky: true, hold: 'side', desc: 'A hitch tray behind the bumper for cans and crates.' },
+  // sheets and boards that bolt on anywhere (see vehicle/plates.js)
+  steelPlate: { name: 'Steel plate', model: ['plate', 'steelPlate'], mass: 8.5, plate: 'steelPlate', bulky: true, hold: 'side', desc: 'Bolt it anywhere on a car. Steel over the nose or tail takes some of a crash.' },
+  steelSheet: { name: 'Steel sheet', model: ['plate', 'steelSheet'], mass: 15.5, plate: 'steelSheet', bulky: true, hold: 'side', desc: 'A big sheet of steel: armour for a window or a whole end of the car.' },
+  plank: { name: 'Plank', model: ['plate', 'plank'], mass: 2.3, plate: 'plank', bulky: true, hold: 'side', desc: 'Bolt it to the car: a step, a shelf, a ramp, a fence.' },
+  plankWide: { name: 'Wide board', model: ['plate', 'plankWide'], mass: 2.8, plate: 'plankWide', bulky: true, hold: 'side', desc: 'A scaffold board. Bolts on anywhere.' },
+  plywood: { name: 'Plywood sheet', model: ['plate', 'plywood'], mass: 3.4, plate: 'plywood', bulky: true, hold: 'side', desc: 'Light and wide: board up a broken window, build a roof deck.' },
+  plasticPanel: { name: 'Plastic panel', model: ['plate', 'plasticPanel'], mass: 1.7, plate: 'plasticPanel', bulky: true, variants: 5, hold: 'side', desc: 'Light, keeps the rain and dust out. Bolts on anywhere.' },
+  plasticSheet: { name: 'Plastic sheet', model: ['plate', 'plasticSheet'], mass: 3.2, plate: 'plasticSheet', bulky: true, variants: 5, hold: 'side', desc: 'A big light panel. Bolts on anywhere.' },
   sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
   meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
 };
@@ -134,6 +142,8 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['plank', 0.6],
+    ['plasticPanel', 0.6],
     ['oilBottle', 3],
     ['part:fanbelt', 1.2],
     ['jerryCan', 1.2],
@@ -196,11 +206,19 @@ export const LOOT = {
     ['jerky', 1],
   ],
   ruin: [
+    ['plank', 1],
+    ['plywood', 0.6],
+    ['steelPlate', 0.3],
     ['ammo38', 0.6],
     ['jerky', 1],
     ['waterBottle', 1],
   ],
   gear: [
+    ['steelPlate', 0.9],
+    ['steelSheet', 0.5],
+    ['plywood', 0.8],
+    ['plank', 1],
+    ['plasticSheet', 0.5],
     ['roofRack', 1],
     ['roofBox', 0.6],
     ['bullBar', 0.7],
@@ -209,6 +227,7 @@ export const LOOT = {
     ['jerryCan', 0.5],
   ],
   wreck: [
+    ['steelPlate', 0.4],
     ['cd', 0.9],
     ['jerryCan', 1.2],
     ['oilBottle', 1],

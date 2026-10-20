@@ -11,6 +11,7 @@ import { Container } from '../items/inventory.js';
 import { hash01 } from '../core/noise.js';
 import { RAPIER } from '../physics/physics.js';
 import { ACCESSORIES, fitAccessory, serializeAccessories } from './accessories.js';
+import { serializePlates, restorePlates } from './plates.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // cars further than this sleep (their bodies off): terrain colliders only exist near the player
@@ -340,6 +341,7 @@ export function serializeCar(car, o) {
     partColors: car.partColors || null,
     stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
     accessories: serializeAccessories(car),
+    plates: serializePlates(car),
     storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
     parts,
     open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
@@ -363,6 +365,7 @@ export function applyCarState(car, c, g) {
   car.rebuildColliders();
   if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
   for (const id of Object.values(c.accessories || {})) if (ACCESSORIES[id]) fitAccessory(car, id);
+  if (same) restorePlates(car, c.plates);
   if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);
   void g;
 }

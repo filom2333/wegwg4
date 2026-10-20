@@ -9,6 +9,7 @@ import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
+import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
 import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
 
@@ -128,6 +129,8 @@ export class Car {
 
   // from: the car type the part came off (another type's part fits the same slot)
   setInstalled(id, on, from = null) {
+    // plates bolted to a part come loose with it
+    if (!on && this.plates) for (const p of this.plates.filter((x) => x.part === id)) this.dropPlate(p);
     const own = this.type.id;
     const src = on ? from || own : this.parts[id].from || own;
     if (on && (src !== (this.parts[id].from || own)) && id !== 'steeringWheel') setPartSource(this, id, this.game.fleet ? this.game.fleet.modelOf(src) : null, src);
@@ -142,6 +145,16 @@ export class Car {
     if ((id === 'engine' || id === 'battery' || id === 'fueltank') && !on) this.setIgnition(false);
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  dropPlate(p) {
+    const w = new THREE.Matrix4().copy(p.mesh.matrixWorld);
+    const pos = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      sc = V(0, 0, 0);
+    w.decompose(pos, q, sc);
+    detachPlate(this, p);
+    if (this.game.items && PLATES[p.id]) this.game.items.spawn(p.id, pos.addScaledVector(V(0, 1, 0).applyQuaternion(q), 0.05), q, { ...p.state });
   }
 
   // Spray paint on one part: its painted surfaces get their own material (same shader, own
@@ -218,6 +231,7 @@ export class Car {
     }
     // whatever is bolted on, strapped down or packed in
     m += accessoryMass(this, com);
+    m += plateMass(this, com);
     for (const it of this.attached || []) {
       if (!it.stowed) continue;
       com.addScaledVector(it.stowed.rest, it.mass);
@@ -260,6 +274,7 @@ export class Car {
       this.game.physics.setOwner(col, { kind: 'car', car: this, part: b.part, tag: b.o.tag || null });
       dyn.colliders.push(col);
     }
+    if (this.plates && this.plates.length) plateColliders(this);
   }
 
   // ---------------------------------------------------------------- doors etc.
@@ -696,10 +711,10 @@ export class Car {
     };
     if (front) {
       const bar = this.accessories && this.accessories.front && ACCESSORIES[this.accessories.front.id].guard;
-      hit(this.type.crash.front, (this.isInstalled('bumper_F') ? 0.5 : 1) * (bar ? 1 - bar : 1));
+      hit(this.type.crash.front, (this.isInstalled('bumper_F') ? 0.5 : 1) * (bar ? 1 - bar : 1) * plateArmour(this, 'front'));
       for (const h of ['headlight_L', 'headlight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * (bar ? 0.8 : 2));
     } else if (rear) {
-      hit(this.type.crash.rear, this.isInstalled('bumper_R') ? 0.5 : 1);
+      hit(this.type.crash.rear, (this.isInstalled('bumper_R') ? 0.5 : 1) * plateArmour(this, 'rear'));
       for (const h of ['taillight_L', 'taillight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
     }
     this.lastImpact = { severity, time: performance.now() };

@@ -8,6 +8,7 @@ import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
 import { paintOf } from '../vehicle/paints.js';
 import { accessoryItemModel } from '../vehicle/accessories.js';
+import { plateModel } from '../vehicle/plates.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -831,6 +832,7 @@ export function sandbag() {
 export const MODEL_BUILDERS = {
   sandbag,
   accessory: accessoryItemModel,
+  plate: (id, variant) => plateModel(id, variant),
   note,
   sponge,
   sprayPaint,
