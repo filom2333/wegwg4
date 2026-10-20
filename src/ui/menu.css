@@ -1,5 +1,5 @@
 /* Menus: title, new game, settings, pause, journal, death, loading.
-   Quiet by design: a single column of type over the live scene, thin rules, one accent colour. */
+   Quiet by design: a single column of type over pictures from the road, thin rules, one accent colour. */
 
 .ui {
   position: fixed;
@@ -27,7 +27,63 @@
   opacity: 1;
 }
 
-/* shading for legibility over the 3D backdrop */
+/* title backdrop: stills from the road, a slow Ken Burns move and a long cross-fade */
+.ui-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  background: #0d0c0b;
+  pointer-events: none;
+}
+.ui-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 2.6s ease;
+  will-change: transform, opacity;
+}
+.ui-slide.on {
+  opacity: 1;
+}
+.ui-slide.moving[data-move='in'] {
+  animation: kb-in 12s linear forwards;
+}
+.ui-slide.moving[data-move='out'] {
+  animation: kb-out 12s linear forwards;
+}
+.ui-slide.moving[data-move='left'] {
+  animation: kb-left 12s linear forwards;
+}
+.ui-slide.moving[data-move='right'] {
+  animation: kb-right 12s linear forwards;
+}
+@keyframes kb-in {
+  from { transform: scale(1.04); }
+  to { transform: scale(1.14); }
+}
+@keyframes kb-out {
+  from { transform: scale(1.15); }
+  to { transform: scale(1.05); }
+}
+@keyframes kb-left {
+  from { transform: scale(1.12) translateX(2.2%); }
+  to { transform: scale(1.12) translateX(-2.2%); }
+}
+@keyframes kb-right {
+  from { transform: scale(1.12) translateX(-2.2%); }
+  to { transform: scale(1.12) translateX(2.2%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-slide.moving[data-move] {
+    animation: none;
+    transform: scale(1.06);
+  }
+}
+
+/* shading for legibility over the backdrop */
 .ui-shade-left {
   background: linear-gradient(90deg, rgba(10, 9, 8, 0.82) 0%, rgba(10, 9, 8, 0.55) 34%, rgba(10, 9, 8, 0) 62%);
 }
@@ -777,4 +833,15 @@
   .ui-news {
     display: none;
   }
+}
+
+/* links in panels (credits): warm accent, quiet underline */
+.ui-body a {
+  color: var(--amber);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(217, 163, 91, 0.35);
+  pointer-events: auto;
+}
+.ui-body a:hover {
+  border-bottom-color: currentColor;
 }

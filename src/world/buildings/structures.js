@@ -39,6 +39,7 @@ function room(b, x0, z0, x1, z1, y, h, { ext, inner, floor, t = 0.22, openings =
   else
     b.gableRoof(x0 - t / 2, z0 - t / 2, x1 + t / 2, z1 + t / 2, y + h + 0.06, pitch, {
       mat: roofMat || M.corrugated,
+      under: M.planks,
       fascia: trim,
       overhang: 0.35,
       ridgeAlong: x1 - x0 >= z1 - z0 ? 'x' : 'z',
@@ -292,7 +293,7 @@ export function buildMotel(rnd) {
     signBoard(b, a + 1.6, y + 2.25, rd / 2 + 0.13, 0.32, 0.22, signMaterial([String(101 + i)], { w: 128, h: 96, bg: '#2a2a2a', fg: '#d9c9a0', border: null }));
   }
   // continuous roof with an overhang over the walkway
-  b.gableRoof(x0 - 0.12, -rd / 2 - 0.12, x0 + total + 0.12, rd / 2 + 2.2, y + 2.76, 0.22, { mat: M.rooftiles, fascia: M.trimWhite, overhang: 0.4, ridgeAlong: 'x', gableMat: ext });
+  b.gableRoof(x0 - 0.12, -rd / 2 - 0.12, x0 + total + 0.12, rd / 2 + 2.2, y + 2.76, 0.22, { mat: M.rooftiles, under: M.planks, fascia: M.trimWhite, overhang: 0.4, ridgeAlong: 'x', gableMat: ext });
   // walkway slab + posts
   b.box(0, y - 0.05, rd / 2 + 1.1, total, 0.2, 2.2, M.concrete, { surface: 'concrete' });
   for (let i = 0; i <= n; i++) b.box(x0 + i * rw, y + 1.35, rd / 2 + 2.0, 0.16, 2.7, 0.16, M.trimWhite, { surface: 'wood' });

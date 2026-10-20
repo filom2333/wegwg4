@@ -33,7 +33,7 @@ for (const s of steps) {
   if (s.wait) await page.waitForTimeout(s.wait);
   if (s.shot) {
     fs.mkdirSync('shots', { recursive: true });
-    await page.evaluate('window.game.renderNow()');
+    if (await page.evaluate('!!(window.game && window.game.renderNow)')) await page.evaluate('window.game.renderNow()');
     await page.screenshot({ path: s.shot, timeout: 180000 });
     console.log('shot', s.shot);
   }

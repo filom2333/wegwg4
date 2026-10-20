@@ -395,6 +395,8 @@ float rFbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*rNoise(p); p*
   diffuseColor.rgb = col;
   vec3 na = texture(uNrm, vec3(wuv, 5.0)).xyz * 2.0 - 1.0;
   vec3 ng = texture(uNrm, vec3(wuv * 2.6, 4.0)).xyz * 2.0 - 1.0;
+  // fine aggregate: only a hint of relief, or grazing headlights turn it into cobbles
+  na.xy *= 0.35;
   ng.xy *= 0.6;
   rNrmT = normalize(mix(mix(na, ng, isDirt), ng, sh));
   rRough = mix(mix(0.88, 0.95, isDirt), 0.95, sh);
@@ -416,6 +418,6 @@ float rFbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*rNoise(p); p*
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'road-v2';
+  mat.customProgramCacheKey = () => 'road-v3';
   return mat;
 }

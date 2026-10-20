@@ -276,6 +276,7 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
     const alongX = plan.W >= plan.D;
     b.gableRoof(x0 - EXT_T / 2, z0 - EXT_T / 2, x1 + EXT_T / 2, z1 + EXT_T / 2, roofY, (24 + rnd() * 10) * (Math.PI / 180), {
       mat: S.roof,
+      under: S.trim,
       fascia: S.trim,
       overhang: 0.45,
       ridgeAlong: alongX ? 'x' : 'z',

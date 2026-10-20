@@ -1,4 +1,4 @@
-// Menu layer: title (over the live attract-mode scene), new game setup, settings, career
+// Menu layer: title (over pre-rendered pictures from the road), new game setup, settings, career
 // statistics, multiplayer placeholder, loading, click-to-play, pause, journal, sleep and death.
 
 import { CAR_TYPE_LIST } from '../vehicle/types.js';
@@ -17,7 +17,18 @@ const el = (tag, cls, parent, html) => {
 };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-const VERSION = '0.9';
+const VERSION = '0.10';
+
+// Pictures behind the title menu (public/menu/), each with its own slow camera move.
+const MENU_SHOTS = [
+  { src: 'menu/golden.webp', move: 'in', origin: '42% 58%' },
+  { src: 'menu/gas.webp', move: 'left', origin: '50% 55%' },
+  { src: 'menu/vista.webp', move: 'out', origin: '48% 60%' },
+  { src: 'menu/forest.webp', move: 'in', origin: '52% 62%' },
+  { src: 'menu/taiga.webp', move: 'right', origin: '40% 64%' },
+  { src: 'menu/night.webp', move: 'in', origin: '50% 52%' },
+];
+const SLIDE_SECONDS = 9;
 
 const TIPS = [
   'A jerry can holds 20 litres. The tank holds 50. Fill both when you find a working pump.',
@@ -136,6 +147,37 @@ export class UI {
     return `<svg class="ui-shield" viewBox="0 0 100 110" aria-hidden="true"><path d="M50 4 C62 12 78 12 92 8 C96 40 92 74 50 106 C8 74 4 40 8 8 C22 12 38 12 50 4 Z" fill="none" stroke="currentColor" stroke-width="5"/><text x="50" y="40" text-anchor="middle" font-size="15" letter-spacing="2" fill="currentColor">ROUTE</text><text x="50" y="82" text-anchor="middle" font-size="44" font-weight="600" fill="currentColor">9</text></svg>`;
   }
 
+  // Title backdrop: stills from the road that slowly pan and zoom, cross-fading every few seconds.
+  showBackdrop() {
+    if (this.backdrop) return;
+    const b = (this.backdrop = el('div', 'ui-backdrop', document.body));
+    const start = Math.floor(Math.random() * MENU_SHOTS.length);
+    const slides = MENU_SHOTS.map((m) => {
+      const d = el('div', 'ui-slide', b);
+      d.style.backgroundImage = `url(${m.src})`;
+      d.style.transformOrigin = m.origin;
+      d.dataset.move = m.move;
+      return d;
+    });
+    let i = start;
+    const next = () => {
+      const prev = slides.find((d) => d.classList.contains('on'));
+      const d = slides[i % slides.length];
+      // restart the camera move from its first frame
+      d.classList.remove('moving');
+      void d.offsetWidth;
+      d.classList.add('on', 'moving');
+      if (prev && prev !== d) setTimeout(() => prev.classList.remove('on'), 50);
+      setTimeout(() => prev && prev !== d && prev.classList.remove('moving'), 3000);
+      i++;
+    };
+    // show the first picture once it has loaded, so the menu never opens on a blank frame
+    const img = new Image();
+    img.onload = img.onerror = () => next();
+    img.src = MENU_SHOTS[start].src;
+    this.backdropTimer = setInterval(next, SLIDE_SECONDS * 1000);
+  }
+
   // First screen: wait for a key/click (also unlocks audio and starts the title theme).
   showSplash() {
     this.mode = 'menu';
@@ -181,8 +223,8 @@ export class UI {
       this.item(m, 'Statistics', () => this.showCareer(() => this.showTitle()));
       this.item(m, 'Credits', () => this.showCredits());
       const news = el('div', 'ui-news', s);
-      news.innerHTML = `<div class="ui-news-k">Update 0.9 · The Haven update</div>
-        <div class="ui-news-t">Notes along the road, radio broadcasts from Haven, a third-person view, hands on the wheel, new clouds and light.</div>
+      news.innerHTML = `<div class="ui-news-k">Update 0.10 · The open country update</div>
+        <div class="ui-news-t">A second car, parts that fit any car, spray paint, roof racks and bolt-on plates, rollovers. New land: real dunes, ridged mountains, mesas, denser brush, yucca and ocotillo, forests to the horizon.</div>
         <div class="ui-news-k dim">Next: co-op on Route 9</div>`;
       el('div', 'ui-foot', s, `v${VERSION} · keyboard and mouse · ↑ ↓ Enter`);
       this.menuNav(m);
@@ -211,9 +253,14 @@ export class UI {
       const p = el('div', 'ui-panel', s);
       el('h2', 'ui-h', p, 'Credits');
       const body = el('div', 'ui-body', p);
-      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time. The car is a 1960s Beetle based on <a href="https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e" target="_blank" rel="noopener">"Beetle/Fusca (Version 1)"</a> by soujagah, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY-4.0</a>, split into parts and re-textured for repainting.</p>
+      const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+      const ccby = link('http://creativecommons.org/licenses/by/4.0/', 'CC-BY-4.0');
+      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time.</p>
+        <p class="ui-sub">The 1960s Beetle is based on ${link('https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e', '"Beetle/Fusca (Version 1)"')} by ${link('https://sketchfab.com/soujagah', 'soujagah')}, and the '88 Riverside sedan on "88 American Sedan - Low poly model" by ${link('https://sketchfab.com/DanielZhabotinsky', 'Daniel Zhabotinsky')}, both licensed under ${ccby}; scaled, split into parts and re-textured for repainting.</p>
+        <p class="ui-sub">Tree bark from ${link('https://www.texturecan.com/', 'TextureCan')} and ${link('https://polyhaven.com/a/bark_brown_02', 'Poly Haven')} (CC0); twig cards from ${link('https://github.com/dgreenheck/ez-tree', 'ez-tree')} by Daniel Greenheck (MIT).</p>
         <div class="ui-cols">
-          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div><div class="ui-stat"><span>Car model</span><span>soujagah (CC-BY-4.0)</span></div></div>
+          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div></div>
+          <div><div class="ui-label">Models and textures</div><div class="ui-stat"><span>Beetle</span><span>soujagah · CC-BY-4.0</span></div><div class="ui-stat"><span>Sedan</span><span>D. Zhabotinsky · CC-BY-4.0</span></div><div class="ui-stat"><span>Bark</span><span>TextureCan, Poly Haven · CC0</span></div><div class="ui-stat"><span>Twigs</span><span>ez-tree · MIT</span></div></div>
           <div><div class="ui-label">Inspired by</div><div class="ui-stat"><span>Road trips</span><span>The Long Drive</span></div><div class="ui-stat"><span>Dust</span><span>Route 66, 89, 95</span></div></div>
         </div>`;
       const a = el('div', 'ui-actions', p);
@@ -524,6 +571,8 @@ export class UI {
     if (k === 'showFps') this.fpsEl.style.display = d.showFps ? '' : 'none';
     if (!g) return;
     if (/Volume$/.test(k) && g.audio && g.audio.applyVolumes) g.audio.applyVolumes();
+    // on the title screen there is no world yet: the rest applies when a game starts
+    if (!g.renderer) return;
     if (k === 'transmission' && g.car) g.car.dyn.automatic = d.transmission === 'auto';
     if (k === 'resolutionScale' && g.renderer.setScale) g.renderer.setScale(d.resolutionScale);
     if (k === 'bloom') g.renderer.applyPassSettings();

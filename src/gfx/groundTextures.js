@@ -196,14 +196,18 @@ const GEN = {
     };
   },
   asphalt(seed) {
-    const P = makeVoronoi(seed + 17, 90);
+    // worn chip seal: fine aggregate pressed flat into the binder, only a few chips stand proud
+    const P = makeVoronoi(seed + 17, 150);
     const L = lattices(seed, 16, 5);
+    const G = lattices(seed + 5, 128, 2);
     return (x, y) => {
-      const [f1, , id] = P(x, y);
-      const agg = clamp01(1 - f1 * 1.9) * id;
+      const [f1, f2, id] = P(x, y);
+      const agg = clamp01(1 - f1 * 2.4) * id;
+      const proud = id > 0.85 ? agg : agg * 0.35;
       const n = fbmT(L, x, y, 5, 16);
-      const h = 0.4 + 0.4 * agg + 0.2 * n;
-      const t = 0.24 + 0.14 * agg + 0.06 * n;
+      const g = fbmT(G, x, y, 2, 128);
+      const h = 0.45 + 0.22 * proud + 0.2 * n + 0.1 * (g - 0.5) - 0.06 * clamp01(1 - (f2 - f1) * 3);
+      const t = 0.25 + 0.08 * agg + 0.05 * n + 0.04 * (g - 0.5);
       return [t, t, t * 0.98, h];
     };
   },
@@ -344,7 +348,7 @@ export function buildGroundTextures(seed = 7) {
         hbuf[y * S + x] = h;
       }
     }
-    const strength = { sand: 2.2, dirt: 4.5, rock: 7, salt: 3.5, gravel: 4, asphalt: 3, grass: 3.5, snow: 2.4, forest: 4 }[name];
+    const strength = { sand: 2.2, dirt: 4.5, rock: 7, salt: 3.5, gravel: 4, asphalt: 2, grass: 3.5, snow: 2.4, forest: 4 }[name];
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const hx = hbuf[y * S + ((x + 1) % S)] - hbuf[y * S + ((x - 1 + S) % S)];
