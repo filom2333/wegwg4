@@ -109,10 +109,17 @@ canvas#game {
 /* target card: sits just below and right of the crosshair */
 .hud-card {
   position: absolute;
-  left: calc(50% + 22px);
-  top: calc(50% + 14px);
-  min-width: 150px;
-  max-width: 300px;
+  left: calc(50% + 24px);
+  top: calc(50% + 16px);
+  min-width: 160px;
+  max-width: 320px;
+  padding: 10px 14px 11px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(22, 20, 17, 0.62), rgba(12, 11, 10, 0.55));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   opacity: 0;
   transform: translateY(3px);
   transition: opacity 0.14s, transform 0.14s;
@@ -134,9 +141,12 @@ canvas#game {
 }
 .hud-card-bar,
 .hud-card-prog {
-  height: 2px;
-  margin-top: 6px;
-  width: 120px;
+  height: 4px;
+  margin-top: 8px;
+  width: 100%;
+  min-width: 140px;
+  border-radius: 2px;
+  overflow: hidden;
   background: var(--line);
 }
 .hud-card-bar > div,
@@ -184,44 +194,99 @@ kbd {
   text-shadow: none;
 }
 
-/* needs */
+/* shared frosted panel */
+.hud-needs,
+.hud-veh,
+.hud-info,
+.hud-compass,
+.hud-toast,
+.hud-hotlabel {
+  background: linear-gradient(180deg, rgba(22, 20, 17, 0.58), rgba(12, 11, 10, 0.5));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* vitals: four rings with the value inside and a label under them */
 .hud-needs {
   position: absolute;
-  left: 28px;
-  bottom: 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  left: 24px;
+  bottom: 22px;
+  display: grid;
+  grid-template-columns: repeat(4, 50px);
+  gap: 6px 8px;
+  padding: 12px 14px 10px;
+  border-radius: 16px;
 }
 .hud-need {
+  position: relative;
+  width: 50px;
+  height: 64px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 9px;
+  --c: #ece6da;
 }
-.hud-need-bar {
-  width: 110px;
-  height: 3px;
-  background: var(--line);
+.need-health { --c: #e36b5b; }
+.need-food { --c: #e3a457; }
+.need-water { --c: #5fb0e8; }
+.need-energy { --c: #e5d265; }
+.hud-need .ring {
+  width: 46px;
+  height: 46px;
+  transform: rotate(-90deg);
 }
-.hud-need-bar > div {
-  height: 100%;
-  background: var(--ink-2);
-  transition: width 0.4s;
+.hud-need .ring circle {
+  fill: none;
+  stroke-width: 3.2;
 }
-.hud-need.low .hud-icon,
-.hud-vstat.low .hud-icon {
+.hud-need .ring .bg {
+  stroke: rgba(236, 230, 218, 0.12);
+}
+.hud-need .ring .fg {
+  stroke: var(--c);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s ease;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 45%, transparent));
+}
+.hud-need .hud-icon {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  color: var(--c);
+}
+.hud-need-val {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 600 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.hud-need-lab {
+  margin-top: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hud-need.low .hud-need-lab,
+.hud-need.low .hud-need-val {
   color: var(--amber);
 }
-.hud-need.low .hud-need-bar > div,
-.hud-vstat.low .hud-vstat-bar > div {
-  background: var(--amber);
-}
+.hud-need.crit .ring,
 .hud-need.crit .hud-icon {
-  color: var(--red);
-  animation: pulse 1s infinite;
+  animation: pulse 0.9s infinite;
 }
-.hud-need.crit .hud-need-bar > div {
-  background: var(--red);
+.hud-need.crit .hud-need-lab,
+.hud-need.crit .hud-need-val {
+  color: var(--red);
 }
 @keyframes pulse {
   50% {
@@ -229,125 +294,190 @@ kbd {
   }
 }
 .hud-stamina {
-  position: absolute;
-  left: 50%;
-  bottom: 40px;
-  width: 160px;
-  margin-left: -80px;
-  height: 2px;
-  background: var(--line);
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(236, 230, 218, 0.1);
+  overflow: hidden;
   transition: opacity 0.4s;
 }
 .hud-stamina > div {
   height: 100%;
-  background: var(--ink-2);
+  border-radius: 2px;
+  background: linear-gradient(90deg, #9fd08a, #d8e6a0);
 }
 
-/* vehicle readout */
+/* vehicle cluster */
 .hud-veh {
   position: absolute;
-  right: 30px;
-  bottom: 24px;
-  width: 190px;
-  text-align: right;
+  right: 24px;
+  bottom: 22px;
+  width: 250px;
+  padding: 14px 16px 12px;
+  border-radius: 16px;
   opacity: 0;
-  transition: opacity 0.3s;
+  transform: translateY(6px);
+  transition: opacity 0.3s, transform 0.3s;
 }
 .hud-veh.on {
   opacity: 1;
+  transform: none;
+}
+.hud-veh-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
 }
 .hud-speed {
-  font-size: 52px;
-  line-height: 1;
-  font-weight: 300;
+  font: 300 54px/0.9 var(--font-display);
   font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .hud-speed-unit {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--ink-3);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  margin-top: 2px;
-}
-.hud-veh-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  margin-top: 4px;
 }
 .hud-gear {
-  font-size: 15px;
-  font-weight: 600;
-  min-width: 34px;
-  text-align: left;
+  min-width: 46px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 18px/1 var(--font-display);
+  color: #191612;
+  background: var(--amber);
+  box-shadow: 0 0 14px rgba(217, 163, 91, 0.35);
+}
+.hud-gear.off {
+  color: var(--ink-2);
+  background: rgba(236, 230, 218, 0.1);
+  box-shadow: none;
+  font-size: 13px;
+  letter-spacing: 0.1em;
 }
 .hud-rpm {
+  display: flex;
+  gap: 2px;
+  margin: 12px 0 10px;
+  height: 8px;
+}
+.hud-rpm i {
   flex: 1;
-  height: 3px;
-  background: var(--line);
+  border-radius: 1.5px;
+  background: rgba(236, 230, 218, 0.1);
 }
-.hud-rpm > div {
-  height: 100%;
-  background: var(--ink-2);
+.hud-rpm i.on {
+  background: #d9d2c2;
 }
-.hud-rpm.red > div {
+.hud-rpm i.hot.on {
+  background: var(--amber);
+}
+.hud-rpm i.red {
+  background: rgba(217, 97, 76, 0.25);
+}
+.hud-rpm i.red.on {
   background: var(--red);
+  box-shadow: 0 0 6px rgba(217, 97, 76, 0.7);
 }
 .hud-veh-stats {
-  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  align-items: flex-end;
+  gap: 7px;
 }
 .hud-vstat {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 54px 1fr 44px;
   align-items: center;
   gap: 8px;
 }
+.hud-vstat-lab {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
 .hud-vstat-bar {
-  width: 90px;
-  height: 3px;
-  background: var(--line);
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(236, 230, 218, 0.1);
+  overflow: hidden;
 }
 .hud-vstat-bar > div {
   height: 100%;
-  background: var(--ink-2);
+  border-radius: 2px;
+  background: #d9d2c2;
+  transition: width 0.4s;
 }
-.hud-veh-warn {
-  margin-top: 10px;
-  min-height: 16px;
-  font-size: 12px;
+.hud-vstat-val {
+  text-align: right;
+  font: 500 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.hud-vstat.low .hud-icon,
+.hud-vstat.low .hud-vstat-val {
   color: var(--amber);
 }
+.hud-vstat.low .hud-vstat-bar > div {
+  background: var(--amber);
+}
+.hud-veh-warn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+.hud-veh-warn:empty {
+  display: none;
+}
+.hud-veh-warn span {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #f0c78e;
+  background: rgba(217, 163, 91, 0.14);
+  border: 1px solid rgba(217, 163, 91, 0.3);
+}
 
-/* compass */
+/* compass, heading, clock and the road to Haven */
 .hud-top {
   position: absolute;
-  top: 18px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 .hud-compass {
   position: relative;
-  width: 240px;
-  height: 20px;
+  width: 360px;
+  height: 28px;
+  border-radius: 999px;
   overflow: hidden;
-  -webkit-mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
-  mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+}
+.hud-compass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(12, 11, 10, 0.9), transparent 22%, transparent 78%, rgba(12, 11, 10, 0.9));
 }
 .hud-compass::after {
   content: '';
   position: absolute;
+  z-index: 2;
   left: 50%;
   top: 0;
-  width: 1px;
-  height: 6px;
-  background: var(--amber);
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top: 6px solid var(--amber);
 }
 .hud-compass-strip {
   position: absolute;
@@ -357,77 +487,116 @@ kbd {
 }
 .hud-compass-strip span {
   position: absolute;
-  top: 7px;
+  top: 8px;
   font-size: 11px;
   transform: translateX(-50%);
   color: var(--ink-2);
 }
 .hud-compass-strip span.tick {
-  top: 12px;
+  top: 17px;
   width: 1px;
   height: 4px;
   background: var(--ink-3);
 }
 .hud-compass-strip span.mid {
-  top: 10px;
+  top: 15px;
   width: 1px;
-  height: 6px;
+  height: 7px;
   background: var(--ink-2);
 }
 .hud-compass-strip span.lab {
   color: var(--ink);
   font-weight: 600;
+  font-size: 12px;
 }
-.hud-clock,
-.hud-dist {
+.hud-heading {
+  margin-top: -3px;
+  font: 600 10px/1 var(--mono);
+  color: var(--amber);
+  letter-spacing: 0.08em;
+}
+.hud-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
   font-size: 12px;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
-.hud-dist {
+.hud-clock b {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 4px;
+}
+.hud-route {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-dist span {
   color: var(--ink-3);
 }
+.hud-route-bar {
+  width: 70px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(236, 230, 218, 0.12);
+  overflow: hidden;
+}
+.hud-route-bar > div {
+  height: 100%;
+  background: var(--amber);
+}
 
-/* hotbar: bottom centre, fades back when idle */
+/* hotbar: bottom centre, fades back when idle; the held thing's name above */
 .hud-hotbar {
   position: absolute;
   left: 50%;
   bottom: 22px;
   transform: translateX(-50%);
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(22, 20, 17, 0.5), rgba(12, 11, 10, 0.42));
+  border: 1px solid rgba(236, 230, 218, 0.08);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   transition: opacity 0.6s;
 }
 .hud-hotbar.dim {
-  opacity: 0.45;
+  opacity: 0.5;
 }
 .hb-slot {
   position: relative;
-  width: 52px;
-  height: 52px;
-  border-radius: 6px;
-  background: rgba(14, 13, 11, 0.55);
-  border: 1px solid rgba(236, 230, 218, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  width: 60px;
+  height: 60px;
+  border-radius: 11px;
+  background: radial-gradient(circle at 50% 35%, rgba(60, 54, 46, 0.55), rgba(18, 16, 14, 0.55));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 .hb-slot.empty {
-  background: rgba(14, 13, 11, 0.28);
+  background: rgba(18, 16, 14, 0.3);
 }
 .hb-slot.on {
   border-color: var(--amber);
-  box-shadow: 0 0 0 1px var(--amber), 0 0 14px rgba(217, 163, 91, 0.35);
+  transform: translateY(-3px);
+  box-shadow: 0 0 0 1px var(--amber), 0 6px 18px rgba(217, 163, 91, 0.3);
 }
 .hb-slot img {
   position: absolute;
-  inset: 3px;
-  width: calc(100% - 6px);
-  height: calc(100% - 6px);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+  inset: 5px;
+  width: calc(100% - 10px);
+  height: calc(100% - 10px);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55));
 }
 .hb-key {
   position: absolute;
-  left: 4px;
-  top: 2px;
+  left: 6px;
+  top: 4px;
   font: 600 10px/1 var(--mono);
   color: var(--ink-3);
   z-index: 1;
@@ -437,39 +606,61 @@ kbd {
 }
 .hb-n {
   position: absolute;
-  right: 4px;
-  bottom: 3px;
-  font: 600 10px/1 var(--mono);
-  color: var(--ink-2);
+  right: 6px;
+  bottom: 4px;
+  font: 600 10.5px/1 var(--mono);
+  color: var(--ink);
+}
+.hud-hotlabel {
+  position: absolute;
+  left: 50%;
+  bottom: 106px;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.hud-hotlabel.on {
+  opacity: 1;
+}
+.hud-hotlabel.on.dim {
+  opacity: 0;
 }
 .hud-ammo {
   position: absolute;
   left: 50%;
-  bottom: 80px;
+  bottom: 140px;
   transform: translateX(-50%);
   display: flex;
   gap: 14px;
   font-size: 11px;
   letter-spacing: 0.08em;
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 .hud-toasts {
   position: absolute;
   left: 50%;
-  top: 30%;
+  top: 112px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .hud-toast {
+  max-width: min(560px, 80vw);
   font-size: 14px;
-  padding: 5px 12px;
+  line-height: 1.4;
+  text-align: center;
+  padding: 8px 16px;
+  border-radius: 12px;
   color: var(--ink);
-  background: rgba(14, 13, 12, 0.5);
-  border-left: 2px solid var(--amber);
+  border-left: 3px solid var(--amber);
   transition: opacity 0.5s, transform 0.5s;
 }
 .hud-toast.out {
@@ -480,7 +671,7 @@ kbd {
 .hud-sub {
   position: absolute;
   left: 50%;
-  bottom: 15%;
+  bottom: 17%;
   transform: translateX(-50%);
   max-width: min(720px, 80vw);
   text-align: center;

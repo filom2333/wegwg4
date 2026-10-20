@@ -1,10 +1,13 @@
-// In-game HUD: crosshair, target card with key prompts, needs, vehicle readout, toasts,
-// hit markers, compass and the hotbar. Quiet by design: everything fades when not relevant.
+// In-game HUD: crosshair, target card with key prompts, vitals rings, vehicle cluster, toasts,
+// hit markers, compass with the road to Haven, and the hotbar. Everything sits on soft frosted
+// panels and fades when not relevant; colours carry meaning (red health, amber food, blue water,
+// yellow rest) so a glance is enough.
 
 import { ICONS } from './icons.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { itemIcon } from './itemIcons.js';
 import { ALBUMS } from '../audio/music/albums.js';
+import { HAVEN_KM } from '../story/story.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -31,37 +34,43 @@ export class HUD {
     this.cardProg = el('div', 'hud-card-prog', this.card);
     this.cardProgFill = el('div', '', this.cardProg);
     this.prompts = el('div', 'hud-prompts', this.card);
-    // needs (bottom left)
+    // vitals (bottom left): four rings with a number, stamina under them
     this.needs = el('div', 'hud-needs', this.root);
     this.needEls = {};
-    for (const [k, icon] of [
-      ['health', 'heart'],
-      ['food', 'food'],
-      ['water', 'water'],
-      ['energy', 'energy'],
+    const C = 2 * Math.PI * 19;
+    this.ringC = C;
+    for (const [k, icon, label] of [
+      ['health', 'heart', 'Health'],
+      ['food', 'food', 'Food'],
+      ['water', 'water', 'Water'],
+      ['energy', 'energy', 'Rest'],
     ]) {
-      const row = el('div', 'hud-need', this.needs);
+      const row = el('div', 'hud-need need-' + k, this.needs);
+      row.innerHTML = `<svg class="ring" viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="19"/><circle class="fg" cx="22" cy="22" r="19" stroke-dasharray="${C.toFixed(2)}"/></svg>`;
       el('span', 'hud-icon', row, ICONS[icon]);
-      const bar = el('div', 'hud-need-bar', row);
-      const fill = el('div', '', bar);
-      this.needEls[k] = { row, fill };
+      const val = el('span', 'hud-need-val', row);
+      el('span', 'hud-need-lab', row, label);
+      this.needEls[k] = { row, fg: row.querySelector('.fg'), val };
     }
-    this.stamina = el('div', 'hud-stamina', this.root);
+    this.stamina = el('div', 'hud-stamina', this.needs);
     this.staminaFill = el('div', '', this.stamina);
-    // vehicle (bottom right)
+    // vehicle cluster (bottom right)
     this.veh = el('div', 'hud-veh', this.root);
-    this.speed = el('div', 'hud-speed', this.veh);
-    this.speedUnit = el('div', 'hud-speed-unit', this.veh, 'km/h');
-    this.vrow = el('div', 'hud-veh-row', this.veh);
-    this.gear = el('div', 'hud-gear', this.vrow);
-    this.rpm = el('div', 'hud-rpm', this.vrow);
-    this.rpmFill = el('div', '', this.rpm);
+    const head = el('div', 'hud-veh-head', this.veh);
+    const sp = el('div', 'hud-speed-wrap', head);
+    this.speed = el('div', 'hud-speed', sp);
+    this.speedUnit = el('div', 'hud-speed-unit', sp, 'km/h');
+    this.gear = el('div', 'hud-gear', head);
+    this.rpm = el('div', 'hud-rpm', this.veh);
+    this.rpmSegs = [];
+    for (let i = 0; i < 28; i++) this.rpmSegs.push(el('i', i >= 24 ? 'red' : i >= 20 ? 'hot' : '', this.rpm));
+    this.vrow = this.rpm;
     this.vstats = el('div', 'hud-veh-stats', this.veh);
-    this.fuel = this.vstat('fuel');
-    this.temp = this.vstat('temp');
-    this.batt = this.vstat('battery');
+    this.fuel = this.vstat('fuel', 'Fuel');
+    this.temp = this.vstat('temp', 'Temp');
+    this.batt = this.vstat('battery', 'Battery');
     this.warn = el('div', 'hud-veh-warn', this.veh);
-    // compass + clock (top centre)
+    // compass + clock + the road to Haven (top centre)
     this.top = el('div', 'hud-top', this.root);
     this.compass = el('div', 'hud-compass', this.top);
     this.compassStrip = el('div', 'hud-compass-strip', this.compass);
@@ -72,10 +81,16 @@ export class HUD {
       marks.push(`<span class="${lab ? 'lab' : deg % 15 === 0 ? 'mid' : 'tick'}" style="left:${i * 12}px">${lab || ''}</span>`);
     }
     this.compassStrip.innerHTML = marks.join('') + marks.join('').replace(/left:(\d+)px/g, (m, n) => `left:${+n + 864}px`);
-    this.clock = el('div', 'hud-clock', this.top);
-    this.dist = el('div', 'hud-dist', this.top);
+    this.heading = el('div', 'hud-heading', this.top);
+    const info = el('div', 'hud-info', this.top);
+    this.clock = el('div', 'hud-clock', info);
+    const route = el('div', 'hud-route', info);
+    this.dist = el('div', 'hud-dist', route);
+    this.routeBar = el('div', 'hud-route-bar', route);
+    this.routeFill = el('div', '', this.routeBar);
     // hotbar (bottom centre): slots 1-6 of the backpack
     this.hotbar = el('div', 'hud-hotbar', this.root);
+    this.hotLabel = el('div', 'hud-hotlabel', this.root);
     this.hotSlots = [];
     for (let i = 0; i < 6; i++) {
       const d = el('div', 'hb-slot', this.hotbar);
@@ -94,12 +109,14 @@ export class HUD {
     this.visible = false;
   }
 
-  vstat(icon) {
+  vstat(icon, label) {
     const row = el('div', 'hud-vstat', this.vstats);
     el('span', 'hud-icon', row, ICONS[icon]);
+    el('span', 'hud-vstat-lab', row, label);
     const bar = el('div', 'hud-vstat-bar', row);
     const fill = el('div', '', bar);
-    return { row, fill };
+    const val = el('span', 'hud-vstat-val', row);
+    return { row, fill, val };
   }
 
   show(on) {
@@ -182,9 +199,14 @@ export class HUD {
     if (this.hitTimer <= 0) this.hit.className = 'hud-hit';
     // needs: rows highlight when low
     for (const k of ['health', 'food', 'water', 'energy']) {
-      const v = p[k];
+      const v = Math.max(0, Math.min(100, p[k]));
       const e = this.needEls[k];
-      e.fill.style.width = v.toFixed(1) + '%';
+      const r = Math.round(v);
+      if (e.last !== r) {
+        e.last = r;
+        e.fg.style.strokeDashoffset = (this.ringC * (1 - v / 100)).toFixed(2);
+        e.val.textContent = r;
+      }
       e.row.classList.toggle('low', v < 25);
       e.row.classList.toggle('crit', v < 10);
     }
@@ -198,14 +220,21 @@ export class HUD {
       const kmh = Math.abs(car.speedKmh);
       this.speed.textContent = Math.round(kmh);
       this.gear.textContent = car.dyn.engine.running ? car.dyn.gearLabel() : car.ignition ? 'ON' : 'OFF';
-      this.rpmFill.style.width = Math.min(100, (car.dyn.engine.rpm / 7000) * 100) + '%';
-      this.rpm.classList.toggle('red', car.dyn.engine.rpm > 6200);
+      this.gear.classList.toggle('off', !car.dyn.engine.running);
+      const lit = Math.round(Math.min(1, car.dyn.engine.rpm / 7000) * this.rpmSegs.length);
+      if (lit !== this._lit) {
+        this._lit = lit;
+        this.rpmSegs.forEach((d, i) => d.classList.toggle('on', i < lit));
+      }
       this.fuel.fill.style.width = (car.fuel / car.fuelCap) * 100 + '%';
+      this.fuel.val.textContent = car.fuel.toFixed(car.fuel < 10 ? 1 : 0) + ' L';
       this.fuel.row.classList.toggle('low', car.fuel / car.fuelCap < 0.12);
       const tn = Math.max(0, Math.min(1, (car.engineTemp - 40) / 90));
       this.temp.fill.style.width = tn * 100 + '%';
+      this.temp.val.textContent = Math.round(car.engineTemp) + '°';
       this.temp.row.classList.toggle('low', car.engineTemp > 110);
       this.batt.fill.style.width = car.battery * 100 + '%';
+      this.batt.val.textContent = Math.round(car.battery * 100) + '%';
       this.batt.row.classList.toggle('low', car.battery < 0.15);
       const w = [];
       if (!car.isInstalled('battery')) w.push('No battery');
@@ -219,7 +248,11 @@ export class HUD {
       if (car.dyn.wheels.some((x) => x.flat)) w.push('Flat tyre');
       if (!car.ignition) w.push('E on ignition or press I');
       else if (!car.dyn.engine.running) w.push('Hold I to start');
-      this.warn.textContent = w.slice(0, 2).join(' · ');
+      const wk = w.slice(0, 3).join('|');
+      if (wk !== this._wk) {
+        this._wk = wk;
+        this.warn.innerHTML = w.slice(0, 3).map((t) => `<span>${t}</span>`).join('');
+      }
     }
     // compass
     const cam = g.renderer.camera;
@@ -227,13 +260,19 @@ export class HUD {
     // world +z is "north" along the road
     let hdg = (Math.atan2(-fwd.x, fwd.z) * 180) / Math.PI;
     hdg = (hdg + 360) % 360;
-    this.compassStrip.style.transform = `translateX(${-(hdg / 5) * 12 - 864 / 2 + 864 / 2 + 120 - 864}px)`;
+    this.compassStrip.style.transform = `translateX(${-(hdg / 5) * 12 + 180 - 864}px)`;
+    this.heading.textContent = String(Math.round(hdg) % 360).padStart(3, '0') + '°';
     const h = g.env.time;
     const hh = Math.floor(h),
       mm = Math.floor((h - hh) * 60);
-    this.clock.textContent = `Day ${g.env.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    const z = g.focusPoint().z + g.origin.z;
-    this.dist.textContent = `${(Math.max(0, z) / 1000).toFixed(1)} km`;
+    this.clock.innerHTML = `<b>Day ${g.env.day}</b> ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    const km = Math.max(0, g.focusPoint().z + g.origin.z) / 1000;
+    const dk = km.toFixed(1);
+    if (dk !== this._dk) {
+      this._dk = dk;
+      this.dist.innerHTML = `${dk} km <span>· Haven ${Math.max(0, HAVEN_KM - km).toFixed(0)} km</span>`;
+      this.routeFill.style.width = Math.min(100, (km / HAVEN_KM) * 100).toFixed(1) + '%';
+    }
     // hotbar
     const ia = g.interaction;
     const inv = g.inventory;
@@ -268,7 +307,15 @@ export class HUD {
           } else if (n) n.remove();
         });
       }
+      const name = ia.held ? ia.held.name || (ia.held.def && ia.held.def.name) || '' : '';
+      if (name !== this._hn) {
+        this._hn = name;
+        this.hotLabel.textContent = name;
+        this.hotLabel.classList.toggle('on', !!name);
+        this.hotIdle = 0;
+      }
       this.hotIdle += dt;
+      this.hotLabel.classList.toggle('dim', this.hotIdle > 4);
       this.hotbar.classList.toggle('dim', this.hotIdle > 4 && !(g.ui && g.ui.current === 'inventory'));
       const akey = ia.ammo['38'] + ',' + ia.ammo['12'];
       if (akey !== this._am) {
