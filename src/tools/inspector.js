@@ -1,13 +1,11 @@
-// Vehicle inspection & validation stand.
+// Vehicle inspection & validation stand (?car=beetle|sedan88).
 // Orbit around the car, open/close every hinged part, hide parts, and switch to analysis
 // render modes (clay, wireframe, normals, back-face hole finder, section cut, open-edge and
-// intersection reports) to critically check the generated geometry.
+// intersection reports) to critically check the imported geometry.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { buildCarBody } from '../vehicle/body/carBody.js';
-import { createCarMaterials } from '../vehicle/carMaterials.js';
-import { CarModel } from '../vehicle/carModel.js';
+import { carType } from '../vehicle/types.js';
 import { Sky, EnvironmentBaker } from '../gfx/sky.js';
 
 const canvas = document.getElementById('view');
@@ -100,7 +98,7 @@ workLights.visible = false;
 scene.add(workLights);
 
 let car = null;
-let body = null;
+let type = null;
 let mats = null;
 const state = {
   mode: 'shaded',
@@ -405,74 +403,19 @@ function runIntersections(filter) {
   return { report, pairs: Object.fromEntries(hits) };
 }
 
-// Skin grid integrity: folded / grazing base triangles reveal non star-shaped regions of the field.
-function runSkinCheck() {
-  clearOverlay('skin');
-  const nodes = body.nodes;
-  const T = nodes.tris,
-    P = nodes.P,
-    N = nodes.N;
-  const em = new Map();
-  for (let t = 0; t < T.length; t += 3)
-    for (let k = 0; k < 3; k++) {
-      const a = T[t + k],
-        b = T[t + ((k + 1) % 3)];
-      if (a === b) continue;
-      const key = a < b ? a + '_' + b : b + '_' + a;
-      em.set(key, (em.get(key) || 0) + 1);
-    }
-  let open = 0;
-  for (const c of em.values()) if (c === 1) open++;
-  const bad = [];
-  for (let t = 0; t < T.length; t += 3) {
-    const a = T[t],
-      b = T[t + 1],
-      c = T[t + 2];
-    const ux = P[b * 3] - P[a * 3],
-      uy = P[b * 3 + 1] - P[a * 3 + 1],
-      uz = P[b * 3 + 2] - P[a * 3 + 2];
-    const vx = P[c * 3] - P[a * 3],
-      vy = P[c * 3 + 1] - P[a * 3 + 1],
-      vz = P[c * 3 + 2] - P[a * 3 + 2];
-    const gx = uy * vz - uz * vy,
-      gy = uz * vx - ux * vz,
-      gz = ux * vy - uy * vx;
-    const l = Math.hypot(gx, gy, gz);
-    if (l < 1e-10) continue;
-    const d =
-      (gx * (N[a * 3] + N[b * 3] + N[c * 3]) + gy * (N[a * 3 + 1] + N[b * 3 + 1] + N[c * 3 + 1]) + gz * (N[a * 3 + 2] + N[b * 3 + 2] + N[c * 3 + 2])) /
-      l /
-      3;
-    if (Math.abs(d) < 0.3) bad.push(P[a * 3], P[a * 3 + 1], P[a * 3 + 2]);
-  }
-  if (bad.length) {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(bad, 3));
-    const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff00ff, size: 8, sizeAttenuation: false, depthTest: false }));
-    pts.renderOrder = 12;
-    pts.userData.overlay = 'skin';
-    scene.add(pts);
-    state.overlays.push(pts);
-  }
-  const report = `Skin grid: ${nodes.count} nodes, ${T.length / 3} tris\nopen edges: ${open}\nfolded/grazing tris: ${bad.length / 3}`;
-  setReport(report);
-  markDirty();
-  return report;
-}
-
-const STAGES = {
-  frame: ['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'],
-  shell: ['body'],
-  panels: ['door_FL', 'door_FR', 'door_RL', 'door_RR', 'hood', 'trunk', 'fender_L', 'fender_R', 'bumper_F', 'bumper_R', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'fuelflap'],
-  mech: ['engine', 'battery', 'radiator', 'airfilter', 'exhaust', 'fueltank'],
-  interior: ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel'],
-};
+// Assembly stages follow the car type's own assembly order.
 function setStage(stage) {
-  const order = ['frame', 'shell', 'panels', 'mech', 'interior'];
-  const upto = stage === 'full' ? order.length - 1 : order.indexOf(stage);
-  const on = new Set();
-  order.forEach((k, i) => i <= upto && STAGES[k].forEach((p) => on.add(p)));
-  for (const id of Object.keys(car.parts)) car.setInstalled(id, on.has(id));
+  const order = type.ASSEMBLY_ORDER;
+  const on = new Set(stage === 'full' ? Object.keys(car.parts) : []);
+  if (stage !== 'full') {
+    const groups = { frame: ['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'], shell: ['body'], mech: ['engine', 'exhaust', 'fanbelt', 'airfilter', 'radiator', 'battery', 'fueltank', 'spare'], interior: ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel'] };
+    const seq = ['frame', 'shell', 'mech', 'panels', 'interior'];
+    for (const k of seq.slice(0, seq.indexOf(stage) + 1)) {
+      if (groups[k]) groups[k].forEach((p) => on.add(p));
+      else order.filter((p) => !Object.values(groups).flat().includes(p)).forEach((p) => on.add(p));
+    }
+  }
+  for (const id of Object.keys(car.parts)) car.setInstalled(id, on.has(id) || id.startsWith('x_'));
   markDirty();
 }
 
@@ -559,7 +502,6 @@ function buildUI() {
   const ar = h('div', { className: 'row' });
   ar.append(h('button', { textContent: 'open edges', onclick: runOpenEdges }));
   ar.append(h('button', { textContent: 'intersections', onclick: () => runIntersections() }));
-  ar.append(h('button', { textContent: 'skin grid', onclick: runSkinCheck }));
   ar.append(
     h('button', {
       textContent: 'clear',
@@ -580,8 +522,8 @@ function buildUI() {
     ['full', 'complete vehicle'],
     ['frame', '1 · rolling chassis'],
     ['shell', '2 · + body shell'],
-    ['panels', '3 · + exterior panels'],
-    ['mech', '4 · + mechanicals'],
+    ['mech', '3 · + mechanicals'],
+    ['panels', '4 · + doors, lids and panels'],
     ['interior', '5 · + interior'],
   ])
     st.append(h('option', { value: k, textContent: label }));
@@ -761,19 +703,18 @@ async function init() {
   await new Promise((r) => setTimeout(r, 30));
   const subject = params.get('subject');
   if (subject && subject !== 'car') return initSubject(subject);
-  const res = parseFloat(params.get('res') || '0.028');
-  body = buildCarBody({ res });
-  mats = createCarMaterials({ color: params.get('color') ? parseInt(params.get('color'), 16) : 0xb4532a });
-  car = new CarModel(body, mats);
-  car.addWheels();
-  car.addExteriorDetails();
-  car.addInterior();
-  car.addEngineBay();
-  car.addChassis();
+  type = carType(params.get('car') || 'beetle');
+  const t0 = performance.now();
+  const asset = await type.load(renderer);
+  mats = type.materials(asset, { color: params.get('color') ? parseInt(params.get('color'), 16) : type.defaultColor });
+  car = type.build(asset, mats);
   scene.add(car.root);
   let tris = 0;
   for (const m of meshesOf(car.root)) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-  statusEl.textContent = `built in ${body.buildMs.toFixed(0)} ms · ${(tris / 1000).toFixed(0)}k triangles`;
+  statusEl.textContent = `${type.name} · loaded in ${(performance.now() - t0).toFixed(0)} ms · ${(tris / 1000).toFixed(0)}k triangles`;
+  // driver's eye view from the type's measurements
+  const e = type.DRIVER.eye;
+  VIEWS.driver = { pos: [e.x, e.y, e.z], target: [e.x, e.y - 0.25, e.z + 2] };
   buildUI();
   setView(params.get('view') || 'front34');
   if (params.get('ui') === '0') {
@@ -815,7 +756,6 @@ window.inspector = {
     workLights.visible = !!work;
   },
   openEdges: runOpenEdges,
-  skinCheck: runSkinCheck,
   intersections: runIntersections,
   camera: (pos, target, fov) => {
     camera.position.set(...pos);

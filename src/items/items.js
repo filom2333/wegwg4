@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass, itemLabel } from './itemDefs.js';
 import { MODEL_BUILDERS } from './itemModels.js';
-import { PARTS } from '../vehicle/carParts.js';
+import { carType } from '../vehicle/types.js';
 import { mulberry32 } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -31,12 +31,12 @@ export class Item {
   }
 
   get name() {
-    if (this.part) return PARTS[this.part].label;
+    if (this.part) return (carType(this.state.carType).PARTS[this.part] || { label: this.part }).label;
     return itemLabel(this.id, this.state);
   }
 
   get mass() {
-    if (this.part) return PARTS[this.part].mass;
+    if (this.part) return (carType(this.state.carType).PARTS[this.part] || { mass: 10 }).mass;
     return itemMass(this.id, this.state);
   }
 
@@ -93,9 +93,12 @@ export class ItemSystem {
     return g;
   }
 
-  // Mesh for a removed car part: shares the car's geometry.
-  buildPartMesh(partId) {
-    const car = this.game.car;
+  // Mesh for a removed car part: shares the geometry of a car of its type (the current car if
+  // it is one, else any in the fleet, else the type's template model).
+  buildPartMesh(partId, typeId = null) {
+    const g0 = this.game;
+    const tid = carType(typeId || (g0.car && g0.car.type.id)).id;
+    const car = g0.car && g0.car.type.id === tid ? g0.car : g0.fleet.cars.find((c) => c.type.id === tid) || g0.fleet.template(tid);
     const src = car.model.parts[partId];
     const g = new THREE.Group();
     const bbox = src.bbox;
@@ -141,7 +144,8 @@ export class ItemSystem {
   }
 
   spawnPart(partId, pos, quat = new THREE.Quaternion(), state = {}) {
-    const mesh = this.buildPartMesh(partId);
+    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'beetle';
+    const mesh = this.buildPartMesh(partId, state.carType);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
     this.group.add(mesh);
     this.items.add(it);
@@ -210,6 +214,7 @@ export class ItemSystem {
     // car-space state for the cargo simulation: it rests where it was put down
     it.stowed = { car, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
     car.attached.push(it);
+    car.owned = true; // a car with your things in it stays where you left it
     car.updateMass();
     it.poiKey = null;
   }
@@ -440,13 +445,14 @@ export class ItemSystem {
           }
         }
       }
-      const inTrunk = s.rest.z < -1.3;
-      const roof = inTrunk ? 0.95 : 1.25;
+      const sp = car.type.SPEC;
+      const inTrunk = s.rest.z < sp.axleR - 0.1 || s.rest.z > sp.axleF - 0.2;
+      const roof = inTrunk ? 0.95 : sp.roofY - 0.3;
       if (s.p.y > roof) {
         s.p.y = roof;
         if (s.v.y > 0) s.v.y *= -0.3;
       }
-      s.p.x = Math.max(-0.66, Math.min(0.66, s.p.x));
+      s.p.x = Math.max(-(sp.halfWidth - 0.13), Math.min(sp.halfWidth - 0.13, s.p.x));
       // orientation: spins while sliding, tumbles in the air
       if (!s.flat) s.flat = s.q.clone().premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -new THREE.Euler().setFromQuaternion(s.q, 'YXZ').y, 0, 'YXZ')));
       if (s.air) {
@@ -509,7 +515,7 @@ export class ItemSystem {
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);
       it.mesh.getWorldQuaternion(q);
-      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: !!it.stowed, poi: it.poiKey, spot: it.spot });
+      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, poi: it.poiKey, spot: it.spot });
     }
     return out;
   }

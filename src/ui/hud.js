@@ -212,6 +212,7 @@ export class HUD {
       else if (car.battery < 0.05) w.push('Battery dead');
       if (!car.isInstalled('engine')) w.push('No engine');
       if (car.oil < 0.8) w.push('Low oil');
+      if (car.coolantCap && (car.coolant < car.coolantCap * 0.3 || !car.isInstalled('radiator'))) w.push('Low coolant');
       if (car.engineTemp > 112) w.push('Overheating');
       if (car.fire > 0) w.push('Engine fire');
       if (!car.isInstalled('steeringWheel')) w.push('No steering wheel');

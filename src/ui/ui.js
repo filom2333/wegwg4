@@ -1,6 +1,7 @@
 // Menu layer: title (over the live attract-mode scene), new game setup, settings, career
 // statistics, multiplayer placeholder, loading, click-to-play, pause, journal, sleep and death.
 
+import { CAR_TYPE_LIST } from '../vehicle/types.js';
 import { settings, DEFAULT_BINDINGS } from '../core/settings.js';
 import { InventoryUI } from './inventoryUI.js';
 import { input } from '../core/input.js';
@@ -234,7 +235,7 @@ export class UI {
 
   // ---------------------------------------------------------------- new game
   showNewGame() {
-    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'assembled', seed: String(Math.floor(Math.random() * 900000) + 100000) });
+    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'assembled', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
     this.screen('newgame', (s) => {
       s.classList.add('ui-shade-panel');
       const p = el('div', 'ui-panel', s);
@@ -252,7 +253,9 @@ export class UI {
         cfg.difficulty,
         (v) => (cfg.difficulty = v)
       );
-      el('div', 'ui-label', body, 'The car');
+      el('div', 'ui-label', body, 'Your car');
+      this.carChoices(body, cfg);
+      el('div', 'ui-label', body, 'Condition');
       this.choices(
         body,
         [
@@ -279,12 +282,35 @@ export class UI {
       const go = this.item(a, 'Start the drive', () => {
         const seed = +(cfg.seed || 1) || 1;
         if (hasSave()) {
-          this.confirm('Starting a new game replaces your current save.', 'Start anyway', () => this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, fresh: 1 }));
-        } else this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, fresh: 1 });
+          this.confirm('Starting a new game replaces your current save.', 'Start anyway', () => this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, car: cfg.car, fresh: 1 }));
+        } else this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, car: cfg.car, fresh: 1 });
       });
       go.classList.add('primary');
     });
     this.show('newgame');
+  }
+
+  // Starting car cards: name, year, a line about it and its numbers. The other two wait somewhere
+  // along the road.
+  carChoices(parent, cfg) {
+    const wrap = el('div', 'ui-cars', parent);
+    const cards = CAR_TYPE_LIST.map((t) => {
+      const S = t.stats;
+      const b = el(
+        'button',
+        'ui-car' + (t.id === cfg.car ? ' sel' : ''),
+        wrap,
+        `<b>${esc(t.name)}</b><em>${t.year} · ${esc(S.engine)}</em><span>${esc(t.blurb)}</span>
+         <div class="ui-car-stats"><i>${S.power} hp</i><i>${S.torque} Nm</i><i>${S.mass} kg</i><i>${S.top} km/h</i><i>${esc(S.drive)}</i><i>${esc(S.gearbox)}</i></div>`
+      );
+      b.onclick = () => {
+        cards.forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+        cfg.car = t.id;
+      };
+      return b;
+    });
+    el('p', 'ui-note', parent, 'The other two are out there somewhere along the road, abandoned. Find them, fix them, drive whichever you like.');
   }
 
   choices(parent, list, cur, onPick) {
@@ -625,12 +651,13 @@ export class UI {
       el('div', 'ui-stat', a, `<span>.38 cartridges</span><span>${ia.ammo['38'] || 0}</span>`);
       el('div', 'ui-stat', a, `<span>12 ga shells</span><span>${ia.ammo['12'] || 0}</span>`);
       const b = el('div', '', cols);
-      el('div', 'ui-label', b, 'The car');
+      el('div', 'ui-label', b, car.type.name);
       meter(b, `Fuel · ${car.fuel.toFixed(1)} of ${car.fuelCap} l`, car.fuel / car.fuelCap, 0.15);
       meter(b, `Oil · ${car.oil.toFixed(1)} l`, car.oil / car.oilCap, 0.3);
       meter(b, 'Battery', car.battery, 0.2);
       meter(b, 'Engine', car.isInstalled('engine') ? car.engineCondition : 0, 0.35);
-      meter(b, 'Fan belt', car.isInstalled('fanbelt') ? car.fanbeltCondition : 0, 0.3);
+      meter(b, car.PARTS.fanbelt.label, car.isInstalled('fanbelt') ? car.fanbeltCondition : 0, 0.3);
+      if (car.coolantCap) meter(b, `Coolant · ${car.coolant.toFixed(1)} of ${car.coolantCap} l`, car.isInstalled('radiator') ? car.coolant / car.coolantCap : 0, 0.3);
       meter(b, `Engine temp · ${Math.round(car.engineTemp)}°C`, 1 - Math.max(0, Math.min(1, (car.engineTemp - 90) / 40)), 0.4);
       const tyres = car.dyn.wheels.filter((w) => w.installed);
       const tc = tyres.length ? tyres.reduce((m, w) => Math.min(m, car.parts[w.id].condition ?? 1), 1) : 0;

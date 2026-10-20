@@ -3,7 +3,7 @@
 // control, and the shared weathering (dust, dirt, rust, wet) used by the rest of the game.
 
 import * as THREE from 'three';
-import { applyWeathering, weatheringUniforms } from '../carMaterials.js';
+import { applyWeathering, weatheringUniforms } from '../weathering.js';
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/beetle/';
 const NAMES = ['paint_color', 'paint_normal', 'paint_orm', 'paint_mask', 'trim_color', 'trim_normal', 'trim_orm', 'trim_mask', 'under_color', 'under_normal', 'under_orm', 'under_mask', 'mech_color', 'mech_normal', 'mech_orm', 'tyre_color', 'tyre_normal', 'tyre_orm'];

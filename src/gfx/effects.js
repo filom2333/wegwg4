@@ -5,7 +5,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise.js';
 import { tubeAlong } from './geom.js';
-import { POINTS as CAR_POINTS } from '../vehicle/beetle/spec.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -369,7 +368,8 @@ export class Effects {
     const rate = 6 + car.dyn.controls.throttle * 20;
     if (Math.random() < rate * dt) {
       // twin tail pipes under the rear bumper
-      const p = (Math.random() < 0.5 ? CAR_POINTS.exhaust : CAR_POINTS.exhaust2).clone().applyMatrix4(car.root.matrixWorld);
+      const P = car.type.POINTS;
+      const p = (Math.random() < 0.5 || !P.exhaust2 ? P.exhaust : P.exhaust2).clone().applyMatrix4(car.root.matrixWorld);
       const back = V(0, 0, -1).applyQuaternion(car.root.quaternion);
       const cold = this.game.env.time < 9 || this.game.env.time > 19 ? 0.35 : 0.12;
       const bad = Math.max(0, 0.5 - car.engineCondition);
@@ -392,7 +392,7 @@ export class Effects {
     const f = car.fire;
     // the engine is at the back: smoke pours out of the engine lid louvres
     const hood = car.isInstalled('hood') && car.model.parts.hood.openT < 0.3;
-    const base = (hood ? CAR_POINTS.engineLidTop : CAR_POINTS.engine).clone().applyMatrix4(car.root.matrixWorld);
+    const base = (hood ? car.type.POINTS.engineLidTop : car.type.POINTS.engine).clone().applyMatrix4(car.root.matrixWorld);
     if (s > 0.05 && Math.random() < s * 30 * dt)
       this.smoke.emit({ pos: base.clone().add(V((Math.random() - 0.5) * 0.6, 0, (Math.random() - 0.5) * 0.4)), vel: V((Math.random() - 0.5) * 0.4, 1.0 + s, (Math.random() - 0.5) * 0.4), size: 0.4, grow: 2.5, life: 2.5, color: s > 0.6 ? [0.12, 0.12, 0.12] : [0.55, 0.55, 0.56], alpha: 0.35, drag: 0.8, grav: -0.5 });
     if (f > 0) {
@@ -405,7 +405,7 @@ export class Effects {
   }
 
   backfire(car) {
-    const p = CAR_POINTS.exhaust.clone().add(V(0, 0, -0.04)).applyMatrix4(car.root.matrixWorld);
+    const p = car.type.POINTS.exhaust.clone().add(V(0, 0, -0.04)).applyMatrix4(car.root.matrixWorld);
     for (let i = 0; i < 6; i++) this.fire.emit({ pos: p, vel: V(0, 0, -1).applyQuaternion(car.root.quaternion).multiplyScalar(4 + Math.random() * 3).add(V(Math.random() - 0.5, Math.random() * 0.5, Math.random() - 0.5)), size: 0.25, grow: 0.05, life: 0.18, color: [1, 0.55, 0.2], alpha: 1, drag: 4 });
     this.smoke.emit({ pos: p, vel: V(0, 0.5, 0), size: 0.3, grow: 1.4, life: 1.5, color: [0.2, 0.2, 0.2], alpha: 0.4, drag: 2, grav: -0.3 });
     this.flash(p, 0.6);
@@ -494,7 +494,7 @@ export class Effects {
   }
 
   extinguish(car) {
-    const p = CAR_POINTS.engine.clone().applyMatrix4(car.root.matrixWorld);
+    const p = car.type.POINTS.engine.clone().applyMatrix4(car.root.matrixWorld);
     for (let i = 0; i < 40; i++) this.smoke.emit({ pos: p.clone().add(V((Math.random() - 0.5) * 0.8, 0, (Math.random() - 0.5) * 0.8)), vel: V((Math.random() - 0.5) * 2, 1 + Math.random(), (Math.random() - 0.5) * 2), size: 0.3, grow: 1.6, life: 2, color: [0.92, 0.92, 0.92], alpha: 0.5, drag: 1.5 });
   }
 
@@ -673,7 +673,7 @@ export class Effects {
     // light sources: car headlights, lanterns, powered POI lamps
     const sources = [];
     const car = g.car;
-    if (car && car.lightsOn) sources.push(CAR_POINTS.headlampGlare.clone().add(V(0, 0, 0.4)).applyMatrix4(car.root.matrixWorld));
+    if (car && car.lightsOn) sources.push(car.type.POINTS.headlampGlare.clone().add(V(0, 0, 0.4)).applyMatrix4(car.root.matrixWorld));
     if (g.pois) for (const l of g.pois.lightPool) if (l.intensity > 0 && !l.userData.beacon) sources.push(l.position.clone());
     for (const it of g.items.items) if (it.light) sources.push(it.mesh.getWorldPosition(V(0, 0, 0)));
     for (const s of sources) {

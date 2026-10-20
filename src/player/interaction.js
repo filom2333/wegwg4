@@ -7,14 +7,18 @@ import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
-import { PARTS, PART_FAMILY } from '../vehicle/carParts.js';
-import { HOTSPOTS, SEATS } from '../vehicle/car.js';
-import { CONTROLS, DRIVER } from '../vehicle/beetle/spec.js';
+import { carType } from '../vehicle/types.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
+
+
+// Part table entry of a part item (it remembers which kind of car it came off).
+function partDefOf(it) {
+  return carType(it.state && it.state.carType).PARTS[it.part] || { label: it.part, mass: 10 };
+}
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const REACH = 2.6;
@@ -149,7 +153,7 @@ export class Interaction {
     const lo = origin.clone().applyMatrix4(cinv);
     const ld = dir.clone().transformDirection(cinv);
     let hs = null;
-    for (const h of HOTSPOTS) {
+    for (const h of car.type.HOTSPOTS) {
       if (!car.isInstalled(h.part)) continue;
       if (h.lid && !car.lidOpen(h.lid)) continue;
       if (h.inside && !this.game.player.seat) continue;
@@ -162,7 +166,7 @@ export class Interaction {
     // seats via door opening: choose the seat closest to the ray if a door is open/missing
     let seat = null;
     if (!this.game.player.seat) {
-      for (const [name, s] of Object.entries(SEATS)) {
+      for (const [name, s] of Object.entries(car.type.SEATS)) {
         const door = s.door;
         const doorOpen = !car.isInstalled(door) || car.model.parts[door].openT > 0.6;
         if (!doorOpen || !car.isInstalled(s.part)) continue;
@@ -205,10 +209,10 @@ export class Interaction {
       const def = it.def;
       if (it.part) {
         const fit = this.partFit(it);
-        info = { title: it.name, sub: `${PARTS[it.part].mass} kg` };
+        info = { title: it.name, sub: `${partDefOf(it).mass} kg` };
         if (fit) {
           this.showGhost(it, fit.ok);
-          if (fit.ok) prompts.push(['E', 'Install ' + PARTS[fit.slot].label.toLowerCase()]);
+          if (fit.ok) prompts.push(['E', 'Install ' + this.game.car.PARTS[fit.slot].label.toLowerCase()]);
           else prompts.push(['', fit.reason]);
           if (fit.ok && !blocked && input.wasPressed('interact')) this.install(it, fit.slot);
         } else this.hideGhost();
@@ -321,6 +325,7 @@ export class Interaction {
       const h = t.hotspot.id;
       if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank')) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
+      if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
     if (t.kind === 'pump' && type === 'fuel') return { kind: 'pump', label: 'Fill from pump' };
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
@@ -335,7 +340,7 @@ export class Interaction {
       case 'item': {
         const it = t.item;
         if (it.part) {
-          info = { title: it.name, sub: `Car part · ${PARTS[it.part].mass} kg` };
+          info = { title: it.name, sub: `${carType(it.state.carType).short} part · ${partDefOf(it).mass} kg` };
         } else info = this.heldInfo(it);
         prompts.push(['E', 'Pick up']);
         if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
@@ -346,7 +351,7 @@ export class Interaction {
       case 'part': {
         const id = t.part;
         const st = car.parts[id];
-        const def = PARTS[id];
+        const def = car.PARTS[id];
         const cond = st ? Math.round(st.condition * 100) : 100;
         info = { title: def.label, sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
         const mp = car.model.parts[id];
@@ -359,6 +364,7 @@ export class Interaction {
         if (id === 'battery') info.sub = `Charge ${Math.round(car.battery * 100)}%`;
         if (id === 'fanbelt') info.sub = `Condition ${Math.round(car.fanbeltCondition * 100)}%${car.fanbeltCondition < 0.25 ? ' · cracked, replace soon' : ''}`;
         if (id === 'fueltank') info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
+        if (id === 'radiator') info.sub = `Condition ${cond}% · coolant ${car.coolant.toFixed(1)} / ${car.coolantCap} l`;
         if (id.startsWith('wheel')) {
           const w = car.dyn.wheels.find((x) => x.id === id);
           info.sub = `Tyre ${cond}%${w && w.flat ? ' · flat' : ''}`;
@@ -374,6 +380,9 @@ export class Interaction {
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
           info.bar = car.oil / car.oilCap;
+        } else if (h.id === 'coolant') {
+          info.sub = `${car.coolant.toFixed(1)} / ${car.coolantCap} l · ${Math.round(car.engineTemp)}°C`;
+          info.bar = car.coolant / car.coolantCap;
         } else if (h.id === 'battery') {
           info.sub = `Charge ${Math.round(car.battery * 100)}%`;
           info.bar = car.battery;
@@ -407,7 +416,7 @@ export class Interaction {
       case 'pump': {
         const st = t.pump.inst.state;
         info = { title: 'Fuel pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
-        const carNear = car && car.worldPointOf(HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
+        const carNear = car && car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
         if (st.fuel > 0.5 && carNear) prompts.push(['E', this.game.refuel && this.game.refuel.active ? 'Stop refuelling' : 'Refuel the car']);
         else if (st.fuel > 0.5) prompts.push(['', 'Bring the car closer or use a jerry can']);
         break;
@@ -421,7 +430,7 @@ export class Interaction {
   }
 
   removeTime(id) {
-    const m = PARTS[id].mass;
+    const m = this.game.car.PARTS[id].mass;
     return 0.6 + Math.min(3, m / 25);
   }
 
@@ -500,7 +509,7 @@ export class Interaction {
         if (viaMouse) return;
         g.player.enterSeat(car, t.seat);
         g.audio && g.audio.play('seat');
-        const door = SEATS[t.seat].door;
+        const door = car.type.SEATS[t.seat].door;
         if (car.isInstalled(door) && car.model.parts[door].openT > 0.5) setTimeout(() => car.toggleOpen(door), 350);
         break;
       }
@@ -511,7 +520,7 @@ export class Interaction {
       case 'pump': {
         if (viaMouse) return;
         if (g.refuel && g.refuel.active) g.refuel.active = false;
-        else if (car.worldPointOf(HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5 && t.pump.inst.state.fuel > 0.5) g.refuel = { active: true, pump: t.pump };
+        else if (car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5 && t.pump.inst.state.fuel > 0.5) g.refuel = { active: true, pump: t.pump };
         break;
       }
       case 'npc':
@@ -524,9 +533,9 @@ export class Interaction {
   pick(it) {
     const g = this.game;
     // heavy parts (engine, body shell) are dragged along the ground rather than carried
-    this.dragging = !!(it.part && PARTS[it.part].mass > 60);
+    this.dragging = !!(it.part && partDefOf(it).mass > 60);
     if (this.dragging) {
-      g.hud && g.hud.toast(`${it.name} · ${PARTS[it.part].mass} kg · too heavy to lift, dragging`);
+      g.hud && g.hud.toast(`${it.name} · ${partDefOf(it).mass} kg · too heavy to lift, dragging`);
       this.dragYaw0 = g.player.yaw;
       this.dragQ0 = it.mesh.quaternion.clone();
     }
@@ -941,7 +950,7 @@ export class Interaction {
     const t = this.target;
     const car = g.car;
     if (it.id === 'repairKit' && t && (t.kind === 'part' || t.kind === 'hotspot')) {
-      if (!car.lidOpen('hood')) return g.hud && g.hud.toast('Open the engine lid first');
+      if (!car.lidOpen('hood')) return g.hud && g.hud.toast(`Open the ${car.type.lids.hood} first`);
       car.engineCondition = Math.min(1, car.engineCondition + 0.35);
       car.fire = 0;
       it.state.charges--;
@@ -1010,6 +1019,9 @@ export class Interaction {
       } else if (tgt.sys === 'oil') {
         amount = Math.min(amount, car.oilCap + 0.3 - car.oil);
         car.oil += amount;
+      } else if (tgt.sys === 'coolant') {
+        amount = Math.min(amount, car.coolantCap - car.coolant);
+        car.coolant += amount;
       }
       if (tgt.sys === 'fuel') car.updateMass();
     } else if (tgt.kind === 'pump') {
@@ -1110,8 +1122,11 @@ export class Interaction {
   partFit(it) {
     const car = this.game.car;
     if (!car) return null;
-    const fam = PART_FAMILY[it.part];
-    const slots = fam ? Object.keys(PART_FAMILY).filter((k) => PART_FAMILY[k] === fam && !car.isInstalled(k)) : [it.part];
+    // parts only fit the kind of car they came off
+    if (carType(it.state.carType).id !== car.type.id) return null;
+    const F = car.type.PART_FAMILY;
+    const fam = F[it.part];
+    const slots = fam ? Object.keys(F).filter((k) => F[k] === fam && !car.isInstalled(k)) : [it.part];
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     let best = null;
@@ -1139,7 +1154,7 @@ export class Interaction {
     if (!fit) return this.hideGhost();
     if (!this.ghost || this.ghostFor !== fit.slot) {
       this.hideGhost();
-      const mesh = this.game.items.buildPartMesh(it.part);
+      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType);
       mesh.traverse((o) => {
         if (o.isMesh) {
           o.material = this.ghostMat;
@@ -1154,7 +1169,7 @@ export class Interaction {
     const c = car.model.parts[fit.slot].bbox.getCenter(V(0, 0, 0));
     // wheels share geometry; slot centre differs
     const m = this.partMatrix(car, fit.slot).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
-    if (PART_FAMILY[it.part] && it.part !== fit.slot) {
+    if (car.type.PART_FAMILY[it.part] && it.part !== fit.slot) {
       const src = car.model.parts[it.part].bbox.getCenter(V(0, 0, 0));
       // mirrored side: rotate 180° about Y for opposite-side wheels
       if (Math.sign(src.x) !== Math.sign(c.x)) m.multiply(new THREE.Matrix4().makeRotationY(Math.PI));
@@ -1183,6 +1198,7 @@ export class Interaction {
     g.player.carryMass = 0;
     g.items.destroy(it);
     car.setInstalled(slot, true);
+    car.owned = true;
     car.parts[slot].condition = cond;
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
@@ -1192,7 +1208,7 @@ export class Interaction {
     if (w) w.flat = cond < 0.02;
     g.stats.partsInstalled++;
     g.audio && g.audio.play('install', { at: car.worldPointOf(car.model.parts[slot].bbox.getCenter(V(0, 0, 0))) });
-    g.hud && g.hud.toast(`${PARTS[slot].label} installed`);
+    g.hud && g.hud.toast(`${car.PARTS[slot].label} installed`);
     g.onPartInstalled && g.onPartInstalled(slot);
   }
 
@@ -1207,7 +1223,7 @@ export class Interaction {
       s = V(0, 0, 0);
     m.decompose(pos, q, s);
     if (mp.hinge) car.model.setOpen(id, 0);
-    const state = { condition: car.parts[id].condition };
+    const state = { condition: car.parts[id].condition, carType: car.type.id };
     if (id === 'battery') {
       state.charge = car.battery;
     }
@@ -1220,10 +1236,11 @@ export class Interaction {
       state.oil = car.oil;
     }
     car.setInstalled(id, false);
+    car.owned = true;
     const it = g.items.spawnPart(id, pos, q, state);
     g.audio && g.audio.play('remove', { at: pos });
-    if (PARTS[id].mass <= 60) this.pick(it);
-    else g.hud && g.hud.toast(`${PARTS[id].label} removed — too heavy to carry`);
+    if (car.PARTS[id].mass <= 60) this.pick(it);
+    else g.hud && g.hud.toast(`${car.PARTS[id].label} removed — too heavy to carry`);
   }
 
   // ------------------------------------------------------------------ stowing in the car
@@ -1288,7 +1305,7 @@ export class Interaction {
       lv.updateMatrix();
       return lv.userData.top.clone().sub(lv.position).applyQuaternion(lv.quaternion).add(lv.position).add(V(0, 0.01, 0));
     }
-    const p = CONTROLS[target];
+    const p = car.type.CONTROLS[target];
     return p ? p.clone() : V(0, 0, 0);
   }
 
@@ -1301,7 +1318,8 @@ export class Interaction {
     for (const side of ['right', 'left']) {
       // car space: +X is the car's left
       const sg = side === 'left' ? 1 : -1;
-      const S = car.root.localToWorld(DRIVER.shoulder.clone().add(V(DRIVER.shoulderHalf * sg, 0, 0))).sub(cam.position).applyQuaternion(inv);
+      const D = car.type.DRIVER;
+      const S = car.root.localToWorld(D.shoulder.clone().add(V(D.shoulderHalf * sg, 0, 0))).sub(cam.position).applyQuaternion(inv);
       const pole = V(0.35 * sg, -1, 0.1).transformDirection(car.root.matrixWorld).applyQuaternion(inv);
       out[side] = { shoulder: S, pole };
     }
@@ -1322,7 +1340,7 @@ export class Interaction {
     const camQ = cam.quaternion;
     const inv = camQ.clone().invert();
     const toCam = (wp) => wp.clone().sub(cam.position).applyQuaternion(inv);
-    const R = DRIVER.rimRadius;
+    const R = car.type.DRIVER.rimRadius;
     // hands ride with the rim up to about 50 degrees each way, then slide along it (the arms
     // would cross over the wheel beyond that)
     const turn = clamp(wheelObj.rotation.z, -0.85, 0.85);

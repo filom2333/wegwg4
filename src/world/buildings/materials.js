@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { makeCanvas, canvasTexture, cached, normalFromHeight } from '../../gfx/textures.js';
 import { mulberry32, SimplexNoise } from '../../core/noise.js';
-import { applyWeathering, weatheringUniforms } from '../../vehicle/carMaterials.js';
+import { applyWeathering, weatheringUniforms } from '../../vehicle/weathering.js';
 
 const PX = 256; // pixels per texture
 

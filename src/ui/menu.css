@@ -227,6 +227,70 @@
   color: var(--amber);
 }
 
+/* starting car cards */
+.ui-cars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.ui-car {
+  all: unset;
+  cursor: pointer;
+  padding: 14px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ui-car b {
+  font-weight: 500;
+  font-size: 16px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.ui-car em {
+  font-style: normal;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  opacity: 0.85;
+}
+.ui-car span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.ui-car-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 4px;
+}
+.ui-car-stats i {
+  font-style: normal;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.ui-car:hover {
+  border-color: rgba(236, 230, 218, 0.36);
+}
+.ui-car.sel {
+  border-color: var(--amber);
+  background: rgba(217, 163, 91, 0.07);
+}
+.ui-car.sel b {
+  color: var(--amber);
+}
+.ui-note {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 6px 0 2px;
+}
+
 /* rows: label + control */
 .ui-row {
   display: grid;

@@ -5,7 +5,6 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
-import { SEATS } from '../vehicle/car.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const RADIUS = 0.3;
@@ -74,6 +73,7 @@ export class Player {
   enterSeat(car, seat) {
     this.seat = seat;
     this.car = car;
+    car.owned = true;
     this.seatYaw = 0;
     this.seatPitch = -0.08;
     this.collider.setEnabled(false);
@@ -83,7 +83,7 @@ export class Player {
   exitSeat() {
     const car = this.car;
     if (!car) return false;
-    const s = SEATS[this.seat];
+    const s = car.type.SEATS[this.seat];
     // find a free spot beside the door
     const candidates = [s.exit, s.exit.clone().setX(-s.exit.x), V(0, 0, 3.2), V(0, 0, -3.4), V(0, 2.0, 0)];
     for (const c of candidates) {
@@ -244,18 +244,23 @@ export class Player {
   // A moving car meeting the player: push the player clear of its footprint and hurt them in
   // proportion to the closing speed. (The capsule itself does not collide with the car.)
   carContact(dt) {
+    for (const car of this.game.fleet ? this.game.fleet.cars : []) if (car.active !== false) this.carContactWith(car, dt);
+  }
+
+  carContactWith(car, dt) {
     const g = this.game;
-    const car = g.car;
     if (!car || !car.dyn) return;
     const pos = this.position;
     const cp = car.root.position;
     const dx = pos.x - cp.x,
       dz = pos.z - cp.z;
-    if (dx * dx + dz * dz > 12) return;
+    if (dx * dx + dz * dz > 16) return;
     const inv = car.root.matrixWorld.clone().invert();
     const l = V(pos.x, pos.y + 0.9, pos.z).applyMatrix4(inv);
-    const hx = 0.92 + RADIUS,
-      hz = 2.28 + RADIUS;
+    const sp = car.type.SPEC;
+    const hx = sp.halfWidth + 0.1 + RADIUS,
+      hz = (sp.frontTip - sp.rearTip) / 2 + RADIUS;
+    l.z -= (sp.frontTip + sp.rearTip) / 2; // footprint centre
     if (Math.abs(l.x) > hx || Math.abs(l.z) > hz || l.y < -0.4 || l.y > 1.9) return;
     // standing on the roof / hood: let the controller handle it
     if (pos.y > car.root.position.y + 1.25) return;

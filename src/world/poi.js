@@ -8,7 +8,7 @@ import { Builder } from './buildings/builder.js';
 import { archMaterials, resolveMaterial } from './buildings/materials.js';
 import { LAYOUTS } from './poiLayouts.js';
 import { POI_SPACING } from './worldGen.js';
-import { applyWeathering, weatheringUniforms } from '../vehicle/carMaterials.js';
+import { applyWeathering, weatheringUniforms } from '../vehicle/weathering.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -27,7 +27,7 @@ export class POIManager {
     game.worldGroup.add(this.group);
     this.loadRadius = 700;
     this.unloadRadius = 950;
-    this.wreckProto = null;
+    this.wreckProtos = [];
     this.inflight = new Set();
     this.ready = new Map();
     // a fixed pool of lights for powered fixtures and beacons: adding and removing lights with
@@ -42,8 +42,12 @@ export class POIManager {
     this.startWorker();
   }
 
-  setWreckPrototype(group) {
-    this.wreckProto = group;
+  // One roadside wreck per car type; boxes for their colliders.
+  setWreckPrototypes(groups) {
+    this.wreckProtos = groups.map((g) => {
+      const b = new THREE.Box3().setFromObject(g);
+      return { group: g, half: b.getSize(V(0, 0, 0)).multiplyScalar(0.5), cy: (b.min.y + b.max.y) / 2 };
+    });
   }
 
   update(gx, gz) {
@@ -186,15 +190,17 @@ export class POIManager {
     }
     // wrecks
     const nW = WRECKS[poi.type] ?? 0;
-    for (let i = 0; i < nW && this.wreckProto; i++) this.addWreck(inst, rnd, i, poi.type);
+    for (let i = 0; i < nW && this.wreckProtos.length; i++) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
     this.loaded.set(k, inst);
     this.game.items && this.game.items.onPoiLoaded && this.game.items.onPoiLoaded(inst, rnd);
     this.game.npcs && this.game.npcs.onPoiLoaded && this.game.npcs.onPoiLoaded(inst, rnd);
+    this.game.fleet && this.game.fleet.onPoiLoaded(inst);
   }
 
   addWreck(inst, rnd, i, type) {
-    const w = this.wreckProto.clone();
+    const proto = this.wreckProtos[Math.floor(rnd() * this.wreckProtos.length)];
+    const w = proto.group.clone();
     let x, z, rot;
     if (type === 'junkyard') {
       x = -8 + (i % 4) * 5.2;
@@ -214,23 +220,27 @@ export class POIManager {
     const wp = V(x, 0, z).applyMatrix4(inst.root.matrixWorld);
     const o = this.game.origin;
     const gy = this.game.gen.height(wp.x + o.x, wp.z + o.z) - inst.poi.y;
-    w.position.set(x, gy + (tilt > 1 ? 0.88 : -0.04), z);
+    const H = proto.half;
+    // on its side the car rests on its half width
+    w.position.set(x, gy + (tilt > 1 ? H.x : -0.04), z);
     w.rotation.set(0, rot, tilt);
     // random paint per wreck
     const paints = [0x6d7a7f, 0x7a2e24, 0x2f4a5c, 0xb9b2a0, 0x4b5a3a, 0x8b6d3c];
     // (clone() deep-copies userData through JSON, so the shared material comes from the prototype)
-    const base = this.wreckProto.wreckPaint || this.wreckProto.userData.paint;
+    const base = proto.group.wreckPaint;
     const hex = paints[Math.floor(rnd() * paints.length)];
-    const pm = base.userData.make ? base.userData.make(hex) : base.clone();
-    pm.color.setHex(hex);
-    w.traverse((o) => {
-      if (o.isMesh && o.material === base) o.material = pm;
-    });
+    if (base) {
+      const pm = base.userData.make ? base.userData.make(hex) : base.clone();
+      pm.color.setHex(hex);
+      w.traverse((o) => {
+        if (o.isMesh && o.material === base) o.material = pm;
+      });
+    }
     inst.root.add(w);
     // collider (box)
-    const c = V(x, gy + (tilt > 1 ? 0.88 : 0.7), z);
+    const c = V(x, gy + (tilt > 1 ? H.x : proto.cy + 0.05), z);
     const qq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot, tilt, 'YXZ'));
-    const desc = RAPIER.ColliderDesc.cuboid(0.78, 0.55, 2.0).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
+    const desc = RAPIER.ColliderDesc.cuboid(H.x * 0.92, H.y * 0.8, H.z * 0.95).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
     const col = this.game.physics.world.createCollider(desc, inst.body);
     this.game.physics.setOwner(col, { kind: 'wreck', surface: 'metal', poi: inst });
     inst.loot.push({ pos: V(x, gy + 0.6, z), kind: 'wreck', wreck: true });
@@ -301,6 +311,7 @@ export class POIManager {
     if (!inst) return;
     this.game.items && this.game.items.onPoiUnloaded && this.game.items.onPoiUnloaded(inst);
     this.game.npcs && this.game.npcs.onPoiUnloaded && this.game.npcs.onPoiUnloaded(inst);
+    this.game.fleet && this.game.fleet.onPoiUnloaded(inst);
     for (const d of inst.doors) this.game.physics.removeBody(d.body);
     this.game.physics.removeBody(inst.body);
     this.group.remove(inst.root);

@@ -55,21 +55,17 @@ export function writeSave(game) {
 
 export function serializeGame(g) {
   const o = g.origin;
-  const car = g.car;
-  const cp = car.root.position,
-    cq = car.root.quaternion;
   const p = g.player;
   const pp = p.position;
   const ia = g.interaction;
-  const parts = {};
-  for (const [id, st] of Object.entries(car.parts)) parts[id] = { installed: !!st.installed, condition: st.condition ?? 1 };
   const held = ia.held ? { id: ia.held.id, part: ia.held.part, state: ia.held.state } : null;
   return {
-    v: 1,
+    v: 2,
     savedAt: Date.now(),
     seed: g.seed,
     difficulty: g.difficultyName,
     startMode: g.startMode,
+    startCar: g.startCarType,
     origin: [o.x, o.z],
     env: { time: g.env.time, day: g.env.day, weather: g.env.weatherName },
     player: {
@@ -82,28 +78,11 @@ export function serializeGame(g) {
       energy: p.energy,
       bleeding: p.bleeding,
       seat: p.seat,
+      seatCar: p.seat && p.car ? p.car.id : null,
       headlampOn: p.headlampOn,
     },
     inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
-    car: {
-      pos: [cp.x + o.x, cp.y, cp.z + o.z],
-      quat: [cq.x, cq.y, cq.z, cq.w],
-      fuel: car.fuel,
-      oil: car.oil,
-      model: 'beetle',
-      battery: car.battery,
-      engineCondition: car.engineCondition,
-      fanbeltCondition: car.fanbeltCondition,
-      odometer: car.odometer,
-      trip: car.trip,
-      dirt: car.dirt,
-      lightsOn: car.lightsOn,
-      paintColor: car.paintColor ?? null,
-      stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
-      storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
-      parts,
-      open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
-    },
+    fleet: g.fleet.serialize(),
     // loot that never left its spot is regenerated deterministically when the POI loads
     items: g.items.serialize().filter((it) => it.poi === null || it.poi === undefined),
     itemsSaved: [...g.items.saved.entries()],
@@ -123,29 +102,14 @@ export function applyWorldState(g, d) {
 export function applySave(g, d) {
   const o = g.origin;
   const car = g.car;
+  const carById = (id) => (id === true || id === undefined ? car : g.fleet.cars.find((c) => c.id === id) || car);
   Object.assign(g.stats, d.stats || {});
   g.env.time = d.env.time;
   g.env.day = d.env.day;
   if (d.env.weather) g.env.setWeather(d.env.weather, true);
-  // car
-  const c = d.car;
-  for (const k of ['fuel', 'oil', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined) car[k] = c[k];
-  // saves from before the Beetle describe another car's parts: keep its fluids, not its layout
-  const sameModel = c.model === 'beetle';
-  if (c.paintColor) {
-    car.paintColor = c.paintColor;
-    g.carMats.paint.color.setHex(c.paintColor);
-  }
-  for (const [id, st] of Object.entries(sameModel ? c.parts || {} : {})) {
-    if (!car.parts[id]) continue;
-    if (!!car.parts[id].installed !== st.installed) car.setInstalled(id, st.installed);
-    car.parts[id].condition = st.condition;
-  }
-  for (const [id, t] of Object.entries(sameModel ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
-  car.rebuildColliders();
   // items
   for (const s of d.items || []) {
-    if (s.part && !car.model.parts[s.part]) continue;
+    if (s.part && !(s.state && s.state.carType) && !car.model.parts[s.part]) continue;
     const pos = new THREE.Vector3(s.pos[0] - o.x, s.pos[1], s.pos[2] - o.z);
     const q = new THREE.Quaternion(...s.quat);
     const it = s.part ? g.items.spawnPart(s.part, pos, q, s.state) : g.items.spawn(s.id, pos, q, s.state, { sleep: !s.stowed });
@@ -153,7 +117,7 @@ export function applySave(g, d) {
     it.spot = null;
     if (s.stowed) {
       it.mesh.updateMatrixWorld(true);
-      g.items.stow(it, car);
+      g.items.stow(it, carById(s.stowed));
     }
   }
   // player
@@ -164,8 +128,6 @@ export function applySave(g, d) {
   const inv = d.inventory || {};
   if (inv.slots) g.inventory.restore(inv.slots);
   else if (inv.pockets) inv.pockets.forEach((e) => e && g.inventory.addSmart({ id: e.id, state: e.state || {} }));
-  if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
-  if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);
   if (inv.ammo) g.interaction.ammo = inv.ammo;
   if (inv.held) {
     const pos = p.position.clone().add(new THREE.Vector3(0, 1.2, 0));
@@ -173,7 +135,7 @@ export function applySave(g, d) {
     g.interaction.pick(it);
     g.inventory.heldFrom = inv.heldFrom ?? -1;
   }
-  if (d.player.seat) p.enterSeat(car, d.player.seat);
+  if (d.player.seat) p.enterSeat(carById(d.player.seatCar ?? true), d.player.seat);
 }
 
 // ------------------------------------------------------------------ career

@@ -12,13 +12,12 @@ import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
 import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
-import { loadBeetleAsset, buildBeetleModel, buildBeetleWreck } from './vehicle/beetle/beetleModel.js';
-import { createBeetleMaterials } from './vehicle/beetle/beetleMaterials.js';
-import { Car } from './vehicle/car.js';
+import { Fleet } from './vehicle/fleet.js';
+import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
-import { Inventory, Container } from './items/inventory.js';
+import { Inventory } from './items/inventory.js';
 import { ITEMS, initialState } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
@@ -29,7 +28,6 @@ import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
-import { PARTS } from './vehicle/carParts.js';
 import { settings } from './core/settings.js';
 import { clamp } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
@@ -81,14 +79,18 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
       start = load.startMode;
       time = load.env.time;
       weather = load.env.weather;
+      carChoice = load.startCar || 'beetle';
     }
+    // the car the run starts with; the other types turn up along the road
+    this.startCarType = carType(carChoice).id;
+    this.settingsTransmission = settings.data.transmission;
     this.load = load;
     this.attract = attract;
     this.startZ = startZ;
@@ -138,12 +140,11 @@ export class Game {
     this.hud = new HUD(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
-    onProgress('Building the car', 0.35);
+    onProgress('Building the cars', 0.35);
     await tick();
-    const carAsset = await loadBeetleAsset(this.renderer.renderer);
-    this.carMats = createBeetleMaterials(carAsset.textures, { color: 0xa8502c });
-    this.carModel = buildBeetleModel(carAsset, this.carMats);
-    this.pois.setWreckPrototype(buildBeetleWreck(carAsset));
+    this.fleet = new Fleet(this);
+    await this.fleet.preload(this.renderer.renderer);
+    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ || load) {
@@ -157,16 +158,19 @@ export class Game {
     await this.waitForTerrain(spawn.x, spawn.z);
     // places right around the spawn must exist before the car and player are dropped in
     if (load) for (let i = 0; i < 4; i++) this.pois.update(spawn.x, spawn.z);
-    const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
-    this.car = new Car(this, this.carModel, {
-      position: new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z),
-      quaternion: spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw),
-    });
-    this.car.dyn.automatic = settings.data.transmission !== 'manual';
-    this.car.storage = {
-      trunk: new Container('trunk', 'Front trunk', 14, { capacity: 120, bulky: true }),
-      glovebox: new Container('glovebox', 'Glovebox', 6, { capacity: 5 }),
-    };
+    if (load && load.fleet) this.fleet.restore(load.fleet);
+    else {
+      // the starting car (saves from before the fleet had a single "car" record)
+      const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
+      const car = this.fleet.create(load && load.car ? load.car.model || 'beetle' : this.startCarType, new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z), spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw), {
+        owned: true,
+        color: carType(this.startCarType).defaultColor,
+        state: load ? load.car : null,
+      });
+      this.fleet.setCurrent(car);
+    }
+    // cars waiting at the places already streamed in
+    for (const inst of this.pois.loaded.values()) this.fleet.onPoiLoaded(inst);
     const py = spawn.y !== undefined ? spawn.y : this.gen.height(spawn.x, spawn.z) + 0.3;
     this.player = new Player(this, new THREE.Vector3(spawn.x - this.origin.x, py, spawn.z - this.origin.z));
     this.player.yaw = spawn.yaw;
@@ -183,7 +187,7 @@ export class Game {
     // let the car settle on its springs and loose things come to rest before anyone looks
     onProgress('Settling', 0.95);
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
-    this.car.syncVisual();
+    this.fleet.syncVisual();
     this.items.update();
     this.hud.show(!attract);
     if (attract) {
@@ -202,7 +206,8 @@ export class Game {
   spawnPoint() {
     if (this.load) {
       const d = this.load;
-      return { x: d.player.pos[0], y: d.player.pos[1], z: d.player.pos[2], yaw: d.player.yaw, carX: d.car.pos[0], carY: d.car.pos[1] - 0.05, carZ: d.car.pos[2], carQuat: d.car.quat, carYaw: 0 };
+      const c = d.car || { pos: d.player.pos, quat: [0, 0, 0, 1] };
+      return { x: d.player.pos[0], y: d.player.pos[1], z: d.player.pos[2], yaw: d.player.yaw, carX: c.pos[0], carY: c.pos[1] - 0.05, carZ: c.pos[2], carQuat: c.quat, carYaw: 0 };
     }
     if (this.startZ) {
       // never start on a bridge (the land under it is the river bed): step back along the road
@@ -270,11 +275,10 @@ export class Game {
     this.effects && this.effects.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
-    this.car.syncVisual();
+    this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
     this.scatter.update(f2.x + this.origin.x, f2.z + this.origin.z);
-    this.car && this.car.prevPos.set(this.car.prevPos.x - dx, this.car.prevPos.y, this.car.prevPos.z - dz);
   }
 
   focusPoint() {
@@ -325,14 +329,15 @@ export class Game {
         void seat;
       }
     }
-    // car controls
+    // car controls (for the current car); every car near the player is simulated
+    this.fleet.updateCurrent();
     let controls = null;
     if (this.attract) controls = this.attractControls(dt);
     else if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
-    this.car.update(dt, controls);
+    this.fleet.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
     this.physics.update(dt);
-    this.car.syncVisual();
+    this.fleet.syncVisual();
     this.items.update(dt);
     if (this.attract) {
       this.updateAttractCamera(dt);
@@ -393,7 +398,8 @@ export class Game {
   setupUnassembled() {
     const car = this.car;
     const keep = new Set(['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
-    const order = ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel', 'headlight_L', 'headlight_R', 'taillight_L', 'taillight_R', 'bumper_F', 'bumper_R', 'fender_FL', 'fender_FR', 'fender_RL', 'fender_RR', 'door_FL', 'door_FR', 'hood', 'trunk', 'spare', 'airfilter', 'fanbelt', 'battery', 'exhaust', 'fueltank', 'engine', 'body'];
+    // taken apart in reverse assembly order
+    const order = [...car.type.ASSEMBLY_ORDER].reverse();
     for (const id of order) if (car.parts[id] && car.isInstalled(id) && !keep.has(id)) car.setInstalled(id, false);
     car.fuel = 6;
     car.battery = 0.7;
@@ -420,6 +426,9 @@ export class Game {
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
+      door_RL: [0, 0, Math.PI / 2],
+      door_RR: [0, 0, -Math.PI / 2],
+      hood: [Math.PI, 0, 0],
       fender_FL: [0, 0, Math.PI / 2],
       fender_FR: [0, 0, -Math.PI / 2],
       fender_RL: [0, 0, Math.PI / 2],
@@ -573,7 +582,7 @@ export class Game {
     if (!r || !r.active) return;
     const car = this.car;
     const st = r.pump.inst.state;
-    const filler = car.worldPointOf(new THREE.Vector3(-0.87, 0.86, -1.63));
+    const filler = car.worldPointOf(car.type.HOTSPOTS.find((h) => h.id === 'fuel').pos);
     if (filler.distanceTo(r.pump.world) > 6 || st.fuel <= 0.01 || car.fuel >= car.fuelCap - 0.01 || this.player.position.distanceTo(r.pump.world) > 6) {
       r.active = false;
       this.hud.toast(car.fuel >= car.fuelCap - 0.01 ? 'Tank full' : st.fuel <= 0.01 ? 'The pump is dry' : 'Refuelling stopped');
@@ -585,7 +594,11 @@ export class Game {
   }
 
   itemName(id) {
-    if (id.startsWith('part:')) return PARTS[id.slice(5)].label;
+    if (id.startsWith('part:')) {
+      const part = id.slice(5);
+      const t = (this.car && this.car.PARTS[part] ? this.car.type : CAR_TYPE_LIST.find((x) => x.PARTS[part])) || CAR_TYPE_LIST[0];
+      return t.PARTS[part] ? t.PARTS[part].label : part;
+    }
     return ITEMS[id] ? ITEMS[id].name : id;
   }
 

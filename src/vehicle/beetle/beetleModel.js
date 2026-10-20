@@ -12,6 +12,7 @@ import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadBeetleTextures, createWreckMaterials } from './beetleMaterials.js';
 import { META, SPEC, STEER_SCALE, SPEEDO_MAX, HARDPOINTS, POINTS } from './spec.js';
+import { drawSpeedoFace } from '../gauges.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/beetle/';
@@ -262,7 +263,7 @@ export class BeetleModel {
     g.quaternion.copy(faceQuat(V(...s.normal)));
     const R = s.radius * 0.93;
     const c = makeCanvas(512, 512);
-    drawSpeedoFace(c.getContext('2d'), 512);
+    drawSpeedoFace(c.getContext('2d'), 512, SPEEDO_MAX);
     const tex = canvasTexture(c, { wrap: false });
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
@@ -469,90 +470,6 @@ export class BeetleModel {
     const target = on ? -0.32 : 0;
     this.handbrake.rotation.x += (target - this.handbrake.rotation.x) * Math.min(1, dt * 10);
   }
-}
-
-// Needle angle: canvas angle a (clockwise from +x); speed sweeps 240 degrees from lower left,
-// fuel sweeps the 70 degree arc at the top.
-export function needleAngle(name, t) {
-  t = Math.min(1, Math.max(0, t));
-  if (name === 'fuel') return Math.PI * 1.5 - 0.61 + 1.22 * t;
-  return Math.PI * (150 / 180) + Math.PI * (240 / 180) * t;
-}
-
-export function setNeedle(needles, name, t) {
-  const n = needles && needles[name];
-  if (!n) return;
-  const a = needleAngle(name, t);
-  n.rotation.z = -(a + Math.PI / 2);
-}
-
-function drawSpeedoFace(ctx, S) {
-  const c = S / 2;
-  ctx.fillStyle = '#0d0d0c';
-  ctx.fillRect(0, 0, S, S);
-  const grd = ctx.createRadialGradient(c, c, S * 0.1, c, c, S * 0.5);
-  grd.addColorStop(0, '#1b1b19');
-  grd.addColorStop(1, '#090909');
-  ctx.fillStyle = grd;
-  ctx.beginPath();
-  ctx.arc(c, c, S * 0.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#e9e4d6';
-  ctx.fillStyle = '#e9e4d6';
-  ctx.lineCap = 'butt';
-  // speed scale
-  for (let v = 0; v <= SPEEDO_MAX; v += 5) {
-    const a = needleAngle('speed', v / SPEEDO_MAX);
-    const major = v % 20 === 0;
-    const r0 = S * (major ? 0.36 : 0.395),
-      r1 = S * 0.44;
-    ctx.lineWidth = major ? S * 0.012 : S * 0.005;
-    ctx.beginPath();
-    ctx.moveTo(c + Math.cos(a) * r0, c + Math.sin(a) * r0);
-    ctx.lineTo(c + Math.cos(a) * r1, c + Math.sin(a) * r1);
-    ctx.stroke();
-    if (major) {
-      ctx.font = `bold ${Math.round(S * 0.07)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const rt = S * 0.29;
-      ctx.fillText(String(v), c + Math.cos(a) * rt, c + Math.sin(a) * rt);
-    }
-  }
-  // fuel arc at the top
-  const fy = c - S * 0.25;
-  ctx.lineWidth = S * 0.008;
-  for (let i = 0; i <= 4; i++) {
-    const a = needleAngle('fuel', i / 4);
-    const r0 = S * 0.09,
-      r1 = S * (i % 2 === 0 ? 0.135 : 0.12);
-    ctx.strokeStyle = i === 0 ? '#d8402a' : '#e9e4d6';
-    ctx.beginPath();
-    ctx.moveTo(c + Math.cos(a) * r0, fy + Math.sin(a) * r0);
-    ctx.lineTo(c + Math.cos(a) * r1, fy + Math.sin(a) * r1);
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#e9e4d6';
-  ctx.font = `bold ${Math.round(S * 0.045)}px Arial`;
-  ctx.fillText('R', c + Math.cos(needleAngle('fuel', 0)) * S * 0.16, fy + Math.sin(needleAngle('fuel', 0)) * S * 0.16);
-  ctx.fillText('1/1', c + Math.cos(needleAngle('fuel', 1)) * S * 0.165, fy + Math.sin(needleAngle('fuel', 1)) * S * 0.165);
-  // km/h and odometer window
-  ctx.font = `${Math.round(S * 0.04)}px Arial`;
-  ctx.fillText('km/h', c, c + S * 0.12);
-  ctx.fillStyle = '#050505';
-  ctx.fillRect(c - S * 0.12, c + S * 0.17, S * 0.24, S * 0.06);
-  ctx.strokeStyle = '#5a5850';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(c - S * 0.12, c + S * 0.17, S * 0.24, S * 0.06);
-  ctx.fillStyle = '#d8d2c2';
-  ctx.font = `bold ${Math.round(S * 0.042)}px monospace`;
-  ctx.fillText('1 8 4 2 1 3', c, c + S * 0.2);
-  // chrome ring shadow
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.lineWidth = S * 0.03;
-  ctx.beginPath();
-  ctx.arc(c, c, S * 0.485, 0, Math.PI * 2);
-  ctx.stroke();
 }
 
 // Builds the complete visual model (all parts installed) with rest-pose bounding boxes.

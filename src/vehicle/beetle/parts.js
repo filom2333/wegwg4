@@ -78,14 +78,3 @@ export const ASSEMBLY_ORDER = [
   'seat_R',
   'steeringWheel',
 ];
-
-// The lid a part is reached through, if any.
-export function lidOf(id) {
-  return (PARTS[id] && PARTS[id].needsOpen) || null;
-}
-
-export function dependentsOf(id) {
-  return Object.entries(PARTS)
-    .filter(([, p]) => p.requires.includes(id))
-    .map(([k]) => k);
-}

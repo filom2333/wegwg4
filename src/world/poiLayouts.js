@@ -46,7 +46,7 @@ export const LAYOUTS = {
   house(rnd) {
     const h = buildHouse(rnd, {});
     const list = [{ ...h, x: 0, z: 0, rot: 0 }];
-    if (rnd() < 0.5) list.push({ ...ST.buildGarage(rnd, { w: 5, d: 6, open: rnd() < 0.7 }), x: h.plan.W / 2 + 5, z: -1, rot: 0 });
+    if (rnd() < 0.5) list.push({ ...ST.buildGarage(rnd, { w: 5, d: 6, open: rnd() < 0.7 }), x: h.plan.W / 2 + 5, z: -1, rot: 0, tag: 'garage' });
     list.push({ ...props((b) => ST.mailbox(b, 2, h.plan.D / 2 + 6, 0)), x: 0, z: 0, rot: 0 });
     return list;
   },
