@@ -216,9 +216,9 @@ Done so far (uncommitted, unverified in game):
   - **macro relief normals** from GLSL value-noise derivatives at 8, 32 and 128 m (`tNoised`,
     the lattice wraps every 2048 m because uv wraps there). They are stronger far away and on rock;
   - a fog-edge fade at the view radius (`uFadeFar`).
-- **Not done (it was about to happen):** rewriting `GEN.rock` in groundTextures.js. The current
-  rock texture has large Voronoi polygons that look like hexagon tiles on slopes. The plan:
-  warped, broken joints at two scales, fine layering, pits, pale lichen.
+- `GEN.rock` in groundTextures.js was rewritten in the last minute: warped, broken joints at two
+  scales, fine layering, pits and pale lichen instead of the big Voronoi "hexagon tiles". It
+  compiles but is **unverified in game**. Check it, and that the rock looks good on slopes.
 
 ## 5. NEXT STEPS (in this order)
 
@@ -226,7 +226,7 @@ Done so far (uncommitted, unverified in game):
    6500 (badlands), 11500 (highland), 16500 (forest), 40000 (saltflat) and 63500 (taiga), at
    time 16.5 and 18.3. Take road-level views and one high view. Compare with the user's
    complaints.
-2. Fix the rock texture (above). Make sure no tiling grid or dots are visible on far mountains.
+2. Check the new rock texture (above). Make sure no tiling grid or dots are visible on far mountains.
    If needed, add a very-far texture scale or fade to the lowest mip beyond about 400 m.
 3. Mountains:
    - real-looking ridges, gullies and scree (dirt/gravel at slope bases);
