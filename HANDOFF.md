@@ -154,6 +154,10 @@ works like a shared log between two sessions.
 
 ## 4. Work in progress, UNCOMMITTED until this push (verify it first!)
 
+Last-minute check: the build runs headless with **no shader or console errors**. The badlands view
+at z=6500, time 17, looks good: a calm plain by the road, terraced mesas and hoodoos set back,
+textured rock. The other biomes, the sun effects and FPS are still unchecked.
+
 This push includes a half-finished landscape and graphics rework. The build compiles, but it was
 **not visually verified** after the last edits. Check it first.
 
