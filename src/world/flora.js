@@ -254,7 +254,8 @@ export function saguaro(seed) {
     prof.push([Math.max(0.001, r), y]);
   }
   prof.push([0.0, H]);
-  const green = [0.29 + rnd() * 0.05, 0.38 + rnd() * 0.05, 0.22];
+  // dusty olive, not mint: the waxy skin reads grey-green in the desert light
+  const green = [0.17 + rnd() * 0.04, 0.22 + rnd() * 0.04, 0.12];
   const parts = [];
   const trunk = ribbedLathe(prof, 14, 0.12, 28);
   parts.push(colorize(trunk, (v) => {
@@ -293,7 +294,7 @@ export function barrelCactus(seed) {
   const g = ribbedLathe(prof, 18, 0.14, 36);
   return colorize(g, (v) => {
     const top = v.y > H * 0.9 ? 1 : 0;
-    return top ? [0.75, 0.55, 0.2] : [0.3, 0.4, 0.22];
+    return top ? [0.55, 0.36, 0.14] : [0.17, 0.21, 0.11];
   });
 }
 
@@ -336,6 +337,84 @@ export function joshuaTree(seed) {
     }
   };
   grow(V(0, 0, 0), V(0, 1, 0), 1.4 + rnd() * 0.8, 0.13, 2);
+  return merge(parts);
+}
+
+// Yucca: a dense rosette of stiff blue-green blades on the ground, now and then a dry flower stalk.
+export function yucca(seed) {
+  const rnd = mulberry32(seed);
+  const pos = [];
+  const col = [];
+  const leaf = [0.2 + rnd() * 0.04, 0.25 + rnd() * 0.03, 0.15];
+  const dry = [0.42, 0.36, 0.24];
+  const n = 46 + Math.floor(rnd() * 20);
+  const H = 0.55 + rnd() * 0.35;
+  const trunk = rnd() < 0.35 ? 0.25 + rnd() * 0.35 : 0;
+  for (let i = 0; i < n; i++) {
+    const u = Math.pow(rnd(), 0.7);
+    const th = rnd() * Math.PI * 2;
+    // outer blades lean out and are older (drier), inner ones stand up
+    const lean = 0.25 + u * 1.15;
+    const d = V(Math.cos(th) * Math.sin(lean), Math.cos(lean), Math.sin(th) * Math.sin(lean)).normalize();
+    const L = H * (0.75 + 0.35 * rnd()) * (1 - u * 0.2);
+    const base = V(0, trunk, 0);
+    const tip = base.clone().addScaledVector(d, L);
+    tip.y -= u * u * L * 0.25;
+    const s = V(-d.z, 0, d.x).normalize().multiplyScalar(0.022);
+    const a = base.clone().add(s),
+      b = base.clone().sub(s);
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z, tip.x, tip.y, tip.z, b.x, b.y, b.z, a.x, a.y, a.z, tip.x, tip.y, tip.z);
+    const c = u > 0.85 && rnd() < 0.6 ? dry : leaf;
+    for (let k = 0; k < 6; k++) {
+      const f = k === 2 || k === 5 ? 1 : 0.55;
+      col.push(c[0] * f, c[1] * f, c[2] * f);
+    }
+  }
+  const parts = [];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  parts.push(g);
+  if (trunk > 0) parts.push(colorize(branch([V(0, -0.05, 0), V(0.02, trunk * 0.5, 0), V(0, trunk + 0.05, 0)], 0.09, 0.08, 6), () => [0.3, 0.26, 0.2]));
+  if (rnd() < 0.4) {
+    const sh = 1.2 + rnd() * 0.8;
+    parts.push(colorize(branch([V(0, trunk, 0), V(0.04, trunk + sh * 0.5, 0.02), V(0.06, trunk + sh, 0)], 0.025, 0.012, 4), () => [0.45, 0.4, 0.28]));
+    for (let i = 0; i < 9; i++) {
+      const pod = new THREE.OctahedronGeometry(0.045, 0);
+      const t = 0.62 + i * 0.04;
+      pod.translate(0.06 * t + (rnd() - 0.5) * 0.08, trunk + sh * t, (rnd() - 0.5) * 0.08);
+      parts.push(colorize(pod, () => [0.5, 0.44, 0.3]));
+    }
+  }
+  return merge(parts);
+}
+
+// Ocotillo: a fan of long, thin, whip-like canes from one root crown, grey with green leaf fuzz.
+export function ocotillo(seed) {
+  const rnd = mulberry32(seed);
+  const parts = [];
+  const n = 9 + Math.floor(rnd() * 8);
+  const H = 2.6 + rnd() * 1.6;
+  const bloom = rnd() < 0.5;
+  for (let i = 0; i < n; i++) {
+    const th = rnd() * Math.PI * 2;
+    const spread = 0.12 + rnd() * 0.32;
+    const L = H * (0.65 + rnd() * 0.4);
+    const dx = Math.cos(th) * spread,
+      dz = Math.sin(th) * spread;
+    const pts = [V(dx * 0.05, 0, dz * 0.05), V(dx * L * 0.3 + (rnd() - 0.5) * 0.08, L * 0.33, dz * L * 0.3), V(dx * L * 0.62 + (rnd() - 0.5) * 0.12, L * 0.66, dz * L * 0.62), V(dx * L * 0.95, L, dz * L * 0.95)];
+    const leafy = 0.4 + rnd() * 0.6;
+    parts.push(colorize(branch(pts, 0.035, 0.012, 4), (v) => {
+      const f = Math.min(1, v.y / L);
+      return [0.3 - 0.1 * leafy * f, 0.3 + 0.02 * leafy * f, 0.24 - 0.06 * leafy * f];
+    }));
+    if (bloom) {
+      const tip = new THREE.ConeGeometry(0.035, 0.22, 5);
+      tip.translate(pts[3].x, pts[3].y + 0.1, pts[3].z);
+      parts.push(colorize(tip, () => [0.62, 0.1, 0.05]));
+    }
+  }
   return merge(parts);
 }
 
@@ -388,27 +467,39 @@ export function rock(seed, kind = 'boulder', { lod = 0 } = {}) {
   });
 }
 
+// Squat eroded pillar on its own talus cone: soft banded stone with narrow waists and a harder,
+// paler cap. Grey vertex colour; the rock material tints it like the local cliffs.
 export function hoodoo(seed) {
   const rnd = mulberry32(seed);
   const noise = new SimplexNoise(seed);
   const parts = [];
-  let y = 0;
-  const n = 3 + Math.floor(rnd() * 3);
-  let r = 1.2 + rnd() * 0.6;
+  const shade = (k) => (v) => {
+    const n = noise.noise3(v.x * 2.2, v.y * 2.2, v.z * 2.2) * 0.5 + 0.5;
+    const band = 0.5 + 0.5 * Math.sin(v.y * 5.5 + n * 1.5);
+    const t = k * (0.8 + 0.2 * n) * (0.9 + 0.1 * band);
+    return [t, t * 0.98, t * 0.96];
+  };
+  // talus: a low, wide cone of fallen debris
+  const R = 1.1 + rnd() * 0.5;
+  const talus = blob(R * 2.1, 0.55, R * 1.9, 2, rnd, 0.28, noise);
+  talus.translate(0, 0.05, 0);
+  parts.push(colorize(talus, shade(0.82)));
+  let y = 0.3;
+  let r = R;
+  const n = 2 + Math.floor(rnd() * 2);
   for (let i = 0; i < n; i++) {
-    const h = 1.2 + rnd() * 1.6;
-    const b = blob(r, h * 0.55, r * (0.8 + rnd() * 0.3), 2, rnd, 0.22, noise);
-    b.translate((rnd() - 0.5) * 0.3, y + h * 0.5, (rnd() - 0.5) * 0.3);
-    const band = i % 2;
-    parts.push(colorize(b, () => (band ? [0.9, 0.62, 0.45] : [0.78, 0.47, 0.32])));
-    y += h * 0.85;
-    r *= 0.72 + rnd() * 0.2;
+    const h = 0.9 + rnd() * 0.7;
+    const b = blob(r, h * 0.56, r * (0.8 + rnd() * 0.25), 2, rnd, 0.2, noise);
+    b.translate((rnd() - 0.5) * 0.2, y + h * 0.5, (rnd() - 0.5) * 0.2);
+    parts.push(colorize(b, shade(0.92 + 0.06 * (i % 2))));
+    y += h * 0.82;
+    // a narrow waist between the soft beds
+    r *= 0.68 + rnd() * 0.16;
   }
-  // cap rock
-  const cap = blob(r * 1.8, 0.45, r * 1.6, 2, rnd, 0.2, noise);
-  cap.translate(0, y + 0.2, 0);
-  parts.push(colorize(cap, () => [0.55, 0.45, 0.38]));
-  return { geometry: merge(parts), height: y + 0.6, radius: 1.4 };
+  const cap = blob(r * 1.75, 0.32 + rnd() * 0.12, r * 1.55, 2, rnd, 0.16, noise);
+  cap.translate((rnd() - 0.5) * 0.15, y + 0.18, 0);
+  parts.push(colorize(cap, shade(1.08)));
+  return { geometry: merge(parts), height: y + 0.5, radius: R };
 }
 
 // ------------------------------------------------------------------ green and snowy country

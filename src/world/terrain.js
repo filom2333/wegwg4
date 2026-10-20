@@ -66,7 +66,7 @@ export class Terrain {
     g.setAttribute('normal', new THREE.BufferAttribute(d.normal, 3));
     g.setAttribute('mat', new THREE.BufferAttribute(d.mat, 4));
     g.setAttribute('matB', new THREE.BufferAttribute(d.mat2, 4));
-    g.setAttribute('tint', new THREE.BufferAttribute(d.tint, 3));
+    g.setAttribute('tint', new THREE.BufferAttribute(d.tint, 4));
     g.setAttribute('uv', new THREE.BufferAttribute(d.uv, 2));
     g.setIndex(new THREE.BufferAttribute(d.index, 1));
     g.boundingBox = new THREE.Box3(new THREE.Vector3(0, d.minY - 3, 0), new THREE.Vector3(req.size, d.maxY, req.size));

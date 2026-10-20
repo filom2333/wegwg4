@@ -11,19 +11,17 @@ import * as F from './flora.js';
 import { texturedConifer, texturedBroadleaf, texturedShrub, treeMaterials } from './trees.js';
 import { bakeImpostors, createImpostorMaterial } from '../gfx/impostor.js';
 import { SPECIES, CELL, STRIDE, BIOME_LIST, sinkOf, cellInstances } from './scatterGen.js';
+import { BIOME_INFO } from './worldGen.js';
 import { settings } from '../core/settings.js';
 
-const ROCK_TINT = {
-  scrub: [0.82, 0.74, 0.64],
-  dunes: [0.95, 0.82, 0.66],
-  badlands: [0.98, 0.62, 0.45],
-  saltflat: [0.85, 0.83, 0.8],
-  highland: [0.72, 0.7, 0.68],
-  prairie: [0.76, 0.74, 0.68],
-  forest: [0.66, 0.66, 0.62],
-  taiga: [0.74, 0.75, 0.77],
-  tundra: [0.72, 0.73, 0.75],
-};
+// Loose rock takes the same tint the terrain shader gives exposed rock in that biome, so boulders,
+// hoodoos and cliffs read as one stone.
+const ROCK_TINT = Object.fromEntries(
+  Object.entries(BIOME_INFO).map(([b, { ground: g }]) => {
+    const lum = Math.max((g[0] + g[1] + g[2]) / 3, 0.01);
+    return [b, g.map((c) => (1 + (c / lum - 1) * 0.55) * 0.7)];
+  })
+);
 
 const FLOWER_PALETTES = [
   [[0.62, 0.32, 0.72], [0.52, 0.28, 0.66]],
@@ -37,7 +35,9 @@ const CAP = {
   grass: [9000, 0],
   meadow: [24000, 0],
   snowgrass: [2500, 0],
-  shrub: [1600, 2400],
+  shrub: [1600, 3600],
+  yucca: [500, 0],
+  ocotillo: [150, 600],
   tundrashrub: [1200, 2000],
   fern: [3500, 0],
   flowers: [1200, 0],
@@ -133,6 +133,10 @@ export class Scatter {
         return F.saguaro(seed).geometry;
       case 'joshua':
         return F.joshuaTree(seed);
+      case 'yucca':
+        return F.yucca(seed);
+      case 'ocotillo':
+        return F.ocotillo(seed);
       case 'deadtree':
         return F.deadTree(seed);
       case 'hoodoo':
@@ -340,7 +344,8 @@ export class Scatter {
         const off = idx * 16;
         if (def.rock) {
           q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rot);
-          qt.setFromEuler(e.set((rot % 0.3) - 0.15, 0, ((rot * 7) % 0.3) - 0.15));
+          const tilt = def.id === 'hoodoo' ? 0.2 : 1;
+          qt.setFromEuler(e.set(((rot % 0.3) - 0.15) * tilt, 0, (((rot * 7) % 0.3) - 0.15) * tilt));
           q.multiply(qt);
           m4.compose(pv.set(tx, ty, tz), q, sv.setScalar(s));
           m4.toArray(arr, off);
@@ -413,7 +418,7 @@ export class Scatter {
             y = data[k + 3] - sinkOf(def, s);
           let desc;
           if (def.solid === 'ball') desc = RAPIER.ColliderDesc.ball(s * 0.75).setTranslation(x, y + s * 0.2, z);
-          else if (def.solid === 'trunkWide') desc = RAPIER.ColliderDesc.cylinder(3 * s, 1.1 * s).setTranslation(x, y + 3 * s, z);
+          else if (def.solid === 'trunkWide') desc = RAPIER.ColliderDesc.cylinder(1.6 * s, 1.0 * s).setTranslation(x, y + 1.6 * s, z);
           else if (def.solid === 'stump') desc = RAPIER.ColliderDesc.cylinder(0.3 * s, 0.3 * s).setTranslation(x, y + 0.3 * s, z);
           else if (def.solid === 'log') {
             const rot = data[k + 6];

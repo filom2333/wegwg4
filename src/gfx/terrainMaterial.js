@@ -20,10 +20,11 @@ export function createTerrainMaterial(tex) {
         `#include <common>
 attribute vec4 mat;
 attribute vec4 matB;
-attribute vec3 tint;
+attribute vec4 tint;
 varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
+varying float vVeg;
 varying vec2 vWuv;
 varying float vWy;
 varying vec3 vWN;
@@ -34,7 +35,8 @@ varying float vViewDist;`
         `#include <begin_vertex>
 vMat = mat;
 vMat2 = matB;
-vTint = tint;
+vTint = tint.rgb;
+vVeg = tint.a;
 vWuv = uv;
 vWy = position.y;
 vWN = normalize(mat3(modelMatrix) * normal);`
@@ -57,6 +59,7 @@ uniform float uFadeFar;
 varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
+varying float vVeg;
 varying vec2 vWuv;
 varying float vWy;
 varying vec3 vWN;
@@ -104,30 +107,44 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   vec2 uvSN = (abs(Nw.x) > abs(Nw.z) ? vec2(vWuv.y, vWy) : vec2(vWuv.x, vWy)) * uScale;
   vec2 uvSF = uvSN * 0.21 + 0.37;
   vec2 dxSN = dFdx(uvSN), dySN = dFdy(uvSN), dxSF = dFdx(uvSF), dySF = dFdy(uvSF);
-  float wt[7];
+  // beyond ~70 m the near scale is gone; blend the far scale into a very coarse one instead, so
+  // hillsides and mountains a kilometre off show no repeating pattern
+  bool vfar = vViewDist > 70.0;
+  vec2 uvX = vWuv * uScale * 0.043 + 0.71, uvSX = uvSN * 0.043 + 0.71;
+  vec2 uA = vfar ? uvF : uvN, uB = vfar ? uvX : uvF;
+  vec2 dxA = vfar ? dxF : dxN, dyA = vfar ? dyF : dyN, dxB = vfar ? dFdx(uvX) : dxF, dyB = vfar ? dFdy(uvX) : dyF;
+  vec2 uSA = vfar ? uvSF : uvSN, uSB = vfar ? uvSX : uvSF;
+  vec2 dxSA = vfar ? dxSF : dxSN, dySA = vfar ? dySF : dySN, dxSB = vfar ? dFdx(uvSX) : dxSF, dySB = vfar ? dFdy(uvSX) : dySF;
+  float pairT = vfar ? smoothstep(110.0, 700.0, vViewDist) * 0.85 : farT;
+  float flatT = smoothstep(450.0, 1400.0, vViewDist) * 0.8;
+  float wt[8];
   wt[0] = vMat.x; wt[1] = vMat.y; wt[2] = vMat.z; wt[3] = vMat.w;
-  wt[4] = vMat2.x; wt[5] = vMat2.y; wt[6] = vMat2.z;
+  wt[4] = vMat2.x; wt[5] = vMat2.y; wt[6] = vMat2.z; wt[7] = vMat2.w;
   // texture-array layer, near and far tiling per ground type:
-  // sand, dirt, rock, salt, grass, snow, forest floor
-  const float LIDX[7] = float[7](0.0, 1.0, 2.0, 3.0, 6.0, 7.0, 8.0);
-  const float SN[7] = float[7](1.0, 0.8, 0.6, 0.5, 0.9, 0.42, 0.85);
-  const float SF[7] = float[7](1.0, 1.0, 0.8, 1.0, 1.0, 0.7, 1.0);
-  const float RO[7] = float[7](0.96, 0.93, 0.82, 0.78, 0.9, 0.62, 0.93);
-  vec4 smp[7];
-  float w[7];
+  // sand, dirt, rock, salt, grass, snow, forest floor, gravel
+  const float LIDX[8] = float[8](0.0, 1.0, 2.0, 3.0, 6.0, 7.0, 8.0, 4.0);
+  const float SN[8] = float[8](1.0, 0.8, 0.6, 0.5, 0.9, 0.42, 0.85, 0.75);
+  const float SF[8] = float[8](1.0, 1.0, 0.8, 1.0, 1.0, 0.7, 1.0, 1.0);
+  const float RO[8] = float[8](0.96, 0.93, 0.82, 0.78, 0.9, 0.62, 0.93, 0.9);
+  vec4 smp[8];
+  float w[8];
   float tot = 0.0;
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 8; i++) {
     smp[i] = vec4(0.0);
     w[i] = 0.0;
     if (wt[i] > 0.004) {
-      vec4 a = textureGrad(uAlb, vec3(uvN * SN[i], LIDX[i]), dxN * SN[i], dyN * SN[i]);
-      vec4 b = textureGrad(uAlb, vec3(uvF * SF[i], LIDX[i]), dxF * SF[i], dyF * SF[i]);
-      smp[i] = mix(a, b, farT);
+      float mA = vfar ? SF[i] : SN[i], mB = vfar ? 1.0 : SF[i];
+      vec4 a = textureGrad(uAlb, vec3(uA * mA, LIDX[i]), dxA * mA, dyA * mA);
+      vec4 b = textureGrad(uAlb, vec3(uB * mB, LIDX[i]), dxB * mB, dyB * mB);
+      smp[i] = mix(a, b, pairT);
       if ((i == 1 || i == 2) && side > 0.01) {
-        vec4 sa = textureGrad(uAlb, vec3(uvSN * SN[i], LIDX[i]), dxSN * SN[i], dySN * SN[i]);
-        vec4 sb = textureGrad(uAlb, vec3(uvSF * SF[i], LIDX[i]), dxSF * SF[i], dySF * SF[i]);
-        smp[i] = mix(smp[i], mix(sa, sb, farT), side);
+        vec4 sa = textureGrad(uAlb, vec3(uSA * mA, LIDX[i]), dxSA * mA, dySA * mA);
+        vec4 sb = textureGrad(uAlb, vec3(uSB * mB, LIDX[i]), dxSB * mB, dySB * mB);
+        smp[i] = mix(smp[i], mix(sa, sb, pairT), side);
       }
+      // far off, texture detail is only noise: settle to the layer's mean colour and let the
+      // relief, light and macro variation carry the land
+      if (flatT > 0.0) smp[i].rgb = mix(smp[i].rgb, textureLod(uAlb, vec3(0.5, 0.5, LIDX[i]), 12.0).rgb, flatT);
       // height-based blending: the taller texture wins at transitions
       w[i] = pow(wt[i] * smp[i].a + wt[i] * 0.001 + 0.08, 6.0);
       tot += w[i];
@@ -136,33 +153,64 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   vec3 alb = vec3(0.0);
   vec3 nt = vec3(0.0);
   gRough = 0.0;
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 8; i++) {
     if (w[i] <= 0.0) continue;
     float k = w[i] / tot;
     alb += smp[i].rgb * k;
-    vec3 na = textureGrad(uNrm, vec3(uvN * SN[i], LIDX[i]), dxN * SN[i], dyN * SN[i]).xyz * 2.0 - 1.0;
-    vec3 nb = textureGrad(uNrm, vec3(uvF * SF[i], LIDX[i]), dxF * SF[i], dyF * SF[i]).xyz * 2.0 - 1.0;
-    nt += normalize(mix(na, nb, farT)) * k;
+    float mA = vfar ? SF[i] : SN[i], mB = vfar ? 1.0 : SF[i];
+    vec3 na = textureGrad(uNrm, vec3(uA * mA, LIDX[i]), dxA * mA, dyA * mA).xyz * 2.0 - 1.0;
+    vec3 nb = textureGrad(uNrm, vec3(uB * mB, LIDX[i]), dxB * mB, dyB * mB).xyz * 2.0 - 1.0;
+    nt += normalize(mix(na, nb, pairT)) * k;
     gRough += RO[i] * k;
   }
-  float wSand = w[0] / tot, wDirt = w[1] / tot, wRock = w[2] / tot, wSalt = w[3] / tot, wSnow = w[5] / tot;
+  float wSand = w[0] / tot, wDirt = w[1] / tot, wRock = w[2] / tot, wSalt = w[3] / tot, wSnow = w[5] / tot, wGrav = w[7] / tot;
   gRockW = wRock;
   // sedimentary layering in exposed rock: bands of slightly different tone, warped and tilted
   {
+    // beds of uneven thickness: value noise along the height, warped, so no regular stripes
     vec3 sn = tNoised(vWuv / 64.0, 32.0);
-    float band = sin((vWy + sn.x * 9.0 + vWuv.x * 0.004) * 0.62) * 0.5 + 0.5;
-    float band2 = sin((vWy + sn.x * 4.0) * 2.1) * 0.5 + 0.5;
-    vec3 strata = mix(vec3(0.86, 0.8, 0.76), vec3(1.1, 1.02, 0.92), band) * (0.92 + 0.08 * band2);
-    alb *= mix(vec3(1.0), strata, wRock * (1.0 - wSnow) * 0.9);
+    float yy = vWy + sn.x * 12.0;
+    float band = tNoised(vec2(yy / 13.0, 3.5), 4096.0).x * 0.6 + tNoised(vec2(yy / 4.7 + 0.37, 9.5), 4096.0).x * 0.4;
+    band = smoothstep(0.3, 0.7, band);
+    float band2 = tNoised(vec2(yy / 2.3, 7.5), 4096.0).x * (1.0 - smoothstep(150.0, 600.0, vViewDist));
+    vec3 strata = mix(vec3(0.84, 0.79, 0.76), vec3(1.1, 1.03, 0.94), band) * (0.93 + 0.1 * band2);
+    alb *= mix(vec3(1.0), strata, wRock * (1.0 - wSnow) * 0.7);
   }
   // biome tint (normalised) mostly on dirt and rock
   float lum = max(dot(vTint, vec3(0.333)), 0.01);
   vec3 tintN = vTint / lum;
-  alb *= mix(vec3(1.0), tintN, (0.55 * (wDirt + wRock) + 0.25 * wSand) * (1.0 - wSnow));
+  alb *= mix(vec3(1.0), tintN, (0.55 * (wDirt + wRock) + 0.25 * wSand + 0.4 * wGrav) * (1.0 - wSnow));
+  // soil crust: dark, slightly greyer blotches with crisp edges on bare earth
+  {
+    float cn = tNoised(vWuv / 4.0, 512.0).x * 0.65 + tNoised(vWuv / 1.0, 2048.0).x * 0.35;
+    float crust = smoothstep(0.58, 0.64, cn) * wDirt * (1.0 - farT * 0.5);
+    alb = mix(alb, alb * vec3(0.72, 0.7, 0.7), crust * 0.8);
+  }
   // macro brightness variation
   float macro = texture(uAlb, vec3(vWuv * 0.0021 + 0.5, 1.0)).a;
   float macro2 = texture(uAlb, vec3(vWuv * 0.0007, 0.0)).a;
   alb *= mix(0.82 + 0.3 * macro + 0.12 * (macro2 - 0.5), 0.95 + 0.08 * macro, wSnow);
+  // far shrubs: past the ring of scattered meshes, dark crowns speckle the open ground at the
+  // biome's cover; once a 4 m cell shrinks to a few pixels they average into a tone, so no shimmer
+  {
+    float veg = vVeg * (1.0 - wRock) * (1.0 - wSnow) * (1.0 - wSalt);
+    float fadeIn = smoothstep(210.0, 330.0, vViewDist);
+    if (veg > 0.01 && fadeIn > 0.0) {
+      vec2 p = vWuv / 4.0;
+      vec2 ci = mod(floor(p), 512.0);
+      vec2 f = fract(p);
+      float pres = step(tHash(ci + vec2(71.0, 3.0)), veg);
+      vec2 c = vec2(tHash(ci + vec2(13.0, 7.0)), tHash(ci + vec2(29.0, 17.0))) * 0.5 + 0.25;
+      float r = 0.18 + 0.14 * tHash(ci + vec2(47.0, 23.0));
+      float mpp = max(length(fwidth(vWuv)), 1e-4);
+      float aa = mpp / 4.0;
+      float dotC = pres * (1.0 - smoothstep(r - aa, r + aa, length(f - c)));
+      float meanC = veg * 3.14159 * 0.0676;
+      float k = smoothstep(2.5, 7.0, 4.0 / mpp);
+      float cov = mix(meanC, dotC, k) * fadeIn;
+      alb = mix(alb, vec3(0.06, 0.07, 0.04) * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
+    }
+  }
   // wetness darkens porous ground (not snow or salt)
   alb *= mix(1.0, 0.62, uWet * (1.0 - wSalt * 0.6) * (1.0 - wSnow));
   diffuseColor.rgb = alb;
@@ -181,7 +229,7 @@ roughnessFactor = gRough;`
         '#include <fog_fragment>',
         `#include <fog_fragment>
 #ifdef USE_FOG
-gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(uFadeFar * 0.7, uFadeFar * 0.97, vViewDist));
+gl_FragColor.rgb = mix(gl_FragColor.rgb, fogC, smoothstep(uFadeFar * 0.7, uFadeFar * 0.97, vViewDist));
 #endif`
       )
       .replace(
@@ -208,7 +256,7 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(uFadeFar * 0.7, uF
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v4';
+  mat.customProgramCacheKey = () => 'terrain-v6';
   return mat;
 }
 

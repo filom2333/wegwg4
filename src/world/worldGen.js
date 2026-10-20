@@ -5,15 +5,15 @@ import { SimplexNoise, hash01, clamp, smoothstep, lerp } from '../core/noise.js'
 
 export const BIOMES = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland', 'prairie', 'forest', 'taiga', 'tundra'];
 export const BIOME_INFO = {
-  scrub: { name: 'Sagebrush steppe', ground: [0.56, 0.47, 0.36] },
-  dunes: { name: 'Dune sea', ground: [0.8, 0.64, 0.44] },
-  badlands: { name: 'Red badlands', ground: [0.66, 0.38, 0.24] },
-  saltflat: { name: 'Salt flats', ground: [0.86, 0.84, 0.8] },
-  highland: { name: 'Stone highlands', ground: [0.5, 0.47, 0.43] },
-  prairie: { name: 'Grass prairie', ground: [0.52, 0.53, 0.36] },
+  scrub: { name: 'Sagebrush steppe', ground: [0.56, 0.47, 0.36], shrubs: 0.85 },
+  dunes: { name: 'Dune sea', ground: [0.8, 0.64, 0.44], shrubs: 0.16 },
+  badlands: { name: 'Red badlands', ground: [0.62, 0.43, 0.32], shrubs: 0.34 },
+  saltflat: { name: 'Salt flats', ground: [0.86, 0.84, 0.8], shrubs: 0.02 },
+  highland: { name: 'Stone highlands', ground: [0.5, 0.47, 0.43], shrubs: 0.55 },
+  prairie: { name: 'Grass prairie', ground: [0.52, 0.53, 0.36], shrubs: 0.14 },
   forest: { name: 'Pine forest', ground: [0.42, 0.42, 0.32] },
   taiga: { name: 'Snowy taiga', ground: [0.86, 0.88, 0.92] },
-  tundra: { name: 'Frozen tundra', ground: [0.84, 0.86, 0.9] },
+  tundra: { name: 'Frozen tundra', ground: [0.84, 0.86, 0.9], shrubs: 0.18 },
 };
 const DESERT = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland'];
 const SNOWY = ['taiga', 'tundra'];
@@ -380,7 +380,9 @@ export class WorldGen {
         // sand sheet by the road, an erg further out: transverse dunes across the wind (+x) with a
         // long gentle windward slope and a short steep slip face, broken into crescents
         const sheet = n.noise2(x * 0.0012, z * 0.0012) * 1.6 + n.noise2(x * 0.006, z * 0.006) * 0.25;
-        const field = smoothstep(-0.05, 0.35, m.noise2(x * 0.00032 + 11, z * 0.00032)) * smoothstep(110, 420, dx);
+        // the erg covers most of the biome; by the road the dunes are low drifts, growing to full
+        // size a few hundred metres out
+        const field = smoothstep(-0.85, -0.25, m.noise2(x * 0.00032 + 11, z * 0.00032)) * smoothstep(16, 50, dx) * (0.35 + 0.65 * smoothstep(50, 280, dx));
         if (field <= 0) return sheet;
         const lambda = 130;
         const warp = m.noise2(x * 0.0009, z * 0.0017) * 38 + n.noise2(x * 0.00035, z * 0.0004) * 150;
@@ -388,21 +390,29 @@ export class WorldGen {
         const saw = ph - Math.floor(ph);
         const prof = saw < 0.76 ? Math.pow(saw / 0.76, 1.35) : 0.5 + 0.5 * Math.cos(((saw - 0.76) / 0.24) * Math.PI);
         const crest = smoothstep(-0.45, 0.2, n.noise2(x * 0.0018 + 3, z * 0.0024));
-        const H = 6 + 13 * (m.noise2(x * 0.0009 + 7, z * 0.0009) * 0.5 + 0.5);
+        const H = 8 + 16 * (m.noise2(x * 0.0009 + 7, z * 0.0009) * 0.5 + 0.5);
         const draa = (n.noise2(x * 0.0007 + 9, z * 0.0007) * 0.5 + 0.5) * 9;
         return sheet + field * (prof * crest * H + draa);
       }
       case 'badlands': {
         // flats and washes by the road; mesas and buttes with terraced cliffs further back
         const flat = n.noise2(x * 0.0013, z * 0.0013) * 2.2 + wash();
-        const mm = n.noise2(x * 0.0021 + 11, z * 0.0021 - 4) + 0.35 * n.noise2(x * 0.006, z * 0.006);
-        let h = smoothstep(0.28, 0.42, mm) * 34;
-        const step = 6.5;
+        const mm = this.mesaNoise(x, z);
+        // each mesa its own height; terraced cliffs over a talus apron
+        const top = 22 + 26 * (m.noise2(x * 0.0011 - 5, z * 0.0011 + 8) * 0.5 + 0.5);
+        let h = smoothstep(0.28, 0.42, mm) * top;
+        const step = 5.5 + 2.5 * (n.noise2(x * 0.0017, z * 0.0017 + 2) * 0.5 + 0.5);
         const tq = Math.floor(h / step);
         const fr = h / step - tq;
-        h = (tq + smoothstep(0.6, 1.0, fr)) * step;
+        h = (tq + smoothstep(0.55, 1.0, fr)) * step;
+        const talus = Math.pow(smoothstep(0.12, 0.3, mm), 1.6) * (5 + 0.12 * top);
+        // erosion notches and gullies cut into the cliff faces
+        const notch = Math.pow(1 - Math.abs(n.noise2(x * 0.016 + 3, z * 0.016)), 6) * 7 * smoothstep(0.26, 0.31, mm) * (1 - smoothstep(0.35, 0.42, mm));
         const gully = Math.abs(n.noise2(x * 0.01, z * 0.01)) * 2.2;
-        return flat + Math.max(0, h - gully) * smoothstep(140, 600, dx);
+        // low rounded clay hills, banded, in patches closer in
+        const cp = smoothstep(0.05, 0.4, m.noise2(x * 0.0016 + 21, z * 0.0016 - 9));
+        const clay = Math.pow(Math.max(0, n.noise2(x * 0.011 + 6, z * 0.011 - 1) - 0.15) / 0.85, 1.4) * 10 * cp * smoothstep(35, 140, dx);
+        return flat + clay + Math.max(0, Math.max(h, talus) - gully - notch) * smoothstep(140, 600, dx);
       }
       case 'saltflat':
         return n.noise2(x * 0.003, z * 0.003) * 0.35;
@@ -441,6 +451,24 @@ export class WorldGen {
     }
   }
 
+  // Slow colour drift of the ground, as a per-channel multiplier: a few hundred metres of redder
+  // soil, then yellower, then a greyer, darker stretch, so a plain is never one flat colour.
+  tintDrift(x, z) {
+    const a = this.nC.noise2(x * 0.0014 + 31, z * 0.0014 - 7);
+    const b = this.nA.noise2(x * 0.0006 - 13, z * 0.0006 + 29);
+    const c = this.nB.noise2(x * 0.0035 + 5, z * 0.0035 + 17) * 0.5;
+    const red = a * 0.09,
+      grey = Math.max(0, b) * 0.14,
+      v = 1 + c * 0.12 - grey * 0.5;
+    return [(1 + red - grey * 0.3) * v, (1 - red * 0.2 + a * a * 0.04) * v, (1 - red * 0.9 + grey * 0.35) * v];
+  }
+
+  // Badlands mesa field: the tops stand where this is above ~0.28; just below it lie their feet.
+  mesaNoise(x, z) {
+    const n = this.nB;
+    return n.noise2(x * 0.0021 + 11, z * 0.0021 - 4) + 0.35 * n.noise2(x * 0.006, z * 0.006);
+  }
+
   // Returns natural (unroaded) ground height.
   naturalHeight(x, z, bw) {
     bw = bw || this.biomeWeights(x, z, this._bw || (this._bw = {}));
@@ -457,7 +485,7 @@ export class WorldGen {
     const dx = Math.abs(x - this.roadX(z));
     const n = this.nA;
     const close = smoothstep(0.3, 0.85, n.noise2(z * 0.00027 + 17, 3.3) * 0.5 + 0.5);
-    const start = 950 - 680 * close;
+    const start = 1300 - 750 * close;
     if (dx < start) return 0;
     // ranges: broad belts of high country, with gaps between them
     const range = smoothstep(-0.5, 0.15, n.noise2(x * 0.00017 + 5, z * 0.00017 - 9) + 0.3 * close);
@@ -474,9 +502,28 @@ export class WorldGen {
     const k = smoothstep(-0.2, 0.45, belt) * mask;
     if (k <= 0.001) return 0;
     const e = erodedFbm(x * 0.00052, z * 0.00052, this.seed | 0);
-    const relief = Math.min(1.35, Math.pow(e / 0.45, 1.6));
+    let relief = Math.pow(e / 0.45, 1.6);
+    relief = 1.35 * Math.tanh(relief / 1.35);
+    // sharp ridges and the gullies between them, cut deeper the higher the ground stands
+    const nr = this.nC;
+    let r = 0,
+      a = 0.5,
+      wgt = 1,
+      px = x * 0.0013,
+      pz = z * 0.0013;
+    for (let o = 0; o < 4; o++) {
+      let v = 1 - Math.abs(nr.noise2(px + o * 17.3, pz - o * 9.1));
+      v = v * v * (3 - 2 * v);
+      r += a * v * wgt;
+      wgt = Math.min(1, v * 1.4);
+      a *= 0.5;
+      const qx = 1.6 * px - 1.2 * pz;
+      pz = 1.2 * px + 1.6 * pz;
+      px = qx;
+    }
+    relief *= 0.72 + 0.5 * r * smoothstep(0.08, 0.6, relief);
     bw = bw || this.biomeWeights(x, z);
-    const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 80;
+    const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 260;
     // foothills where the belt thins out, full height in its middle
     return relief * amp * k * k * (3 - 2 * k);
   }
@@ -800,7 +847,7 @@ export class WorldGen {
     return [-hx / l, (2 * e) / l, -hz / l];
   }
 
-  // Ground material weights: [sand, dirt, rock, salt, grass, snow, forest floor].
+  // Ground material weights: [sand, dirt, rock, salt, grass, snow, forest floor, gravel].
   groundMaterial(x, z, nrmY, bw) {
     bw = bw || this.biomeWeights(x, z);
     const slope = 1 - nrmY;
@@ -813,6 +860,12 @@ export class WorldGen {
     let grass = bw.prairie * 0.9 + bw.forest * 0.3 + bw.tundra * 0.18 * n2 + bw.highland * 0.05;
     let snow = bw.taiga * 0.9 + bw.tundra * (0.85 - 0.25 * n2);
     let forest = bw.forest * 0.65 + bw.taiga * 0.12;
+    // desert pavement: patches of packed gravel on the flats, sharp-edged and irregular
+    const pv = this.nA.noise2(x * 0.019 + 7, z * 0.019 - 3) + this.nB.noise2(x * 0.07, z * 0.07) * 0.3;
+    const dryland = bw.scrub + bw.badlands + bw.highland + bw.saltflat * 0.3;
+    let gravel = smoothstep(0.3, 0.55, pv) * dryland * 1.2;
+    // and a sandy fringe where wind piles it in the low spots
+    sand += smoothstep(-0.1, -0.5, pv) * (bw.scrub + bw.highland * 0.5) * 0.25;
     sand *= 0.7 + 0.6 * n;
     dirt *= 1.3 - 0.6 * n;
     grass *= 0.75 + 0.5 * n2;
@@ -821,6 +874,9 @@ export class WorldGen {
     // earth first and only to rock on real cliffs
     const green = bw.prairie + bw.forest + bw.taiga + bw.tundra;
     const steep = smoothstep(0.05, 0.2, slope) * (1 - bw.dunes * 0.92);
+    // scree: loose gravel collects on the moderate slopes below the cliffs
+    gravel += smoothstep(0.03, 0.1, slope) * (1 - smoothstep(0.18, 0.3, slope)) * (1 - green) * (1 - bw.dunes) * 1.4;
+    gravel *= 1 - smoothstep(0.2, 0.35, slope);
     rock += steep * 3 * (1 - green * 0.75) + smoothstep(0.3, 0.5, slope) * 2 * green;
     dirt += steep * 1.6 * green;
     salt *= 1 - smoothstep(0.015, 0.06, slope);
@@ -848,8 +904,9 @@ export class WorldGen {
       grass *= 1 - t * 0.6;
       snow *= 1 - t * (rv.r.frozen ? 0.2 : 0.8);
     }
-    const s = sand + dirt + rock + salt + grass + snow + forest + 1e-6;
-    return [sand / s, dirt / s, rock / s, salt / s, grass / s, snow / s, forest / s];
+    if (rv && rv.d < rv.r.w + 10) gravel *= smoothstep(rv.r.w, rv.r.w + 10, rv.d);
+    const s = sand + dirt + rock + salt + grass + snow + forest + gravel + 1e-6;
+    return [sand / s, dirt / s, rock / s, salt / s, grass / s, snow / s, forest / s, gravel / s];
   }
 
   // Surface type for tyres / footsteps.
@@ -866,6 +923,6 @@ export class WorldGen {
     const n = this.normal(x, z, 1.0);
     const m = this.groundMaterial(x, z, n[1], bw);
     const best = m.indexOf(Math.max(...m));
-    return ['sand', 'dirt', 'rock', 'salt', 'grass', 'snow', 'dirt'][best];
+    return ['sand', 'dirt', 'rock', 'salt', 'grass', 'snow', 'dirt', 'gravel'][best];
   }
 }

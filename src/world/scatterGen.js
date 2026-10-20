@@ -15,10 +15,11 @@ export const STRIDE = 8;
 // solid: collider shape near the player. cluster: noise threshold that groups them (forests,
 // meadows); slope: steepest ground (normal y) they grow on.
 export const SPECIES = [
-  { id: 'grass', variants: 4, near: 2, dens: { scrub: 120, dunes: 9, badlands: 14, saltflat: 0.6, highland: 60 }, scale: [1.0, 1.9], sway: 'grass', shadow: false, cluster: -0.35 },
+  { id: 'grass', variants: 4, near: 2, dens: { scrub: 165, dunes: 16, badlands: 34, saltflat: 0.8, highland: 85 }, scale: [1.0, 1.9], sway: 'grass', shadow: false, cluster: -0.25 },
   { id: 'meadow', variants: 4, near: 2, dens: { prairie: 330, forest: 45, highland: 14 }, scale: [1.0, 1.7], sway: 'grass', shadow: false, cluster: -0.45 },
   { id: 'snowgrass', variants: 3, near: 2, dens: { taiga: 9, tundra: 22 }, scale: [0.8, 1.4], sway: 'grass', shadow: false, cluster: -0.2 },
-  { id: 'shrub', variants: 4, near: 3, lod1: 'mesh', dens: { scrub: 18, dunes: 2.2, badlands: 4, saltflat: 0.1, highland: 9, prairie: 2.5 }, scale: [0.7, 1.6], sway: 'shrub', cluster: -0.35 },
+  { id: 'shrub', variants: 4, near: 4, lod1: 'mesh', dens: { scrub: 30, dunes: 6, badlands: 11, saltflat: 0.3, highland: 17, prairie: 4.5 }, scale: [0.6, 1.7], sway: 'shrub', cluster: -0.15 },
+  { id: 'yucca', variants: 3, near: 3, dens: { scrub: 1.4, dunes: 0.5, badlands: 0.5, highland: 2.2, prairie: 0.3 }, scale: [0.8, 1.3], cluster: -0.05 },
   { id: 'tundrashrub', variants: 3, near: 3, lod1: 'mesh', dens: { tundra: 8, taiga: 1.6 }, scale: [0.8, 1.6], cluster: -0.25 },
   { id: 'fern', variants: 3, near: 2, dens: { forest: 34 }, scale: [0.8, 1.5], sway: 'shrub', shadow: false, cluster: -0.2 },
   { id: 'flowers', variants: 4, near: 2, dens: { prairie: 26, forest: 3, highland: 1.5 }, scale: [0.8, 1.3], sway: 'grass', shadow: false, cluster: 0.05 },
@@ -28,13 +29,19 @@ export const SPECIES = [
   { id: 'boulder', variants: 4, lod1: 'mesh', dens: { scrub: 0.25, dunes: 0.04, badlands: 1.1, saltflat: 0.02, highland: 1.6, prairie: 0.12, forest: 0.45 }, scale: [0.6, 2.2], rock: true, solid: 'ball' },
   { id: 'snowrock', variants: 3, lod1: 'mesh', dens: { taiga: 0.55, tundra: 1.3 }, scale: [0.6, 2.4], rock: true, solid: 'ball' },
   { id: 'slab', variants: 3, lod1: 'mesh', dens: { scrub: 0.1, dunes: 0.02, badlands: 0.4, saltflat: 0.01, highland: 0.5, tundra: 0.15 }, scale: [0.8, 2.4], rock: true, solid: 'ball' },
-  { id: 'saguaro', variants: 3, lod1: 'impostor', dens: { scrub: 0.2, dunes: 0.03, badlands: 0.3, highland: 0.15 }, scale: [0.85, 1.25], solid: 'trunk' },
-  { id: 'joshua', variants: 3, lod1: 'impostor', dens: { scrub: 0.26, dunes: 0.01, badlands: 0.05, highland: 0.4 }, scale: [0.9, 1.5], solid: 'trunk' },
+  { id: 'saguaro', variants: 3, lod1: 'impostor', dens: { scrub: 0.3, dunes: 0.05, badlands: 0.35, highland: 0.12 }, scale: [0.85, 1.25], solid: 'trunk', cluster: -0.1 },
+  { id: 'ocotillo', variants: 3, lod1: 'impostor', dens: { scrub: 0.16, badlands: 0.22, highland: 0.1 }, scale: [0.85, 1.2], cluster: 0.0 },
+  { id: 'joshua', variants: 3, lod1: 'impostor', dens: { scrub: 0.34, dunes: 0.01, badlands: 0.05, highland: 0.55 }, scale: [0.9, 1.5], solid: 'trunk', cluster: -0.1 },
   { id: 'deadtree', variants: 3, lod1: 'impostor', dens: { scrub: 0.05, dunes: 0.02, badlands: 0.06, saltflat: 0.01, highland: 0.1, prairie: 0.02, tundra: 0.04 }, scale: [0.8, 1.4], solid: 'trunk' },
-  { id: 'hoodoo', variants: 3, lod1: 'mesh', dens: { badlands: 0.06, highland: 0.02 }, scale: [1, 2.2], rock: true, solid: 'trunkWide' },
-  { id: 'pine', mid: 3, variants: 4, lod1: 'impostor', dens: { forest: 16, prairie: 0.35, highland: 0.25 }, scale: [0.8, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.15, slope: 0.78, far: 0.85 },
+  // hoodoos: only in groups at the feet of the mesas, well off the road
+  { id: 'hoodoo', variants: 3, lod1: 'mesh', dens: { badlands: 0.9 }, scale: [0.7, 1.5], rock: true, solid: 'trunkWide', place: (gen, x, z, dRoad) => {
+    if (dRoad < 120) return false;
+    const mm = gen.mesaNoise(x, z);
+    return mm > 0.17 && mm < 0.29;
+  } },
+  { id: 'pine', mid: 3, variants: 4, lod1: 'impostor', dens: { forest: 20, prairie: 0.45, highland: 0.25 }, scale: [0.8, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.15, slope: 0.78, far: 0.85 },
   { id: 'snowpine', mid: 3, variants: 4, lod1: 'impostor', snow: true, dens: { taiga: 15, tundra: 0.35 }, scale: [0.7, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.2, slope: 0.78, far: 0.85 },
-  { id: 'birch', mid: 3, variants: 3, lod1: 'impostor', dens: { forest: 2.6, prairie: 0.4 }, scale: [0.85, 1.2], sway: 'tree', solid: 'trunk', cluster: 0.1 },
+  { id: 'birch', mid: 3, variants: 3, lod1: 'impostor', dens: { forest: 3.4, prairie: 0.6 }, scale: [0.85, 1.2], sway: 'tree', solid: 'trunk', cluster: 0.1 },
   { id: 'birchbare', mid: 3, variants: 3, lod1: 'impostor', snow: true, dens: { taiga: 0.9, tundra: 0.06 }, scale: [0.85, 1.2], solid: 'trunk', cluster: 0.1 },
   { id: 'stump', variants: 3, near: 3, dens: { forest: 0.8, taiga: 0.4 }, scale: [0.8, 1.3], solid: 'stump' },
   { id: 'log', variants: 3, near: 3, dens: { forest: 0.35, taiga: 0.25 }, scale: [0.9, 1.2], solid: 'log' },
@@ -84,6 +91,7 @@ export function cellInstances(gen, ci, cj) {
       const rx = gen.roadX(z);
       const dRoad = Math.abs(x - rx);
       if (dRoad < ROAD.halfWidth + ROAD.shoulder + (def.solid ? 6 : 1.5)) continue;
+      if (def.place && !def.place(gen, x, z, dRoad)) continue;
       let blocked = false;
       for (const p of pois) if (Math.hypot(x - p.x, z - p.z) < p.padR + (def.solid ? 8 : 2)) blocked = true;
       if (blocked) continue;
