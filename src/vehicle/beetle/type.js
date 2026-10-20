@@ -26,7 +26,15 @@ export const BEETLE = {
   // front impacts reach the fuel tank behind the luggage space, rear ones the engine
   crash: { front: 'tank', rear: 'engine' },
   lids: { hood: 'engine lid', trunk: 'front lid' },
-  trunk: { label: 'Front trunk', slots: 14, capacity: 120 },
+  trunk: { label: 'Front trunk', slots: 14, capacity: 120, com: [0, 0.62, 1.3] },
+  // things dropped in through the doors ride in here (car space)
+  cabin: { hw: 0.72, y0: 0.22, y1: 1.35, z0: -2.15, z1: 0.85 },
+  // accessory mounts: roof (gutters to rack top), nose and tail
+  MOUNTS: {
+    roof: { z: -0.33, l: 1.0, w: 1.0, top: 1.635 },
+    front: { z: 1.92, y0: 0.3, y1: 0.98, w: 0.95 },
+    rear: { z: -2.05, y: 0.5, w: 0.95, d: 0.48 },
+  },
   massSize: [1.55, 1.1, 4.0],
   fuelCom: [0, 0.62, 0.85],
   lights: { head: [0, 0.7, 1.72], headX: 0.53, reverse: [0, 0.6, -2.0] },

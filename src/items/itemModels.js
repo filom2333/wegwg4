@@ -7,6 +7,7 @@ import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
 import { paintOf } from '../vehicle/paints.js';
+import { accessoryItemModel } from '../vehicle/accessories.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -802,8 +803,34 @@ export function cdCase(album = 0) {
   return centered(g);
 }
 
+// A sack of sand: a lumpy pillow, tied off at one end.
+export function sandbag() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const geo = roundedBox(0.36, 0.17, 0.6, 0.07, 4);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i),
+      y = p.getY(i),
+      z = p.getZ(i);
+    // slumped: the sand settles to the bottom and bulges the sides; the tied end narrows
+    const end = Math.max(0, z / 0.3 - 0.55) / 0.45;
+    const lump = 1 + 0.04 * Math.sin(x * 23 + z * 17) * Math.sin(z * 11);
+    p.setX(i, x * (1 - 0.55 * end * end) * (y < 0 ? 1.06 : 0.94) * lump);
+    p.setY(i, (y * (1 - 0.6 * end * end) - (y > 0 ? 0.02 * (1 - (x / 0.18) ** 2) : 0)) * lump);
+  }
+  geo.computeVertexNormals();
+  g.add(mesh(geo, M.sack || (M.sack = addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x8d7c58, roughness: 0.97 }), 'weave', 0.5))));
+  g.add(mesh(latheY([[0.03, 0], [0.045, 0.02], [0.02, 0.05], [0.035, 0.09], [0, 0.1]], 10).rotateX(Math.PI / 2).translate(0, 0, 0.29), M.sack));
+  g.add(mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 14).translate(0, 0, 0.32), M.rubber));
+  grip(g, 'side', 'wrap12', V(0, 0, 0.33), RIGHT, UP);
+  return centered(g);
+}
+
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
+  sandbag,
+  accessory: accessoryItemModel,
   note,
   sponge,
   sprayPaint,

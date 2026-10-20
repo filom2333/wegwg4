@@ -6,6 +6,7 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass, itemLabel } from './itemDefs.js';
 import { MODEL_BUILDERS } from './itemModels.js';
 import { carType } from '../vehicle/types.js';
+import { cargoZone, cargoDeck } from '../vehicle/accessories.js';
 import { mulberry32 } from '../core/noise.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -214,7 +215,8 @@ export class ItemSystem {
     const col = this.game.physics.world.createCollider(cd, car.dyn.body);
     this.game.physics.setOwner(col, it.ownerTag);
     // car-space state for the cargo simulation: it rests where it was put down
-    it.stowed = { car, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
+    const zone = cargoZone(car, p, it.size) || 'cabin';
+    it.stowed = { car, zone, collider: col, rest: p.clone(), p: p.clone(), v: V(0, 0, 0), q: q.clone(), spin: 0, air: false, tumble: V(0, 0, 0) };
     car.attached.push(it);
     car.owned = true; // a car with your things in it stays where you left it
     car.updateMass();
@@ -390,6 +392,8 @@ export class ItemSystem {
     const f = V(0, -9.81, 0).sub(cs.a).applyQuaternion(qi);
     const MU_S = 0.7,
       MU_K = 0.45;
+    const tipped = 1 - 2 * (car.root.quaternion.x ** 2 + car.root.quaternion.z ** 2) < 0.2;
+    const loose = [];
     for (const it of car.attached) {
       const s = it.stowed;
       if (!s || !s.rest) continue;
@@ -448,13 +452,23 @@ export class ItemSystem {
         }
       }
       const sp = car.type.SPEC;
-      const inTrunk = s.rest.z < sp.axleR - 0.1 || s.rest.z > sp.axleF - 0.2;
-      const roof = inTrunk ? 0.95 : sp.roofY - 0.3;
-      if (s.p.y > roof) {
-        s.p.y = roof;
-        if (s.v.y > 0) s.v.y *= -0.3;
+      if (s.zone === 'cabin') {
+        const inTrunk = s.rest.z < sp.axleR - 0.1 || s.rest.z > sp.axleF - 0.2;
+        const roof = inTrunk ? 0.95 : sp.roofY - 0.3;
+        if (s.p.y > roof) {
+          s.p.y = roof;
+          if (s.v.y > 0) s.v.y *= -0.3;
+        }
+        s.p.x = Math.max(-(sp.halfWidth - 0.13), Math.min(sp.halfWidth - 0.13, s.p.x));
+      } else {
+        // strapped down: it shifts a little in the straps, and comes off when the car goes over
+        const deck = cargoDeck(car, s.zone);
+        if (deck) s.p.x = Math.max(-deck.hw, Math.min(deck.hw, s.p.x));
+        if (tipped) {
+          loose.push(it);
+          continue;
+        }
       }
-      s.p.x = Math.max(-(sp.halfWidth - 0.13), Math.min(sp.halfWidth - 0.13, s.p.x));
       // orientation: spins while sliding, tumbles in the air
       if (!s.flat) s.flat = s.q.clone().premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -new THREE.Euler().setFromQuaternion(s.q, 'YXZ').y, 0, 'YXZ')));
       if (s.air) {
@@ -470,6 +484,11 @@ export class ItemSystem {
         s.collider.setTranslationWrtParent({ x: s.p.x, y: s.p.y, z: s.p.z });
         s.collider.setRotationWrtParent({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w });
       }
+    }
+    for (const it of loose) {
+      this.unstow(it, true);
+      const cv = body.linvel();
+      it.body && it.body.setLinvel({ x: cv.x + (Math.random() - 0.5), y: cv.y + 1, z: cv.z + (Math.random() - 0.5) }, true);
     }
   }
 

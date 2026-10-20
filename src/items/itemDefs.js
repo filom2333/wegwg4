@@ -38,6 +38,12 @@ export const ITEMS = {
   coffee: { name: 'Canned coffee', model: ['coffee'], mass: 0.3, consume: { energy: 28, water: 6, food: 2 }, hold: 'hand', desc: 'Keeps you awake on long drives.' },
   cd: { name: 'CD', model: ['cdCase'], mass: 0.1, disc: true, hold: 'hand', variants: 6, desc: 'Put it in the car stereo (look at the radio, LMB).' },
   note: { name: 'Note', model: ['note'], mass: 0.01, readable: true, hold: 'hand', desc: 'Someone left this for whoever came next.' },
+  // bolt-on car accessories (see vehicle/accessories.js) and ballast
+  roofRack: { name: 'Roof rack', model: ['accessory', 'roofRack'], mass: 14, accessory: 'roofRack', bulky: true, hold: 'side', desc: 'Fits any car roof. Strap cargo on top; it raises the centre of gravity.' },
+  roofBox: { name: 'Roof box', model: ['accessory', 'roofBox'], mass: 17, accessory: 'roofBox', bulky: true, hold: 'side', desc: 'A 50 kg boot that clamps on the roof. High weight rolls easier.' },
+  bullBar: { name: 'Bull bar', model: ['accessory', 'bullBar'], mass: 26, accessory: 'bullBar', bulky: true, hold: 'side', desc: 'Bolts across the nose and takes the worst of a head-on hit. Heavy on the front axle.' },
+  rearRack: { name: 'Rear carrier', model: ['accessory', 'rearRack'], mass: 11, accessory: 'rearRack', bulky: true, hold: 'side', desc: 'A hitch tray behind the bumper for cans and crates.' },
+  sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
   meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
 };
 
@@ -194,6 +200,14 @@ export const LOOT = {
     ['jerky', 1],
     ['waterBottle', 1],
   ],
+  gear: [
+    ['roofRack', 1],
+    ['roofBox', 0.6],
+    ['bullBar', 0.7],
+    ['rearRack', 0.8],
+    ['sandbag', 1.4],
+    ['jerryCan', 0.5],
+  ],
   wreck: [
     ['cd', 0.9],
     ['jerryCan', 1.2],
@@ -204,7 +218,7 @@ export const LOOT = {
 };
 
 // spawn chance per spot kind (before difficulty multiplier)
-export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.55, tools: 0.6, shop: 0.5, drinks: 0.5, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45 };
+export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.55, tools: 0.6, shop: 0.5, drinks: 0.5, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45, gear: 0.75 };
 
 export function initialState(id, rnd) {
   const d = ITEMS[id];

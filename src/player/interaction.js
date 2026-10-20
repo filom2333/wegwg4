@@ -10,6 +10,7 @@ import { ITEMS } from '../items/itemDefs.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
 import { fitMatrix } from '../vehicle/swap.js';
+import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
@@ -179,13 +180,25 @@ export class Interaction {
         if (dd < 0.32 && (!seat || dd < seat.dd)) seat = { kind: 'seat', seat: name, dist: t, dd };
       }
     }
+    // bolt-on accessories
+    if (!seated)
+      for (const [mount, a] of Object.entries(car.accessories || {})) {
+        tmpRay.origin.copy(origin).applyMatrix4(cinv);
+        tmpRay.direction.copy(dir).transformDirection(cinv);
+        const hitP = tmpRay.intersectBox(a.box, tmpV);
+        if (!hitP) continue;
+        const d = hitP.clone().applyMatrix4(car.root.matrixWorld).distanceTo(origin);
+        if (d > maxDist) continue;
+        const sz = a.box.getSize(V(0, 0, 0));
+        list.push({ id: mount, acc: true, d, vol: sz.x * sz.y * sz.z });
+      }
     list.sort((a, b) => a.d - b.d);
     let pick = null;
     if (list.length) {
       pick = list[0];
       for (const c of list) if (c.d - list[0].d < 0.15 && c.vol < pick.vol) pick = c;
     }
-    let best = pick ? { kind: 'part', part: pick.id, dist: pick.d } : null;
+    let best = pick ? (pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
     if (seat && (!best || seat.dist < best.dist + 0.4)) best = seat;
     if (hs && (!best || hs.dist < best.dist + 0.25)) best = hs;
     return best;
@@ -218,6 +231,18 @@ export class Interaction {
           else prompts.push(['', fit.reason]);
           if (fit.ok && !blocked && input.wasPressed('interact')) this.install(it, fit.slot);
         } else this.hideGhost();
+      } else if (def && def.accessory) {
+        const fit = this.accessoryFit(it);
+        info = this.heldInfo(it);
+        if (fit) {
+          this.showAccessoryGhost(it, fit.ok);
+          if (fit.ok) prompts.push(['E', `Fit to the ${MOUNT_LABEL[fit.mount]}`]);
+          else prompts.push(['', fit.reason]);
+          if (fit.ok && !blocked && input.wasPressed('interact')) this.fitHeldAccessory(it);
+        } else {
+          this.hideGhost();
+          prompts.push(['', `Take it to a car to fit it to the ${MOUNT_LABEL[ACCESSORIES[def.accessory].mount]}`]);
+        }
       } else {
         this.hideGhost();
         info = this.heldInfo(it);
@@ -237,7 +262,12 @@ export class Interaction {
       }
     } else {
       this.hideGhost();
-      if (t) {
+      if (this.carTipped()) {
+        info = { title: 'Overturned', sub: 'On its side or roof', progress: this.righting > 0 ? Math.min(1, this.righting / 0.4) : undefined };
+        prompts.push([kn('interact'), 'Push it back onto its wheels (hold)']);
+        if (!blocked) this.updateRighting(dt);
+      } else if (t) {
+        this.righting = 0;
         const r = this.describeTarget(t);
         info = r.info;
         prompts.push(...r.prompts);
@@ -413,6 +443,25 @@ export class Interaction {
         }
         break;
       }
+      case 'accessory': {
+        const a = car.accessories[t.mount];
+        const def = ACCESSORIES[a.id];
+        info = { title: def.label, sub: `${def.mass} kg on the ${MOUNT_LABEL[t.mount]}` };
+        if (def.storage && car.storage.roofbox) {
+          info.sub += ` · ${Math.round(car.storage.roofbox.weight())} / ${def.storage.capacity} kg inside`;
+          prompts.push(['E', 'Open']);
+        }
+        if (def.cargo) {
+          const n = car.attached.filter((x) => x.stowed && x.stowed.zone === t.mount).length;
+          if (n) info.sub += ` · ${n} strapped on`;
+          else prompts.push(['', 'Drop things on it to strap them down']);
+        }
+        const rem = canRemoveAccessory(car, t.mount);
+        if (rem.ok) prompts.push(['R', 'Take off (hold)']);
+        else prompts.push(['', rem.reason]);
+        if (this.removing && this.removing.acc === t.mount) info.progress = this.removing.t / 1.6;
+        break;
+      }
       case 'seat':
         info = { title: { driver: 'Driver seat', passenger: 'Passenger seat', rearL: 'Rear seat', rearR: 'Rear seat' }[t.seat] };
         prompts.push(['E', 'Sit']);
@@ -453,6 +502,18 @@ export class Interaction {
         if (Math.floor((this.removing.t - dt) / 0.45) !== Math.floor(this.removing.t / 0.45)) g.audio && g.audio.play('ratchet');
         if (this.removing.t >= this.removeTime(id)) {
           this.remove(id);
+          this.removing = null;
+        }
+      }
+      return;
+    }
+    if (t.kind === 'accessory' && input.isDown('reload')) {
+      if (canRemoveAccessory(car, t.mount).ok) {
+        if (!this.removing || this.removing.acc !== t.mount) this.removing = { acc: t.mount, t: 0 };
+        this.removing.t += dt;
+        if (Math.floor((this.removing.t - dt) / 0.45) !== Math.floor(this.removing.t / 0.45)) g.audio && g.audio.play('ratchet');
+        if (this.removing.t >= 1.6) {
+          this.takeOffAccessory(t.mount);
           this.removing = null;
         }
       }
@@ -513,6 +574,11 @@ export class Interaction {
         g.audio && g.audio.play('click');
         break;
       }
+      case 'accessory': {
+        if (viaMouse) return;
+        if (car.storage.roofbox && t.mount === 'roof') g.ui && g.ui.inventory.show('roofbox');
+        break;
+      }
       case 'seat': {
         if (viaMouse) return;
         g.player.enterSeat(car, t.seat);
@@ -556,7 +622,7 @@ export class Interaction {
     this.userRotated = false;
     this.hangAng = 0;
     this.hangVel = 0;
-    this.holdDist = it.part ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
+    this.holdDist = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55 ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
     g.audio && g.audio.play('pickup', { mass: it.mass });
@@ -1214,6 +1280,7 @@ export class Interaction {
   hideGhost() {
     if (this.ghost) {
       this.ghost.parent && this.ghost.parent.remove(this.ghost);
+      if (this.ghost.userData.ownGeometry) this.ghost.traverse((o) => o.isMesh && o.geometry.dispose());
       this.ghost = null;
       this.ghostFor = null;
     }
@@ -1280,6 +1347,116 @@ export class Interaction {
     else g.hud && g.hud.toast(`${car.PARTS[id].label} removed — too heavy to carry`);
   }
 
+  // ------------------------------------------------------------------ righting a car
+  // The current car lying on its side or roof, right in front of you.
+  carTipped() {
+    const car = this.game.car;
+    if (!car || this.game.player.seat) return false;
+    const q = car.root.quaternion;
+    if (1 - 2 * (q.x * q.x + q.z * q.z) > 0.5 || car.dyn.speed > 2) return false;
+    const S = car.type.SPEC;
+    const box = new THREE.Box3(V(-S.halfWidth, 0, S.rearTip), V(S.halfWidth, S.roofY, S.frontTip));
+    const inv = new THREE.Matrix4().copy(car.root.matrixWorld).invert();
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    tmpRay.origin.copy(this.cam.position).applyMatrix4(inv);
+    tmpRay.direction.copy(dir).transformDirection(inv);
+    const hit = tmpRay.intersectBox(box, tmpV);
+    return !!hit && hit.distanceTo(tmpRay.origin) < 3.2;
+  }
+
+  // Shoulder against the roof: the car rolls back over toward its wheels while E is held.
+  updateRighting(dt) {
+    const g = this.game;
+    const car = g.car;
+    if (!input.isDown('interact')) {
+      this.righting = 0;
+      return;
+    }
+    const before = this.righting || 0;
+    this.righting = before + dt;
+    if (Math.floor(before / 0.7) !== Math.floor(this.righting / 0.7)) g.audio && g.audio.play('land', { at: car.root.position, volume: 0.35 });
+    if (this.righting < 0.4) return;
+    const b = car.dyn.body;
+    const up = V(0, 1, 0).applyQuaternion(car.root.quaternion);
+    const axis = up.clone().cross(V(0, 1, 0));
+    // flat on its roof: roll it over the long axis, away from where you stand
+    if (axis.lengthSq() < 0.01) {
+      const toCar = car.root.position.clone().sub(g.player.position).setY(0);
+      axis.copy(V(0, 1, 0).cross(toCar)).negate();
+    }
+    axis.normalize().multiplyScalar(1.5);
+    const lv = b.linvel();
+    b.setAngvel({ x: axis.x, y: axis.y, z: axis.z }, true);
+    if (up.y < 0.4) b.setLinvel({ x: lv.x * 0.9, y: Math.max(lv.y, 0.7), z: lv.z * 0.9 }, true);
+  }
+
+  // ------------------------------------------------------------------ accessories
+  // Holding a rack, box or bar near a car with that mount free.
+  accessoryFit(it) {
+    const car = this.game.car;
+    if (!car || !car.type.MOUNTS) return null;
+    const def = ACCESSORIES[it.def.accessory];
+    const f = car.type.MOUNTS[def.mount];
+    if (!f) return null;
+    const c = def.mount === 'roof' ? V(0, f.top, f.z) : def.mount === 'front' ? V(0, (f.y0 + f.y1) / 2, f.z) : V(0, f.y, f.z - f.d / 2);
+    if (car.worldPointOf(c).distanceTo(this.cam.position) > 2.8) return null;
+    const where = MOUNT_LABEL[def.mount];
+    if (car.accessories && car.accessories[def.mount]) return { ok: false, mount: def.mount, reason: `There is already something on the ${where}` };
+    if (def.mount === 'roof' && !car.isInstalled('body')) return { ok: false, mount: def.mount, reason: 'Needs the body shell to bolt on to' };
+    if (this.game.player.seat) return { ok: false, mount: def.mount, reason: 'Get out of the car first' };
+    return { ok: true, mount: def.mount };
+  }
+
+  showAccessoryGhost(it, ok) {
+    const car = this.game.car;
+    const key = `acc:${it.def.accessory}:${car.id}`;
+    if (!this.ghost || this.ghostFor !== key) {
+      this.hideGhost();
+      const g = buildAccessory(it.def.accessory, car);
+      g.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = false;
+        o.renderOrder = 5;
+      });
+      g.userData.ownGeometry = true;
+      this.ghost = g;
+      this.ghostFor = key;
+      car.root.add(g);
+    }
+    const mat = ok ? this.ghostMat : this.ghostBad;
+    this.ghost.traverse((o) => o.isMesh && (o.material = mat));
+  }
+
+  fitHeldAccessory(it) {
+    const g = this.game;
+    const car = g.car;
+    const def = ACCESSORIES[it.def.accessory];
+    this.hideGhost();
+    this.held = null;
+    g.player.carryMass = 0;
+    g.items.destroy(it);
+    const a = fitAccessory(car, it.def.accessory);
+    car.owned = true;
+    g.audio && g.audio.play('install', { at: car.worldPointOf(a.center) });
+    g.hud && g.hud.toast(`${def.label} fitted · ${def.mass} kg on the ${MOUNT_LABEL[def.mount]}`);
+  }
+
+  takeOffAccessory(mount) {
+    const g = this.game;
+    const car = g.car;
+    const a = car.accessories[mount];
+    const def = ACCESSORIES[a.id];
+    // whatever was strapped to it comes loose
+    for (const it of [...car.attached]) if (it.stowed && it.stowed.zone === mount) g.items.unstow(it, true);
+    const pos = car.worldPointOf(a.center);
+    removeAccessory(car, mount);
+    car.owned = true;
+    const it = g.items.spawn(a.id, pos, car.root.quaternion.clone(), {});
+    g.audio && g.audio.play('remove', { at: pos });
+    this.pick(it);
+    g.hud && g.hud.toast(`${def.label} taken off`);
+  }
+
   // ------------------------------------------------------------------ stowing in the car
   updateStowing(dt) {
     const car = this.game.car;
@@ -1291,7 +1468,7 @@ export class Interaction {
         continue;
       }
       const lp = it.mesh.position.clone().applyMatrix4(inv);
-      const inside = Math.abs(lp.x) < 0.72 && lp.y > 0.22 && lp.y < 1.35 && lp.z > -2.15 && lp.z < 0.85;
+      const inside = !!cargoZone(car, lp, it.size);
       const v = it.body.linvel();
       const cv = car.dyn.body.linvel();
       const rel = Math.hypot(v.x - cv.x, v.y - cv.y, v.z - cv.z);

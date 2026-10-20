@@ -118,6 +118,8 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true } = {}) {
   stain.translate(0.2, y + 0.012, 0.3);
   b.add(stain, M.blackMatte);
   b.carSpot = { x: 0, z: 0.4, rot: 0 };
+  // bigger kit leaning by the side wall: racks, bars, sandbags
+  b.loot.push({ pos: [x0 + 1.3, y + 0.02, 0.2], kind: 'gear' });
   return { builder: b, footprint: { w: w + 1, d: d + 1 } };
 }
 

@@ -10,6 +10,7 @@ import { CAR_TYPES, carType } from './types.js';
 import { Container } from '../items/inventory.js';
 import { hash01 } from '../core/noise.js';
 import { RAPIER } from '../physics/physics.js';
+import { ACCESSORIES, fitAccessory, serializeAccessories } from './accessories.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // cars further than this sleep (their bodies off): terrain colliders only exist near the player
@@ -207,7 +208,10 @@ export class Fleet {
       state: rec ? rec.state : null,
       init: rec ? {} : abandonedState(g.seed, k),
     });
-    if (!rec) neglect(car, g.seed, k);
+    if (!rec) {
+      neglect(car, g.seed, k);
+      outfit(car, g.seed, k);
+    }
     car.syncVisual();
   }
 
@@ -304,6 +308,14 @@ function neglect(car, seed, k) {
   car.coolant = car.type.coolantCap ? car.type.coolantCap * (0.2 + r(6) * 0.6) : 0;
 }
 
+// ... and some came with gear bolted on, there for the taking.
+function outfit(car, seed, k) {
+  const r = (i) => hash01(seed, k, 960 + i);
+  if (r(0) < 0.32) fitAccessory(car, r(1) < 0.35 ? 'roofBox' : 'roofRack');
+  if (r(2) < 0.14) fitAccessory(car, 'bullBar');
+  if (r(3) < 0.12) fitAccessory(car, 'rearRack');
+}
+
 // ------------------------------------------------------------------- car state
 export function serializeCar(car, o) {
   const cp = car.root.position,
@@ -327,6 +339,7 @@ export function serializeCar(car, o) {
     paintColor: car.paintColor ?? null,
     partColors: car.partColors || null,
     stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
+    accessories: serializeAccessories(car),
     storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
     parts,
     open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
@@ -349,6 +362,7 @@ export function applyCarState(car, c, g) {
   for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);
   car.rebuildColliders();
   if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
+  for (const id of Object.values(c.accessories || {})) if (ACCESSORIES[id]) fitAccessory(car, id);
   if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);
   void g;
 }

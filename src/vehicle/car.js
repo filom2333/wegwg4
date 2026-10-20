@@ -8,6 +8,7 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
+import { accessoryMass, ACCESSORIES } from './accessories.js';
 import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
 
@@ -204,6 +205,8 @@ export class Car {
       com.addScaledVector(c, mass);
       m += mass;
     }
+    // the shell's mass sits lower than its bounding box (sills, floor pan, glass is light)
+    com.y -= 0.05 * m;
     // fuel
     const fuelMass = this.isInstalled('fueltank') ? this.fuel * 0.74 : 0;
     com.addScaledVector(V(...this.type.fuelCom), fuelMass);
@@ -213,11 +216,26 @@ export class Car {
       com.addScaledVector(this.type.SEATS[this.game.player.seat].pos.clone().setY(0.6), 80);
       m += 80;
     }
+    // whatever is bolted on, strapped down or packed in
+    m += accessoryMass(this, com);
+    for (const it of this.attached || []) {
+      if (!it.stowed) continue;
+      com.addScaledVector(it.stowed.rest, it.mass);
+      m += it.mass;
+    }
+    const packed = this.packedMass();
+    com.addScaledVector(V(...(this.type.trunk.com || [0, 0.6, 0])), packed.trunk);
+    if (packed.roofbox) com.addScaledVector(this.accessories.roof.center, packed.roofbox);
+    m += packed.trunk + packed.roofbox;
+    this.packed = packed.trunk + packed.roofbox;
     com.multiplyScalar(1 / Math.max(1, m));
-    // pull COM a little lower: shell mass sits low in sills and floor
-    com.y = Math.min(com.y, 0.55);
     this.totalMass = m;
     this.dyn.setMassProperties({ mass: Math.max(m, 120), com, size: V(...this.type.massSize) });
+  }
+
+  packedMass() {
+    const S = this.storage || {};
+    return { trunk: (S.trunk ? S.trunk.weight() : 0) + (S.glovebox ? S.glovebox.weight() : 0), roofbox: S.roofbox ? S.roofbox.weight() : 0 };
   }
 
   rebuildColliders() {
@@ -490,6 +508,21 @@ export class Car {
       }
     }
     if (collidersDirty) this.rebuildColliders();
+    // what is packed in the boot changes the mass distribution
+    this.massCheck = (this.massCheck || 0) + dt;
+    if (this.massCheck > 0.5) {
+      this.massCheck = 0;
+      const pk = this.packedMass();
+      if (Math.abs(pk.trunk + pk.roofbox - (this.packed || 0)) > 0.3) this.updateMass();
+    }
+    // on its side or roof the engine starves of oil and stalls, and the tank breather weeps fuel
+    const upY = 1 - 2 * (this.root.quaternion.x ** 2 + this.root.quaternion.z ** 2);
+    this.inverted = upY < 0.3 ? (this.inverted || 0) + dt : 0;
+    if (this.inverted > 2.5 && d.engine.running) {
+      d.engine.running = false;
+      d.onStall && d.onStall();
+    }
+    if (this.inverted > 0 && this.isInstalled('fueltank')) this.fuel = Math.max(0, this.fuel - dt * 0.03);
 
     // controls -> dynamics
     const running = d.engine.running;
@@ -662,8 +695,9 @@ export class Car {
       }
     };
     if (front) {
-      hit(this.type.crash.front, this.isInstalled('bumper_F') ? 0.5 : 1);
-      for (const h of ['headlight_L', 'headlight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
+      const bar = this.accessories && this.accessories.front && ACCESSORIES[this.accessories.front.id].guard;
+      hit(this.type.crash.front, (this.isInstalled('bumper_F') ? 0.5 : 1) * (bar ? 1 - bar : 1));
+      for (const h of ['headlight_L', 'headlight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * (bar ? 0.8 : 2));
     } else if (rear) {
       hit(this.type.crash.rear, this.isInstalled('bumper_R') ? 0.5 : 1);
       for (const h of ['taillight_L', 'taillight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
