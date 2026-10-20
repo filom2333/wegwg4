@@ -81,7 +81,12 @@ The car is based on ["Beetle/Fusca (Version 1)"](https://sketchfab.com/3d-models
 by [soujagah](https://sketchfab.com/soujagah), licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). It was converted with
 `tools/beetle/import.py` (scaled to real size, split into parts, glass separated, paint masks
-built for repainting, textures resized and recompressed). Everything else is generated in code.
+built for repainting, textures resized and recompressed).
+
+Trees and shrubs use photographed bark from Poly Haven and TextureCan (CC0) and twig cards from
+[ez-tree](https://github.com/dgreenheck/ez-tree) by Daniel Greenheck (MIT); see
+`public/textures/trees/LICENSE.txt`. Grass and fern cards are painted by `tools/flora/*.py`.
+Everything else is generated in code.
 
 ## Inspection stand
 
