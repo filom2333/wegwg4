@@ -166,9 +166,10 @@ export class VehicleDynamics {
     this.surfaceAt = opts.surfaceAt || (() => 'asphalt');
     this.setMassProperties(opts.massProps || { mass: 1150, com: new THREE.Vector3(0, 0.52, 0.2) });
     if (opts.colliders) this.setColliders(opts.colliders);
-    this._preStep = (dt) => this.step(dt);
+    // a parked car (body disabled) gets no suspension forces: they would pile up as velocity
+    this._preStep = (dt) => this.body.isEnabled() && this.step(dt);
     physics.beforeStep.push(this._preStep);
-    this._postStep = () => this.postStep();
+    this._postStep = () => this.body.isEnabled() && this.postStep();
     physics.afterStep.push(this._postStep);
   }
 

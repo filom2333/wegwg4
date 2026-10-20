@@ -127,6 +127,7 @@ export function createImportedMaterials(type, asset, opts = {}) {
   const domeLens = new THREE.MeshStandardMaterial({ color: 0xece6d6, roughness: 0.4, emissive: 0xfff0d0, emissiveIntensity: 0 });
   return {
     byName,
+    paintables: new Set(type.META.keys.filter((k) => roles[k] === 'paint').map((k) => byName[k])),
     paint: byName[paintKey],
     color,
     weather,

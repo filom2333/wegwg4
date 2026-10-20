@@ -6,6 +6,7 @@ import { latheY, roundedBox, tubeAlong, loftSections, superSection } from '../gf
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
+import { paintOf } from '../vehicle/paints.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -238,25 +239,32 @@ export function sponge() {
   return centered(g);
 }
 
-export function sprayPaint() {
+export function sprayPaint(variant = 0) {
   const M = itemMats();
   const g = new THREE.Group();
-  const lab = labelMat('spray', 256, 128, (c, w, h) => {
-    const gr = c.createLinearGradient(0, 0, w, 0);
-    gr.addColorStop(0, '#1d4e8a');
-    gr.addColorStop(0.5, '#c23b22');
-    gr.addColorStop(1, '#e0b21c');
-    c.fillStyle = gr;
+  const P = paintOf(variant);
+  const css = '#' + P.hex.toString(16).padStart(6, '0');
+  const lab = labelMat('spray' + variant, 256, 128, (c, w, h) => {
+    c.fillStyle = '#e8e4da';
     c.fillRect(0, 0, w, h);
-    c.fillStyle = '#fff';
-    c.font = 'bold 30px Arial';
-    c.fillText('AUTO ENAMEL', 18, 74);
+    c.fillStyle = css;
+    c.fillRect(0, 0, w, h * 0.62);
+    c.fillStyle = '#1b1b1b';
+    c.fillRect(0, h * 0.62, w, 4);
+    c.font = 'bold 26px Arial';
+    c.fillStyle = P.hex > 0x999999 ? '#1b1b1b' : '#ffffff';
+    c.fillText('AUTO ENAMEL', 16, 46);
+    c.fillStyle = '#1b1b1b';
+    c.font = 'bold 20px Arial';
+    c.fillText(P.name.toUpperCase(), 16, h * 0.86);
   }, { metalness: 0.5, roughness: 0.35 });
   g.add(mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.16, 24, 1, true).translate(0, 0.085, 0), lab));
   g.add(mesh(latheY([[0.0, 0.0], [0.03, 0.0], [0.033, 0.005]], 24), M.steel));
   g.add(mesh(latheY([[0.033, 0.165], [0.02, 0.185], [0.012, 0.19], [0.0, 0.19]], 24), M.steel));
-  g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.015, 10).translate(0, 0.197, 0), M.rubber));
+  // the cap shows the colour too
+  g.add(mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.016, 12).translate(0, 0.198, 0), new THREE.MeshStandardMaterial({ color: P.hex, roughness: 0.4 })));
   grip(g, 'wrap', 'wrap33', V(0, 0.075, 0), UP, RIGHT);
+  g.userData.muzzle = V(0, 0.2, 0.012); // the nozzle
   return centered(g);
 }
 

@@ -186,6 +186,7 @@ export class Game {
     this.systemsReady = true;
     // let the car settle on its springs and loose things come to rest before anyone looks
     onProgress('Settling', 0.95);
+    this.fleet.wake();
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
     this.fleet.syncVisual();
     this.items.update();

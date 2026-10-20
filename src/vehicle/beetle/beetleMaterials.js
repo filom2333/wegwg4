@@ -183,6 +183,8 @@ export function createBeetleMaterials(T, opts = {}) {
   const byName = { paint, trim, under, mech, tyre, glass, lens: headLens };
   return {
     byName,
+    // materials a spray can recolours, part by part (the masked sets: only where the mask says paint)
+    paintables: new Set([paint, trim, under]),
     paint,
     color,
     weather,

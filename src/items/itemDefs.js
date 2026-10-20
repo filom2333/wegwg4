@@ -1,4 +1,5 @@
 import { albumName } from '../audio/music/albums.js';
+import { paintOf } from '../vehicle/paints.js';
 
 // Item catalogue: physical properties, contents and what using the item does.
 // Liquids are tracked in litres; food values are in need points (0-100 scale).
@@ -32,7 +33,7 @@ export const ITEMS = {
   ammo38: { name: '.38 cartridges', model: ['ammoBox', '38'], mass: 0.15, stack: 6, ammo: { type: '38', count: 12 }, hold: 'hand', desc: 'Use to put them in your pouch.' },
   ammo12: { name: '12 ga shells', model: ['ammoBox', '12'], mass: 0.4, stack: 6, ammo: { type: '12', count: 8 }, hold: 'hand' },
   sponge: { name: 'Sponge', model: ['sponge'], mass: 0.03, clean: true, hold: 'hand', desc: 'Hold LMB on the car to wash off the dust.' },
-  sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 1, hold: 'hand', desc: 'Use on the car to give it a new colour.' },
+  sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 5, variants: 15, hold: 'hand', desc: 'Aim at a car part and hold LMB to paint it. Enough for about five panels.' },
   cigarettes: { name: 'Cigarettes', model: ['cigarettes'], mass: 0.03, consume: { energy: 6, food: -3, water: -5, smoke: true }, charges: 5, hold: 'hand', desc: 'Calms the nerves. Makes you thirsty.' },
   coffee: { name: 'Canned coffee', model: ['coffee'], mass: 0.3, consume: { energy: 28, water: 6, food: 2 }, hold: 'hand', desc: 'Keeps you awake on long drives.' },
   cd: { name: 'CD', model: ['cdCase'], mass: 0.1, disc: true, hold: 'hand', variants: 6, desc: 'Put it in the car stereo (look at the radio, LMB).' },
@@ -232,5 +233,6 @@ export function itemLabel(id, state = {}) {
   const d = ITEMS[id];
   if (!d) return id;
   if (d.disc) return 'CD: ' + albumName(state.variant || 0);
+  if (d.paint) return 'Spray paint · ' + paintOf(state.variant).name;
   return d.name;
 }

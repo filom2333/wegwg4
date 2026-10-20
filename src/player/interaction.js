@@ -8,6 +8,7 @@ import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { carType } from '../vehicle/types.js';
+import { paintOf } from '../vehicle/paints.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
@@ -302,7 +303,11 @@ export class Interaction {
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
-    if (def.paint) out.push(['LMB', 'Repaint the car']);
+    if (def.paint) {
+      const car = this.game.car;
+      if (t && t.kind === 'part' && car && car.paintable(t.part)) out.push(['LMB', `Paint the ${car.PARTS[t.part].label.toLowerCase()} (hold)`]);
+      else out.push(['', 'Aim at a body panel to paint it']);
+    }
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.liquid) {
       const tgt = this.pourTarget(it, t);
@@ -360,6 +365,8 @@ export class Interaction {
         if (rem.ok) prompts.push(['R', 'Remove (hold)']);
         else if (!mp.hinge) prompts.push(['', rem.reason]);
         if (this.removing && this.removing.part === id) info.progress = this.removing.t / this.removeTime(id);
+        if (this.spraying && this.spraying.part === id && this.spraying.need) info.progress = this.spraying.t / this.spraying.need;
+        if (car.partColors && car.partColors[id]) info.sub += ' · repainted';
         if (id === 'engine') info.sub = `Condition ${Math.round(car.engineCondition * 100)}% · ${Math.round(car.engineTemp)}°C`;
         if (id === 'battery') info.sub = `Charge ${Math.round(car.battery * 100)}%`;
         if (id === 'fanbelt') info.sub = `Condition ${Math.round(car.fanbeltCondition * 100)}%${car.fanbeltCondition < 0.25 ? ' · cracked, replace soon' : ''}`;
@@ -803,7 +810,41 @@ export class Interaction {
             this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
           }
         }
-      } else if (input.mousePressed(0)) this.useHeld();
+      } else if (def.paint) this.updateSpray(it, dt);
+      else if (input.mousePressed(0)) this.useHeld();
+    }
+  }
+
+  // Holding LMB on a panel with a spray can: a mist of colour, then the panel takes the paint.
+  updateSpray(it, dt) {
+    const g = this.game;
+    const car = g.car;
+    const t = this.target;
+    const ok = t && t.kind === 'part' && car && car.paintable(t.part) && (t.dist || 0) < 2.6;
+    if (!input.mouseDown(0) || !ok) {
+      this.spraying = null;
+      return;
+    }
+    if (!this.spraying || this.spraying.part !== t.part) this.spraying = { part: t.part, t: 0 };
+    const S = this.spraying;
+    const b = car.model.parts[t.part].bbox;
+    const sz = b.getSize(V(0, 0, 0));
+    // big panels take longer: about a second per square metre of face
+    const need = 0.7 + Math.min(3, sz.x * sz.z + sz.y * Math.max(sz.x, sz.z)) * 0.8;
+    S.t += dt;
+    S.need = need;
+    this.useAnim = Math.max(this.useAnim, 0.7);
+    const P = paintOf(it.state.variant);
+    const nozzle = (it.mesh.userData.muzzle || V(0, 0.1, 0)).clone().applyMatrix4(it.mesh.matrixWorld);
+    const aim = car.worldPointOf(b.getCenter(V(0, 0, 0)));
+    g.effects && g.effects.sprayMist && g.effects.sprayMist(nozzle, aim, P.hex, dt);
+    if (S.t >= need) {
+      car.paintPart(t.part, P.hex);
+      car.owned = true;
+      it.state.charges = (it.state.charges ?? it.def.charges ?? 1) - 1;
+      g.hud && g.hud.toast(`${car.PARTS[t.part].label} painted ${P.name.toLowerCase()}${it.state.charges > 0 ? ` · can ${Math.round((it.state.charges / it.def.charges) * 100)}% full` : ' · the can is empty'}`);
+      this.spraying = null;
+      if (it.state.charges <= 0) this.consumeHeld();
     }
   }
 
@@ -895,19 +936,6 @@ export class Interaction {
       if (def.consume.food > 0) g.stats.meals++;
       else g.stats.drinks++;
       g.audio && g.audio.play(def.consume.food > 0 ? 'eat' : def.consume.health > 0 ? 'bandage' : 'drink');
-      this.consumeHeld();
-      return;
-    }
-    if (def.paint) {
-      const car = g.car;
-      if (!car || car.root.position.distanceTo(p.position) > 4) return g.hud && g.hud.toast('Stand next to the car');
-      const palette = [0xa8502c, 0x2f4a5c, 0x6d7a7f, 0x7a2e24, 0x4b5a3a, 0xb9b2a0, 0x1f1f22, 0xc8a14a];
-      const cur = g.carMats.paint.color.getHex();
-      const i = (palette.findIndex((c) => Math.abs(c - cur) < 0x10) + 1) % palette.length;
-      g.carMats.paint.color.setHex(palette[i]);
-      car.paintColor = palette[i];
-      g.audio && g.audio.play('pour');
-      g.hud && g.hud.toast('New coat of paint');
       this.consumeHeld();
       return;
     }
@@ -1199,6 +1227,7 @@ export class Interaction {
     g.items.destroy(it);
     car.setInstalled(slot, true);
     car.owned = true;
+    if (it.state.color !== undefined) car.paintPart(slot, it.state.color);
     car.parts[slot].condition = cond;
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
@@ -1224,6 +1253,7 @@ export class Interaction {
     m.decompose(pos, q, s);
     if (mp.hinge) car.model.setOpen(id, 0);
     const state = { condition: car.parts[id].condition, carType: car.type.id };
+    if (car.partColors && car.partColors[id] !== undefined) state.color = car.partColors[id];
     if (id === 'battery') {
       state.charge = car.battery;
     }

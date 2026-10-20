@@ -31,7 +31,7 @@ const STEREO = { center: [0, 0.745, 0.77], normal: [0, 0.2, -1], w: 0.08, h: 0.0
 const HOTSPOTS = [
   { id: 'fuel', label: 'Fuel filler', pos: V(0.86, 0.86, -1.6), r: 0.12, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.2, 0.86, 1.35), r: 0.1, part: 'engine', lid: 'hood' },
-  { id: 'coolant', label: 'Radiator cap', pos: V(0.32, 0.86, 1.94), r: 0.1, part: 'radiator', lid: 'hood' },
+  { id: 'coolant', label: 'Radiator cap', pos: V(0.33, 0.76, 1.95), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(0.5, 0.78, 1.74), r: 0.13, part: 'battery', lid: 'hood' },
   { id: 'ignition', label: 'Ignition', pos: CONTROLS.key.clone(), r: 0.06, part: 'steeringWheel', inside: true },
   { id: 'lights', label: 'Light switch', pos: V(0.6, 0.82, 0.62), r: 0.05, part: 'body', inside: true },
@@ -151,8 +151,8 @@ export const SEDAN88 = {
   lights: { head: [0, 0.65, 2.2], headX: 0.56, reverse: [0, 0.6, -2.35] },
   glassOpacity: 0.28,
   sound: { fires: 3, harmonics: [0, 1, 0.7, 0.35, 0.22, 0.12, 0.08, 0.05, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01], odd: 0.7, even: 1, sub: 0.7, tone: 140, toneRpm: 0.12, gain: 0.75, drive: 1.6, intake: 0.7 },
-  defaultColor: 0x1b2f3a,
-  colors: [0x1b2f3a, 0x6b1f22, 0xc8c2b0, 0x2b3b2a, 0x8f8a80, 0x1a1a1c, 0x5b4a3a],
+  defaultColor: 0xcbb994,
+  colors: [0xcbb994, 0x6b1f22, 0x1b2f3a, 0xc8c2b0, 0x2b3b2a, 0x8f8a80, 0x5b4a3a, 0x9a3a1e],
   repaintable: true,
   load(renderer) {
     return loadImportedAsset(this, renderer);
@@ -169,8 +169,8 @@ export const SEDAN88 = {
   // the source has no battery, radiator, belt, filter, tank or spare
   extras(model, M) {
     // over the battery moulded into the left inner wing
-    model.addPart('battery', PP.battery(M, V(0.5, 0.66, 1.74), { spec: '12V  60Ah', size: [0.2, 0.2, 0.27] }));
-    model.addPart('radiator', PP.radiator(M, V(0, 0.64, 1.98), { w: 0.62, h: 0.34 }));
+    model.addPart('battery', PP.battery(M, V(0.5, 0.645, 1.74), { spec: '12V  60Ah', size: [0.2, 0.2, 0.27] }));
+    model.addPart('radiator', PP.radiator(M, V(0, 0.56, 1.95), { w: 0.62, h: 0.28 }));
     model.addPart('fanbelt', PP.belt({ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.78, 1.5), r: 0.045 }, { plane: 'x' }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.78, 1.55), { h: 0.08 }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.27, -0.65), { w: 0.85, h: 0.2, d: 0.5 }));

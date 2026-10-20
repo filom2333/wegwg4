@@ -135,6 +135,48 @@ export class Car {
     this.updateMass();
   }
 
+  // Spray paint on one part: its painted surfaces get their own material (same shader, own
+  // colour). Returns false if nothing on the part takes paint.
+  paintPart(id, hex) {
+    const mp = this.model.parts[id];
+    const P = this.model.mats.paintables;
+    if (!mp || !P || !P.size) return false;
+    this.partMats = this.partMats || {};
+    const own = (this.partMats[id] = this.partMats[id] || new Map());
+    let any = false;
+    mp.inner.traverse((o) => {
+      if (!o.isMesh) return;
+      const base = o.userData.baseMat || o.material;
+      if (!P.has(base)) return;
+      o.userData.baseMat = base;
+      let m = own.get(base);
+      if (!m) {
+        m = base.clone();
+        m.onBeforeCompile = base.onBeforeCompile;
+        m.customProgramCacheKey = base.customProgramCacheKey;
+        m.color = new THREE.Color();
+        own.set(base, m);
+      }
+      m.color.setHex(hex);
+      o.material = m;
+      any = true;
+    });
+    if (any) (this.partColors = this.partColors || {})[id] = hex;
+    return any;
+  }
+
+  // Can a spray can do anything to this part?
+  paintable(id) {
+    const mp = this.model.parts[id];
+    const P = this.model.mats.paintables;
+    if (!mp || !P) return false;
+    let ok = false;
+    mp.inner.traverse((o) => {
+      if (o.isMesh && P.has(o.userData.baseMat || o.material)) ok = true;
+    });
+    return ok;
+  }
+
   // Bounding box of a part in car space (rest pose).
   partBox(id) {
     return this.model.parts[id].bbox;

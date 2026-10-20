@@ -122,12 +122,22 @@ export class Fleet {
   // Simulation for cars near the player, parking (hidden, bodies off) for the far ones.
   update(dt, controls) {
     const g = this.game;
+    this.wake();
+    for (const car of this.cars) if (car.active) car.update(dt, car === g.car ? controls : null);
+  }
+
+  // Bodies on for cars near the player (on solid ground), off for the rest.
+  wake() {
+    const g = this.game;
     const focus = g.focusPoint();
     for (const car of this.cars) {
       const d = car.root.position.distanceTo(focus);
       const active = d < SIM_RADIUS || car === g.car;
       if (active !== car.active) {
         car.active = active;
+        // wake at rest
+        car.dyn.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+        car.dyn.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
         // the ground under a waking car must be solid before its body is
         if (active) {
           const o = g.origin;
@@ -136,8 +146,6 @@ export class Fleet {
         car.dyn.body.setEnabled(active);
       }
       car.root.visible = d < SHOW_RADIUS || car === g.car;
-      if (!active) continue;
-      car.update(dt, car === g.car ? controls : null);
     }
   }
 
@@ -310,6 +318,7 @@ export function serializeCar(car, o) {
     dirt: car.dirt,
     lightsOn: car.lightsOn,
     paintColor: car.paintColor ?? null,
+    partColors: car.partColors || null,
     stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
     storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
     parts,
@@ -330,6 +339,7 @@ export function applyCarState(car, c, g) {
     car.parts[id].condition = st.condition;
   }
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
+  for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);
   car.rebuildColliders();
   if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
   if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);

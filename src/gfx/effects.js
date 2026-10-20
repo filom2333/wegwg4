@@ -420,6 +420,27 @@ export class Effects {
     }
   }
 
+  // Spray can mist: a cone of fine droplets in the paint colour from the nozzle to the panel.
+  sprayMist(from, to, hex, dt) {
+    const c = new THREE.Color(hex);
+    const dir = to.clone().sub(from).normalize();
+    const n = Math.ceil(dt * 90);
+    for (let i = 0; i < n; i++) {
+      const spread = V((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
+      this.smoke.emit({
+        pos: from.clone().addScaledVector(dir, 0.04),
+        vel: dir.clone().add(spread.multiplyScalar(0.6)).multiplyScalar(2.2 + Math.random() * 1.2),
+        size: 0.025,
+        grow: 0.5,
+        life: 0.45 + Math.random() * 0.3,
+        color: [c.r, c.g, c.b],
+        alpha: 0.35,
+        drag: 3.5,
+        grav: 0.1,
+      });
+    }
+  }
+
   footDust(pos, strength = 1) {
     for (let i = 0; i < 2; i++) this.dust.emit({ pos: pos.clone().add(V((Math.random() - 0.5) * 0.2, 0.05, (Math.random() - 0.5) * 0.2)), vel: V((Math.random() - 0.5) * 0.3, 0.2, (Math.random() - 0.5) * 0.3), size: 0.15, grow: 0.6 * strength, life: 0.9, color: [0.7, 0.6, 0.46], alpha: 0.2, drag: 2 });
   }

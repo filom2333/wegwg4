@@ -216,6 +216,8 @@ export class AudioSystem {
     ps.connect(pg).connect(this.sfx);
     ps.start();
     this.loops.pour = { g: pg };
+    // spray can hiss
+    this.loops.spray = mkNoise(this.buffers.white, this.sfx, 'highpass', 3800, 0.7);
     // radio
     const rf = c.createBiquadFilter();
     rf.type = 'bandpass';
@@ -477,6 +479,7 @@ export class AudioSystem {
     // pour
     this.pourT = Math.max(0, (this.pourT || 0) - dt);
     set(this.loops.pour.g.gain, this.pourT > 0 ? 0.35 : 0, now, 0.04);
+    set(this.loops.spray.g.gain, g.interaction && g.interaction.spraying ? 0.22 : 0, now, 0.03);
     if (g.interaction && g.interaction.pouring) this.pourT = 0.12;
     // ---- CD player (replaces the radio while a disc plays)
     if (car) car.stereoState = this.updateCd(car, dt, seated);
