@@ -268,7 +268,7 @@ export class AudioSystem {
           b.copyToChannel(d.L, 0);
           b.copyToChannel(d.R, 1);
           cd.buffers.set(k, b);
-          while (cd.buffers.size > 3) cd.buffers.delete(cd.buffers.keys().next().value);
+          while (cd.buffers.size > 2) cd.buffers.delete(cd.buffers.keys().next().value);
         };
       }
       cd.pending.set(key, true);

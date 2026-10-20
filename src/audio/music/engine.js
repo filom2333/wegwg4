@@ -30,16 +30,36 @@ export class Mix {
     this.dlyR = new Float32Array(this.n);
   }
 
-  // Adds a mono voice at time t (seconds) with pan (-1..1), gain and send levels.
-  put(v, t, { pan = 0, gain = 1, rev = 0.15, dly = 0 } = {}) {
+  // Kick-triggered ducking for put(..., { duck }): the gain dips by `depth` at each time and
+  // recovers over `rel` seconds, the pumping of dance music.
+  sidechain(times, depth = 0.6, rel = 0.16) {
+    const e = new Float32Array(this.n).fill(1);
+    const a = Math.floor(0.004 * SR),
+      len = Math.floor(rel * SR * 5);
+    for (const t of times) {
+      const i0 = Math.floor(t * SR);
+      for (let k = -a; k < len; k++) {
+        const i = i0 + k;
+        if (i < 0 || i >= this.n) continue;
+        const g = k < 0 ? 1 - depth * (1 + k / a) : 1 - depth * Math.exp(-k / (rel * SR));
+        if (g < e[i]) e[i] = g;
+      }
+    }
+    this.duckEnv = e;
+  }
+
+  // Adds a mono voice at time t (seconds) with pan (-1..1), gain and send levels; `duck` (0..1)
+  // is how much the sidechain pumps it.
+  put(v, t, { pan = 0, gain = 1, rev = 0.15, dly = 0, duck = 0 } = {}) {
     const i0 = Math.floor(t * SR);
     const a = Math.cos(((pan + 1) * Math.PI) / 4) * gain,
       b = Math.sin(((pan + 1) * Math.PI) / 4) * gain;
     const n = Math.min(v.length, this.n - i0);
     const { L, R, revL, revR, dlyL, dlyR } = this;
+    const de = duck && this.duckEnv;
     for (let k = Math.max(0, -i0); k < n; k++) {
-      const x = v[k],
-        i = i0 + k;
+      const i = i0 + k,
+        x = de ? v[k] * (1 - duck * (1 - de[i])) : v[k];
       const l = x * a,
         r = x * b;
       L[i] += l;
@@ -56,7 +76,7 @@ export class Mix {
   }
 
   // Ping-pong delay and a Freeverb-style reverb on the sends, then the master bus.
-  finish({ delay = 0.375, feedback = 0.38, room = 0.82, damp = 0.35, wet = 1, lowpass = 0, crackle = 0, seed = 1, wow = 0 } = {}) {
+  finish({ delay = 0.375, feedback = 0.38, room = 0.82, damp = 0.35, wet = 1, lowpass = 0, crackle = 0, seed = 1, wow = 0, stop = null, level = 0.24 } = {}) {
     const { L, R, n } = this;
     // delay
     const D = Math.max(1, Math.floor(delay * SR));
@@ -154,7 +174,29 @@ export class Mix {
         R[i] += x * 0.9;
       }
     }
-    // master: DC block, soft knee, normalise to -1 dBFS, short fades at the ends
+    // tape stop: from `stop[0]` s the reels slow to a halt over `stop[1]` s
+    if (stop) {
+      const i0 = Math.floor(stop[0] * SR),
+        m = Math.floor(stop[1] * SR);
+      const tl = L.slice(i0),
+        tr = R.slice(i0);
+      let p = 0;
+      for (let k = 0; i0 + k < n; k++) {
+        const rate = 1 - k / m,
+          p0 = Math.floor(p),
+          fr = p - p0;
+        if (rate <= 0 || p0 + 1 >= tl.length) {
+          L[i0 + k] = R[i0 + k] = 0;
+          continue;
+        }
+        const g = Math.min(1, rate * 4);
+        L[i0 + k] = (tl[p0] * (1 - fr) + tl[p0 + 1] * fr) * g;
+        R[i0 + k] = (tr[p0] * (1 - fr) + tr[p0 + 1] * fr) * g;
+        p += rate;
+      }
+    }
+    // master: DC block, then the loud parts of every song brought to the same level (`level` RMS)
+    // into a soft clipper, short fades at the ends
     let pk = 1e-6;
     let zl = 0,
       zr = 0,
@@ -171,7 +213,16 @@ export class Mix {
       R[i] = zr;
       pk = Math.max(pk, Math.abs(zl), Math.abs(zr));
     }
-    const g = 1.6 / pk;
+    const W = SR >> 1,
+      wins = [];
+    for (let i = 0; i + W <= n; i += W) {
+      let q = 0;
+      for (let j = i; j < i + W; j++) q += L[j] * L[j] + R[j] * R[j];
+      wins.push(Math.sqrt(q / (2 * W)));
+    }
+    wins.sort((a, b) => a - b);
+    const loud = wins[Math.floor(wins.length * 0.85)] || 0.1;
+    const g = Math.min(level / Math.max(loud, 1e-4), 2.4 / pk);
     const fade = Math.floor(SR * 0.6);
     for (let i = 0; i < n; i++) {
       let e = 1;
@@ -202,8 +253,8 @@ function env(n, a, d, s, r, holdN) {
 }
 
 // Karplus-Strong string: bright = pick brightness (0..1), decay = seconds to fade, bend = semitones
-// up over the first part of the note, mute = palm mute.
-export function pluck(f, dur, { bright = 0.6, decay = 2.5, seed = 1, bend = 0, mute = 0, drive = 0, body = 0.3 } = {}) {
+// up over the first part of the note, mute = palm mute, vib = finger vibrato depth (fraction).
+export function pluck(f, dur, { bright = 0.6, decay = 2.5, seed = 1, bend = 0, mute = 0, drive = 0, body = 0.3, vib = 0 } = {}) {
   const r = rng(seed);
   const tail = mute ? 0.12 : Math.min(decay, 4);
   const n = Math.floor((dur + tail) * SR);
@@ -230,7 +281,7 @@ export function pluck(f, dur, { bright = 0.6, decay = 2.5, seed = 1, bend = 0, m
   for (let i = 0; i < n; i++) {
     // a bend shortens the loop over the first 120 ms
     if (bend && i <= bendN) P = P0 / Math.pow(2, (bend * (i / bendN)) / 12);
-    let rp = w - P;
+    let rp = w - (vib && i > 4000 ? P * (1 + vib * Math.sin(i * 0.00108) * Math.min(1, (i - 4000) / 6000)) : P);
     if (rp < 0) rp += len;
     const i0 = rp | 0,
       fr = rp - i0;
@@ -271,7 +322,7 @@ export function epiano(f, dur, { vel = 0.8, bright = 0.5 } = {}) {
 }
 
 // Detuned saw pad through a gliding lowpass.
-export function pad(f, dur, { voices = 5, detune = 0.12, cutoff = 1800, attack = 0.6, release = 1.2, seed = 3, sweep = 0 } = {}) {
+export function pad(f, dur, { voices = 5, detune = 0.12, cutoff = 1800, attack = 0.6, release = 1.2, seed = 3, sweep = 0, vib = 0 } = {}) {
   const r = rng(seed);
   const n = Math.floor((dur + release) * SR);
   const out = new Float32Array(n);
@@ -287,8 +338,9 @@ export function pad(f, dur, { voices = 5, detune = 0.12, cutoff = 1800, attack =
     k = 0;
   for (let i = 0; i < n; i++) {
     let s = 0;
+    const vb = vib ? 1 + vib * Math.sin(i * 0.00098) : 1;
     for (let v = 0; v < voices; v++) {
-      phs[v] += frs[v] / SR;
+      phs[v] += (frs[v] * vb) / SR;
       phs[v] -= Math.floor(phs[v]);
       s += phs[v] * 2 - 1;
     }
@@ -324,7 +376,23 @@ export function organ(f, dur, { bars = [1, 0.8, 0.5, 0.35, 0.2], vib = 0.004 } =
 }
 
 // Bass: 'synth' (saw + sub through an envelope filter), 'finger' (round plucked), 'upright'.
-export function bass(f, dur, { kind = 'finger', cutoff = 700, seed = 5 } = {}) {
+export function bass(f, dur, { kind = 'finger', cutoff = 700, seed = 5, from = 0 } = {}) {
+  if (kind === 'sub') {
+    // round sine sub with a touch of second harmonic, gliding in from `from` (lo-fi, 808)
+    const rel = 0.08;
+    const n = Math.floor((dur + rel) * SR);
+    const out = new Float32Array(n);
+    const offN = Math.floor(dur * SR);
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / SR;
+      const g = from ? from + (f - from) * Math.min(1, t / 0.06) : f;
+      ph += (2 * Math.PI * g) / SR;
+      const e = Math.min(1, i / 90) * (i > offN ? Math.max(0, 1 - (i - offN) / (rel * SR)) : 1) * (0.7 + 0.3 * Math.exp(-t * 5));
+      out[i] = Math.tanh(Math.sin(ph) * 1.5 + Math.sin(2 * ph) * 0.2) * 0.8 * e;
+    }
+    return out;
+  }
   if (kind === 'finger' || kind === 'upright') {
     const v = pluck(f, dur, { bright: kind === 'upright' ? 0.25 : 0.4, decay: kind === 'upright' ? 1.2 : 2.2, seed, body: 0.8 });
     // fundamental reinforcement
@@ -358,8 +426,11 @@ export function bass(f, dur, { kind = 'finger', cutoff = 700, seed = 5 } = {}) {
   return out;
 }
 
-// Mono lead: square/saw blend with vibrato, glide from `from` (Hz) and a soft filter.
-export function lead(f, dur, { shape = 0.5, vib = 0.012, from = 0, cutoff = 2600, attack = 0.02 } = {}) {
+// Mono lead: square/saw blend with vibrato, glide from `from` (Hz) over `glide` s and a soft
+// filter; `breath` blows filtered noise in (harmonica, flute, sax).
+export function lead(f, dur, { shape = 0.5, vib = 0.012, from = 0, cutoff = 2600, attack = 0.02, breath = 0, glide = 0.07, seed = 3 } = {}) {
+  const r = rng(seed);
+  let nz = 0;
   const rel = 0.15;
   const kc = 1 - Math.exp((-2 * Math.PI * cutoff) / SR);
   const n = Math.floor((dur + rel) * SR);
@@ -370,13 +441,17 @@ export function lead(f, dur, { shape = 0.5, vib = 0.012, from = 0, cutoff = 2600
   const offN = Math.floor(dur * SR);
   for (let i = 0; i < n; i++) {
     const t = i / SR;
-    const g = from ? from + (f - from) * Math.min(1, t / 0.07) : f;
+    const g = from ? from + (f - from) * Math.min(1, t / glide) : f;
     const v = 1 + Math.sin(t * 2 * Math.PI * 5.5) * vib * Math.min(1, t / 0.3);
     p += (g * v) / SR;
     p -= Math.floor(p);
     const sq = p < 0.5 ? 1 : -1;
     const saw = p * 2 - 1;
-    const s = sq * (1 - shape) + saw * shape;
+    let s = sq * (1 - shape) + saw * shape;
+    if (breath) {
+      nz += (r() * 2 - 1 - nz) * 0.35;
+      s = s * (1 - breath * 0.5) + nz * breath * 2.2;
+    }
     a += (s - a) * kc;
     b += (a - b) * kc;
     const e = Math.min(1, t / attack) * (i > offN ? Math.max(0, 1 - (i - offN) / (rel * SR)) : 1);
@@ -505,6 +580,173 @@ export function clap({ seed = 17 } = {}) {
     prev = x;
     const bursts = [0, 0.011, 0.022].reduce((a, b) => a + (t >= b ? Math.exp(-(t - b) * 180) : 0), 0);
     out[i] = hp * (bursts * 0.6 + Math.exp(-t * 14) * 0.5) * 0.6;
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ more instruments
+// Struck piano: pairs of slightly detuned inharmonic partials, brighter and shorter up high, a
+// felt hammer thump at the start and dampers falling when the key is let go.
+export function piano(f, dur, { vel = 0.7, bright = 0.5, seed = 7 } = {}) {
+  const r = rng(seed);
+  const life = Math.min(dur + 0.3, 1.5 + 5 * Math.pow(110 / f, 0.5));
+  const n = Math.floor(life * SR);
+  const out = new Float32Array(n);
+  const offN = Math.floor(dur * SR);
+  const P = f > 900 ? 4 : f > 400 ? 6 : 9;
+  const bf = 0.35 + 0.4 * bright * (0.5 + vel * 0.5);
+  const damp = Math.exp(-26 / SR);
+  for (let k = 1; k <= P; k++) {
+    const fk = k * f * Math.sqrt(1 + 0.00035 * k * k);
+    if (fk > SR * 0.45) break;
+    const amp = (Math.pow(bf, k - 1) / Math.sqrt(k)) * 0.5;
+    const dm = Math.exp(-((0.6 + 0.45 * k) * Math.pow(f / 220, 0.45)) / SR);
+    for (const det of [1, 1.0007]) {
+      const w = (2 * Math.PI * fk * det) / SR;
+      const c = Math.cos(w),
+        s = Math.sin(w);
+      const p0 = r() * 6.283;
+      let x = Math.cos(p0),
+        y = Math.sin(p0),
+        e = amp;
+      for (let i = 0; i < n; i++) {
+        const nx = x * c - y * s;
+        y = x * s + y * c;
+        x = nx;
+        out[i] += y * e;
+        e *= i < offN ? dm : dm * damp;
+      }
+    }
+  }
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    let v = out[i] * Math.min(1, i / 30);
+    if (i < 500) {
+      lp += (r() * 2 - 1 - lp) * 0.25;
+      v += lp * 0.3 * vel * Math.exp(-i / 110);
+    }
+    out[i] = v * vel * 0.42;
+  }
+  return out;
+}
+
+// FM mallet: `ratio` sets the colour (3.5 glassy bell, 1 vibraphone, 4 woody marimba with a fast
+// decay); `trem` is a vibraphone's motor tremolo.
+export function bell(f, { len = 2.5, ratio = 3.5, index = 2, decay = 1.6, vel = 0.8, trem = 0 } = {}) {
+  const n = Math.floor(len * SR);
+  const out = new Float32Array(n);
+  let ph = 0,
+    pm = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    pm += (2 * Math.PI * f * ratio) / SR;
+    ph += (2 * Math.PI * f) / SR;
+    const ie = index * vel * Math.exp(-t * decay * 2.5);
+    let amp = Math.exp(-t * decay) * Math.min(1, i / 40);
+    if (trem) amp *= 1 - trem * 0.5 * (1 - Math.cos(t * 2 * Math.PI * 5.2));
+    if (i > n - 400) amp *= (n - i) / 400;
+    out[i] = Math.sin(ph + ie * Math.sin(pm)) * amp * vel * 0.4;
+  }
+  return out;
+}
+
+export function tom(f = 110, { len = 0.6, seed = 19 } = {}) {
+  const r = rng(seed);
+  const n = Math.floor(len * SR);
+  const out = new Float32Array(n);
+  let ph = 0,
+    lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    ph += (2 * Math.PI * f * (1 + 0.55 * Math.exp(-t * 18))) / SR;
+    lp += (r() * 2 - 1 - lp) * 0.5;
+    out[i] = (Math.sin(ph) * Math.exp(-t * 5.5) + lp * 0.35 * Math.exp(-t * 50)) * 0.8;
+  }
+  return out;
+}
+
+// Crash / splash: square partials at inharmonic ratios (the clang) and noise, highpassed, with a
+// long shimmering tail.
+export function crash({ seed = 23, len = 2.4 } = {}) {
+  const r = rng(seed);
+  const n = Math.floor(len * SR);
+  const out = new Float32Array(n);
+  const fr = [296, 435, 593, 811, 1063, 1427, 1789, 2383].map((x) => x * (1 + r() * 0.03));
+  const ph = fr.map(() => r());
+  let h1 = 0,
+    p1 = 0,
+    h2 = 0,
+    p2 = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    let s = 0;
+    for (let k = 0; k < fr.length; k++) {
+      ph[k] += fr[k] / SR;
+      ph[k] -= Math.floor(ph[k]);
+      s += ph[k] < 0.5 ? 1 : -1;
+    }
+    const x = s * 0.06 + (r() * 2 - 1) * 0.6;
+    h1 = 0.55 * (h1 + x - p1);
+    p1 = x;
+    h2 = 0.7 * (h2 + h1 - p2);
+    p2 = h1;
+    const e = (0.8 * Math.exp((-t * 3.2) / len) + 0.35 * Math.exp(-t * 22)) * Math.min(1, i / 25) * (i > n - 800 ? (n - i) / 800 : 1);
+    out[i] = h2 * e * 0.5;
+  }
+  return out;
+}
+
+export function shaker({ seed = 29, len = 0.1 } = {}) {
+  const r = rng(seed);
+  const n = Math.floor(len * SR);
+  const out = new Float32Array(n);
+  let h = 0,
+    p = 0,
+    lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const x = r() * 2 - 1;
+    h = 0.5 * (h + x - p);
+    p = x;
+    lp += (h - lp) * 0.7;
+    out[i] = lp * Math.min(1, t / 0.012) * Math.exp(-t * 38) * 0.5;
+  }
+  return out;
+}
+
+// Cross-stick / rim click.
+export function rim({ seed = 31 } = {}) {
+  const r = rng(seed);
+  const n = Math.floor(0.09 * SR);
+  const out = new Float32Array(n);
+  let h = 0,
+    p = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const x = r() * 2 - 1;
+    h = 0.6 * (h + x - p);
+    p = x;
+    out[i] = (Math.sin(t * 2 * Math.PI * 1650) * 0.55 + Math.sin(t * 2 * Math.PI * 430) * 0.4) * Math.exp(-t * 75) + h * 0.45 * Math.exp(-t * 160);
+  }
+  return out;
+}
+
+// White noise swelling through a rising band: the build into a chorus.
+export function riser(len = 2, { from = 300, to = 4800, seed = 37 } = {}) {
+  const r = rng(seed);
+  const n = Math.floor(len * SR);
+  const out = new Float32Array(n);
+  let lo = 0,
+    bd = 0;
+  for (let i = 0; i < n; i++) {
+    const u = i / n;
+    const f = from * Math.pow(to / from, u);
+    const k = 2 * Math.sin((Math.PI * f) / SR);
+    const x = r() * 2 - 1;
+    lo += k * bd;
+    const hi = x - lo - 0.35 * bd;
+    bd += k * hi;
+    out[i] = bd * u * u * 0.35 * (i > n - 200 ? (n - i) / 200 : 1);
   }
   return out;
 }
