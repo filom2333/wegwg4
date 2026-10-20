@@ -391,6 +391,57 @@ export function meatChunk(cooked = false) {
   return centered(g);
 }
 
+// Fishing rod: cork handle, a small spinning reel, a long tapered blank with guides.
+export function fishingRod() {
+  const g = new THREE.Group();
+  const M = itemMats();
+  const cork = cached('corkMat', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xb08a5a, roughness: 0.9 }), 'cast', 0.5));
+  const blank = cached('rodMat', () => new THREE.MeshStandardMaterial({ color: 0x2a3a2e, roughness: 0.35, metalness: 0.4 }));
+  g.add(mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.3, 12).translate(0, 0.15, 0), cork));
+  g.add(mesh(new THREE.CylinderGeometry(0.003, 0.009, 1.45, 8).translate(0, 1.02, 0), blank));
+  for (let i = 0; i < 5; i++) g.add(mesh(new THREE.TorusGeometry(0.008 - i * 0.0008, 0.0012, 4, 10).rotateY(Math.PI / 2).translate(0.012, 0.45 + i * 0.28, 0), M.steel));
+  const reel = new THREE.Group();
+  reel.add(mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.03, 16).rotateZ(Math.PI / 2), M.darkSteel));
+  reel.add(mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.045, 6).rotateZ(Math.PI / 2).translate(-0.03, 0, 0), M.steel));
+  reel.position.set(0.035, 0.34, 0);
+  g.add(reel);
+  grip(g, 'tool', 'grip', V(0, 0.16, 0), UP, RIGHT);
+  return centered(g);
+}
+
+// A trout: raw (silvery, speckled) or grilled (golden brown, charred stripes).
+export function fish(cooked = false) {
+  const g = new THREE.Group();
+  const mat = cached('fishMat' + (cooked ? 'C' : 'R'), () => {
+    const tex = labelTex('fishSkin' + (cooked ? 'C' : 'R'), 128, 64, (c, w, h) => {
+      const grd = c.createLinearGradient(0, 0, 0, h);
+      if (cooked) {
+        grd.addColorStop(0, '#5a3418');
+        grd.addColorStop(1, '#b07a3c');
+      } else {
+        grd.addColorStop(0, '#4a5a52');
+        grd.addColorStop(0.5, '#b6b9a8');
+        grd.addColorStop(1, '#e6e2d6');
+      }
+      c.fillStyle = grd;
+      c.fillRect(0, 0, w, h);
+      c.fillStyle = cooked ? 'rgba(20,10,4,0.65)' : 'rgba(30,30,30,0.5)';
+      for (let i = 0; i < (cooked ? 6 : 40); i++) {
+        if (cooked) c.fillRect(14 + i * 18, 0, 4, h);
+        else c.fillRect(Math.random() * w, Math.random() * h * 0.5, 2, 2);
+      }
+    });
+    return new THREE.MeshStandardMaterial({ map: tex, roughness: cooked ? 0.7 : 0.3, metalness: cooked ? 0 : 0.2 });
+  });
+  const body = new THREE.SphereGeometry(0.06, 20, 12);
+  body.scale(2.6, 0.75, 0.42);
+  g.add(mesh(body, mat));
+  const tail = new THREE.ConeGeometry(0.05, 0.08, 4).rotateZ(Math.PI / 2).scale(1, 1, 0.2).translate(-0.19, 0, 0);
+  g.add(mesh(tail, mat));
+  grip(g, 'palm', 'palm', V(0, -0.04, 0), RIGHT, DOWN);
+  return centered(g);
+}
+
 // Folded sheet of paper with handwriting.
 export function note() {
   const mat = cached('noteMat', () => {
@@ -928,6 +979,8 @@ export const MODEL_BUILDERS = {
   blanket,
   campfireKit,
   meatChunk,
+  fishingRod,
+  fish,
   jerryCan,
   waterBottle,
   sodaCan,

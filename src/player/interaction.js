@@ -26,6 +26,14 @@ function partDefOf(it) {
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const REACH = 2.6;
+
+// Big things are carried out in front with both hands; long tools (guns, a fishing rod) are held
+// by their grip like anything small.
+function carriedBig(it) {
+  if (it.part) return true;
+  if (it.def && (it.def.weapon || it.def.fishing)) return false;
+  return Math.max(it.size.x, it.size.y, it.size.z) > 0.55;
+}
 // where thumb and index meet in the pinch pose (hand space)
 const PINCH_TIP = V(0, -0.028, -0.135);
 const tmpM = new THREE.Matrix4();
@@ -229,6 +237,7 @@ export class Interaction {
         g.hud && c && !this._hitchHint && (this._hitchHint = true) && g.hud.toast('Over the tow ball: let go and press E to hitch');
       }
     } else this._hitchHint = false;
+    if (this.fishing && !(this.held && this.held.def && this.held.def.fishing)) this.endFishing();
     this.target = this.findTarget();
     const t = this.target;
     const prompts = [];
@@ -360,6 +369,7 @@ export class Interaction {
     if (def.raw && this.game.campfires && this.game.campfires.near(this.game.player.position, 2.6)) out.push(['LMB', 'Cook']);
     else if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
     if (def.campfire) out.push(['LMB', 'Light a fire']);
+    if (def.fishing) out.push(['LMB', this.fishing ? 'Strike / reel in' : 'Cast']);
     if (def.wrap) out.push(['LMB', 'Wrap up']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
@@ -387,6 +397,13 @@ export class Interaction {
 
   pourTarget(it, t) {
     const type = it.state.liquidType;
+    // siphon: a can (empty or holding fuel) against another car draws fuel out of its tank
+    const h = this.lookHit;
+    const other = h && h.owner && h.owner.kind === 'car' && h.owner.car !== this.game.car ? h.owner.car : null;
+    if (other && it.def.liquid.cap >= 5 && (type === 'fuel' || (it.state.liquid || 0) < 0.01) && h.distance < REACH + 0.4) {
+      if (other.fuel > 0.05 && other.isInstalled('fueltank')) return { kind: 'siphon', car: other, label: `Siphon fuel · ${other.fuel.toFixed(1)} L in the tank` };
+      return null;
+    }
     if (!t) return null;
     const car = this.game.car;
     if (t.kind === 'hotspot') {
@@ -697,7 +714,7 @@ export class Interaction {
     this.hangAng = 0;
     this.hangVel = 0;
     // big things are carried close, within arm's reach, whatever their length
-    this.holdDist = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55 ? 0.62 + Math.min(1, Math.max(it.size.x, it.size.y, it.size.z)) * 0.1 : 0.75;
+    this.holdDist = carriedBig(it) ? 0.62 + Math.min(1, Math.max(it.size.x, it.size.y, it.size.z)) * 0.1 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
     g.audio && g.audio.play('pickup', { mass: it.mass });
@@ -864,7 +881,7 @@ export class Interaction {
     }
     if (input.mouse.wheel && def && def.plate && this.plateAim) this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
     else if (input.mouse.wheel && !weapon) {
-      const isBig = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55;
+      const isBig = carriedBig(it);
       if (!isBig && !this.floating) {
         // the wheel takes a small thing out of the hand: it floats in front to be turned and moved
         this.floating = true;
@@ -879,7 +896,7 @@ export class Interaction {
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
-    const big = it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !weapon);
+    const big = carriedBig(it);
     // look sway: the item lags a little behind fast turns
     const lookDx = input.mouse.dx,
       lookDy = input.mouse.dy;
@@ -969,6 +986,7 @@ export class Interaction {
           }
         }
       } else if (def.paint) this.updateSpray(it, dt);
+      else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
     }
   }
@@ -1091,7 +1109,7 @@ export class Interaction {
     if (def.raw && g.campfires && g.campfires.near(p.position, 2.6)) {
       const pos = it.mesh.position.clone();
       this.consumeHeld();
-      const cooked = g.items.spawn('cookedMeat', pos);
+      const cooked = g.items.spawn(def.cooksTo || 'cookedMeat', pos);
       this.pick(cooked);
       g.hud && g.hud.toast('Cooked over the fire');
       g.audio && g.audio.play('ignite', { volume: 0.4 });
@@ -1273,6 +1291,12 @@ export class Interaction {
         car.coolant += amount;
       }
       if (tgt.sys === 'fuel') car.updateMass();
+    } else if (tgt.kind === 'siphon') {
+      amount = Math.min(rate * dt, it.def.liquid.cap - (s.liquid || 0), tgt.car.fuel);
+      tgt.car.fuel -= amount;
+      s.liquid = (s.liquid || 0) + amount;
+      s.liquidType = 'fuel';
+      amount = 0;
     } else if (tgt.kind === 'pump') {
       const st = this.target.pump.inst.state;
       amount = Math.min(rate * 2 * dt, it.def.liquid.cap - s.liquid, st.fuel);
@@ -1289,6 +1313,93 @@ export class Interaction {
     if (!this.pouring) g.audio && g.audio.play('pour', { loop: true });
     this.pouring = 1;
     g.items.refreshVisual(it);
+  }
+
+  // Fishing: LMB casts toward open water in view; the float bobs, dips when a fish bites, and LMB
+  // during the bite lands it (into the backpack, or at your feet when that is full). LMB before a
+  // bite reels in. Walking off or putting the rod away ends it.
+  updateFishing(it, dt) {
+    const g = this.game;
+    const p = g.player;
+    const f = this.fishing;
+    if (f && (p.position.distanceTo(f.from) > 3 || p.seat)) return this.endFishing();
+    if (!f) {
+      if (!input.mousePressed(0)) return;
+      const at = this.waterInView();
+      if (!at) {
+        g.hud && g.hud.toast('Cast toward open water: a river or a lake');
+        return;
+      }
+      if (at.frozen) {
+        g.hud && g.hud.toast('The water is frozen');
+        return;
+      }
+      const bob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8321e, roughness: 0.4 }));
+      bob.position.copy(at.pos);
+      g.worldGroup.add(bob);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(), V()]), new THREE.LineBasicMaterial({ color: 0xdcdcd0, transparent: true, opacity: 0.6 }));
+      line.frustumCulled = false;
+      g.worldGroup.add(line);
+      this.fishing = { at: at.pos.clone(), from: p.position.clone(), t: 0, bite: 4 + Math.random() * 12, bob, line };
+      this.useAnim = 1;
+      g.audio && g.audio.play('swing', { volume: 0.5 });
+      g.hud && g.hud.toast('Line out. Wait for the float to dip, then press LMB');
+      return;
+    }
+    f.t += dt;
+    const biting = f.t > f.bite && f.t < f.bite + 1.6;
+    f.bob.position.y = f.at.y + 0.02 + Math.sin(f.t * 2.2) * 0.008 - (biting ? 0.05 + Math.abs(Math.sin(f.t * 18)) * 0.03 : 0);
+    if (biting && !f.splashed) {
+      f.splashed = true;
+      g.audio && g.audio.play('pour', { at: f.at, volume: 0.25 });
+    }
+    // the line from the rod tip to the float
+    const tip = V(0, 0.75, 0).applyQuaternion(it.mesh.quaternion).add(it.mesh.position);
+    const pos = f.line.geometry.attributes.position;
+    pos.setXYZ(0, tip.x, tip.y, tip.z);
+    pos.setXYZ(1, f.bob.position.x, f.bob.position.y, f.bob.position.z);
+    pos.needsUpdate = true;
+    if (f.t > f.bite + 1.6) {
+      // missed it: wait for the next one
+      f.t = 0;
+      f.bite = 3 + Math.random() * 10;
+      f.splashed = false;
+    }
+    if (!input.mousePressed(0)) return;
+    if (biting) {
+      const fish = g.items.spawn('fish', p.position.clone().add(V(0, 0.4, 0)));
+      if (g.inventory.addSmart({ id: 'fish', state: fish.state }) >= 0) g.items.destroy(fish);
+      g.stats && (g.stats.fish = (g.stats.fish || 0) + 1);
+      g.hud && g.hud.toast('Caught a fish');
+      g.audio && g.audio.play('pour', { volume: 0.5 });
+    } else g.hud && g.hud.toast('Reeled in');
+    this.endFishing();
+  }
+
+  endFishing() {
+    const f = this.fishing;
+    if (!f) return;
+    this.game.worldGroup.remove(f.bob, f.line);
+    f.bob.geometry.dispose();
+    f.line.geometry.dispose();
+    this.fishing = null;
+  }
+
+  // Where the view meets open water within casting range (scene coordinates), or null.
+  waterInView() {
+    const g = this.game;
+    const o = g.origin;
+    const cam = this.cam;
+    const dir = V(0, 0, -1).applyQuaternion(cam.quaternion);
+    for (let d = 3; d < 22; d += 0.5) {
+      const x = cam.position.x + dir.x * d,
+        z = cam.position.z + dir.z * d;
+      const w = g.gen.waterAt(x + o.x, z + o.z);
+      if (!w) continue;
+      if (cam.position.y + dir.y * d > w.level + 2.5) continue;
+      return { pos: V(x, w.level, z), frozen: w.frozen };
+    }
+    return null;
   }
 
   melee(it) {
@@ -1827,7 +1938,7 @@ export class Interaction {
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;
     const h = this.hands;
-    const big = it && (it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon)));
+    const big = it && carriedBig(it);
     const seated = !!this.game.player.seat;
     const driving = seated && this.game.player.seat === 'driver';
     h.right.visible = true;
