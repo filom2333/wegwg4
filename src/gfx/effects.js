@@ -3,6 +3,7 @@
 // meteors and moths. Everything is pooled; nothing allocates per frame in steady state.
 
 import * as THREE from 'three';
+import { GLASS_RAIN } from './glassRain.js';
 import { mulberry32 } from '../core/noise.js';
 import { tubeAlong } from './geom.js';
 
@@ -131,6 +132,10 @@ class Particles {
     }
   }
 }
+
+const moteFwd = new THREE.Vector3(),
+  motePos = new THREE.Vector3(),
+  moteVel = new THREE.Vector3();
 
 // ------------------------------------------------------------------ tumbleweed mesh
 function tumbleweedGeo(seed) {
@@ -345,6 +350,20 @@ export class Effects {
           const p = w.contactPoint;
           const back = V(0, 0, -1).applyQuaternion(car.root.quaternion);
           const col = powder ? [0.93, 0.95, 0.98] : w.surface === 'asphalt' ? [0.55, 0.53, 0.5] : w.surface === 'salt' ? [0.85, 0.84, 0.8] : w.surface === 'grass' ? [0.55, 0.5, 0.38] : [0.72, 0.6, 0.45];
+          // a hard skid on tarmac burns rubber: thick pale smoke that hangs and drifts
+          if (w.skid > 0.3 && (w.surface === 'asphalt' || w.surface === 'concrete') && Math.random() < 0.6)
+            this.smoke.emit({
+              pos: V(p.x + back.x * 0.2, p.y + 0.2, p.z + back.z * 0.2),
+              vel: V(back.x * speed * 0.15 + (Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.5, back.z * speed * 0.15 + (Math.random() - 0.5) * 0.6),
+              size: 0.7,
+              grow: 4.5,
+              life: 2.6 + Math.random() * 1.8,
+              color: [0.86, 0.86, 0.85],
+              alpha: 0.3 * Math.min(1, w.skid),
+              drag: 0.9,
+              grav: -0.05,
+              fadeIn: 0.1,
+            });
           this.dust.emit({
             pos: V(p.x + back.x * 0.3, p.y + 0.15, p.z + back.z * 0.3),
             vel: V(back.x * speed * 0.3 + (Math.random() - 0.5), 0.6 + Math.random() * 0.8, back.z * speed * 0.3 + (Math.random() - 0.5)),
@@ -713,6 +732,27 @@ export class Effects {
     }
   }
 
+  // Dust motes: a few specks drifting in the air around you, lit up when you look toward the sun.
+  updateMotes(dt, cam) {
+    const env = this.game.env;
+    if (env.isNight || env.w.rain > 0.1 || env.sunDir.y < 0.02) return;
+    const fwd = moteFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    const facing = THREE.MathUtils.smoothstep(fwd.dot(env.sunDir), 0.35, 0.9);
+    if (facing <= 0) return;
+    const n = dt * 26 * facing * (1 + env.w.dust * 2);
+    const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+    const c = env.sun.color;
+    for (let i = 0; i < count; i++) {
+      const r = 0.8 + Math.random() * 4.5;
+      motePos.copy(fwd).multiplyScalar(r).add(cam.position);
+      motePos.x += (Math.random() - 0.5) * r;
+      motePos.y += (Math.random() - 0.5) * r * 0.7;
+      motePos.z += (Math.random() - 0.5) * r;
+      moteVel.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.3) * 0.08, (Math.random() - 0.5) * 0.12);
+      this.moths.emit({ pos: motePos, vel: moteVel, size: 0.008 + Math.random() * 0.01, grow: 0.012, life: 3 + Math.random() * 4, color: [c.r, c.g * 0.95, c.b * 0.85], alpha: 0.35 * facing, drag: 0.4, spin: 0, fadeIn: 0.3 });
+    }
+  }
+
   // ------------------------------------------------------------------ frame
   update(dt) {
     this.t += dt;
@@ -791,6 +831,12 @@ export class Effects {
     this.updateBirds(dt, cam);
     this.updateMeteors(dt, cam);
     this.updateMoths(dt);
+    this.updateMotes(dt, cam);
+    // rain on the glass of the car you are near
+    GLASS_RAIN.time.value += dt;
+    GLASS_RAIN.rain.value += ((g.env.w.rain > 0.05 ? Math.min(1, 0.35 + g.env.w.rain) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
+    GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
+    GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
     // sandstorm: dense moving dust around the camera
     const dust = g.env.w.dust;
     if (dust > 0.2) {

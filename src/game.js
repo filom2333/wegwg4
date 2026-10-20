@@ -680,6 +680,8 @@ export class Game {
       const up = E.sunDir.y;
       const clear = (1 - E.w.overcast * 0.9) * (1 - E.w.dust * 0.6) * (1 - E.w.rain * 0.8);
       this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
+      const hot = E.biome === 'dunes' || E.biome === 'badlands' || E.biome === 'saltflat' ? 1 : E.biome === 'scrub' || E.biome === 'highland' ? 0.7 : 0;
+      this.renderer.setHeat(hot * THREE.MathUtils.smoothstep(up, 0.45, 0.85) * clear * (1 - E.w.rain) * (settings.data.quality === 'low' ? 0 : 1));
       updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
     }
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);

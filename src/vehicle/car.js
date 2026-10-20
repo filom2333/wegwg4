@@ -12,6 +12,7 @@ import { accessoryMass, ACCESSORIES } from './accessories.js';
 import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
 import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
+import { addGlassRain } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -23,6 +24,7 @@ export class Car {
     this.model = model;
     this.root = model.root;
     game.worldGroup.add(this.root);
+    if (model.mats) addGlassRain(model.mats.glass);
     this.parts = {};
     for (const id of Object.keys(model.parts)) {
       this.parts[id] = { installed: true, condition: 1, item: null };

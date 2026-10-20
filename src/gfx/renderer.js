@@ -42,6 +42,9 @@ const GradeShader = {
     uWarm: { value: 0 },
     uNight: { value: 0 },
     uOvercast: { value: 0 },
+    uHeat: { value: 0 },
+    uNear: { value: 0.1 },
+    uFar: { value: 10000 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
@@ -49,15 +52,26 @@ const GradeShader = {
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
     uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
+    uniform float uHeat; uniform float uNear; uniform float uFar;
     varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
     // open sky (nothing drawn in front of the cleared far plane)
     float sky(vec2 uv){ return step(0.999999, texture2D(tDepth, clamp(uv, 0.001, 0.999)).r); }
     void main(){
-      vec4 c = texture2D(tDiffuse, vUv);
+      // heat shimmer: on a hot clear day the air over the ground wobbles from ~100 m out to the
+      // horizon (where the far road turns to a mirage of the sky)
+      vec2 uv = vUv;
+      if (uHeat > 0.001) {
+        float dz = texture2D(tDepth, vUv).r;
+        float z = uNear * uFar / (uFar - dz * (uFar - uNear));
+        float band = smoothstep(90.0, 320.0, z) * (1.0 - smoothstep(2600.0, 5200.0, z)) * step(dz, 0.999999);
+        float wob = sin(vUv.y * 950.0 - uTime * 7.0 + sin(vUv.x * 55.0 + uTime * 1.3) * 3.0) * 0.55 + sin(vUv.y * 1830.0 - uTime * 11.0 + vUv.x * 37.0) * 0.45;
+        uv += vec2(0.0004, 0.0007) * wob * band * uHeat;
+      }
+      vec4 c = texture2D(tDiffuse, uv);
       // contrast-adaptive sharpening: a cross of neighbours, limited where the contrast is already high
-      vec3 n = texture2D(tDiffuse, vUv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tDiffuse, vUv - vec2(0.0, uTexel.y)).rgb;
-      vec3 e = texture2D(tDiffuse, vUv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tDiffuse, vUv - vec2(uTexel.x, 0.0)).rgb;
+      vec3 n = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tDiffuse, uv - vec2(0.0, uTexel.y)).rgb;
+      vec3 e = texture2D(tDiffuse, uv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tDiffuse, uv - vec2(uTexel.x, 0.0)).rgb;
       vec3 mn = min(c.rgb, min(min(n, s), min(e, w))), mx = max(c.rgb, max(max(n, s), max(e, w)));
       vec3 amt = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-3), 0.0, 1.0)) * uSharpen;
       vec3 col = clamp(c.rgb + (4.0 * c.rgb - n - s - e - w) * amt * 0.25, 0.0, 1.0);
@@ -263,6 +277,15 @@ export class Renderer {
       this.grade.uniforms.uTexel.value.set(1 / (w * pr), 1 / (h * pr));
       this.grade.uniforms.uAspect.value = w / h;
     }
+  }
+
+  // Heat shimmer strength 0..1 (midday in the desert).
+  setHeat(v) {
+    if (!this.grade) return;
+    const u = this.grade.uniforms;
+    u.uHeat.value = v;
+    u.uNear.value = this.camera.near;
+    u.uFar.value = this.camera.far;
   }
 
   // Where the sun is on screen and how much of it shows (0 behind the camera, set or overcast).
