@@ -224,6 +224,31 @@ Done so far (uncommitted, unverified in game):
   scales, fine layering, pits and pale lichen instead of the big Voronoi "hexagon tiles". It
   compiles but is **unverified in game**. Check it, and that the rock looks good on slopes.
 
+## 4c. USER FEEDBACK on the current look (top priority, read before step 1)
+
+Picture: `docs/feedback/badlands_ugly.webp` (badlands, z=6500, time 17). The user's words, paraphrased:
+"Ugly trash, nothing goes together, there's no beauty. Maybe the game is too dark, maybe it's
+something else. What is this? The stone pillars are too tall and weird, nonsense."
+What to fix:
+- **Hoodoos** (`hoodoo` in scatterGen SPECIES, `F.hoodoo` in flora.js): they are too tall, too
+  many, and stand like evenly scattered red sticks. Make them rare and grouped in clusters at mesa
+  feet, lower, with believable eroded shapes and the same rock colour as the mesas (they are a
+  different red now). Or remove them near the road.
+- **Colour harmony**: the rocks, ground, mesas, cacti and boulders don't match (different hues and
+  saturation). Unify the palette per biome: rock tint = ground tint family; boulders tinted like
+  the local rock; less orange on the ground.
+- **Lighting and brightness**: the scene reads dull, flat and dark. Check exposure and tone mapping
+  (`env.update`: toneMappingExposure, hemi/sun intensity), shadow contrast, ambient. Aim for
+  bright, warm, clear desert light with visible depth (aerial haze, the sunlit-haze glow from
+  fogSun.js) and richer sky colour.
+- **Ground**: big flat areas with a uniform texture and sprinkled dots look cheap. Add more ground
+  detail variety (patches of gravel, darker crust, sparse grass tufts in clumps), larger-scale
+  colour variation, and denser vegetation clumped naturally rather than evenly sprinkled.
+- **Mesas**: their faces look like flat bands. Add more variation in cliff height, talus slopes at
+  their feet, and erosion notches.
+- Judge every change by screenshots against this picture. The user wants it to look **beautiful**,
+  like a real road trip through the American Southwest.
+
 ## 5. NEXT STEPS (in this order)
 
 1. Serve the build, then render the dev query at z=1200 (scrub), 3800/4300 (dunes),
