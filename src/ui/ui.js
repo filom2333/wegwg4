@@ -282,7 +282,7 @@ export class UI {
 
   // ---------------------------------------------------------------- new game
   showNewGame() {
-    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'assembled', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
+    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
     this.screen('newgame', (s) => {
       s.classList.add('ui-shade-panel');
       const p = el('div', 'ui-panel', s);
@@ -306,8 +306,8 @@ export class UI {
       this.choices(
         body,
         [
+          ['parts', 'Build it first', 'The body stands on its wheels in the garage. Everything else is somewhere about the place, and a few parts are down the road.'],
           ['assembled', 'Ready to drive', 'Start with the car assembled in the garage, a little fuel in the tank.'],
-          ['parts', 'Build it first', 'Start with a rolling chassis. Every panel, seat and the engine are in the yard.'],
         ],
         cfg.start,
         (v) => (cfg.start = v)

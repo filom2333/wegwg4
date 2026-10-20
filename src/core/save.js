@@ -86,6 +86,7 @@ export function serializeGame(g) {
     // loot that never left its spot is regenerated deterministically when the POI loads
     items: g.items.serialize().filter((it) => it.poi === null || it.poi === undefined),
     itemsSaved: [...g.items.saved.entries()],
+    itemsPending: [...(g.items.pending || new Map()).entries()],
     pois: [...g.pois.state.entries()].map(([k, st]) => [k, { ...st, taken: [...st.taken] }]),
     stats: { ...g.stats },
     story: g.story ? g.story.serialize() : null,
@@ -96,6 +97,7 @@ export function serializeGame(g) {
 export function applyWorldState(g, d) {
   for (const [k, st] of d.pois || []) g.pois.state.set(+k, { ...st, taken: new Set(st.taken || []) });
   for (const [k, list] of d.itemsSaved || []) g.items.saved.set(+k, list);
+  for (const [k, list] of d.itemsPending || []) g.items.addPending(+k, list);
 }
 
 // Restores player, car, items and stats once the car and player exist.

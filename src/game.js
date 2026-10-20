@@ -30,7 +30,7 @@ import { RoadSigns } from './story/roadSigns.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
-import { clamp } from './core/noise.js';
+import { clamp, mulberry32 } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
 
 export const DIFFICULTY = {
@@ -396,41 +396,58 @@ export class Game {
     }
   }
 
-  // "Build it first": a rolling chassis in the garage, everything else laid out in the yard.
+  // "Build it first": a body on its wheels in the garage; everything else is somewhere about the
+  // place, the way it was left: small parts on shelves and tables in the house and garage, panels
+  // and seats around the yard, the engine on the scrap pile, a few things at the neighbours' down
+  // the road. Sometimes an old donor car stands behind the house.
   setupUnassembled() {
     const car = this.car;
-    const keep = new Set(['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
-    // taken apart in reverse assembly order
+    const rnd = mulberry32((this.seed | 0) * 31 + 7);
+    const keep = new Set(['chassis', 'body', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
     const order = [...car.type.ASSEMBLY_ORDER].reverse();
     for (const id of order) if (car.parts[id] && car.isInstalled(id) && !keep.has(id)) car.setInstalled(id, false);
-    car.fuel = 6;
+    car.fuel = 4;
     car.battery = 0.7;
     const inst = this.pois.loaded.get(0);
-    if (!inst) return;
+    if (!inst) return this.spawnStarterItems();
     inst.root.updateMatrixWorld(true);
     const m = inst.root.matrixWorld;
     const at = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(m);
     const rq = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), inst.poi.rot + a);
-    // heavy pieces first, near the garage mouth; small parts in two rows across the yard
-    const spots = [
-      ['body', 8.6, 0.9, 8.4, Math.PI / 2],
-      ['engine', 4.6, 0.6, 4.4, 0],
-      ['fueltank', 12.6, 0.4, 6.6, 0.3],
-      ['exhaust', 12.4, 0.3, 8.6, Math.PI / 2],
-    ];
-    const small = order.filter((id) => !spots.some((s) => s[0] === id) && car.parts[id] && !keep.has(id));
-    small.forEach((id, i) => {
-      const row = Math.floor(i / 8),
-        col = i % 8;
-      spots.push([id, 5.2 + col * 1.0, 0.45, 4.2 + row * 1.5 + (col % 2) * 0.25, (col * 0.7) % 1]);
-    });
-    // lay thin panels on their faces the way someone would put them down
+    const shuffle = (a) => {
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    const missing = order.filter((id) => car.parts[id] && !keep.has(id));
+    const def = (id) => car.type.PARTS[id] || {};
+    const heavy = missing.filter((id) => (def(id).mass || 0) > 60);
+    const small = shuffle(missing.filter((id) => (def(id).mass || 0) <= 8 && !/door|fender|hood|trunk|bumper|seat|spare|exhaust|fueltank/.test(id)));
+    const large = shuffle(missing.filter((id) => !heavy.includes(id) && !small.includes(id)));
+    // indoor spots: the house's tables, shelves and counters, the garage's bench and kit corner
+    const indoor = shuffle(inst.loot.filter((l) => l.kind !== 'wreck').map((l) => l.pos.clone()));
+    // yard spots: a ring around the buildings, kept off roofs, floors and fences
+    const yard = [];
+    for (let i = 0; i < 60 && yard.length < 24; i++) {
+      const a = rnd() * Math.PI * 2,
+        r = 9 + rnd() * 16;
+      const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r * 0.8);
+      const w = p.clone().applyMatrix4(m);
+      const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
+      const owner = hit && this.physics.ownerOf(hit.collider);
+      if (owner && owner.kind === 'structure') continue;
+      if (yard.some((q) => q.distanceTo(p) < 1.8)) continue;
+      yard.push(p);
+    }
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
       door_RL: [0, 0, Math.PI / 2],
       door_RR: [0, 0, -Math.PI / 2],
       hood: [Math.PI, 0, 0],
+      trunk: [Math.PI, 0, 0],
       fender_FL: [0, 0, Math.PI / 2],
       fender_FR: [0, 0, -Math.PI / 2],
       fender_RL: [0, 0, Math.PI / 2],
@@ -440,12 +457,47 @@ export class Game {
       spare: [0, 0, Math.PI / 2],
       steeringWheel: [-0.45, 0, 0],
     };
-    for (const [id, x, y, z, a] of spots) {
+    const put = (id, wpos, a) => {
       const q = rq(a);
       if (lay[id]) q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...lay[id])));
-      const it = this.items.spawnPart(id, at(x, y + 0.25, z), q, { condition: 0.75 + Math.random() * 0.25 });
+      const it = this.items.spawnPart(id, wpos, q, { condition: 0.6 + rnd() * 0.4 });
       it.poiKey = null;
+    };
+    // the neighbours down the road keep one or two of the small things
+    const away = small.splice(0, rnd() < 0.5 ? 1 : 2);
+    let k = 1;
+    while (k < 8 && !this.gen.poiSlot(k)) k++;
+    if (k < 8) this.items.addPending(k, away.map((id) => ({ part: id, carType: car.type.id, condition: 0.55 + rnd() * 0.4 })));
+    else small.push(...away);
+    for (const id of small) {
+      const p = indoor.length ? indoor.shift().applyMatrix4(m) : at(0, 0, 0);
+      put(id, p.add(new THREE.Vector3(0, 0.12, 0)), rnd() * Math.PI * 2);
     }
+    for (const id of large) {
+      const p = yard.length ? yard.shift() : new THREE.Vector3((rnd() - 0.5) * 20, 0, 10 + rnd() * 6);
+      const w = p.clone().applyMatrix4(m);
+      w.y = this.groundHeightAt(w.x, w.z) + 0.35;
+      put(id, w, rnd() * Math.PI * 2);
+    }
+    // the engine sits on the scrap pile behind the garage
+    for (const [i, id] of heavy.entries()) {
+      const w = at(11.5 + i * 2.2, 0, -8.5);
+      w.y = this.groundHeightAt(w.x, w.z) + 0.6;
+      put(id, w, 0.4);
+    }
+    // a donor car behind the house in some worlds: the other model, tired and missing bits
+    if (rnd() < 0.45) {
+      const other = CAR_TYPE_LIST.find((t) => t.id !== car.type.id);
+      if (other) {
+        const w = at(-7 + (rnd() - 0.5) * 3, 0, -12.5);
+        w.y = this.groundHeightAt(w.x, w.z) + 0.05;
+        const donor = this.fleet.create(other.id, w, rq(Math.PI / 2 + (rnd() - 0.5) * 0.5), { owned: false });
+        for (const id of [...other.ASSEMBLY_ORDER].reverse()) if (donor.parts[id] && !/chassis|body/.test(id) && rnd() < 0.35 && donor.isInstalled(id)) donor.setInstalled(id, false);
+        donor.fuel = 0;
+        donor.battery = rnd() * 0.2;
+      }
+    }
+    this.hud && this.hud.toast && setTimeout(() => this.hud.toast('Your car is in pieces. Look around the house, the garage and the yard. Some parts may be further down the road.'), 1500);
     this.spawnStarterItems();
   }
 

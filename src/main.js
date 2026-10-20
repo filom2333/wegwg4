@@ -60,7 +60,7 @@ async function boot() {
     await game.init({
       seed: +(params.get('seed') || 1234),
       difficulty: params.get('difficulty') || 'normal',
-      start: params.get('start') || 'assembled',
+      start: params.get('start') || 'parts',
       car: params.get('car') || 'beetle',
       time: 8.2,
       weather: 'clear',

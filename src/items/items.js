@@ -255,9 +255,30 @@ export class ItemSystem {
     if (vel) it.body.setLinvel({ x: vel.x, y: vel.y, z: vel.z }, true);
   }
 
+  // Things promised to a place before it was ever loaded (car parts left at the neighbours').
+  addPending(k, list) {
+    if (!this.pending) this.pending = new Map();
+    this.pending.set(k, [...(this.pending.get(k) || []), ...list]);
+  }
+
+  placePending(inst) {
+    const list = this.pending && this.pending.get(inst.k);
+    if (!list) return;
+    this.pending.delete(inst.k);
+    inst.root.updateMatrixWorld(true);
+    const spots = inst.loot.filter((l) => l.kind !== 'wreck');
+    list.forEach((e, i) => {
+      const sp = spots.length ? spots[(i * 7 + 3) % spots.length].pos : V(0, 0.2, 4);
+      const wp = sp.clone().applyMatrix4(inst.root.matrixWorld).add(V(0, 0.12, 0));
+      const it = this.spawnPart(e.part, wp, new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), i * 2.1), { condition: e.condition ?? 0.7, carType: e.carType });
+      it.poiKey = inst.k;
+    });
+  }
+
   // ------------------------------------------------------------------ loot
   onPoiLoaded(inst, rnd) {
     const key = inst.k;
+    this.placePending(inst);
     const saved = this.saved.get(key);
     const o = this.game.origin;
     if (saved) {
