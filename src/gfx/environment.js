@@ -16,6 +16,19 @@ export const WEATHERS = {
   sandstorm: { cloud: 0.4, overcast: 0.3, dust: 0.85, rain: 0, wind: 1.0, turbidity: 8, fogDensity: 0.006 },
 };
 
+// Day and night air temperature (°C) per biome.
+const AIR = {
+  scrub: [31, 7],
+  dunes: [38, 5],
+  badlands: [34, 8],
+  saltflat: [36, 4],
+  highland: [23, 1],
+  prairie: [25, 9],
+  forest: [19, 5],
+  taiga: [-1, -14],
+  tundra: [-5, -20],
+};
+
 export class Environment {
   constructor(renderer, scene, opts = {}) {
     this.renderer = renderer;
@@ -66,6 +79,18 @@ export class Environment {
     this.focus = new THREE.Vector3();
     this.biome = 'scrub';
     this.update(0);
+  }
+
+  // Air temperature (°C) where you are: the biome's day and night, cloud and rain, wind chill.
+  airTemp(biome = this.biome) {
+    const T = AIR[biome] || AIR.scrub;
+    // warmest a little after noon, coldest just before dawn
+    const h = this.time;
+    const curve = 0.5 - 0.5 * Math.cos(((h - 4.5) / 24) * Math.PI * 2 - (h > 15 ? 0.25 : 0));
+    let t = T[1] + (T[0] - T[1]) * curve;
+    t -= this.w.overcast * (T[0] - T[1]) * 0.25;
+    t -= this.w.rain * 6 + this.w.wind * 3;
+    return t;
   }
 
   setTime(h) {

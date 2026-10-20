@@ -214,7 +214,7 @@ kbd {
   left: 24px;
   bottom: 22px;
   display: grid;
-  grid-template-columns: repeat(4, 50px);
+  grid-template-columns: repeat(5, 50px);
   gap: 6px 8px;
   padding: 12px 14px 10px;
   border-radius: 16px;
@@ -232,6 +232,8 @@ kbd {
 .need-food { --c: #e3a457; }
 .need-water { --c: #5fb0e8; }
 .need-energy { --c: #e5d265; }
+.need-warmth { --c: #ef8c55; }
+.need-warmth.cold { --c: #8fd0f0; }
 .hud-need .ring {
   width: 46px;
   height: 46px;

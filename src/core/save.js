@@ -76,6 +76,8 @@ export function serializeGame(g) {
       food: p.food,
       water: p.water,
       energy: p.energy,
+      warmth: p.warmth,
+      wet: p.wet,
       bleeding: p.bleeding,
       seat: p.seat,
       seatCar: p.seat && p.car ? p.car.id : null,
@@ -124,7 +126,7 @@ export function applySave(g, d) {
   }
   // player
   const p = g.player;
-  for (const k of ['health', 'food', 'water', 'energy', 'bleeding', 'headlampOn']) if (d.player[k] !== undefined) p[k] = d.player[k];
+  for (const k of ['health', 'food', 'water', 'energy', 'warmth', 'wet', 'bleeding', 'headlampOn']) if (d.player[k] !== undefined) p[k] = d.player[k];
   p.yaw = d.player.yaw;
   p.pitch = d.player.pitch;
   const inv = d.inventory || {};

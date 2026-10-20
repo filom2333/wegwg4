@@ -44,6 +44,7 @@ export class HUD {
       ['food', 'food', 'Food'],
       ['water', 'water', 'Water'],
       ['energy', 'energy', 'Rest'],
+      ['warmth', 'temp', 'Warmth'],
     ]) {
       const row = el('div', 'hud-need need-' + k, this.needs);
       row.innerHTML = `<svg class="ring" viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="19"/><circle class="fg" cx="22" cy="22" r="19" stroke-dasharray="${C.toFixed(2)}"/></svg>`;
@@ -198,7 +199,7 @@ export class HUD {
     this.hitTimer -= dt;
     if (this.hitTimer <= 0) this.hit.className = 'hud-hit';
     // needs: rows highlight when low
-    for (const k of ['health', 'food', 'water', 'energy']) {
+    for (const k of ['health', 'food', 'water', 'energy', 'warmth']) {
       const v = Math.max(0, Math.min(100, p[k]));
       const e = this.needEls[k];
       const r = Math.round(v);
@@ -209,6 +210,14 @@ export class HUD {
       }
       e.row.classList.toggle('low', v < 25);
       e.row.classList.toggle('crit', v < 10);
+    }
+    // the warmth ring turns icy when cold and shows the air temperature on its label
+    const wv = p.warmth;
+    this.needEls.warmth.row.classList.toggle('cold', wv < 45);
+    const at = Math.round(p.airTemp ?? 20);
+    if (at !== this._at) {
+      this._at = at;
+      this.needEls.warmth.row.querySelector('.hud-need-lab').textContent = `${at}°C`;
     }
     this.stamina.style.opacity = p.stamina < 99 && !p.seat ? 1 : 0;
     this.staminaFill.style.width = p.stamina.toFixed(0) + '%';

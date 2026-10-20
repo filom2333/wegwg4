@@ -117,6 +117,7 @@ export class AudioSystem {
     B.pour = GEN.pourLoop(c, { len: 2 });
     B.bandage = GEN.crunch(c, { grains: 60, cut: 5000, len: 0.9, spread: 0.8, seed: 62 });
     B.extinguish = GEN.noise(c, 1.5, 'white', 63);
+    B.ignite = GEN.whoosh(c, { len: 0.9, f0: 160, f1: 900, seed: 90 });
     B.hurt = GEN.breath(c, { len: 0.45, seed: 64 });
     B.land = GEN.thump(c, { f: 60, decay: 0.08, click: 0.6, seed: 65, len: 0.4, noiseCut: 1500 });
     B.seat = GEN.crunch(c, { grains: 20, cut: 1500, len: 0.5, spread: 0.4, seed: 66, body: 0.4, bodyF: 70 });

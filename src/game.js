@@ -15,6 +15,7 @@ import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
 import { Fleet } from './vehicle/fleet.js';
 import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
+import { Campfires } from './world/campfires.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
@@ -34,9 +35,9 @@ import { clamp, mulberry32 } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
 
 export const DIFFICULTY = {
-  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
-  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
-  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
+  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, cold: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
+  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, cold: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
+  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, cold: 1.3, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
 };
 
 export class Game {
@@ -74,6 +75,7 @@ export class Game {
       daysSurvived: 1,
     };
     this.systems = [new Water(), new Bridges()];
+    this.campfires = null;
     window.addEventListener('resize', () => this.renderer.resize());
     input.attach(canvas);
     this.__input = input;
@@ -141,6 +143,7 @@ export class Game {
     this.hud = new HUD(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
+    this.campfires = new Campfires(this);
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
@@ -275,6 +278,7 @@ export class Game {
     this.pois.rebase(dx, dz);
     this.items.rebase(dx, dz);
     this.effects && this.effects.rebase(dx, dz);
+    this.campfires && this.campfires.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
@@ -338,6 +342,7 @@ export class Game {
     else if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
     this.fleet.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
+    this.campfires && this.campfires.update(dt);
     this.physics.update(dt);
     this.fleet.syncVisual();
     this.items.update(dt);

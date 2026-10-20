@@ -43,6 +43,10 @@ export class Player {
     this.food = 85;
     this.water = 80;
     this.energy = 90;
+    // body warmth 0..100 (comfortable above ~60) and how soaked the clothes are 0..1
+    this.warmth = 80;
+    this.wet = 0;
+    this.shelterT = 0;
     this.stamina = 100;
     this.bleeding = 0;
     this.dead = false;
@@ -340,8 +344,11 @@ export class Player {
       const eyeH = lerp(EYE, 1.05, this.crouch);
       const bob = settings.data.headBob ? Math.sin(this.bob * 2) * 0.035 * this.bobAmp : 0;
       const sway = settings.data.headBob ? Math.cos(this.bob) * 0.025 * this.bobAmp : 0;
-      cam.position.set(p.x, p.y + eyeH + bob, p.z);
-      cam.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw + Math.PI, sway * 0.4, 'YXZ'));
+      // shivering when cold
+      const shiver = this.warmth < 30 ? (30 - this.warmth) / 30 : 0;
+      const sh = shiver ? Math.sin(performance.now() * 0.06) * 0.004 * shiver : 0;
+      cam.position.set(p.x + sh, p.y + eyeH + bob, p.z);
+      cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + sh * 0.8, this.yaw + Math.PI, sway * 0.4, 'YXZ'));
       const right = V(1, 0, 0).applyQuaternion(cam.quaternion);
       cam.position.addScaledVector(right, sway);
     }
@@ -415,8 +422,60 @@ export class Player {
       this.damage(this.bleeding * dt * 0.6, 'bleeding', true);
       this.bleeding = Math.max(0, this.bleeding - dt * 0.05);
     }
-    if (this.food > 45 && this.water > 45 && this.bleeding <= 0) this.health = Math.min(100, this.health + hours * 4);
+    this.updateWarmth(dt, hours, diff);
+    if (this.food > 45 && this.water > 45 && this.warmth > 35 && this.bleeding <= 0) this.health = Math.min(100, this.health + hours * 4);
     this.damageFlash = Math.max(0, this.damageFlash - dt * 1.5);
+  }
+
+  // Warmth drifts toward what the air, shelter, a heater or a fire allow. Rain soaks you outdoors;
+  // wet clothes chill. Cold makes you shiver and tire, then hurts.
+  updateWarmth(dt, hours, diff) {
+    const g = this.game;
+    const env = g.env;
+    if (!env) return;
+    // shelter: a roof overhead (checked twice a second) or a car's cabin
+    this.shelterT -= dt;
+    if (this.shelterT <= 0) {
+      this.shelterT = 0.5;
+      const p = this.position;
+      const hit = !this.seat && g.physics.raycast({ x: p.x, y: p.y + 1.8, z: p.z }, { x: 0, y: 1, z: 0 }, 8, GROUPS.look, this.body);
+      const o = hit && g.physics.ownerOf(hit.collider);
+      this.indoors = !!(o && o.kind === 'structure');
+    }
+    let air = env.airTemp();
+    this.wrapCooldown = Math.max(0, (this.wrapCooldown || 0) - hours);
+    if (this.wrapCooldown > 0) air += 8;
+    const car = this.seat && this.car;
+    if (car) {
+      // a closed cabin keeps the wind off; a warm engine runs the heater
+      air = air + 6;
+      if (car.dyn.engine.running && car.engineTemp > 55) air = Math.max(air, 22);
+    } else if (this.indoors) air = air + 7;
+    // asleep under a blanket (in the backpack or the car): snug whatever the night does
+    if (g.sleepHours > 0 && this.hasBlanket()) air = Math.max(air, 18);
+    // fires and lamps close by
+    const fire = g.campfires ? g.campfires.heatAt(this.position) : 0;
+    air += fire;
+    const sheltered = !!car || this.indoors;
+    if (!sheltered && env.w.rain > 0.05) this.wet = Math.min(1, this.wet + dt * 0.012 * env.w.rain);
+    else this.wet = Math.max(0, this.wet - dt * (0.002 + Math.max(0, air - 10) * 0.0004 + fire * 0.001));
+    air -= this.wet * 9;
+    const target = clamp((air + 6) * 3.2, 0, 100);
+    const rate = target < this.warmth ? 0.006 * (1 + this.wet * 2) * (diff.cold || 1) : 0.012 + fire * 0.004;
+    this.warmth += (target - this.warmth) * Math.min(1, dt * rate);
+    this.airTemp = air;
+    if (this.warmth < 30) this.energy = Math.max(0, this.energy - hours * 2.5);
+    if (this.warmth < 12) this.damage(hours * 9, 'hypothermia', true);
+    // heat: sun on bare ground dries you out faster
+    if (!sheltered && air > 32) this.water = Math.max(0, this.water - hours * (air - 32) * 0.35 * diff.thirst);
+  }
+
+  hasBlanket() {
+    const g = this.game;
+    const inBag = g.inventory && g.inventory.slots.some((e) => e && e.id === 'blanket');
+    const st = this.car && this.car.storage;
+    const inCar = st && Object.values(st).some((c) => c.slots && c.slots.some((e) => e && e.id === 'blanket'));
+    return !!(inBag || inCar || (g.interaction && g.interaction.held && g.interaction.held.id === 'blanket'));
   }
 
   damage(amount, cause, silent = false) {
@@ -445,7 +504,8 @@ export class Player {
   }
 
   // eat / drink / heal
-  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0 } = {}) {
+  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0, warmth = 0 } = {}) {
+    this.warmth = clamp(this.warmth + warmth, 0, 100);
     this.food = clamp(this.food + food, 0, 100);
     this.water = clamp(this.water + water, 0, 100);
     this.health = clamp(this.health + health, 0, 100);

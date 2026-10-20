@@ -305,6 +305,92 @@ export function coffee() {
   return centered(g);
 }
 
+// Steel vacuum flask with an olive sleeve and a cup for a lid.
+export function thermos() {
+  const g = new THREE.Group();
+  const M = itemMats();
+  const sleeve = cached('thermosMat', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x4f5b3e, roughness: 0.5, metalness: 0.2 }), 'cast', 0.25));
+  g.add(mesh(latheY([[0, 0], [0.042, 0], [0.045, 0.01], [0.045, 0.2], [0.04, 0.215], [0.03, 0.225]], 28), sleeve));
+  g.add(mesh(latheY([[0.03, 0.222], [0.046, 0.226], [0.047, 0.29], [0.04, 0.295], [0, 0.297]], 28), M.steel));
+  g.add(mesh(new THREE.CylinderGeometry(0.0465, 0.0465, 0.012, 28).translate(0, 0.06, 0), M.steel));
+  grip(g, 'wrap', 'wrap40', V(0, 0.11, 0), UP, RIGHT);
+  return centered(g);
+}
+
+// Wool blanket rolled up and tied with two straps.
+export function blanket() {
+  const g = new THREE.Group();
+  const wool = cached('blanketMat', () => {
+    const tex = labelTex('blanketPlaid', 128, 128, (c, w, h) => {
+      c.fillStyle = '#7a2f24';
+      c.fillRect(0, 0, w, h);
+      c.fillStyle = 'rgba(30,24,20,0.55)';
+      for (const x of [20, 76]) c.fillRect(x, 0, 16, h);
+      for (const y of [20, 76]) c.fillRect(0, y, w, 16);
+      c.fillStyle = 'rgba(230,200,140,0.35)';
+      for (const x of [48, 104]) c.fillRect(x, 0, 3, h);
+      for (const y of [48, 104]) c.fillRect(0, y, w, 3);
+    });
+    return addSurfaceDetail(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.98 }), 'weave', 0.5);
+  });
+  const roll = new THREE.CylinderGeometry(0.075, 0.075, 0.42, 24, 1);
+  roll.rotateZ(Math.PI / 2);
+  g.add(mesh(roll, wool));
+  const M = itemMats();
+  for (const x of [-0.12, 0.12]) g.add(mesh(new THREE.TorusGeometry(0.078, 0.006, 6, 24).rotateY(Math.PI / 2).translate(x, 0, 0), M.rubber));
+  grip(g, 'side', 'grip', V(0, 0.075, 0), RIGHT, UP);
+  return centered(g);
+}
+
+// Fire kit: a bundle of kindling sticks tied with cord, a box of matches tucked in.
+export function campfireKit() {
+  const g = new THREE.Group();
+  const wood = cached('kindlingMat', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 0.9 }), 'grain', 0.4));
+  const M = itemMats();
+  let seed = 3;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const rr = i === 0 ? 0 : 0.032;
+    const stick = new THREE.CylinderGeometry(0.014 + r() * 0.006, 0.016 + r() * 0.006, 0.38 + r() * 0.06, 6);
+    stick.rotateZ(Math.PI / 2);
+    stick.translate((r() - 0.5) * 0.04, Math.sin(a) * rr, Math.cos(a) * rr);
+    g.add(mesh(stick, wood));
+  }
+  for (const x of [-0.09, 0.09]) g.add(mesh(new THREE.TorusGeometry(0.05, 0.004, 5, 18).rotateY(Math.PI / 2).translate(x, 0, 0), M.cardboard));
+  const box = labelMat('matches', 64, 32, (c, w, h) => {
+    c.fillStyle = '#c8402a';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = '#f2e3b8';
+    c.font = 'bold 12px Arial';
+    c.fillText('MATCHES', 6, 20);
+  });
+  g.add(mesh(roundedBox(0.05, 0.016, 0.035, 0.002, 1).translate(0, 0.05, 0), box));
+  grip(g, 'side', 'grip', V(0, 0.05, 0), RIGHT, UP);
+  return centered(g);
+}
+
+// A piece of meat: raw (dark red, glistening) or cooked over a fire (browned, charred edges).
+export function meatChunk(cooked = false) {
+  const g = new THREE.Group();
+  const mat = cached('meat' + (cooked ? 'C' : 'R'), () =>
+    addSurfaceDetail(new THREE.MeshStandardMaterial({ color: cooked ? 0x6a3a1e : 0x8a2420, roughness: cooked ? 0.75 : 0.35 }), 'grain', 0.35)
+  );
+  const geo = new THREE.IcosahedronGeometry(0.06, 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i),
+      y = p.getY(i),
+      z = p.getZ(i);
+    const w = 1 + 0.18 * Math.sin(x * 60 + z * 40) + 0.12 * Math.sin(y * 70);
+    p.setXYZ(i, x * 1.6 * w, y * 0.55 * w, z * 1.05 * w);
+  }
+  geo.computeVertexNormals();
+  g.add(mesh(geo, mat));
+  grip(g, 'palm', 'palm', V(0, -0.03, 0), RIGHT, DOWN);
+  return centered(g);
+}
+
 // Folded sheet of paper with handwriting.
 export function note() {
   const mat = cached('noteMat', () => {
@@ -838,6 +924,10 @@ export const MODEL_BUILDERS = {
   sprayPaint,
   cigarettes,
   coffee,
+  thermos,
+  blanket,
+  campfireKit,
+  meatChunk,
   jerryCan,
   waterBottle,
   sodaCan,

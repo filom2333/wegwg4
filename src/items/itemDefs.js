@@ -52,7 +52,11 @@ export const ITEMS = {
   plasticPanel: { name: 'Plastic panel', model: ['plate', 'plasticPanel'], mass: 1.7, plate: 'plasticPanel', bulky: true, variants: 5, hold: 'side', desc: 'Light, keeps the rain and dust out. Bolts on anywhere.' },
   plasticSheet: { name: 'Plastic sheet', model: ['plate', 'plasticSheet'], mass: 3.2, plate: 'plasticSheet', bulky: true, variants: 5, hold: 'side', desc: 'A big light panel. Bolts on anywhere.' },
   sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
-  meat: { name: 'Rabbit meat', model: ['snackBag', 'jerky'], mass: 0.5, consume: { food: 30, water: -4 }, hold: 'hand', desc: 'Better cooked, but it will do.' },
+  meat: { name: 'Raw meat', model: ['meatChunk', false], mass: 0.5, consume: { food: 26, water: -4 }, raw: true, hold: 'hand', desc: 'Cook it over a fire. Eaten raw it may make you sick.' },
+  cookedMeat: { name: 'Cooked meat', model: ['meatChunk', true], mass: 0.45, consume: { food: 48, water: -2, energy: 6, warmth: 6 }, hold: 'hand', desc: 'Hot from the fire.' },
+  thermos: { name: 'Thermos of coffee', model: ['thermos'], mass: 1.1, consume: { water: 14, energy: 14, warmth: 22 }, charges: 3, hold: 'hand', desc: 'Hot coffee. Warms you up on a cold night.' },
+  blanket: { name: 'Wool blanket', model: ['blanket'], mass: 1.4, wrap: 34, hold: 'side', desc: 'Wrap up in it when the night gets cold. Sleeping with one keeps you warm.' },
+  campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
 // Loot tables by spot kind: [itemId, weight]
@@ -65,6 +69,7 @@ export const LOOT = {
     ['bandage', 1],
   ],
   kitchen: [
+    ['thermos', 0.5],
     ['coffee', 1],
     ['sponge', 0.6],
     ['cannedBeans', 3],
@@ -114,12 +119,14 @@ export const LOOT = {
     ['medkit', 1],
   ],
   bed: [
+    ['blanket', 1.5],
     ['cd', 0.3],
     ['ammo38', 0.6],
     ['revolver', 0.2],
     ['chocolate', 1],
   ],
   clothes: [
+    ['blanket', 1.0],
     ['bandage', 1],
     ['ammo12', 0.5],
     ['shotgun', 0.12],
@@ -142,6 +149,8 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['campfireKit', 0.8],
+    ['blanket', 0.6],
     ['plank', 0.6],
     ['plasticPanel', 0.6],
     ['oilBottle', 3],
@@ -162,6 +171,8 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['thermos', 0.6],
+    ['campfireKit', 0.8],
     ['cd', 0.6],
     ['cigarettes', 1.2],
     ['coffee', 1.2],
@@ -179,6 +190,7 @@ export const LOOT = {
     ['waterBottle', 3],
   ],
   counter: [
+    ['thermos', 0.4],
     ['ammo38', 0.8],
     ['chocolate', 1],
     ['painkillers', 1],
@@ -193,12 +205,17 @@ export const LOOT = {
     ['waterJug', 1],
   ],
   tent: [
+    ['campfireKit', 1.5],
+    ['blanket', 1],
     ['mre', 1],
     ['waterBottle', 2],
     ['lantern', 1],
     ['jerky', 1],
   ],
   camp: [
+    ['campfireKit', 2],
+    ['blanket', 1],
+    ['thermos', 0.6],
     ['cd', 0.4],
     ['sodaCan', 2],
     ['waterBottle', 2],

@@ -952,6 +952,7 @@ export function causeText(c) {
       crash: 'Killed in a crash',
       starvation: 'Starved',
       dehydration: 'Died of thirst',
+      hypothermia: 'Froze to death',
       exhaustion: 'Exhaustion',
       bleeding: 'Bled out',
       creature: 'Taken by something in the dark',

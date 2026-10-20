@@ -264,7 +264,7 @@ export class Interaction {
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
       prompts.push(['G', 'Drop', 'hold to throw']);
-      if (!def || !def.weapon) prompts.push(['RMB', 'Rotate']);
+      if (!def || !def.weapon) prompts.push(['RMB', 'Rotate'], ['Wheel', this.floating ? 'Closer / further, back into the hand' : 'Hold out / closer']);
       if (def && !it.part) prompts.push([kn('stow'), fitsInBag(it.id, it.state) ? 'Put in backpack' : 'Too bulky for the backpack']);
       if (!blocked) {
         if (input.isDown('drop')) this.dropHold += dt;
@@ -344,7 +344,10 @@ export class Interaction {
       return out;
     }
     if (def.melee) out.push(['LMB', 'Swing']);
-    if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
+    if (def.raw && this.game.campfires && this.game.campfires.near(this.game.player.position, 2.6)) out.push(['LMB', 'Cook']);
+    else if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
+    if (def.campfire) out.push(['LMB', 'Light a fire']);
+    if (def.wrap) out.push(['LMB', 'Wrap up']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
@@ -1050,8 +1053,54 @@ export class Interaction {
     const def = it.def;
     const g = this.game;
     const p = g.player;
+    // raw meat held over a burning fire is cooked instead of eaten
+    if (def.raw && g.campfires && g.campfires.near(p.position, 2.6)) {
+      const pos = it.mesh.position.clone();
+      this.consumeHeld();
+      const cooked = g.items.spawn('cookedMeat', pos);
+      this.pick(cooked);
+      g.hud && g.hud.toast('Cooked over the fire');
+      g.audio && g.audio.play('ignite', { volume: 0.4 });
+      return;
+    }
+    if (def.campfire) {
+      // on open, fairly flat ground in front, not indoors or in the car
+      const cam = this.cam;
+      const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion).setY(0).normalize();
+      const at = p.position.clone().addScaledVector(fwd, 1.6);
+      at.y = g.groundHeightAt(at.x, at.z, p.position.y + 2);
+      if (p.seat || p.indoors || Math.abs(at.y - p.position.y) > 0.8) {
+        g.hud && g.hud.toast('Find open, level ground for a fire');
+        return;
+      }
+      if (g.env.w.rain > 0.6) {
+        g.hud && g.hud.toast('Too wet to light a fire');
+        return;
+      }
+      g.campfires.kindle(at);
+      this.consumeHeld();
+      g.hud && g.hud.toast('The kindling catches. Stand close to warm up; hold raw meat over it and use it to cook');
+      return;
+    }
+    if (def.wrap) {
+      if ((p.wrapCooldown || 0) > 0) {
+        g.hud && g.hud.toast('Already wrapped up');
+        return;
+      }
+      p.consume({ warmth: def.wrap });
+      p.wrapCooldown = 1;
+      g.hud && g.hud.toast('You wrap up in the blanket');
+      g.audio && g.audio.play('pocket');
+      return;
+    }
     if (def.consume) {
       p.consume(def.consume);
+      // raw meat: a fair chance of a bad stomach
+      if (def.raw && Math.random() < 0.4) {
+        p.consume({ water: -16, food: -12, energy: -10 });
+        g.hud && g.hud.toast('That meat was off. You feel sick');
+        g.audio && g.audio.play('hurt');
+      }
       if (def.consume.smoke) {
         // a cigarette: a few puffs of smoke drifting up past the view
         const cam = this.cam;
@@ -1066,6 +1115,14 @@ export class Interaction {
       if (def.consume.food > 0) g.stats.meals++;
       else g.stats.drinks++;
       g.audio && g.audio.play(def.consume.food > 0 ? 'eat' : def.consume.health > 0 ? 'bandage' : 'drink');
+      // a flask has several cups in it
+      if (def.charges !== undefined) {
+        it.state.charges = (it.state.charges ?? def.charges) - 1;
+        if (it.state.charges > 0) {
+          this.useAnim = 1;
+          return;
+        }
+      }
       this.consumeHeld();
       return;
     }
