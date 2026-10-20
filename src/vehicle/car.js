@@ -384,23 +384,25 @@ export class Car {
   // ---------------------------------------------------------------- lights
   setupLights() {
     const M = this.model.mats;
-    // one spot between the round headlamps does the beam; a wide dim fill lights the verge
-    const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
+    // a beam from each headlamp (each with its own shadows, so posts and bodies throw two soft
+    // shadows like real lamps), and a wide dim fill out in front lighting the verge
     const L = this.type.lights;
-    head.position.set(...L.head);
-    head.target.position.set(0, 0.0, 14);
-    head.castShadow = true;
-    head.shadow.mapSize.set(1024, 1024);
-    head.shadow.camera.near = 0.3;
-    head.shadow.camera.far = 60;
-    head.shadow.bias = -0.0008;
-    head.shadow.normalBias = 0.03;
-    // the beam's shadow map only needs redrawing while the car moves
-    head.shadow.autoUpdate = true;
-    this.root.add(head, head.target);
-    this.headLight = head;
+    this.headLights = [1, -1].map((sg) => {
+      const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
+      head.position.set(L.headX * sg, L.head[1], L.head[2] + 0.06);
+      head.target.position.set(L.headX * sg * 0.6, 0.0, 14);
+      head.castShadow = true;
+      head.shadow.mapSize.set(768, 768);
+      head.shadow.camera.near = 0.25;
+      head.shadow.camera.far = 60;
+      head.shadow.bias = -0.0008;
+      head.shadow.normalBias = 0.03;
+      this.root.add(head, head.target);
+      return head;
+    });
+    this.headLight = this.headLights[0];
     const fill = new THREE.SpotLight(0xffe9d0, 0, 26, 1.15, 0.9, 1.6);
-    fill.position.set(L.head[0], L.head[1], L.head[2] + 0.08);
+    fill.position.set(L.head[0], L.head[1] + 0.15, L.head[2] + 0.45);
     fill.target.position.set(0, 0, 8);
     this.root.add(fill, fill.target);
     this.headFill = fill;
@@ -437,16 +439,18 @@ export class Car {
     const hcount = (leftH ? 1 : 0) + (rightH ? 1 : 0);
     // 6-volt-era lamps: a little dimmer and yellower at idle with a weak battery
     const dim = clamp(this.battery * 3, 0.2, 1) * (this.dyn.engine.running ? 1 : 0.8);
-    this.headLight.intensity = on ? (hiBeam ? 230 : 135) * (hcount / 2) * dim : 0;
-    this.headLight.distance = hiBeam ? 110 : 65;
-    this.headLight.angle = hiBeam ? 0.5 : 0.6;
-    this.headLight.target.position.y = hiBeam ? 0.6 : 0.0;
-    const hx = this.type.lights.headX;
-    this.headLight.position.x = leftH && !rightH ? hx : rightH && !leftH ? -hx : 0;
-    this.headLight.castShadow = on;
+    // +X is the car's left: lamp 0 is the left one
+    for (const [i, lamp] of this.headLights.entries()) {
+      const lit = on && (i === 0 ? leftH : rightH);
+      lamp.intensity = lit ? (hiBeam ? 120 : 72) * dim : 0;
+      lamp.distance = hiBeam ? 110 : 65;
+      lamp.angle = hiBeam ? 0.5 : 0.6;
+      lamp.target.position.y = hiBeam ? 0.6 : 0.0;
+      lamp.castShadow = lit;
+    }
     this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
-    e.head.emissiveIntensity = on ? (hiBeam ? 3.2 : 2.2) * dim : 0;
+    e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
     // tail lamps and brake lights share the bulb housings
     e.tail.emissiveIntensity = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
     this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : 0) : 0;
