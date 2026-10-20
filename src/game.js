@@ -48,7 +48,7 @@ export class Game {
     this.scene.add(this.worldGroup);
     this.renderer.setupComposer(this.scene);
     // first-person eye (aim, reach, viewmodel); the rendered camera follows it or orbits in 3rd person
-    this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 6000);
+    this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 7000);
     this.origin = { x: 0, z: 0 };
     this.clock = new THREE.Clock();
     this.running = false;
@@ -655,7 +655,7 @@ export class Game {
   render(dt) {
     const cam = this.renderer.camera;
     cam.fov = this.debugFov || verticalFov(settings.data.hfov, cam.aspect);
-    cam.far = 6000;
+    cam.far = 7000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;
     this.eyeCam.aspect = cam.aspect;

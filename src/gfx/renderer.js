@@ -78,7 +78,7 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 6000);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 7000);
     this.setQuality(quality);
   }
 

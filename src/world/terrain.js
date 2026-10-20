@@ -7,7 +7,7 @@ import { ROAD } from './worldGen.js';
 
 const ROOT = 2048;
 const MIN_TILE = 64;
-const VIEW_RADIUS = 3200;
+const VIEW_RADIUS = 5600; // far enough to see the mountain ranges
 const SEG = 128; // road segment length (m along z): fewer, longer road meshes = fewer draw calls
 const COLLIDER_TILE = 48;
 const COLLIDER_RADIUS = 110;
@@ -29,7 +29,9 @@ export class Terrain {
     this.roadSegs = new Map();
     this.colliders = new Map();
     this.nextId = 1;
-    this.viewRadius = quality === 'low' ? 1800 : VIEW_RADIUS;
+    this.viewRadius = quality === 'low' ? 3000 : VIEW_RADIUS;
+    // the far edge fades into the haze instead of ending against the sky
+    if (terrainMaterial.userData.uniforms) terrainMaterial.userData.uniforms.uFadeFar.value = this.viewRadius;
     this.ready = false;
     this.worker = new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.onWorker(e.data);
@@ -134,7 +136,7 @@ export class Terrain {
       const key = this.key(t);
       if (this.tiles.has(key) || !this.wanted.has(key)) continue;
       const id = this.nextId++;
-      const N = t.size <= MIN_TILE ? 64 : 32;
+      const N = t.size <= MIN_TILE ? 64 : t.size >= ROOT ? 24 : 32;
       this.pending.set(id, { ...t, key, N });
       this.inflight++;
       this.worker.postMessage({ type: 'tile', id, x0: t.x0, z0: t.z0, size: t.size, N });

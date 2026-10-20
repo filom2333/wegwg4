@@ -369,7 +369,47 @@ export class WorldGen {
     bw = bw || this.biomeWeights(x, z, this._bw || (this._bw = {}));
     let d = 0;
     for (const b of BIOMES) if (bw[b] > 0.001) d += bw[b] * this.biomeDetail(b, x, z);
-    return this.macroHeight(x, z) + d;
+    return this.macroHeight(x, z) + d + this.mountain(x, z, bw);
+  }
+
+  // Mountain ranges standing back from the road: ridged peaks a few hundred metres high that
+  // come and go along the way, now and then crowding in so the road runs up a valley between
+  // them. Rivers cut their own valleys through.
+  mountain(x, z, bw) {
+    const dx = Math.abs(x - this.roadX(z));
+    const n = this.nA;
+    const close = smoothstep(0.3, 0.85, n.noise2(z * 0.00027 + 17, 3.3) * 0.5 + 0.5);
+    const start = 950 - 680 * close;
+    if (dx < start) return 0;
+    // ranges: broad belts of high country, with gaps between them
+    const range = smoothstep(-0.5, 0.15, n.noise2(x * 0.00017 + 5, z * 0.00017 - 9) + 0.3 * close);
+    if (range <= 0) return 0;
+    let mask = smoothstep(start, start + 1000, dx) * range;
+    for (const rv of this.riversNear(z, 1)) {
+      if (Math.abs(z - rv.z0) > 1200) continue;
+      mask *= smoothstep(rv.w + 40, rv.w + 520, Math.abs(z - this.riverZ(rv, x)));
+    }
+    if (mask <= 0.001) return 0;
+    // broad massifs carry the height; ridged noise on them makes crests, spurs and gullies (the
+    // coordinates are warped so the ridges wander instead of lining up)
+    const wx = x + n.noise2(x * 0.0004 + 41, z * 0.0004) * 420,
+      wz = z + n.noise2(x * 0.0004, z * 0.0004 - 23) * 420;
+    const mass = smoothstep(-0.65, 0.45, n.noise2(wx * 0.00021 + 3, wz * 0.00021 - 1));
+    let f = 0.0007,
+      a = 1,
+      sum = 0,
+      w = 1;
+    for (let o = 0; o < 5; o++) {
+      let r = 1 - Math.abs(n.noise2(wx * f + o * 13.1, wz * f - o * 7.7));
+      r = r * r * w;
+      w = Math.min(1, r * 1.6);
+      sum += r * a;
+      f *= 2.07;
+      a *= 0.47;
+    }
+    bw = bw || this.biomeWeights(x, z);
+    const amp = bw.scrub * 620 + bw.dunes * 480 + bw.badlands * 650 + bw.saltflat * 780 + bw.highland * 950 + bw.prairie * 420 + bw.forest * 720 + bw.taiga * 1050 + bw.tundra * 560;
+    return mass * (0.3 + 0.7 * mass) * (0.3 + 0.7 * (sum / 1.5)) * amp * 1.35 * mask;
   }
 
   // ---------------------------------------------------------------- water
@@ -715,6 +755,16 @@ export class WorldGen {
     rock += steep * 3 * (1 - green * 0.75) + smoothstep(0.3, 0.5, slope) * 2 * green;
     dirt += steep * 1.6 * green;
     salt *= 1 - smoothstep(0.015, 0.06, slope);
+    // mountains: bare rock high up, snow on the tops (lower in the north)
+    const mh = this.mountain(x, z, bw);
+    if (mh > 40) {
+      const desert = bw.dunes + bw.scrub + bw.badlands + bw.saltflat;
+      rock += smoothstep(120, 300, mh) * (1.5 + desert);
+      grass *= 1 - smoothstep(180, 380, mh) * 0.85;
+      forest *= 1 - smoothstep(250, 450, mh);
+      const line = 420 + desert * 160 - (bw.taiga + bw.tundra) * 200;
+      snow += smoothstep(line - 30, line + 70, mh + n * 40) * 4;
+    }
     // snow slides off steep rock; grass thins on slopes
     snow *= 1 - smoothstep(0.3, 0.6, slope) * 0.8;
     grass *= 1 - smoothstep(0.12, 0.3, slope) * 0.8;

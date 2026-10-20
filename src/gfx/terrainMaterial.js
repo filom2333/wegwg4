@@ -10,6 +10,7 @@ export function createTerrainMaterial(tex) {
     uNrm: { value: tex.normal },
     uWet: { value: 0 },
     uScale: { value: 0.33 },
+    uFadeFar: { value: 3200 },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, mat.userData.uniforms);
@@ -50,6 +51,7 @@ uniform sampler2DArray uAlb;
 uniform sampler2DArray uNrm;
 uniform float uWet;
 uniform float uScale;
+uniform float uFadeFar;
 varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
@@ -139,6 +141,13 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
 roughnessFactor = gRough;`
       )
       .replace(
+        '#include <fog_fragment>',
+        `#include <fog_fragment>
+#ifdef USE_FOG
+gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(uFadeFar * 0.7, uFadeFar * 0.97, vViewDist));
+#endif`
+      )
+      .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
 {
@@ -151,7 +160,7 @@ roughnessFactor = gRough;`
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v2';
+  mat.customProgramCacheKey = () => 'terrain-v3';
   return mat;
 }
 
