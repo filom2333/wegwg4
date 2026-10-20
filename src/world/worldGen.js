@@ -10,7 +10,7 @@ export const BIOME_INFO = {
   badlands: { name: 'Red badlands', ground: [0.62, 0.43, 0.32], shrubs: 0.34 },
   saltflat: { name: 'Salt flats', ground: [0.86, 0.84, 0.8], shrubs: 0.02 },
   highland: { name: 'Stone highlands', ground: [0.5, 0.47, 0.43], shrubs: 0.55 },
-  prairie: { name: 'Grass prairie', ground: [0.52, 0.53, 0.36], shrubs: 0.14 },
+  prairie: { name: 'Grass prairie', ground: [0.52, 0.53, 0.36], shrubs: 0.3 },
   forest: { name: 'Pine forest', ground: [0.42, 0.42, 0.32] },
   taiga: { name: 'Snowy taiga', ground: [0.86, 0.88, 0.92] },
   tundra: { name: 'Frozen tundra', ground: [0.84, 0.86, 0.9], shrubs: 0.18 },

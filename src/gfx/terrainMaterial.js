@@ -186,6 +186,19 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
     float crust = smoothstep(0.58, 0.64, cn) * wDirt * (1.0 - farT * 0.5);
     alb = mix(alb, alb * vec3(0.72, 0.7, 0.7), crust * 0.8);
   }
+  // grassland is never one green: drier, golden stretches and lusher hollows drift across it
+  {
+    float wGrass = w[4] / tot;
+    if (wGrass > 0.01) {
+      vec2 wq = vWuv / 128.0 + (tNoised(vWuv / 64.0, 32.0).x - 0.5) * 1.3;
+      float dn = tNoised(wq, 16.0).x * 0.7 + tNoised(vWuv / 32.0, 64.0).x * 0.3;
+      float dry = smoothstep(0.32, 0.62, dn);
+      float l = dot(alb, vec3(0.3, 0.5, 0.2));
+      vec3 straw = vec3(1.75, 1.42, 0.7) * l;
+      alb = mix(alb, straw, dry * 0.85 * wGrass);
+      alb = mix(alb, alb * vec3(0.72, 0.88, 0.7), (1.0 - smoothstep(0.22, 0.42, dn)) * 0.7 * wGrass);
+    }
+  }
   // macro brightness variation
   float macro = texture(uAlb, vec3(vWuv * 0.0021 + 0.5, 1.0)).a;
   float macro2 = texture(uAlb, vec3(vWuv * 0.0007, 0.0)).a;
@@ -193,22 +206,26 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   // far shrubs: past the ring of scattered meshes, dark crowns speckle the open ground at the
   // biome's cover; once a 4 m cell shrinks to a few pixels they average into a tone, so no shimmer
   {
-    float veg = vVeg * (1.0 - wRock) * (1.0 - wSnow) * (1.0 - wSalt);
-    float fadeIn = smoothstep(210.0, 330.0, vViewDist);
+    // in wooded country the speckle is forest canopy, taking over where the tree impostors end
+    float wood = smoothstep(0.15, 0.45, w[6] / tot);
+    float veg = max(vVeg, wood * 0.95) * (1.0 - wRock) * (1.0 - wSnow * (1.0 - wood * 0.7)) * (1.0 - wSalt);
+    float fadeIn = smoothstep(mix(210.0, 760.0, wood), mix(330.0, 980.0, wood), vViewDist);
     if (veg > 0.01 && fadeIn > 0.0) {
       vec2 p = vWuv / 4.0;
       vec2 ci = mod(floor(p), 512.0);
       vec2 f = fract(p);
       float pres = step(tHash(ci + vec2(71.0, 3.0)), veg);
       vec2 c = vec2(tHash(ci + vec2(13.0, 7.0)), tHash(ci + vec2(29.0, 17.0))) * 0.5 + 0.25;
-      float r = 0.18 + 0.14 * tHash(ci + vec2(47.0, 23.0));
+      float r = mix(0.18, 0.36, wood) + 0.14 * tHash(ci + vec2(47.0, 23.0));
       float mpp = max(length(fwidth(vWuv)), 1e-4);
       float aa = mpp / 4.0;
       float dotC = pres * (1.0 - smoothstep(r - aa, r + aa, length(f - c)));
-      float meanC = veg * 3.14159 * 0.0676;
+      float rm = mix(0.25, 0.43, wood);
+      float meanC = veg * 3.14159 * rm * rm;
       float k = smoothstep(2.5, 7.0, 4.0 / mpp);
       float cov = mix(meanC, dotC, k) * fadeIn;
-      alb = mix(alb, vec3(0.06, 0.07, 0.04) * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
+      vec3 crown = mix(vec3(0.06, 0.07, 0.04), vec3(0.025, 0.045, 0.025), wood);
+      alb = mix(alb, crown * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
     }
   }
   // wetness darkens porous ground (not snow or salt)
