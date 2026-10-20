@@ -255,7 +255,7 @@ export function saguaro(seed) {
   }
   prof.push([0.0, H]);
   // dusty olive, not mint: the waxy skin reads grey-green in the desert light
-  const green = [0.17 + rnd() * 0.04, 0.22 + rnd() * 0.04, 0.12];
+  const green = [0.15 + rnd() * 0.03, 0.18 + rnd() * 0.03, 0.115];
   const parts = [];
   const trunk = ribbedLathe(prof, 14, 0.12, 28);
   parts.push(colorize(trunk, (v) => {
@@ -294,7 +294,7 @@ export function barrelCactus(seed) {
   const g = ribbedLathe(prof, 18, 0.14, 36);
   return colorize(g, (v) => {
     const top = v.y > H * 0.9 ? 1 : 0;
-    return top ? [0.55, 0.36, 0.14] : [0.17, 0.21, 0.11];
+    return top ? [0.5, 0.34, 0.15] : [0.15, 0.17, 0.1];
   });
 }
 

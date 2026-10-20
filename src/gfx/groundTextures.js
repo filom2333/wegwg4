@@ -121,8 +121,9 @@ const GEN = {
       let crack = 1 - clamp01((f2 - f1) * 18);
       crack *= clamp01((fbmT(W, x, y, 3, 4) - 0.42) * 4);
       const [p1, , pid] = P(x, y);
-      const pebble = pid > 0.9 ? clamp01(1 - p1 * (2.6 + (1 - pid) * 10)) : 0;
-      const h = 0.5 + 0.3 * (n - 0.5) + 0.2 * (g - 0.5) - 0.3 * crack * crack + 0.5 * Math.sqrt(pebble);
+      // a few small stones, not a sprinkle of dots
+      const pebble = pid > 0.988 ? clamp01(1 - p1 * (1.8 + (1 - pid) * 30)) : 0;
+      const h = 0.5 + 0.3 * (n - 0.5) + 0.2 * (g - 0.5) - 0.3 * crack * crack + 0.28 * Math.sqrt(pebble);
       const t = 0.84 + 0.28 * (n - 0.5) + 0.1 * (g - 0.5) - 0.12 * crack;
       let r = 0.62 * t,
         gg = 0.52 * t,

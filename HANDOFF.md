@@ -249,9 +249,49 @@ What to fix:
 - Judge every change by screenshots against this picture. The user wants it to look **beautiful**,
   like a real road trip through the American Southwest.
 
+## 4d. Landscape pass done in the next session (commits after 36d4730, all verified by screenshots)
+
+What was done in reply to 4c (and 4b), checked with headless renders of scrub 1200, dunes 4300,
+badlands 6500, highland 11500, forest 16500, prairie 19500, taiga 63500, golden hour 18.3–18.4:
+
+- **Hoodoos** (`F.hoodoo`, SPECIES `hoodoo`): squat pillars on a talus cone, 2–5 m, grey vertex
+  colour so the rock material tints them like local cliffs. Placement uses the new `place()` hook
+  in scatterGen: only at mesa feet (`gen.mesaNoise` 0.17–0.29) and ≥120 m from the road; removed
+  from highland. Collider shrunk to match. Tilt reduced.
+- **Colour harmony**: `ROCK_TINT` in scatter.js is now derived from `BIOME_INFO.ground` with the
+  same formula the terrain shader uses for rock, so boulders/hoodoos/cliffs match. Badlands ground
+  is `[0.62, 0.43, 0.32]` (less orange). Saguaro and barrel cactus are dusty olive. Base rock
+  texture warmer.
+- **Light**: sun 4.1 (+0.8 warm), hemi 0.3 + 0.24·day, day exposure 0.98, horizon/fog colour bluer
+  `(0.71, 0.77, 0.85)`. The terrain far fade now uses the sun-tinted fog colour `fogC`, which
+  fixed the flat white "cardboard" mountains at sunset.
+- **Ground**: 8th ground layer **gravel** (`mat2.w`, texture layer 4): desert pavement patches
+  and scree on moderate slopes; `surfaceAt` can return `gravel`. Soil-crust blotches on dirt,
+  `gen.tintDrift(x,z)` broad colour drift baked into the tint attribute, dirt pebbles cut to a few
+  stones, irregular strata beds (value noise, not sine stripes).
+- **No tiling on far slopes**: beyond 70 m the shader blends the far scale into a very coarse one
+  (`uvX`, ×0.043), and from 450–1400 m textures settle to the layer mean (`flatT`, textureLod 12).
+- **Landforms**: dunes cover most of the dune sea and reach the road as low drifts (8–24 m);
+  mesas vary in height with talus aprons and erosion notches; low banded clay hills near the
+  badlands road. Mountains: ridged multifractal on top of `erodedFbm`, tanh soft clip instead of a
+  flat cap, start 550–1300 m from the road (`start = 1300 - 750 * close`), lower in the dune sea.
+- **Vegetation**: denser, clumped grass/shrubs (shrubs drawn to ring 4), more cacti/Joshua/pines/
+  birch; new species `yucca` (rosette, sometimes a flower stalk) and `ocotillo` (impostor far).
+- **Far vegetation in the terrain shader**: `tint` is now a vec4; `.a` = shrub cover from
+  `BIOME_INFO.shrubs`. Past the scatter rings (210–330 m) dark shrub crowns speckle the ground on
+  4 m cells, averaging to a tone when cells get small (no shimmer). In wooded ground (forest-floor
+  weight) the speckle becomes a dense canopy beyond 760–980 m, so forests don't end in bare land.
+  Grass drifts between golden dry stretches and lush hollows.
+- FPS: not measurable headless (SwiftShader). Costs added: ~1 extra fetch per layer far away,
+  a few value-noise evaluations, ~2× shrub instances. **Ask the user to check FPS on their GPU.**
+
+Known leftovers: highland mixes pines, Joshua trees and cacti fairly evenly (could cluster per
+biome); looking straight into a high sun the glare/bloom is large; a desert-type tan mountain can
+stand inside the forest biome (mountain colour follows local biome weights).
+
 ## 5. NEXT STEPS (in this order)
 
-1. Serve the build, then render the dev query at z=1200 (scrub), 3800/4300 (dunes),
+1. (Done in 4d — re-check only after new changes.) Serve the build, then render the dev query at z=1200 (scrub), 3800/4300 (dunes),
    6500 (badlands), 11500 (highland), 16500 (forest), 40000 (saltflat) and 63500 (taiga), at
    time 16.5 and 18.3. Take road-level views and one high view. Compare with the user's
    complaints.
