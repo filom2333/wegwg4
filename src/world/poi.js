@@ -196,6 +196,7 @@ export class POIManager {
     this.game.items && this.game.items.onPoiLoaded && this.game.items.onPoiLoaded(inst, rnd);
     this.game.npcs && this.game.npcs.onPoiLoaded && this.game.npcs.onPoiLoaded(inst, rnd);
     this.game.fleet && this.game.fleet.onPoiLoaded(inst);
+    this.game.trailers && this.game.trailers.onPoiLoaded(inst);
   }
 
   addWreck(inst, rnd, i, type) {

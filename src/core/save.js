@@ -85,6 +85,7 @@ export function serializeGame(g) {
     },
     inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
     fleet: g.fleet.serialize(),
+    trailers: g.trailers ? g.trailers.serialize() : [],
     // loot that never left its spot is regenerated deterministically when the POI loads
     items: g.items.serialize().filter((it) => it.poi === null || it.poi === undefined),
     itemsSaved: [...g.items.saved.entries()],

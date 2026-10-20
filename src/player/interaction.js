@@ -108,6 +108,8 @@ export class Interaction {
       const pump = g.pois.nearestPump(tip, 0.9);
       if (pump && pump.world.distanceTo(origin) < reach + 0.6) best = { kind: 'pump', pump, dist: pump.world.distanceTo(origin) };
     }
+    // trailers
+    if (hit && hit.owner && hit.owner.kind === 'trailer' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist)) best = { kind: 'trailer', trailer: hit.owner.trailer, dist: hit.distance };
     // npcs (for melee / corpses)
     if (hit && hit.owner && hit.owner.kind === 'npc' && hit.distance <= reach && (!best || hit.distance < best.dist)) best = { kind: 'npc', npc: hit.owner.npc, dist: hit.distance, zone: hit.owner.zone };
     // lootable bodies are small and low: accept a near miss
@@ -216,6 +218,17 @@ export class Interaction {
     const p = g.player;
     if (p.dead) return;
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    // pulling a trailer by its drawbar for as long as E is held
+    if (this.pullingTrailer) {
+      const tr = this.pullingTrailer;
+      if (!input.isDown('interact') || this.held || p.seat || tr.hitch) this.pullingTrailer = null;
+      else {
+        const fwd = V(0, 0, -1).applyQuaternion(this.cam.quaternion).setY(0).normalize();
+        tr.pull(p.position.clone().addScaledVector(fwd, 1.1).add(V(0, 0.45, 0)), dt);
+        const c = tr.hitchableCar();
+        g.hud && c && !this._hitchHint && (this._hitchHint = true) && g.hud.toast('Over the tow ball: let go and press E to hitch');
+      }
+    } else this._hitchHint = false;
     this.target = this.findTarget();
     const t = this.target;
     const prompts = [];
@@ -403,6 +416,15 @@ export class Interaction {
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
         break;
       }
+      case 'trailer': {
+        const tr = t.trailer;
+        const near = !tr.hitch && tr.hitchableCar();
+        info = { title: 'Utility trailer', sub: tr.hitch ? 'Hitched' : near ? 'The coupler is over the tow ball' : 'Unhitched · 260 kg' };
+        if (tr.hitch) prompts.push(['E', 'Unhitch']);
+        else if (near) prompts.push(['E', 'Hitch to the car']);
+        else prompts.push(['E', 'Pull by the drawbar (hold)']);
+        break;
+      }
       case 'part': {
         const id = t.part;
         const st = car.parts[id];
@@ -559,6 +581,18 @@ export class Interaction {
       return;
     }
     if (!input.isDown('reload')) this.removing = null;
+    if (t.kind === 'trailer') {
+      const tr = t.trailer;
+      if (input.wasPressed('interact')) {
+        if (tr.hitch) tr.unhitch();
+        else {
+          const c = tr.hitchableCar();
+          if (c) tr.hitchTo(c);
+          else this.pullingTrailer = tr;
+        }
+      }
+      return;
+    }
     if (t.kind === 'hotspot' && t.hotspot.id === 'radio') {
       const st = car.stereo;
       if (input.mousePressed(0) && st.disc >= 0) {

@@ -16,6 +16,7 @@ import { POIManager } from './world/poi.js';
 import { Fleet } from './vehicle/fleet.js';
 import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Campfires } from './world/campfires.js';
+import { Trailers } from './vehicle/trailer.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
@@ -82,7 +83,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', trailer = false, onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
@@ -173,6 +174,25 @@ export class Game {
       });
       this.fleet.setCurrent(car);
     }
+    // a trailer stands beside the homestead garage; restored ones come back where they were left
+    this.trailers = new Trailers(this);
+    if (load && load.trailers) this.trailers.restore(load.trailers);
+    else if (!this.startZ && !load) {
+      const inst = this.pois.loaded.get(0);
+      if (inst) {
+        inst.root.updateMatrixWorld(true);
+        const w = new THREE.Vector3(13.6, 0, 3.5).applyMatrix4(inst.root.matrixWorld);
+        w.y = this.groundHeightAt(w.x, w.z) + 0.05;
+        this.trailers.spawn(w, inst.poi.rot + Math.PI);
+      }
+    } else if (this.startZ && trailer) {
+      // dev: hitched behind the car
+      const c = this.car;
+      c.root.updateMatrixWorld(true);
+      const w = new THREE.Vector3(0, 0.1, c.type.SPEC.rearTip - 2.4).applyMatrix4(c.root.matrixWorld);
+      const t = this.trailers.spawn(w, new THREE.Euler().setFromQuaternion(c.root.quaternion, 'YXZ').y);
+      t.hitchTo(c);
+    }
     // cars waiting at the places already streamed in
     for (const inst of this.pois.loaded.values()) this.fleet.onPoiLoaded(inst);
     const py = spawn.y !== undefined ? spawn.y : this.gen.height(spawn.x, spawn.z) + 0.3;
@@ -193,6 +213,7 @@ export class Game {
     this.fleet.wake();
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
     this.fleet.syncVisual();
+    this.trailers.update();
     this.items.update();
     this.hud.show(!attract);
     if (attract) {
@@ -345,6 +366,7 @@ export class Game {
     this.campfires && this.campfires.update(dt);
     this.physics.update(dt);
     this.fleet.syncVisual();
+    this.trailers && this.trailers.update();
     this.items.update(dt);
     if (this.attract) {
       this.updateAttractCamera(dt);

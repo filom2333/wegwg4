@@ -44,6 +44,7 @@ async function boot() {
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
       car: params.get('car') || 'beetle',
+      trailer: params.has('trailer'),
       onProgress: (t, p) => console.log('load', t, p),
     });
     if (!params.get('manual')) game.start();

@@ -13,6 +13,7 @@ export const G = {
   HELD: 1 << 5,
   DEBRIS: 1 << 6,
   WHEEL_PROBE: 1 << 7,
+  TRAILER: 1 << 8,
 };
 
 // Rapier interaction groups: 16-bit membership << 16 | 16-bit filter.
@@ -23,20 +24,20 @@ export function groups(member, filter) {
 export const GROUPS = {
   world: groups(G.WORLD, 0xffff),
   car: groups(G.CAR, G.WORLD | G.CAR | G.ITEM | G.NPC | G.DEBRIS),
-  item: groups(G.ITEM, G.WORLD | G.CAR | G.ITEM | G.PLAYER | G.NPC | G.DEBRIS),
-  held: groups(G.HELD, G.WORLD | G.CAR | G.ITEM),
+  item: groups(G.ITEM, G.WORLD | G.CAR | G.ITEM | G.PLAYER | G.NPC | G.DEBRIS | G.TRAILER),
+  held: groups(G.HELD, G.WORLD | G.CAR | G.ITEM | G.TRAILER),
   // the player capsule is kinematic: if it took part in contacts with the car, a moving car
   // would stop dead against it like a wall. Car <-> player is resolved by hand instead
   // (Player.carContact) while the character controller still sees the car (playerQuery).
   player: groups(G.PLAYER, G.WORLD | G.ITEM | G.NPC),
-  playerQuery: groups(G.PLAYER, G.WORLD | G.CAR | G.ITEM | G.NPC),
-  npc: groups(G.NPC, G.WORLD | G.CAR | G.PLAYER | G.ITEM),
+  playerQuery: groups(G.PLAYER, G.WORLD | G.CAR | G.ITEM | G.NPC | G.TRAILER),
+  npc: groups(G.NPC, G.WORLD | G.CAR | G.PLAYER | G.ITEM | G.TRAILER),
   debris: groups(G.DEBRIS, G.WORLD | G.CAR | G.ITEM),
   // queries
   wheelRay: groups(G.WHEEL_PROBE, G.WORLD),
-  look: groups(0xffff, G.WORLD | G.CAR | G.ITEM | G.NPC),
-  shoot: groups(0xffff, G.WORLD | G.CAR | G.ITEM | G.NPC),
-  ground: groups(0xffff, G.WORLD | G.CAR | G.ITEM),
+  look: groups(0xffff, G.WORLD | G.CAR | G.ITEM | G.NPC | G.TRAILER),
+  shoot: groups(0xffff, G.WORLD | G.CAR | G.ITEM | G.NPC | G.TRAILER),
+  ground: groups(0xffff, G.WORLD | G.CAR | G.ITEM | G.TRAILER),
 };
 
 export class Physics {
