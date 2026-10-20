@@ -418,6 +418,10 @@ export class Player {
     if (this.food <= 0) this.damage(hours * 6, 'starvation', true);
     if (this.water <= 0) this.damage(hours * 10, 'dehydration', true);
     if (this.energy <= 0) this.damage(hours * 2, 'exhaustion', true);
+    if (this.poison > 0) {
+      this.damage(this.poison * dt * 0.35, 'venom', true);
+      this.poison = Math.max(0, this.poison - dt * 0.004);
+    }
     if (this.bleeding > 0) {
       this.damage(this.bleeding * dt * 0.6, 'bleeding', true);
       this.bleeding = Math.max(0, this.bleeding - dt * 0.05);
@@ -504,7 +508,8 @@ export class Player {
   }
 
   // eat / drink / heal
-  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0, warmth = 0 } = {}) {
+  consume({ food = 0, water = 0, health = 0, energy = 0, bleeding = 0, warmth = 0, poison = 0 } = {}) {
+    if (poison) this.poison = Math.max(0, (this.poison || 0) - poison);
     this.warmth = clamp(this.warmth + warmth, 0, 100);
     this.food = clamp(this.food + food, 0, 100);
     this.water = clamp(this.water + water, 0, 100);
