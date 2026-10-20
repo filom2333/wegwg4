@@ -524,8 +524,8 @@ export function archMaterials() {
 // Text-bearing sign material (cached by text)
 export function signMaterial(lines, opts = {}) {
   if (TOKENS) return { __sign: [lines, opts] };
-  const { w = 512, h = 256, bg = '#e8e2d2', fg = '#1d1d1d', border = '#1d1d1d', font = 'Arial', weight = 'bold', worn = 0.3 } = opts;
-  return cached('sign:' + JSON.stringify(lines) + bg + fg, () => {
+  const { w = 512, h = 256, bg = '#e8e2d2', fg = '#1d1d1d', border = '#1d1d1d', font = 'Arial', weight = 'bold', worn = 0.3, repeatX = false } = opts;
+  return cached('sign:' + JSON.stringify(lines) + bg + fg + repeatX, () => {
     const c = makeCanvas(w, h);
     const ctx = c.getContext('2d');
     ctx.fillStyle = bg;
@@ -561,6 +561,7 @@ export function signMaterial(lines, opts = {}) {
       ctx.fill();
     }
     const tex = canvasTexture(c, { wrap: false });
+    if (repeatX) tex.wrapS = THREE.RepeatWrapping;
     return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, metalness: 0.1 });
   });
 }

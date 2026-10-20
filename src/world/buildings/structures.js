@@ -490,9 +490,7 @@ export function buildWaterTower(rnd) {
   for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 2);
   band.translate(0, H + 2.4, 0);
   const town = ['ASHFORK', 'RED MESA', 'DRY CREEK', 'SALTON', 'GRAYSTONE'][Math.floor(rnd() * 5)];
-  const sm = signMaterial([town], { w: 1024, h: 128, bg: '#e6e2d8', fg: '#2e4a66', border: null, worn: 0.6 });
-  sm.map.wrapS = THREE.RepeatWrapping;
-  b.add(band, sm);
+  b.add(band, signMaterial([town], { w: 1024, h: 128, bg: '#e6e2d8', fg: '#2e4a66', border: null, worn: 0.6, repeatX: true }));
   // walkway ring + ladder
   b.add(new THREE.TorusGeometry(R + 0.5, 0.04, 6, 40).rotateX(Math.PI / 2).translate(0, H + 1.4, 0), M.metal);
   for (let i = 0; i < 12; i++) {

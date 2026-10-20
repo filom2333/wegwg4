@@ -15,8 +15,8 @@ export const STRIDE = 8;
 // solid: collider shape near the player. cluster: noise threshold that groups them (forests,
 // meadows); slope: steepest ground (normal y) they grow on.
 export const SPECIES = [
-  { id: 'grass', variants: 4, near: 2, dens: { scrub: 85, dunes: 9, badlands: 12, saltflat: 0.6, highland: 45 }, scale: [1.0, 1.9], sway: 'grass', shadow: false, cluster: -0.35 },
-  { id: 'meadow', variants: 4, near: 2, dens: { prairie: 150, forest: 30, highland: 8 }, scale: [1.0, 1.7], sway: 'grass', shadow: false, cluster: -0.45 },
+  { id: 'grass', variants: 4, near: 2, dens: { scrub: 120, dunes: 9, badlands: 14, saltflat: 0.6, highland: 60 }, scale: [1.0, 1.9], sway: 'grass', shadow: false, cluster: -0.35 },
+  { id: 'meadow', variants: 4, near: 2, dens: { prairie: 330, forest: 45, highland: 14 }, scale: [1.0, 1.7], sway: 'grass', shadow: false, cluster: -0.45 },
   { id: 'snowgrass', variants: 3, near: 2, dens: { taiga: 9, tundra: 22 }, scale: [0.8, 1.4], sway: 'grass', shadow: false, cluster: -0.2 },
   { id: 'shrub', variants: 4, near: 3, lod1: 'mesh', dens: { scrub: 18, dunes: 2.2, badlands: 4, saltflat: 0.1, highland: 9, prairie: 2.5 }, scale: [0.7, 1.6], sway: 'shrub', cluster: -0.35 },
   { id: 'tundrashrub', variants: 3, near: 3, lod1: 'mesh', dens: { tundra: 8, taiga: 1.6 }, scale: [0.8, 1.6], cluster: -0.25 },
@@ -32,10 +32,10 @@ export const SPECIES = [
   { id: 'joshua', variants: 3, lod1: 'impostor', dens: { scrub: 0.26, dunes: 0.01, badlands: 0.05, highland: 0.4 }, scale: [0.9, 1.5], solid: 'trunk' },
   { id: 'deadtree', variants: 3, lod1: 'impostor', dens: { scrub: 0.05, dunes: 0.02, badlands: 0.06, saltflat: 0.01, highland: 0.1, prairie: 0.02, tundra: 0.04 }, scale: [0.8, 1.4], solid: 'trunk' },
   { id: 'hoodoo', variants: 3, lod1: 'mesh', dens: { badlands: 0.06, highland: 0.02 }, scale: [1, 2.2], rock: true, solid: 'trunkWide' },
-  { id: 'pine', variants: 4, lod1: 'impostor', dens: { forest: 16, prairie: 0.35, highland: 0.25 }, scale: [0.8, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.15, slope: 0.78, far: 0.85 },
-  { id: 'snowpine', variants: 4, lod1: 'impostor', snow: true, dens: { taiga: 15, tundra: 0.35 }, scale: [0.7, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.2, slope: 0.78, far: 0.85 },
-  { id: 'birch', variants: 3, lod1: 'impostor', dens: { forest: 2.6, prairie: 0.4 }, scale: [0.85, 1.2], sway: 'tree', solid: 'trunk', cluster: 0.1 },
-  { id: 'birchbare', variants: 3, lod1: 'impostor', snow: true, dens: { taiga: 0.9, tundra: 0.06 }, scale: [0.85, 1.2], solid: 'trunk', cluster: 0.1 },
+  { id: 'pine', mid: 3, variants: 4, lod1: 'impostor', dens: { forest: 16, prairie: 0.35, highland: 0.25 }, scale: [0.8, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.15, slope: 0.78, far: 0.85 },
+  { id: 'snowpine', mid: 3, variants: 4, lod1: 'impostor', snow: true, dens: { taiga: 15, tundra: 0.35 }, scale: [0.7, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.2, slope: 0.78, far: 0.85 },
+  { id: 'birch', mid: 3, variants: 3, lod1: 'impostor', dens: { forest: 2.6, prairie: 0.4 }, scale: [0.85, 1.2], sway: 'tree', solid: 'trunk', cluster: 0.1 },
+  { id: 'birchbare', mid: 3, variants: 3, lod1: 'impostor', snow: true, dens: { taiga: 0.9, tundra: 0.06 }, scale: [0.85, 1.2], solid: 'trunk', cluster: 0.1 },
   { id: 'stump', variants: 3, near: 3, dens: { forest: 0.8, taiga: 0.4 }, scale: [0.8, 1.3], solid: 'stump' },
   { id: 'log', variants: 3, near: 3, dens: { forest: 0.35, taiga: 0.25 }, scale: [0.9, 1.2], solid: 'log' },
 ];

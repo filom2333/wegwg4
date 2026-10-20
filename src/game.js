@@ -10,6 +10,7 @@ import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
+import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
 import { loadBeetleAsset, buildBeetleModel, buildBeetleWreck } from './vehicle/beetle/beetleModel.js';
 import { createBeetleMaterials } from './vehicle/beetle/beetleMaterials.js';
@@ -121,8 +122,9 @@ export class Game {
       origin: this.origin,
       quality: settings.data.quality,
     });
+    const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
-    this.scatter = new Scatter(this, this.groundTex);
+    this.scatter = new Scatter(this, this.groundTex, await treeTex);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);

@@ -9,7 +9,9 @@ const TILE_W = 128,
 
 // geos: [BufferGeometry] with position/normal/color, base near y = 0. Returns
 // { texture, quads: [BufferGeometry] } (one crossed-quad geometry per input).
-export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, snow = [] } = {}) {
+// materials[i]: optional material array for a textured model (geometry groups); unlit copies of
+// its maps are used for the bake.
+export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, snow = [], materials = [] } = {}) {
   const tiles = geos.length * 2;
   const cols = Math.min(16, tiles);
   const rows = Math.ceil(tiles / cols);
@@ -26,6 +28,28 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
   const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   // snowy models: the same facet-normal snow as the scene's snow material
   const snowMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const addSnow = (m, lo = 0.18, hi = 0.55) => {
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;').replace('#include <project_vertex>', '#include <project_vertex>\nvSnowWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;').replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec3 fn = normalize(cross(dFdx(vSnowWP), dFdy(vSnowWP)));
+  if (dot(fn, cameraPosition - vSnowWP) < 0.0) fn = -fn;
+  float sn = smoothstep(${lo.toFixed(2)}, ${hi.toFixed(2)}, fn.y);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.93), sn * 0.9);
+}`
+      );
+    };
+    m.customProgramCacheKey = () => 'impSnow' + lo;
+  };
+  const textured = (mats, sn) =>
+    mats.map((m, k) => {
+      const b = new THREE.MeshBasicMaterial({ map: m.map || null, color: m.color, alphaTest: m.alphaTest || 0, side: THREE.DoubleSide });
+      if (sn) addSnow(b, k ? 0.05 : 0.25, k ? 0.45 : 0.6);
+      return b;
+    });
   snowMat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;').replace('#include <project_vertex>', '#include <project_vertex>\nvSnowWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;').replace(
@@ -85,7 +109,10 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
       cam.lookAt(0, 0, 0);
       cam.updateProjectionMatrix();
       mesh.geometry = geo;
-      mesh.material = snow[i] ? snowMat : mat;
+      if (materials[i]) {
+        if (!materials[i].baked) materials[i].baked = textured(materials[i], snow[i]);
+        mesh.material = materials[i].baked;
+      } else mesh.material = snow[i] ? snowMat : mat;
       const px = cx * tileW,
         py = cy * tileH;
       // render-target viewports are in target pixels (no device pixel ratio)
@@ -108,6 +135,7 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
   renderer.toneMapping = prev.tone;
   mat.dispose();
   snowMat.dispose();
+  for (const ms of materials) if (ms && ms.baked) for (const m of ms.baked) m.dispose();
   // read back and bleed colour into the transparent texels (push-pull), so the mip chain does
   // not average the trees with the background and distant cards keep their colour
   const px = new Uint8Array(W * H * 4);

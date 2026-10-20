@@ -286,17 +286,17 @@ const GEN = {
       const cone = id > 0.93 ? clamp01(1 - f1 * 3.2) : 0;
       const h = clamp01(Math.max(hb[k], cone * 0.9) * 0.8 + 0.2 * macro);
       const t = 0.6 + 0.5 * h + 0.15 * (macro - 0.5);
-      let r = (0.36 + cb[k] * 0.12) * t,
-        g = (0.27 + cb[k] * 0.08) * t,
-        b = (0.17 + cb[k] * 0.05) * t;
+      let r = (0.5 + cb[k] * 0.14) * t,
+        g = (0.39 + cb[k] * 0.1) * t,
+        b = (0.26 + cb[k] * 0.06) * t;
       if (cone > 0) {
-        r = 0.42 * t;
-        g = 0.28 * t;
-        b = 0.16 * t;
+        r = 0.5 * t;
+        g = 0.34 * t;
+        b = 0.2 * t;
       }
-      r += (0.28 * t - r) * moss;
-      g += (0.36 * t - g) * moss;
-      b += (0.16 * t - b) * moss;
+      r += (0.38 * t - r) * moss;
+      g += (0.46 * t - g) * moss;
+      b += (0.22 * t - b) * moss;
       return [r, g, b, h];
     };
   },

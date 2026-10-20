@@ -22,7 +22,6 @@ function colorize(geo, fn) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return geo;
 }
-
 function clean(g) {
   const n = g.index ? g.toNonIndexed() : g;
   for (const k of Object.keys(n.attributes)) if (!['position', 'normal', 'color'].includes(k)) n.deleteAttribute(k);
@@ -71,42 +70,6 @@ function branch(points, r0, r1, radial = 5) {
   g.computeVertexNormals();
   return g;
 }
-
-// ------------------------------------------------------------------ species
-export function sagebrush(seed, { lod = 0, palette = null } = {}) {
-  const rnd = mulberry32(seed);
-  const noise = new SimplexNoise(seed);
-  const parts = [];
-  const R = 0.45 + rnd() * 0.35;
-  const H = 0.5 + rnd() * 0.35;
-  const base = palette ? palette.slice() : [0.4 + rnd() * 0.06, 0.4 + rnd() * 0.05, 0.3];
-  // woody stems (near only)
-  for (let i = 0; i < (lod ? 0 : 5); i++) {
-    const a = rnd() * Math.PI * 2;
-    const r = R * (0.3 + rnd() * 0.5);
-    const pts = [V(0, -0.05, 0), V(Math.cos(a) * r * 0.3, H * 0.3, Math.sin(a) * r * 0.3), V(Math.cos(a) * r * 0.8, H * (0.55 + rnd() * 0.3), Math.sin(a) * r * 0.8)];
-    parts.push(colorize(branch(pts, 0.025, 0.008, 4), () => [0.26, 0.2, 0.15]));
-  }
-  // foliage clumps: fewer, bigger and coarser in the distance
-  const n = lod ? 5 : 9 + Math.floor(rnd() * 4);
-  for (let i = 0; i < n; i++) {
-    const a = rnd() * Math.PI * 2;
-    const rr = Math.sqrt(rnd()) * R * 0.8;
-    const y = H * (0.35 + rnd() * 0.6) * (1 - (rr / R) * 0.4);
-    const s = (0.14 + rnd() * 0.13) * (lod ? 1.45 : 1);
-    const b = blob(s, s * 0.8, s, lod ? 0 : 1, rnd, 0.3, noise);
-    b.translate(Math.cos(a) * rr, y, Math.sin(a) * rr);
-    const tint = 0.85 + rnd() * 0.3;
-    parts.push(
-      colorize(b, (v) => {
-        const ao = 0.55 + 0.45 * Math.min(1, (v.y / H) * 1.1);
-        return [base[0] * tint * ao, base[1] * tint * ao, base[2] * tint * ao];
-      })
-    );
-  }
-  return merge(parts);
-}
-
 export function grassTuft(seed, { blades: nBlades = 0, height = 1, base = null, tip = null, spread = 1 } = {}) {
   const rnd = mulberry32(seed);
   const pos = [],
@@ -162,6 +125,101 @@ export function grassTuft(seed, { blades: nBlades = 0, height = 1, base = null, 
     const l = Math.hypot(nx, ny, nz);
     n.setXYZ(i, nx / l, ny / l, nz / l);
   }
+  return g;
+}
+
+// Textured grass clump: three crossed cards around the stem point carrying a painted clump
+// (grey, tinted per vertex). Normals point up so the cards light like the ground under them.
+export function grassClump(seed, { height = 0.7, width = 0.9, tint = [0.6, 0.62, 0.36], cards = 3 } = {}) {
+  const rnd = mulberry32(seed);
+  const pos = [],
+    nor = [],
+    uv = [],
+    col = [],
+    idx = [];
+  const h = height * (0.75 + rnd() * 0.5),
+    w = width * (0.8 + rnd() * 0.4);
+  const a0 = rnd() * Math.PI;
+  for (let c = 0; c < cards; c++) {
+    const a = a0 + (c / cards) * Math.PI + (rnd() - 0.5) * 0.3;
+    const dx = Math.cos(a) * w * 0.5,
+      dz = Math.sin(a) * w * 0.5;
+    const lean = (rnd() - 0.5) * 0.25 * h;
+    const lx = -Math.sin(a) * lean,
+      lz = Math.cos(a) * lean;
+    const base = pos.length / 3;
+    const v = 0.85 + rnd() * 0.3;
+    const quad = [
+      [-dx, 0, -dz, 0, 0],
+      [dx, 0, dz, 1, 0],
+      [dx + lx, h, dz + lz, 1, 1],
+      [-dx + lx, h, -dz + lz, 0, 1],
+    ];
+    for (const [x, y, z, u, t] of quad) {
+      pos.push(x, y, z);
+      nor.push(x * 0.7, 0.75, z * 0.7);
+      uv.push(u, t);
+      col.push(tint[0] * v, tint[1] * v, tint[2] * v);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.normalizeNormals();
+  return g;
+}
+
+// Fern: fronds arching out from the crown, each a bent strip carrying the frond texture.
+export function fernClump(seed, { tint = [1, 1, 1] } = {}) {
+  const rnd = mulberry32(seed);
+  const pos = [],
+    nor = [],
+    uv = [],
+    col = [],
+    idx = [];
+  const n = 7 + Math.floor(rnd() * 4);
+  const L = 0.7 + rnd() * 0.45;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
+    const dx = Math.cos(a),
+      dz = Math.sin(a);
+    const px = -dz,
+      pz = dx;
+    const rise = 0.55 + rnd() * 0.35;
+    const len = L * (0.75 + rnd() * 0.4);
+    const w = len * 0.42;
+    const seg = 4;
+    const base = pos.length / 3;
+    const v = 0.85 + rnd() * 0.3;
+    for (let k = 0; k <= seg; k++) {
+      const t = k / seg;
+      // arch: up, then out and down at the tip
+      const r = Math.sin(t * Math.PI * 0.5) * len * 0.9;
+      const y = Math.sin(t * Math.PI * 0.85) * len * rise * 0.6;
+      const roll = 0.25;
+      for (const sx of [-0.5, 0.5]) {
+        pos.push(r * dx + px * sx * w, y + sx * w * roll * 0.3, r * dz + pz * sx * w);
+        nor.push(dx * 0.2, 1, dz * 0.2);
+        uv.push(sx + 0.5, t);
+        col.push(tint[0] * v, tint[1] * v, tint[2] * v);
+      }
+    }
+    for (let k = 0; k < seg; k++) {
+      const a0 = base + k * 2;
+      idx.push(a0, a0 + 1, a0 + 3, a0, a0 + 3, a0 + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.normalizeNormals();
   return g;
 }
 
@@ -353,201 +411,6 @@ export function hoodoo(seed) {
 }
 
 // ------------------------------------------------------------------ green and snowy country
-
-const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-
-// Smooth "crown" normals: point away from an axis/centre and upward, so foliage shades as a
-// soft volume instead of flat facets.
-function crownNormals(g, centre, { up = 0.55, axis = false } = {}) {
-  const p = g.attributes.position;
-  const n = new Float32Array(p.count * 3);
-  const v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i).sub(centre);
-    if (axis) v.y = 0;
-    v.normalize();
-    v.y += up;
-    v.normalize();
-    n[i * 3] = v.x;
-    n[i * 3 + 1] = v.y;
-    n[i * 3 + 2] = v.z;
-  }
-  g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
-  return g;
-}
-
-// Conifer (pine / spruce): a tapered trunk inside stacked, drooping tiers of branches whose rims
-// are star-shaped (branch tips), smooth-shaded as a volume. Snow is added by the snow material.
-export function conifer(seed, { spruce = false, scale = 1 } = {}) {
-  const rnd = mulberry32(seed);
-  const noise = new SimplexNoise(seed);
-  const parts = [];
-  const H = (spruce ? 10 + rnd() * 6 : 9 + rnd() * 6) * scale;
-  const R = H * (spruce ? 0.17 : 0.2);
-  const bark = spruce ? [0.24, 0.18, 0.14] : [0.36, 0.24, 0.16];
-  const trunk = branch([V(0, -0.2, 0), V((rnd() - 0.5) * 0.15, H * 0.5, (rnd() - 0.5) * 0.15), V(0, H * 0.98, 0)], 0.14 * scale + H * 0.013, 0.025, 7);
-  parts.push(colorize(trunk, (v) => bark.map((c) => c * (0.7 + 0.3 * Math.min(1, v.y / 2)) * (0.85 + 0.3 * (noise.noise3(v.x * 9, v.y * 3, v.z * 9) * 0.5 + 0.5)))));
-  const deep = spruce ? [0.035, 0.08, 0.05] : [0.05, 0.1, 0.045];
-  const mid = spruce ? [0.08, 0.16, 0.1] : [0.12, 0.2, 0.08];
-  const tipC = spruce ? [0.15, 0.26, 0.16] : [0.26, 0.33, 0.14];
-  const tiers = spruce ? 13 : 10;
-  const seg = 14;
-  const y0 = H * (spruce ? 0.08 : 0.3);
-  for (let i = 0; i < tiers; i++) {
-    const t = i / (tiers - 1);
-    const yb = y0 + (H * 0.95 - y0) * Math.pow(t, 0.92);
-    const r = R * Math.pow(1 - t * 0.93, spruce ? 1.0 : 0.8) * (0.85 + rnd() * 0.3) + 0.2;
-    const h = Math.max(0.45, r * (spruce ? 0.85 : 0.6));
-    const rot = rnd() * Math.PI * 2;
-    const pos = [],
-      col = [],
-      idx = [];
-    const vert = (x, y, z, c) => {
-      pos.push(x, y, z);
-      col.push(...c);
-      return pos.length / 3 - 1;
-    };
-    const shade = (base, x, y, z) => {
-      const nn = 0.82 + 0.36 * (noise.noise3(x * 0.9 + i, y * 0.9, z * 0.9) * 0.5 + 0.5);
-      return base.map((c) => c * nn);
-    };
-    const apex = vert(0, yb + h, 0, shade(deep, 0, yb + h, 0));
-    const ringA = [],
-      ringB = [];
-    for (let k = 0; k < seg; k++) {
-      const a = rot + (k / seg) * Math.PI * 2;
-      const ca = Math.cos(a),
-        sa = Math.sin(a);
-      const rm = r * (0.5 + rnd() * 0.1);
-      const ym = yb + h * 0.42 - rnd() * 0.08 * r;
-      ringA.push(vert(ca * rm, ym, sa * rm, shade(mid, ca * rm, ym, sa * rm)));
-      // star rim: long drooping branch tips alternate with short raised ones
-      const tip = k % 2 === 0;
-      const rr = r * (tip ? 0.95 + rnd() * 0.25 : 0.62 + rnd() * 0.12);
-      const yy = yb - (tip ? (0.12 + rnd() * 0.2) * r : -0.05 * h);
-      ringB.push(vert(ca * rr, yy, sa * rr, shade(tip ? tipC : mid, ca * rr, yy, sa * rr)));
-    }
-    for (let k = 0; k < seg; k++) {
-      const k2 = (k + 1) % seg;
-      idx.push(apex, ringA[k2], ringA[k]);
-      idx.push(ringA[k], ringA[k2], ringB[k2]);
-      idx.push(ringA[k], ringB[k2], ringB[k]);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.setIndex(idx);
-    crownNormals(g, V(0, yb - h * 0.4, 0), { up: 0.7, axis: true });
-    parts.push(g.toNonIndexed());
-  }
-  return merge(parts);
-}
-
-// Birch: white trunk with dark marks, a few rising limbs and many loose leaf clusters shaded as
-// one soft crown (or bare twigs in winter).
-export function broadleaf(seed, { autumn = 0, bare = false } = {}) {
-  const rnd = mulberry32(seed);
-  const noise = new SimplexNoise(seed);
-  const parts = [];
-  const H = 7 + rnd() * 5;
-  const barkC = (v) => {
-    const n = noise.noise3(v.x * 7, v.y * 11, v.z * 7);
-    const mark = n > 0.42 ? 0.22 : 1;
-    const base = v.y < 0.7 ? 0.5 : 1;
-    return [0.8 * mark * base, 0.79 * mark * base, 0.75 * mark * base];
-  };
-  const lean = V((rnd() - 0.5) * 0.7, 0, (rnd() - 0.5) * 0.7);
-  const top = V(lean.x, H, lean.z);
-  parts.push(colorize(branch([V(0, -0.15, 0), V(lean.x * 0.3, H * 0.45, lean.z * 0.3), top], 0.15, 0.035, 7), barkC));
-  const limbs = bare ? 9 : 6;
-  const ends = [];
-  for (let i = 0; i < limbs; i++) {
-    const y = H * (0.38 + 0.5 * (i / limbs));
-    const a = rnd() * Math.PI * 2;
-    const L = H * (0.2 + rnd() * 0.16) * (1 - (i / limbs) * 0.45);
-    const p0 = V(lean.x * (y / H), y, lean.z * (y / H));
-    const p1 = p0.clone().add(V(Math.cos(a) * L * 0.5, L * 0.5, Math.sin(a) * L * 0.5));
-    const p2 = p0.clone().add(V(Math.cos(a) * L, L * 0.85, Math.sin(a) * L));
-    parts.push(colorize(branch([p0, p1, p2], 0.045, 0.01, 4), () => [0.4, 0.36, 0.33]));
-    ends.push(p2, p1.clone().lerp(p2, 0.4));
-    if (bare)
-      for (let k = 0; k < 3; k++) {
-        const b = rnd() * Math.PI * 2;
-        const q = p2.clone().add(V(Math.cos(b) * L * 0.35, L * 0.3, Math.sin(b) * L * 0.35));
-        parts.push(colorize(branch([p1.clone().lerp(p2, 0.6), q], 0.012, 0.004, 3), () => [0.36, 0.32, 0.3]));
-      }
-  }
-  if (!bare) {
-    const leaf = lerp3([0.3, 0.42, 0.12], [0.85, 0.6, 0.12], autumn);
-    const leafDeep = lerp3([0.1, 0.18, 0.05], [0.42, 0.24, 0.05], autumn);
-    const crownC = V(lean.x * 0.8, H * 0.72, lean.z * 0.8);
-    const cr = H * 0.28;
-    const clumps = [...ends, top, top.clone().add(V(0, -0.8, 0))];
-    for (const e of clumps)
-      for (let k = 0; k < 2; k++) {
-        const s = 0.55 + rnd() * 0.55;
-        const b = blob(s, s * 0.75, s, 1, rnd, 0.55, noise);
-        b.translate(e.x + (rnd() - 0.5) * 1.1, e.y - 0.1 + (rnd() - 0.5) * 0.8, e.z + (rnd() - 0.5) * 1.1);
-        const tint = 0.8 + rnd() * 0.35;
-        colorize(b, (v) => {
-          const outside = Math.min(1, v.distanceTo(crownC) / cr);
-          const nn = 0.8 + 0.4 * (noise.noise3(v.x * 1.7, v.y * 1.7, v.z * 1.7) * 0.5 + 0.5);
-          return lerp3(leafDeep, leaf, outside * 0.8 + Math.max(0, v.y - crownC.y) / cr * 0.3).map((c) => c * tint * nn);
-        });
-        crownNormals(b, crownC, { up: 0.45 });
-        parts.push(b);
-      }
-  }
-  return merge(parts);
-}
-
-// Fern: arching fronds from one crown.
-export function fern(seed) {
-  const rnd = mulberry32(seed);
-  const pos = [],
-    col = [];
-  const n = 6 + Math.floor(rnd() * 3);
-  const L = 0.5 + rnd() * 0.35;
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
-    const dx = Math.cos(a),
-      dz = Math.sin(a);
-    const px = -dz,
-      pz = dx;
-    const seg = 5;
-    let prev = null;
-    for (let k = 0; k <= seg; k++) {
-      const t = k / seg;
-      const r = t * L;
-      const y = Math.sin(t * Math.PI * 0.8) * L * 0.55;
-      const w = Math.sin(t * Math.PI) * 0.09 * (0.8 + rnd() * 0.3);
-      const c = [r * dx, y, r * dz];
-      const cur = [
-        [c[0] - px * w, c[1], c[2] - pz * w],
-        [c[0] + px * w, c[1], c[2] + pz * w],
-      ];
-      if (prev) {
-        for (const tri of [
-          [prev[0], prev[1], cur[1]],
-          [prev[0], cur[1], cur[0]],
-        ])
-          for (const v of tri) {
-            pos.push(...v);
-            const f = v[1] / (L * 0.55);
-            col.push(0.1 + 0.12 * f, 0.22 + 0.16 * f, 0.07 + 0.05 * f);
-          }
-      }
-      prev = cur;
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-// A patch of wildflowers: thin stems with coloured heads.
 export function flowers(seed, palette = [[0.62, 0.32, 0.72]]) {
   const rnd = mulberry32(seed);
   const parts = [];
@@ -570,6 +433,8 @@ export function flowers(seed, palette = [[0.62, 0.32, 0.72]]) {
 }
 
 // Cut stump with a pale face and growth rings.
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
 export function stump(seed, { snow = 0 } = {}) {
   const rnd = mulberry32(seed);
   const r = 0.22 + rnd() * 0.16,
@@ -611,41 +476,20 @@ export function fallenLog(seed, { snow = 0 } = {}) {
     return lerp3([0.3 * m, 0.23 * m, 0.17 * m], [0.24, 0.3, 0.12], moss);
   });
 }
-
-// Low tundra shrub (dwarf willow, heather): flat reddish-olive mounds.
-export function tundraShrub(seed) {
-  const rnd = mulberry32(seed);
-  const noise = new SimplexNoise(seed);
-  const parts = [];
-  const n = 4 + Math.floor(rnd() * 3);
-  const pal = [
-    [0.36, 0.24, 0.16],
-    [0.42, 0.36, 0.2],
-    [0.3, 0.3, 0.16],
-  ];
-  for (let i = 0; i < n; i++) {
-    const s = 0.22 + rnd() * 0.25;
-    const b = blob(s, s * 0.45, s, 1, rnd, 0.35, noise);
-    b.translate((rnd() - 0.5) * 0.7, s * 0.3, (rnd() - 0.5) * 0.7);
-    const c = pal[Math.floor(rnd() * pal.length)];
-    parts.push(colorize(b, (v) => c.map((x) => x * (0.7 + 0.5 * Math.min(1, v.y / 0.25)))));
-  }
-  return merge(parts);
-}
-
-// Reeds at the water's edge.
 export function reeds(seed) {
   return grassTuft(seed, { blades: 22, height: 3.2, base: [0.25, 0.28, 0.14], tip: [0.62, 0.58, 0.3], spread: 3 });
 }
 
 // ------------------------------------------------------------------ materials
-export function createFloraMaterial({ sway = 0, roughness = 0.9, snow = false, doubleSide = null } = {}) {
+export function createFloraMaterial({ sway = 0, roughness = 0.9, snow = false, doubleSide = null, map = null, alphaTest = 0 } = {}) {
   const two = doubleSide ?? sway > 0;
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: two ? THREE.DoubleSide : THREE.FrontSide });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: two ? THREE.DoubleSide : THREE.FrontSide, map, alphaTest });
   m.userData.uniforms = { uTime: { value: 0 }, uWind: { value: 0.3 } };
-  if (sway > 0 || snow) {
+  if (sway > 0 || snow || map) {
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, m.userData.uniforms);
+      // cards: the up-pointing normals hold on back faces too
+      if (map) shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize( vNormal );');
       if (snow) {
         // snow lies on whatever faces up: the true facet normal from screen derivatives, turned
         // toward the viewer, so the underside of a branch stays green
@@ -682,7 +526,7 @@ export function createFloraMaterial({ sway = 0, roughness = 0.9, snow = false, d
 }`
         );
     };
-    m.customProgramCacheKey = () => 'sway' + sway + (snow ? 's' : '');
+    m.customProgramCacheKey = () => 'sway' + sway + (snow ? 's' : '') + (map ? 'm' : '');
   }
   return m;
 }

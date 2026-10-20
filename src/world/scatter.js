@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import * as F from './flora.js';
+import { texturedConifer, texturedBroadleaf, texturedShrub, treeMaterials } from './trees.js';
 import { bakeImpostors, createImpostorMaterial } from '../gfx/impostor.js';
 import { SPECIES, CELL, STRIDE, BIOME_LIST, sinkOf, cellInstances } from './scatterGen.js';
 import { settings } from '../core/settings.js';
@@ -33,8 +34,8 @@ const FLOWER_PALETTES = [
 
 // instance capacity per variant: [near model, far stand-in]
 const CAP = {
-  grass: [5000, 0],
-  meadow: [6000, 0],
+  grass: [9000, 0],
+  meadow: [24000, 0],
   snowgrass: [2500, 0],
   shrub: [1600, 2400],
   tundrashrub: [1200, 2000],
@@ -50,10 +51,10 @@ const CAP = {
   joshua: [200, 900],
   deadtree: [120, 500],
   hoodoo: [60, 240],
-  pine: [900, 9000],
-  snowpine: [900, 9000],
-  birch: [300, 2500],
-  birchbare: [200, 1500],
+  pine: [900, 9000, 2400],
+  snowpine: [900, 9000, 2400],
+  birch: [300, 2500, 800],
+  birchbare: [200, 1500, 600],
   stump: [200, 0],
   log: [120, 0],
 };
@@ -61,20 +62,34 @@ const CAP = {
 const FAR_BY_QUALITY = { low: 520, medium: 700, high: 880, ultra: 1000 };
 
 export class Scatter {
-  constructor(game, tex) {
+  constructor(game, tex, treeTex) {
     this.game = game;
     this.gen = game.gen;
     this.group = new THREE.Group();
     this.group.name = 'scatter';
     game.worldGroup.add(this.group);
     this.grassMat = F.createFloraMaterial({ sway: 0.6 });
+    // painted card ground cover
+    this.grassTallMat = F.createFloraMaterial({ sway: 0.32, map: treeTex.flora.grass_tall, alphaTest: 0.38, roughness: 0.95 });
+    this.grassShortMat = F.createFloraMaterial({ sway: 0.32, map: treeTex.flora.grass_short, alphaTest: 0.38, roughness: 0.95 });
+    this.fernMat = F.createFloraMaterial({ sway: 0.12, map: treeTex.flora.fern, alphaTest: 0.4, roughness: 0.85 });
     this.swayMat = F.createFloraMaterial({ sway: 0.12 });
-    this.treeMat = F.createFloraMaterial({ sway: 0.0024 });
-    this.snowTreeMat = F.createFloraMaterial({ sway: 0.0024, snow: true });
     this.solidMat = F.createFloraMaterial({});
     this.snowSolidMat = F.createFloraMaterial({ snow: true, doubleSide: true });
     this.rockMat = F.createRockMaterial(tex);
     this.snowRockMat = F.createRockMaterial(tex, { snow: true });
+    // textured trees: [bark, foliage] pairs
+    const T = treeTex;
+    this.treeMats = {
+      pine: treeMaterials(T, { bark: 'pine', leaf: 'pine', tint: 0xc9d4bf }),
+      snowpine: treeMaterials(T, { bark: 'pine', leaf: 'pine', tint: 0xb8c4b4, snow: true }),
+      birch: treeMaterials(T, { bark: 'birch', leaf: 'aspen_green', tint: 0xa9b892 }),
+      birchAutumn: treeMaterials(T, { bark: 'birch', leaf: 'aspen_autumn', tint: 0xe0d0b8 }),
+      birchbare: treeMaterials(T, { bark: 'birch', leaf: null, snow: true }),
+      shrub: treeMaterials(T, { bark: 'oak', leaf: 'pine', tint: 0xd6dac8, sway: 0.05, sat: 0.22 }),
+      tundrashrub: treeMaterials(T, { bark: 'oak', leaf: 'oak', tint: 0xb07850, sway: 0.05, sat: 0.4 }),
+    };
+    this.treeTex = T;
     this.meshes = []; // [species][variant] -> [lod0, lod1|null]
     this.cells = new Map(); // key -> { ci, cj, data: Float32Array|null, colliders }
     this.lastCell = null;
@@ -89,17 +104,17 @@ export class Scatter {
     const seed = 1000 + v * 37 + def.id.length * 101 + SPECIES.indexOf(def) * 7;
     switch (def.id) {
       case 'grass':
-        return F.grassTuft(seed);
+        return F.grassClump(seed, { height: 0.42, width: 0.8, tint: [[0.24, 0.19, 0.11], [0.19, 0.17, 0.1], [0.27, 0.22, 0.13], [0.16, 0.16, 0.09]][v % 4] });
       case 'meadow':
-        return F.grassTuft(seed, { blades: 24, height: 1.15, base: [0.18, 0.24, 0.09], tip: v % 2 ? [0.62, 0.62, 0.28] : [0.42, 0.55, 0.2], spread: 1.6 });
+        return F.grassClump(seed, { height: 0.75, width: 0.85, tint: [[0.1, 0.17, 0.045], [0.15, 0.19, 0.06], [0.085, 0.15, 0.04], [0.2, 0.19, 0.075]][v % 4] });
       case 'snowgrass':
-        return F.grassTuft(seed, { blades: 12, height: 1.1, base: [0.42, 0.38, 0.26], tip: [0.8, 0.72, 0.5] });
+        return F.grassClump(seed, { height: 0.5, width: 0.7, tint: [0.3, 0.25, 0.16] });
       case 'shrub':
-        return F.sagebrush(seed, { lod });
+        return texturedShrub(seed, { lod, height: 1.0 });
       case 'tundrashrub':
-        return lod ? F.sagebrush(seed, { lod: 1, palette: [0.36, 0.28, 0.17] }) : F.tundraShrub(seed);
+        return texturedShrub(seed, { lod, height: 0.7, spread: 1.4 });
       case 'fern':
-        return F.fern(seed);
+        return F.fernClump(seed, { tint: [[0.42, 0.5, 0.36], [0.5, 0.52, 0.38], [0.36, 0.44, 0.32]][v % 3] });
       case 'flowers':
         return F.flowers(seed, FLOWER_PALETTES[v % FLOWER_PALETTES.length]);
       case 'reeds':
@@ -123,13 +138,13 @@ export class Scatter {
       case 'hoodoo':
         return F.hoodoo(seed).geometry;
       case 'pine':
-        return F.conifer(seed);
+        return texturedConifer(seed, { spruce: v % 2 === 0, lod });
       case 'snowpine':
-        return F.conifer(seed, { snow: 1, spruce: v % 2 === 0 });
+        return texturedConifer(seed, { spruce: v !== 3, lod });
       case 'birch':
-        return F.broadleaf(seed, { autumn: v === 2 ? 0.85 : v * 0.15 });
+        return texturedBroadleaf(seed, { lod });
       case 'birchbare':
-        return F.broadleaf(seed, { bare: true, snow: 1 });
+        return texturedBroadleaf(seed, { bare: true, lod });
       case 'stump':
         return F.stump(seed);
       case 'log':
@@ -138,11 +153,15 @@ export class Scatter {
     return F.rock(seed, 'pebble');
   }
 
-  materialFor(def) {
+  materialFor(def, v = 0) {
+    if (def.id === 'birch') return v === 2 ? this.treeMats.birchAutumn : this.treeMats.birch;
+    if (this.treeMats[def.id]) return this.treeMats[def.id];
     if (def.rock) return def.id === 'snowrock' ? this.snowRockMat : this.rockMat;
+    if (def.id === 'meadow') return this.grassTallMat;
+    if (def.id === 'grass' || def.id === 'snowgrass') return this.grassShortMat;
+    if (def.id === 'fern') return this.fernMat;
     if (def.sway === 'grass') return this.grassMat;
     if (def.sway === 'shrub') return this.swayMat;
-    if (def.sway === 'tree') return def.snow ? this.snowTreeMat : this.treeMat;
     return def.snow ? this.snowSolidMat : this.solidMat;
   }
 
@@ -155,15 +174,24 @@ export class Scatter {
         g0.computeBoundingSphere();
         g0.computeBoundingBox();
         const cap = CAP[def.id] || [500, 1000];
-        const m0 = this.instanced(g0, this.materialFor(def), cap[0], def);
+        const mat = this.materialFor(def, v);
+        const m0 = this.instanced(g0, mat, cap[0], def);
         m0.castShadow = def.shadow !== false;
-        let m1 = null;
+        let m1 = null,
+          m2 = null;
         if (def.lod1 === 'mesh') {
           const g1 = def.id === 'hoodoo' ? g0 : this.geometryFor(def, v, 1);
           g1.computeBoundingSphere();
-          m1 = this.instanced(g1, this.materialFor(def), cap[1], def);
-        } else if (def.lod1 === 'impostor') impostorSrc.push({ def, v, geo: g0, cap: cap[1] });
-        list.push([m0, m1]);
+          m1 = this.instanced(g1, mat, cap[1], def);
+        } else if (def.lod1 === 'impostor') impostorSrc.push({ def, v, geo: g0, mats: Array.isArray(mat) ? mat : null, cap: cap[1] });
+        // textured trees have a coarser mesh between the full model and the billboard
+        if (def.mid) {
+          const g2 = this.geometryFor(def, v, 1);
+          g2.computeBoundingSphere();
+          m2 = this.instanced(g2, mat, cap[2] || cap[0] * 2, def);
+          m2.castShadow = def.shadow !== false && settings.data.quality !== 'low';
+        }
+        list.push([m0, m1, m2]);
       }
       this.meshes.push(list);
     }
@@ -172,7 +200,7 @@ export class Scatter {
       const baked = bakeImpostors(
         this.game.renderer.renderer,
         impostorSrc.map((s) => s.geo),
-        { snow: impostorSrc.map((s) => !!s.def.snow) }
+        { snow: impostorSrc.map((s) => !!s.def.snow), materials: impostorSrc.map((s) => s.mats) }
       );
       this.impostorTex = baked.texture;
       this.impostorMat = createImpostorMaterial(baked.texture);
@@ -296,7 +324,7 @@ export class Scatter {
           lod = ring <= 1 ? 0 : def.lod1 ? 1 : 0;
         } else {
           if (d > farR * (def.far || 1) + CELL * 0.5) continue;
-          lod = ring <= 1 || !def.lod1 ? 0 : 1;
+          lod = ring <= 1 || !def.lod1 ? 0 : def.mid && ring <= def.mid ? 2 : 1;
         }
         const im = this.meshes[si][data[k + 1]][lod];
         if (!im) continue;
@@ -407,7 +435,7 @@ export class Scatter {
   }
 
   setTime(t, wind) {
-    for (const m of [this.swayMat, this.grassMat, this.treeMat, this.snowTreeMat]) {
+    for (const m of [this.swayMat, this.grassMat, this.grassTallMat, this.grassShortMat, this.fernMat, ...Object.values(this.treeMats).flat()]) {
       m.userData.uniforms.uTime.value = t;
       m.userData.uniforms.uWind.value = wind;
     }
