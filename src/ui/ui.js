@@ -410,8 +410,9 @@ export class UI {
       };
       if (tab === 'graphics') {
         this.seg(body, 'Quality preset', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], d.quality, (v) => set('quality', v), 'Shadows, view distance and detail. Applies on the next start.');
-        this.range(body, 'Field of view', 60, 100, 1, d.fov, (v) => set('fov', v), (v) => v + '°');
+        this.range(body, 'Field of view', 70, 110, 1, d.hfov, (v) => set('hfov', v), (v) => v + '°');
         this.range(body, 'Render scale', 0.5, 1, 0.05, d.resolutionScale, (v) => set('resolutionScale', v), (v) => Math.round(v * 100) + '%');
+        this.toggle(body, 'Dynamic resolution', d.dynamicResolution !== false, (v) => set('dynamicResolution', v));
         this.toggle(body, 'Bloom', d.bloom, (v) => set('bloom', v));
         this.toggle(body, 'Show frame rate', d.showFps, (v) => set('showFps', v));
       } else if (tab === 'audio') {

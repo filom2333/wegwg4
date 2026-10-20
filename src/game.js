@@ -638,7 +638,7 @@ export class Game {
 
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = this.debugFov || settings.data.fov;
+    cam.fov = this.debugFov || verticalFov(settings.data.hfov, cam.aspect);
     cam.far = 6000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;
@@ -647,6 +647,8 @@ export class Game {
     this.env.sky.mesh.position.copy(cam.position);
     for (const s of this.systems) s.preRender && s.preRender(dt);
     if (this.interaction && !this.attract) this.interaction.updateView(0);
+    // headless tests: a function placing the camera after the player's view is set
+    if (this.debugView) this.debugView(cam);
     const gr = this.env && this.env.grade;
     if (gr) {
       const u = this.renderer.grade.uniforms;
@@ -672,6 +674,12 @@ export class Game {
     this.render(0.016);
     return true;
   }
+}
+
+// Vertical camera FOV for a horizontal one (degrees); narrow windows keep a sane vertical angle.
+function verticalFov(hfov, aspect) {
+  const h = THREE.MathUtils.degToRad(hfov || 90);
+  return Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / Math.max(aspect, 1.2))));
 }
 
 function tick() {

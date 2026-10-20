@@ -674,10 +674,7 @@ export class Effects {
     const sources = [];
     const car = g.car;
     if (car && car.lightsOn) sources.push(CAR_POINTS.headlampGlare.clone().add(V(0, 0, 0.4)).applyMatrix4(car.root.matrixWorld));
-    if (g.pois)
-      for (const inst of g.pois.loaded.values())
-        for (const l of inst.lights)
-          if (l.light.intensity > 0 && !l.def.beacon) sources.push(l.light.getWorldPosition(V(0, 0, 0)));
+    if (g.pois) for (const l of g.pois.lightPool) if (l.intensity > 0 && !l.userData.beacon) sources.push(l.position.clone());
     for (const it of g.items.items) if (it.light) sources.push(it.mesh.getWorldPosition(V(0, 0, 0)));
     for (const s of sources) {
       if (s.distanceTo(g.renderer.camera.position) > 40) continue;

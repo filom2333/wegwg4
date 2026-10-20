@@ -8,7 +8,7 @@ import { ROAD } from './worldGen.js';
 const ROOT = 2048;
 const MIN_TILE = 64;
 const VIEW_RADIUS = 3200;
-const SEG = 64; // road segment length (m along z)
+const SEG = 128; // road segment length (m along z): fewer, longer road meshes = fewer draw calls
 const COLLIDER_TILE = 48;
 const COLLIDER_RADIUS = 110;
 
@@ -190,10 +190,13 @@ export class Terrain {
       if (Math.hypot(rx - px, z + SEG / 2 - pz) > this.viewRadius) continue;
       want.add(k);
     }
-    let built = 0;
+    // building a segment samples the road profile ~900 times: spread the work over frames
+    // (everything at once only while the road near the player is still missing)
+    const t0 = performance.now();
+    const urgent = !this.roadSegs.has(k0);
     for (const k of [...want].sort((a, b) => Math.abs(a - k0) - Math.abs(b - k0))) {
       if (this.roadSegs.has(k)) continue;
-      if (built++ > 6) break;
+      if (!urgent && performance.now() - t0 > 2.5) break;
       this.roadSegs.set(k, this.buildRoadSegment(k));
     }
     for (const [k, m] of this.roadSegs) {

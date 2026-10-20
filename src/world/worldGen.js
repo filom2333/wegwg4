@@ -531,14 +531,17 @@ export class WorldGen {
     const dx = Math.abs(x - rx);
     const roadY = this.roadY(z);
     const flat = ROAD.halfWidth + ROAD.shoulder;
-    if (dx < flat) return roadY - Math.max(0, dx - ROAD.halfWidth) * 0.07;
+    // on a POI pad the shoulder stays level and the ditch is filled, so forecourts and wrecks
+    // beside the road sit on the ground instead of over a dip
+    const pw = this.padWeight(x, z);
+    if (dx < flat) return roadY - Math.max(0, dx - ROAD.halfWidth) * 0.07 * (1 - pw);
     const n0 = this.naturalHeight(x, z);
     const nat = n0 + this.padOffset(x, z, n0);
     const diff = nat - roadY;
     const jag = this.nC.noise2(x * 0.05, z * 0.05) * 2.5 + this.nC.noise2(z * 0.011, x * 0.003) * 4;
     const width = 10 + jag + Math.min(60, Math.abs(diff) * 1.6);
-    const t = smoothstep(flat + Math.max(0, jag * 0.3), flat + width, dx);
-    const edge = roadY - ROAD.shoulder * 0.07 - 0.25 * smoothstep(flat, flat + 3, dx) * (1 - t);
+    const t = Math.max(smoothstep(flat + Math.max(0, jag * 0.3), flat + width, dx), pw * smoothstep(flat, flat + 2.5, dx));
+    const edge = roadY - ROAD.shoulder * 0.07 * (1 - pw) - 0.25 * smoothstep(flat, flat + 3, dx) * (1 - t) * (1 - pw);
     return lerp(edge, nat, t);
   }
 
@@ -594,21 +597,52 @@ export class WorldGen {
     }
     if (res) {
       const info = POI_INFO[res.type];
-      const [dx, dz] = this.roadDir(res.z);
-      // perpendicular (pointing to +x side of the road for side=+1)
-      const px = dz,
-        pz = -dx;
-      res.x = this.roadX(res.z) + px * res.offset * res.side;
-      res.z = res.z + pz * res.offset * res.side;
-      // face the road
-      res.rot = Math.atan2(-px * res.side, -pz * res.side);
       res.padR = info.pad;
       res.padBlend = 22;
-      res.y = this.roadY(res.z) + 0.1;
       res.seed = Math.floor(r(9) * 1e9);
+      // keep the pad out of river valleys and lake basins: slide it along the road, or try the
+      // other side, and give the slot up if neither works
+      const along = res.z;
+      let placed = false;
+      for (const shift of k === 0 ? [0] : [0, 40, -40, 80, -80, 130, -130, 190, -190]) {
+        for (const side of [res.side, -res.side]) {
+          this.placePoi(res, along + shift, side);
+          if (k === 0 || this.poiClear(res.x, res.z, res.padR + res.padBlend * 0.6)) {
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
+      }
+      if (!placed) res = null;
     }
     this._poi.set(k, res);
     return res;
+  }
+
+  placePoi(res, along, side) {
+    const [dx, dz] = this.roadDir(along);
+    // perpendicular (pointing to +x side of the road for side=+1)
+    const px = dz,
+      pz = -dx;
+    res.side = side;
+    res.x = this.roadX(along) + px * res.offset * side;
+    res.z = along + pz * res.offset * side;
+    // face the road
+    res.rot = Math.atan2(-px * side, -pz * side);
+    res.y = this.roadY(res.z) + 0.1;
+  }
+
+  // No river bank or lake basin within R metres of (x, z).
+  poiClear(x, z, R) {
+    const rv = this.riverAt(x, z);
+    if (rv && rv.d < rv.r.w + 12 + rv.r.w * 0.6 + R) return false;
+    for (const l of this.lakesNear(z, 1)) {
+      if (Math.abs(z - l.z) > Math.max(l.rx, l.rz) * 2 + R || Math.abs(x - l.x) > Math.max(l.rx, l.rz) * 2 + R) continue;
+      // basin edge at normalised distance 1.5; convert the margin to metres with the short radius
+      if ((this.lakeDist(l, x, z) - 1.5) * Math.min(l.rx, l.rz) < R) return false;
+    }
+    return true;
   }
 
   poisNear(z, range = 1) {
@@ -619,6 +653,19 @@ export class WorldGen {
       if (p) out.push(p);
     }
     return out;
+  }
+
+  // 1 on a POI's level pad, fading to 0 across its blend ring.
+  padWeight(x, z) {
+    const k0 = Math.round(z / POI_SPACING);
+    let w = 0;
+    for (let k = k0 - 1; k <= k0 + 1; k++) {
+      const p = this.poiSlot(k);
+      if (!p) continue;
+      const d = Math.hypot(x - p.x, z - p.z);
+      if (d < p.padR + p.padBlend) w = Math.max(w, 1 - smoothstep(p.padR, p.padR + p.padBlend, d));
+    }
+    return w;
   }
 
   padOffset(x, z, nat) {

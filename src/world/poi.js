@@ -5,154 +5,12 @@ import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { mulberry32 } from '../core/noise.js';
 import { Builder } from './buildings/builder.js';
-import { archMaterials, signMaterial } from './buildings/materials.js';
-import { buildHouse } from './buildings/house.js';
-import * as ST from './buildings/structures.js';
-import * as FUR from './buildings/furniture.js';
+import { archMaterials, resolveMaterial } from './buildings/materials.js';
+import { LAYOUTS } from './poiLayouts.js';
 import { POI_SPACING } from './worldGen.js';
 import { applyWeathering, weatheringUniforms } from '../vehicle/carMaterials.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
-
-// ------------------------------------------------------------------ layouts
-function props(fn) {
-  const b = new Builder('props');
-  fn(b);
-  return { builder: b };
-}
-
-export const LAYOUTS = {
-  homestead(rnd) {
-    const house = buildHouse(rnd, { style: 'siding', abandoned: 0.1 });
-    const garage = ST.buildGarage(rnd, { w: 6.5, d: 7.5, open: true });
-    const out = [
-      { ...house, x: -6.5, z: -2, rot: 0 },
-      { ...garage, x: 8.5, z: -1.5, rot: 0, tag: 'garage' },
-      {
-        ...props((b) => {
-          ST.mailbox(b, -3, 12, 0);
-          ST.fence(b, [
-            [-14, 9],
-            [-4, 9],
-          ]);
-          ST.fence(b, [
-            [-14, 9],
-            [-14, -9],
-          ]);
-          FUR.place(b, FUR.barrel(rnd), 12.8, 0, 3.5, 0);
-          FUR.place(b, FUR.crate(rnd), 12.8, 0, 4.6, 0.2);
-        }),
-        x: 0,
-        z: 0,
-        rot: 0,
-      },
-    ];
-    return out;
-  },
-  house(rnd) {
-    const h = buildHouse(rnd, {});
-    const list = [{ ...h, x: 0, z: 0, rot: 0 }];
-    if (rnd() < 0.5) list.push({ ...ST.buildGarage(rnd, { w: 5, d: 6, open: rnd() < 0.7 }), x: h.plan.W / 2 + 5, z: -1, rot: 0 });
-    list.push({ ...props((b) => ST.mailbox(b, 2, h.plan.D / 2 + 6, 0)), x: 0, z: 0, rot: 0 });
-    return list;
-  },
-  houses(rnd) {
-    const n = 2 + (rnd() < 0.5 ? 1 : 0);
-    const list = [];
-    let x = -((n - 1) * 15) / 2;
-    for (let i = 0; i < n; i++) {
-      const h = buildHouse(rnd, {});
-      list.push({ ...h, x: x + (rnd() - 0.5) * 2, z: (rnd() - 0.5) * 4, rot: (rnd() - 0.5) * 0.1 });
-      x += 15;
-    }
-    return list;
-  },
-  gasStation(rnd) {
-    return [{ ...ST.buildGasStation(rnd), x: 0, z: 0, rot: 0 }];
-  },
-  motel(rnd) {
-    return [{ ...ST.buildMotel(rnd), x: 3, z: -2, rot: 0 }];
-  },
-  diner(rnd) {
-    return [{ ...ST.buildDiner(rnd), x: 0, z: -2, rot: 0 }];
-  },
-  ranch(rnd) {
-    const h = buildHouse(rnd, { style: rnd() < 0.5 ? 'siding' : 'brick' });
-    return [
-      { ...h, x: -9, z: 2, rot: 0 },
-      { ...ST.buildBarn(rnd), x: 10, z: -4, rot: Math.PI / 2 },
-      { ...ST.buildWindmill(rnd), x: 2, z: -14, rot: rnd() * 6 },
-      {
-        ...props((b) =>
-          ST.fence(b, [
-            [16, 10],
-            [26, 10],
-            [26, -16],
-            [16, -16],
-          ])
-        ),
-        x: 0,
-        z: 0,
-        rot: 0,
-      },
-    ];
-  },
-  waterTower(rnd) {
-    return [{ ...ST.buildWaterTower(rnd), x: 0, z: 0, rot: rnd() * 6 }];
-  },
-  radioTower(rnd) {
-    return [{ ...ST.buildRadioTower(rnd), x: 0, z: 0, rot: rnd() * 6 }];
-  },
-  trailers(rnd) {
-    const n = 2 + Math.floor(rnd() * 2);
-    const list = [];
-    for (let i = 0; i < n; i++) list.push({ ...ST.buildTrailer(rnd), x: (i - (n - 1) / 2) * 9, z: (rnd() - 0.5) * 6, rot: Math.PI / 2 + (rnd() - 0.5) * 0.3 });
-    list.push({ ...props((b) => ST.tent(b, rnd, 0, 12, 0.4, archMaterials().canvasOrange, 2.4, 2, 1.4)), x: 0, z: 0, rot: 0 });
-    return list;
-  },
-  outpost(rnd) {
-    return [{ ...ST.buildOutpost(rnd), x: 0, z: 0, rot: 0 }];
-  },
-  ruins(rnd) {
-    const list = [{ ...ST.buildRuins(rnd), x: 0, z: 0, rot: rnd() * 6 }];
-    if (rnd() < 0.5) list.push({ ...ST.buildRuins(rnd), x: 10, z: -6, rot: rnd() * 6 });
-    return list;
-  },
-  camp(rnd) {
-    return [{ ...ST.buildCamp(rnd), x: 0, z: 0, rot: 0 }];
-  },
-  junkyard(rnd) {
-    const shack = ST.buildGarage(rnd, { w: 5, d: 5, open: true });
-    return [
-      { ...shack, x: -9, z: -8, rot: 0 },
-      {
-        ...props((b) => {
-          const M = archMaterials();
-          // corrugated perimeter with a gap for the gate
-          const wall = (x0, z0, x1, z1) => {
-            const L = Math.hypot(x1 - x0, z1 - z0);
-            const rot = Math.atan2(-(z1 - z0), x1 - x0);
-            b.box((x0 + x1) / 2, 1.1, (z0 + z1) / 2, L, 2.2, 0.06, M.corrugatedRust, { rotY: rot, surface: 'metal' });
-          };
-          wall(-14, 13, -3, 13);
-          wall(3, 13, 14, 13);
-          wall(-14, 13, -14, -13);
-          wall(14, 13, 14, -13);
-          wall(-14, -13, 14, -13);
-          for (let i = 0; i < 6; i++) FUR.place(b, FUR.tirePile(rnd), -6 + i * 2.5, 0, -10.5 + (i % 2), 0);
-          for (let i = 0; i < 4; i++) FUR.place(b, FUR.barrel(rnd), 10 + (i % 2) * 0.7, 0, -9 + Math.floor(i / 2) * 0.7, 0);
-          ST.signBoard(b, 0, 3.0, 13.2, 4, 0.8, signMaterial(['SALVAGE · PARTS'], { w: 512, h: 96, bg: '#d8c9a2', fg: '#3a2a1a' }), 0, { posts: 2 });
-        }),
-        x: 0,
-        z: 0,
-        rot: 0,
-      },
-    ];
-  },
-  wreck() {
-    return [];
-  },
-};
 
 // wrecks per type (car bodies placed by the manager)
 const WRECKS = { junkyard: 7, wreck: 1, homestead: 0, trailers: 1, ranch: 1, houses: 1, house: 0, gasStation: 1, motel: 1, diner: 2, outpost: 1, ruins: 0, camp: 1 };
@@ -170,6 +28,18 @@ export class POIManager {
     this.loadRadius = 700;
     this.unloadRadius = 950;
     this.wreckProto = null;
+    this.inflight = new Set();
+    this.ready = new Map();
+    // a fixed pool of lights for powered fixtures and beacons: adding and removing lights with
+    // every POI would change the light count and recompile every shader in the scene
+    this.lightPool = [];
+    for (let i = 0; i < 4; i++) {
+      const l = new THREE.PointLight(0xffd9a0, 0, 14, 1.6);
+      l.visible = true;
+      this.group.add(l);
+      this.lightPool.push(l);
+    }
+    this.startWorker();
   }
 
   setWreckPrototype(group) {
@@ -183,20 +53,59 @@ export class POIManager {
       const p = gen.poiSlot(k);
       if (!p) continue;
       const d = Math.hypot(p.x - gx, p.z - gz);
-      if (d < this.loadRadius && !this.loaded.has(k) && !this.queue.includes(k)) this.queue.push(k);
+      if (d < this.loadRadius && !this.loaded.has(k) && !this.queue.includes(k) && !this.inflight.has(k) && !this.ready.has(k)) this.queue.push(k);
     }
     for (const [k, inst] of this.loaded) {
       if (Math.hypot(inst.poi.x - gx, inst.poi.z - gz) > this.unloadRadius) this.unload(k);
     }
-    // build at most one POI per frame, nearest first
     if (this.queue.length) {
       this.queue.sort((a, b) => {
         const pa = gen.poiSlot(a),
           pb = gen.poiSlot(b);
         return Math.hypot(pa.x - gx, pa.z - gz) - Math.hypot(pb.x - gx, pb.z - gz);
       });
-      const k = this.queue.shift();
-      if (!this.loaded.has(k)) this.load(k);
+      if (this.worker) {
+        // geometry is generated in the worker; at most two requests in flight
+        while (this.queue.length && this.inflight.size < 2) {
+          const k = this.queue.shift();
+          if (this.loaded.has(k)) continue;
+          this.inflight.add(k);
+          this.worker.postMessage({ type: 'poi', k, poi: gen.poiSlot(k) });
+        }
+      } else {
+        const k = this.queue.shift();
+        if (!this.loaded.has(k)) this.load(k);
+      }
+    }
+    // assemble at most one finished POI per frame
+    for (const [k, msg] of this.ready) {
+      this.ready.delete(k);
+      const p = gen.poiSlot(k);
+      if (this.loaded.has(k) || !p || Math.hypot(p.x - gx, p.z - gz) > this.unloadRadius) continue;
+      if (msg.error) {
+        console.warn('POI worker failed, building on the main thread', msg.error);
+        this.load(k);
+      } else this.assemble(k, msg.entries.map((en) => ({ ...en, builder: Builder.fromData(en.data) })), msg.calls, true);
+      break;
+    }
+  }
+
+  startWorker() {
+    try {
+      this.worker = new Worker(new URL('./poiWorker.js', import.meta.url), { type: 'module' });
+      this.worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type !== 'poi') return;
+        this.inflight.delete(m.k);
+        this.ready.set(m.k, m);
+      };
+      this.worker.onerror = () => {
+        this.worker = null;
+        for (const k of this.inflight) this.queue.push(k);
+        this.inflight.clear();
+      };
+    } catch (err) {
+      this.worker = null;
     }
   }
 
@@ -205,12 +114,28 @@ export class POIManager {
     return this.loaded.get(k);
   }
 
+  // Synchronous build on the main thread (the spawn point must exist at once).
   load(k) {
-    const gen = this.game.gen;
-    const poi = gen.poiSlot(k);
+    const poi = this.game.gen.poiSlot(k);
     if (!poi) return;
     const rnd = mulberry32(poi.seed);
-    const layout = (LAYOUTS[poi.type] || LAYOUTS.house)(rnd, poi);
+    let calls = 0;
+    const counted = () => {
+      calls++;
+      return rnd();
+    };
+    const layout = (LAYOUTS[poi.type] || LAYOUTS.house)(counted, poi);
+    this.assemble(k, layout, calls, false);
+  }
+
+  // Scene objects, colliders, doors, lights and loot from built layout entries. `calls` is how
+  // many random numbers the layout used, so the sequence continues identically either way.
+  assemble(k, layout, calls, tokens) {
+    const gen = this.game.gen;
+    const poi = gen.poiSlot(k);
+    const rnd = mulberry32(poi.seed);
+    for (let i = 0; i < calls; i++) rnd();
+    const resolve = tokens ? resolveMaterial : (m) => m;
     const o = this.game.origin;
     const root = new THREE.Group();
     root.name = 'poi_' + poi.type + '_' + k;
@@ -226,7 +151,7 @@ export class POIManager {
     const tmpQ = new THREE.Quaternion();
     for (const e of layout) {
       const b = e.builder;
-      const g = b.build();
+      const g = b.build(resolve);
       g.position.set(e.x, 0, e.z);
       g.rotation.y = e.rot || 0;
       root.add(g);
@@ -244,20 +169,17 @@ export class POIManager {
         ph.setOwner(col, { kind: 'structure', surface: c.surface === 'roof' ? 'wood' : c.surface, poi: inst });
       }
       // doors
-      b.doors.forEach((d, i) => this.makeDoor(inst, d, em, e, i));
+      b.doors.forEach((d, i) => this.makeDoor(inst, { ...d, mat: resolve(d.mat) }, em, e, i));
       // pumps
       for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst });
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
       for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });
-      // lights: only powered fixtures / beacons become real lights (budgeted)
+      // light fixtures: positions only; a shared pool of lights visits the nearest ones
       for (const l of b.lights) {
         if (!(l.powered || l.beacon)) continue;
         if (inst.lights.length >= 3) break;
-        const light = new THREE.PointLight(l.color, 0, l.distance, 1.6);
-        light.position.copy(V(...l.pos).applyMatrix4(em));
-        root.add(light);
-        inst.lights.push({ light, def: l });
+        inst.lights.push({ local: V(...l.pos).applyMatrix4(em), def: l });
       }
       for (const a of b.animated || []) inst.animated.push(a);
       if (e.tag === 'garage' && b.carSpot) inst.carSpot = V(b.carSpot.x, 0, b.carSpot.z).applyMatrix4(em);
@@ -288,12 +210,16 @@ export class POIManager {
       rot = rnd() * 6;
     }
     const tilt = type === 'wreck' && rnd() < 0.5 ? Math.PI / 2 : (rnd() - 0.5) * 0.08;
-    w.position.set(x, tilt > 1 ? 0.88 : -0.04, z);
+    // rest on the ground where it actually is (the pad fades out away from the centre)
+    const wp = V(x, 0, z).applyMatrix4(inst.root.matrixWorld);
+    const o = this.game.origin;
+    const gy = this.game.gen.height(wp.x + o.x, wp.z + o.z) - inst.poi.y;
+    w.position.set(x, gy + (tilt > 1 ? 0.88 : -0.04), z);
     w.rotation.set(0, rot, tilt);
     // random paint per wreck
     const paints = [0x6d7a7f, 0x7a2e24, 0x2f4a5c, 0xb9b2a0, 0x4b5a3a, 0x8b6d3c];
     // (clone() deep-copies userData through JSON, so the shared material comes from the prototype)
-    const base = this.wreckProto.userData.paint;
+    const base = this.wreckProto.wreckPaint || this.wreckProto.userData.paint;
     const hex = paints[Math.floor(rnd() * paints.length)];
     const pm = base.userData.make ? base.userData.make(hex) : base.clone();
     pm.color.setHex(hex);
@@ -302,12 +228,12 @@ export class POIManager {
     });
     inst.root.add(w);
     // collider (box)
-    const c = V(x, tilt > 1 ? 0.88 : 0.7, z);
+    const c = V(x, gy + (tilt > 1 ? 0.88 : 0.7), z);
     const qq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot, tilt, 'YXZ'));
     const desc = RAPIER.ColliderDesc.cuboid(0.78, 0.55, 2.0).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
     const col = this.game.physics.world.createCollider(desc, inst.body);
     this.game.physics.setOwner(col, { kind: 'wreck', surface: 'metal', poi: inst });
-    inst.loot.push({ pos: V(x, 0.6, z).applyMatrix4(new THREE.Matrix4()), kind: 'wreck', wreck: true });
+    inst.loot.push({ pos: V(x, gy + 0.6, z), kind: 'wreck', wreck: true });
   }
 
   makeDoor(inst, d, em, e, i) {
@@ -388,6 +314,7 @@ export class POIManager {
     const env = this.game.env;
     const night = env ? 1 - env.daylight : 0;
     const t = this.game.time;
+    this.updateLightPool(night, t);
     for (const inst of this.loaded.values()) {
       for (const d of inst.doors) {
         if (Math.abs(d.open - d.target) > 1e-3) {
@@ -398,11 +325,35 @@ export class POIManager {
       for (const a of inst.animated) {
         if (a.kind === 'spin') a.obj.rotation.z += dt * a.speed * (0.4 + (env ? env.w.wind : 0.3));
       }
-      for (const l of inst.lights) {
-        if (l.def.beacon) l.light.intensity = night > 0.3 ? (Math.sin(t * 3) > 0.6 ? 25 : 0) : 0;
-        else l.light.intensity = inst.powered && night > 0.4 ? 14 * (0.92 + 0.08 * Math.sin(t * 40 + l.light.position.x)) : 0;
-      }
     }
+  }
+
+  // The pool's lights go to the fixtures nearest the camera that are lit right now.
+  updateLightPool(night, t) {
+    const cam = this.game.renderer && this.game.renderer.camera;
+    const cands = [];
+    if (night > 0.3 && cam)
+      for (const inst of this.loaded.values())
+        for (const l of inst.lights) {
+          const lit = l.def.beacon ? Math.sin(t * 3) > 0.6 : inst.powered && night > 0.4;
+          if (!lit) continue;
+          const w = l.local.clone().applyMatrix4(inst.root.matrixWorld);
+          const d = w.distanceTo(cam.position);
+          if (d < 160) cands.push({ w, d, l });
+        }
+    cands.sort((a, b) => a.d - b.d);
+    this.lightPool.forEach((pl, i) => {
+      const c = cands[i];
+      if (!c) {
+        pl.intensity = 0;
+        return;
+      }
+      pl.position.copy(c.w);
+      pl.userData.beacon = !!c.l.def.beacon;
+      pl.color.set(c.l.def.color);
+      pl.distance = c.l.def.distance;
+      pl.intensity = c.l.def.beacon ? 25 : 14 * (0.92 + 0.08 * Math.sin(t * 40 + c.w.x));
+    });
   }
 
   // nearest pump (world position) to a point

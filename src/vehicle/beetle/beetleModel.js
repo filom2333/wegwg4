@@ -608,6 +608,8 @@ export function buildBeetleWreck(asset) {
       t.userData.shared = true;
       g.add(t);
     }
-  g.userData.paint = M.paint;
+  // not in userData: Object3D.clone() deep-copies userData through JSON, which would serialise
+  // the material's textures for every wreck placed
+  Object.defineProperty(g, 'wreckPaint', { value: M.paint, enumerable: false });
   return g;
 }

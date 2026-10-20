@@ -33,7 +33,8 @@ export const DEFAULT_BINDINGS = {
 export const DEFAULTS = {
   quality: 'high', // low | medium | high | ultra
   resolutionScale: 1,
-  fov: 75,
+  dynamicResolution: true,
+  hfov: 90, // horizontal field of view in degrees (the camera's vertical one follows the aspect)
   sensitivity: 1,
   invertY: false,
   viewDistance: 1, // multiplier

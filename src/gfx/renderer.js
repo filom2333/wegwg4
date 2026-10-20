@@ -7,14 +7,16 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
+import { SelectionOutlinePass } from './outline.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
+// maxPixels caps the internal resolution: a 4K or retina panel at full device resolution costs
+// four times the shading of 1080p for little visible gain at the post-processed output.
 export const QUALITY = {
-  low: { pixelRatio: 0.75, shadow: 1024, shadowExtent: 35, bloom: false, aa: false, view: 1800 },
-  medium: { pixelRatio: 1, shadow: 2048, shadowExtent: 45, bloom: true, aa: true, view: 2600 },
-  high: { pixelRatio: 1, shadow: 2048, shadowExtent: 55, bloom: true, aa: true, view: 3200 },
-  ultra: { pixelRatio: 1.5, shadow: 4096, shadowExtent: 65, bloom: true, aa: true, view: 3200 },
+  low: { pixelRatio: 0.75, maxPixels: 1.0e6, shadow: 1024, shadowExtent: 35, bloom: false, aa: false, view: 1800 },
+  medium: { pixelRatio: 1, maxPixels: 2.1e6, shadow: 2048, shadowExtent: 45, bloom: true, aa: true, view: 2600 },
+  high: { pixelRatio: 1, maxPixels: 3.0e6, shadow: 2048, shadowExtent: 55, bloom: true, aa: true, view: 3200 },
+  ultra: { pixelRatio: 1.5, maxPixels: 5.0e6, shadow: 4096, shadowExtent: 65, bloom: true, aa: true, view: 3200 },
 };
 
 // Final grade: subtle vignette, warmth and film grain applied after tone mapping.
@@ -92,27 +94,61 @@ export class Renderer {
     this.applyPixelRatio();
   }
 
+  // Device pixel ratio x preset x user render scale x dynamic scale, capped by the preset's
+  // pixel budget.
   applyPixelRatio() {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * this.q.pixelRatio * (this.scale ?? settings.data.resolutionScale ?? 1));
+    const w = window.innerWidth,
+      h = window.innerHeight;
+    let pr = Math.min(window.devicePixelRatio || 1, 2) * this.q.pixelRatio * (this.scale ?? settings.data.resolutionScale ?? 1);
+    const budget = this.q.maxPixels || 3e6;
+    if (w * h * pr * pr > budget) pr = Math.sqrt(budget / (w * h));
+    pr *= this.dynScale ?? 1;
+    this.renderer.setPixelRatio(Math.max(0.35, pr));
     this.resize();
+  }
+
+  // Dynamic resolution: when frames run long for a second, render a little smaller; when there
+  // is headroom for a few seconds, step back up. Changes are rare and in 10 % steps.
+  adaptResolution(dt) {
+    if (settings.data.dynamicResolution === false) {
+      if (this.dynScale !== undefined && this.dynScale !== 1) {
+        this.dynScale = 1;
+        this.applyPixelRatio();
+      }
+      return;
+    }
+    this.dynScale = this.dynScale ?? 1;
+    const ms = dt * 1000;
+    this._ftAvg = this._ftAvg === undefined ? ms : this._ftAvg + (ms - this._ftAvg) * 0.05;
+    this._slow = ms > 21 ? (this._slow || 0) + dt : Math.max(0, (this._slow || 0) - dt * 0.5);
+    this._fast = this._ftAvg < 13.5 ? (this._fast || 0) + dt : 0;
+    if (this._slow > 1.0 && this.dynScale > 0.6) {
+      this.dynScale = Math.max(0.6, this.dynScale * 0.9);
+      this._slow = 0;
+      this._fast = 0;
+      this.applyPixelRatio();
+    } else if (this._fast > 4 && this.dynScale < 1) {
+      this.dynScale = Math.min(1, this.dynScale / 0.9);
+      this._fast = 0;
+      this.applyPixelRatio();
+    }
   }
 
   setupComposer(scene) {
     this.scene = scene;
     const r = this.renderer;
     const size = r.getDrawingBufferSize(new THREE.Vector2());
+    // the scene depth is kept as a texture so the selection outline can test against it
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 0 });
+    rt.depthTexture = new THREE.DepthTexture(size.x, size.y);
+    rt.depthTexture.type = THREE.UnsignedIntType;
     this.composer = new EffectComposer(r, rt);
     this.renderPass = new RenderPass(scene, this.camera);
     this.composer.addPass(this.renderPass);
-    this.outline = new OutlinePass(new THREE.Vector2(size.x, size.y), scene, this.camera);
+    this.outline = new SelectionOutlinePass(this.camera);
     this.outline.edgeStrength = 2.2;
-    this.outline.edgeGlow = 0.0;
-    this.outline.edgeThickness = 1.0;
-    this.outline.pulsePeriod = 0;
     this.outline.visibleEdgeColor.set(0xf2e6cf);
-    // only the visible silhouette: hidden edges drew every part behind the selection through the body
-    this.outline.hiddenEdgeColor.set(0x000000);
+    this.outline.enabled = false;
     this.composer.addPass(this.outline);
     // threshold well above sunlit diffuse surfaces (snow, salt and white sand are ~1.5 in the
     // linear HDR buffer): only lamps, the sun's glint and fire bloom
@@ -148,6 +184,7 @@ export class Renderer {
   }
 
   render(dt) {
+    if (dt > 0 && dt < 0.25) this.adaptResolution(dt);
     if (this.grade) this.grade.uniforms.uTime.value += dt;
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);

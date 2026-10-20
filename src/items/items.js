@@ -57,25 +57,39 @@ export class ItemSystem {
   }
 
   // ------------------------------------------------------------------ creation
+  // Item models are built once per kind/variant and cloned: clones share geometry and materials
+  // (only a lantern's glow gets its own material, since its brightness follows the item's state).
   buildMesh(id, state = {}) {
     const d = ITEMS[id];
-    const [fn, ...args] = d.model;
-    const extra = d.variants ? [state.variant || 0] : [];
-    const g = MODEL_BUILDERS[fn](...args, ...extra);
-    if (!g.userData.size) {
-      const b = new THREE.Box3().setFromObject(g);
-      const c = b.getCenter(V(0, 0, 0));
-      for (const ch of g.children) ch.position.sub(c);
-      if (g.userData.muzzle) g.userData.muzzle.sub(c);
-      for (const k of ['grip', 'grip2']) if (g.userData[k]) g.userData[k].p.sub(c);
-      g.userData.size = b.getSize(V(0, 0, 0));
-    }
-    g.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
+    const variant = d.variants ? state.variant || 0 : null;
+    const key = variant === null ? id : id + ':' + variant;
+    this.protos = this.protos || new Map();
+    let proto = this.protos.get(key);
+    if (!proto) {
+      const [fn, ...args] = d.model;
+      proto = MODEL_BUILDERS[fn](...args, ...(variant === null ? [] : [variant]));
+      if (!proto.userData.size) {
+        const b = new THREE.Box3().setFromObject(proto);
+        const c = b.getCenter(V(0, 0, 0));
+        for (const ch of proto.children) ch.position.sub(c);
+        if (proto.userData.muzzle) proto.userData.muzzle.sub(c);
+        for (const k of ['grip', 'grip2']) if (proto.userData[k]) proto.userData[k].p.sub(c);
+        proto.userData.size = b.getSize(V(0, 0, 0));
       }
-    });
+      proto.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+          o.userData.shared = true;
+        }
+      });
+      this.protos.set(key, proto);
+    }
+    const g = proto.clone();
+    // clone() copies userData through JSON, which turns vectors into plain objects
+    g.userData = cloneUserData(proto.userData);
+    const glow = g.getObjectByName('glow');
+    if (glow && glow.material) glow.material = glow.material.clone();
     return g;
   }
 
@@ -499,4 +513,15 @@ export class ItemSystem {
     }
     return out;
   }
+}
+
+function cloneUserData(v) {
+  if (v && v.isVector3) return v.clone();
+  if (Array.isArray(v)) return v.map(cloneUserData);
+  if (v && typeof v === 'object' && v.constructor === Object) {
+    const o = {};
+    for (const k in v) o[k] = cloneUserData(v[k]);
+    return o;
+  }
+  return v;
 }
