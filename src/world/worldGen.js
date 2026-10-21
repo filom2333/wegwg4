@@ -627,7 +627,7 @@ export class WorldGen {
       pz = 1.2 * px + 1.6 * pz;
       px = qx;
     }
-    relief *= 0.72 + 0.5 * r * smoothstep(0.08, 0.6, relief);
+    relief *= 0.6 + 0.85 * r * smoothstep(0.06, 0.5, relief);
     bw = bw || this.biomeWeights(x, z);
     const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 260;
     // foothills where the belt thins out, full height in its middle
