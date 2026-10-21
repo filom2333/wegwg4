@@ -32,6 +32,16 @@ const REACH = 2.6;
 
 // Big things are carried out in front with both hands; long tools (guns, a fishing rod) are held
 // by their grip like anything small.
+// Keeps a hand within the arm's reach of its shoulder (camera space), sliding it back along the
+// line to where it was wanted; true when it had to (the hand reaches rather than holds).
+const ARM_REACH = 0.7;
+function reachClamp(placed, shoulder) {
+  const d = placed.p.distanceTo(shoulder);
+  if (d <= ARM_REACH) return false;
+  placed.p.sub(placed.p.clone().sub(shoulder).multiplyScalar((d - ARM_REACH) / d));
+  return true;
+}
+
 function carriedBig(it) {
   if (it.part) return true;
   if (it.def && (it.def.weapon || it.def.fishing)) return false;
@@ -895,7 +905,7 @@ export class Interaction {
     this.hangAng = 0;
     this.hangVel = 0;
     // big things are carried close, within arm's reach, whatever their length
-    this.holdDist = carriedBig(it) ? 0.62 + Math.min(1, Math.max(it.size.x, it.size.y, it.size.z)) * 0.1 : 0.75;
+    this.holdDist = carriedBig(it) ? 0.6 + Math.min(1, Math.max(it.size.x, it.size.y, it.size.z)) * 0.06 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
     g.audio && g.audio.play('pickup', { mass: it.mass });
@@ -1068,7 +1078,7 @@ export class Interaction {
         this.holdDist = 0.5;
         this.holdRot.copy(this.cam.quaternion.clone().invert().multiply(it.mesh.quaternion));
       }
-      this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, isBig ? 0.5 : 0.38, it.part ? 3 : 1.6);
+      this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, isBig ? 0.42 : 0.38, it.part ? 3 : 1.6);
       // pulled all the way back in: into the hand again
       if (!isBig && this.holdDist < 0.42) this.floating = false;
     }
@@ -1102,7 +1112,8 @@ export class Interaction {
       this.heldPose = pose;
     } else {
       // big items are carried in front at holdDist, a little below eye level
-      local = V(0, -0.2 - Math.min(0.2, it.size.y * 0.22), -this.holdDist);
+      // (high enough that the hands on its sides are in view)
+      local = V(0, -0.21 - Math.min(0.1, it.size.y * 0.12), -this.holdDist);
       localQ = this.holdRot.clone();
       if (this.useAnim > 0) {
         const k = Math.sin(Math.min(1, this.useAnim) * Math.PI);
@@ -2148,19 +2159,17 @@ export class Interaction {
     h.left.visible = false;
     const inv = cam.quaternion.clone().invert();
     if (it && !big && this.floating && !this.dragging) {
-      // reaching for the floating thing while it is within arm's length
+      // the hand follows the floating thing: pinching it within arm's length, reaching out to it
+      // with an open hand when it is held further off
       const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
-      const near = c.length() < 0.62;
-      h.right.visible = near;
-      if (near) {
-        const anchor = { p: c.clone().add(V(0.05, -0.04, 0.03)), q: anchorQ(V(-0.2, 1, 0.1), V(0.45, -0.3, 0.85)) };
-        const placed = handFromAnchor('right', 'pinch', anchor);
-        placed.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placed.q));
-        h.setPose('right', 'pinch');
-        h.place('right', placed.p, placed.q);
-        const arms = defaultArms();
-        h.solveArm('right', arms.right.shoulder, arms.right.pole);
-      }
+      const anchor = { p: c.clone().add(V(0.05, -0.04, 0.03)), q: anchorQ(V(-0.2, 1, 0.1), V(0.45, -0.3, 0.85)) };
+      const placed = handFromAnchor('right', 'pinch', anchor);
+      placed.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placed.q));
+      const arms = defaultArms();
+      const far = reachClamp(placed, arms.right.shoulder);
+      h.setPose('right', far ? 'palm' : 'pinch');
+      h.place('right', placed.p, placed.q);
+      h.solveArm('right', arms.right.shoulder, arms.right.pole);
       if (driving) this.updateDriverHands(dt, 'left');
     } else if (it && !big && !this.dragging) {
       // both hands are derived from where the item actually is, so they never drift off it
@@ -2200,14 +2209,17 @@ export class Interaction {
         const edge = sg > 0 ? hi.x : lo.x;
         const x = clamp(edge - sg * 0.03, c.x - 0.32, c.x + 0.32);
         // round the sides a little below the middle (a wheel at three and nine o'clock)
-        const y = c.y - Math.min(0.12, (hi.y - lo.y) * 0.12);
+        const y = c.y - Math.min(0.06, (hi.y - lo.y) * 0.06);
         // palm toward the item when the hand is at its edge; from below when the item is too wide
         const wide = Math.abs(edge - x) > 0.08 ? 1 : 0;
         const thumb = wide ? V(sg, 0.1, 0.25) : V(0.15 * sg, 1, 0.2);
         const wrist = wide ? V(0.25 * sg, -0.5, 0.85) : V(0.45 * sg, -0.35, 0.8);
-        const anchor = { p: V(x, wide ? lo.y + 0.01 : y, clamp(c.z + 0.05, -0.6, -0.3)), q: anchorQFor(side, thumb, wrist) };
+        // the hands stay on the item as it is pulled in or pushed out; beyond the arms' reach they
+        // stretch toward it, open, steadying rather than gripping
+        const anchor = { p: V(x, wide ? lo.y + 0.01 : y, Math.min(-0.24, c.z + 0.05)), q: anchorQFor(side, thumb, wrist) };
         const placed = handFromAnchor(side, 'carry', anchor);
-        h.setPose(side, 'carry');
+        const far = reachClamp(placed, arms[side].shoulder);
+        h.setPose(side, far ? 'palm' : 'carry');
         h.place(side, placed.p, placed.q);
         h.solveArm(side, arms[side].shoulder, arms[side].pole);
       }
