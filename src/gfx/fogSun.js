@@ -66,7 +66,9 @@ C.fog_fragment = `#ifdef USE_FOG
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogSun.wallColor, wf );
 	}
 	if ( fogSun.mist > 0.0 ) {
-		float mk = dot( vFogView, fogSun.up ) / fogSun.mistH;
+		// clamped: a long look down from high ground would overflow exp() and, times the
+		// vanishing density up here, give 0 * inf = NaN, which bloom smears into black blocks
+		float mk = clamp( dot( vFogView, fogSun.up ) / fogSun.mistH, -20.0, 80.0 );
 		float mInt = abs( mk ) > 1e-3 ? ( 1.0 - exp( -mk ) ) / mk : 1.0;
 		float mAmt = 1.0 - exp( -fogSun.mist * exp( -fogSun.camH / fogSun.mistH ) * fogL * max( mInt, 0.0 ) );
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogSun.mistColor, mAmt );

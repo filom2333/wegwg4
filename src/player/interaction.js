@@ -880,7 +880,7 @@ export class Interaction {
     // heavy parts (engine, body shell) are dragged along the ground rather than carried
     this.dragging = !!(it.part && partDefOf(it).mass > 60);
     if (this.dragging) {
-      g.hud && g.hud.toast(`${it.name} · ${partDefOf(it).mass} kg · too heavy to lift, dragging`);
+      g.hud && g.hud.toast('Too heavy to lift: dragging it');
       this.dragYaw0 = g.player.yaw;
       this.dragQ0 = it.mesh.quaternion.clone();
     }
@@ -999,7 +999,6 @@ export class Interaction {
     const mesh = this.game.items.buildMesh('cd', it.state);
     it.mesh.clear();
     for (const ch of [...mesh.children]) it.mesh.add(ch);
-    this.game.hud && this.game.hud.toast('Swapped discs');
   }
 
   // Takes the disc out of the car stereo: into the hands if they are free, else the backpack.
@@ -1292,7 +1291,6 @@ export class Interaction {
       this.consumeHeld();
       const cooked = g.items.spawn(def.cooksTo || 'cookedMeat', pos);
       this.pick(cooked);
-      g.hud && g.hud.toast('Cooked over the fire');
       g.audio && g.audio.play('ignite', { volume: 0.4 });
       return;
     }
@@ -1322,7 +1320,6 @@ export class Interaction {
       }
       p.consume({ warmth: def.wrap });
       p.wrapCooldown = 1;
-      g.hud && g.hud.toast('You wrap up in the blanket');
       g.audio && g.audio.play('pocket');
       return;
     }
@@ -1782,7 +1779,6 @@ export class Interaction {
     if (w) w.flat = cond < 0.02;
     g.stats.partsInstalled++;
     g.audio && g.audio.play('install', { at: car.worldPointOf(car.model.parts[slot].bbox.getCenter(V(0, 0, 0))) });
-    g.hud && g.hud.toast(`${car.partLabel(slot)} installed`);
     g.onPartInstalled && g.onPartInstalled(slot);
   }
 
@@ -1863,7 +1859,7 @@ export class Interaction {
     attachPlate(car, { id: it.def.plate, state: { ...it.state }, part: spot.part, local });
     car.owned = true;
     g.audio && g.audio.play('install', { at: spot.point });
-    g.hud && g.hud.toast(`${PLATES[it.def.plate].name} bolted on · ${PLATES[it.def.plate].mass} kg`);
+    
   }
 
   unboltPlate(plate) {
@@ -1970,7 +1966,7 @@ export class Interaction {
     const a = fitAccessory(car, it.def.accessory);
     car.owned = true;
     g.audio && g.audio.play('install', { at: car.worldPointOf(a.center) });
-    g.hud && g.hud.toast(`${def.label} fitted · ${def.mass} kg on the ${MOUNT_LABEL[def.mount]}`);
+    
   }
 
   takeOffAccessory(mount) {
@@ -1986,7 +1982,6 @@ export class Interaction {
     const it = g.items.spawn(a.id, pos, car.root.quaternion.clone(), {});
     g.audio && g.audio.play('remove', { at: pos });
     this.pick(it);
-    g.hud && g.hud.toast(`${def.label} taken off`);
   }
 
   // ------------------------------------------------------------------ stowing in the car

@@ -282,6 +282,11 @@ export class Player {
   carContactWith(car, dt) {
     const g = this.game;
     if (!car || !car.dyn) return;
+    // a parked or creeping car is solid to the character controller already: walking up to it,
+    // leaning on it or running into it never pushes or hurts
+    const v = car.dyn.body.linvel();
+    const carSpeed = Math.hypot(v.x, v.z);
+    if (carSpeed < 1.2) return;
     const pos = this.position;
     const cp = car.root.position;
     const dx = pos.x - cp.x,
@@ -296,13 +301,14 @@ export class Player {
     if (Math.abs(l.x) > hx || Math.abs(l.z) > hz || l.y < -0.4 || l.y > 1.9) return;
     // standing on the roof / hood: let the controller handle it
     if (pos.y > car.root.position.y + 1.25) return;
-    const v = car.dyn.body.linvel();
-    const vRel = Math.hypot(v.x - this.velocity.x, v.z - this.velocity.z);
+    // how fast the car is coming at the player (its own speed toward them, not the player's)
+    const toP = V(dx, 0, dz).normalize();
+    const vRel = Math.max(0, v.x * toP.x + v.z * toP.z);
     // push out along the shallowest side
     const px = hx - Math.abs(l.x),
       pz = hz - Math.abs(l.z);
     // a moving car shoves people aside (never carries them on the bumper)
-    const moving = Math.hypot(v.x, v.z) > 1;
+    const moving = carSpeed > 1;
     const out = px < pz || moving ? V((Math.sign(l.x) || 1) * (px + 0.02), 0, 0) : V(0, 0, Math.sign(l.z) * (pz + 0.02));
     out.applyQuaternion(car.root.quaternion);
     const np = { x: pos.x + out.x, y: pos.y, z: pos.z + out.z };

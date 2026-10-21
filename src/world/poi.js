@@ -287,7 +287,8 @@ export class POIManager {
     pivot.add(knob2);
     inst.root.add(pivot);
     const key = e.x.toFixed(1) + ':' + e.z.toFixed(1) + ':' + i;
-    const open = inst.state.doors[key] ?? d.open;
+    // a door stands either shut or wide open: one left ajar only blocks the way
+    const open = (inst.state.doors[key] ?? d.open) > 0.3 ? 1 : 0;
     const door = { pivot, baseRot, open, target: open, w: d.w, h: d.h, t: d.t, key, inst, body: null };
     // kinematic body for the leaf
     door.body = ph.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());

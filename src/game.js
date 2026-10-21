@@ -184,7 +184,11 @@ export class Game {
       const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
       const car = this.fleet.create(load && load.car ? load.car.model || 'beetle' : this.startCarType, new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z), spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw), {
         owned: true,
-        color: carType(this.startCarType).defaultColor,
+        // a different colour each world
+        color: (() => {
+          const cs = carType(this.startCarType).colors || [];
+          return cs.length ? cs[Math.floor(mulberry32((this.seed | 0) * 13 + 5)() * cs.length)] : carType(this.startCarType).defaultColor;
+        })(),
         state: load ? load.car : null,
       });
       this.fleet.setCurrent(car);
@@ -529,19 +533,25 @@ export class Game {
     const large = shuffle(missing.filter((id) => !heavy.includes(id) && !small.includes(id)));
     // indoor spots: the house's tables, shelves and counters, the garage's bench and kit corner
     const indoor = shuffle(inst.loot.filter((l) => l.kind !== 'wreck').map((l) => l.pos.clone()));
-    // yard spots: a ring around the buildings, kept off roofs, floors and fences
+    // yard spots: tidy rows where someone stripping a car would lay things out: behind the
+    // garage, down its far side, and behind the house; kept off roofs, floors and fences
+    const rows = [
+      { from: [5.4, -6.7], step: [1.55, 0], n: 5, a: 0 },
+      { from: [13.1, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
+      { from: [-12.5, -9.3], step: [1.6, 0], n: 7, a: 0 },
+      { from: [3.2, 6.5], step: [-1.6, 0], n: 5, a: 0 },
+    ];
     const yard = [];
-    for (let i = 0; i < 60 && yard.length < 24; i++) {
-      const a = rnd() * Math.PI * 2,
-        r = 9 + rnd() * 16;
-      const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r * 0.8);
-      const w = p.clone().applyMatrix4(m);
-      const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
-      const owner = hit && this.physics.ownerOf(hit.collider);
-      if (owner && owner.kind === 'structure') continue;
-      if (yard.some((q) => q.distanceTo(p) < 1.8)) continue;
-      yard.push(p);
-    }
+    for (const r of rows)
+      for (let i = 0; i < r.n; i++) {
+        const p = new THREE.Vector3(r.from[0] + r.step[0] * i, 0, r.from[1] + r.step[1] * i);
+        const w = p.clone().applyMatrix4(m);
+        const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
+        const owner = hit && this.physics.ownerOf(hit.collider);
+        if (owner && owner.kind === 'structure') continue;
+        p.a = r.a;
+        yard.push(p);
+      }
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
@@ -574,11 +584,14 @@ export class Game {
       const p = indoor.length ? indoor.shift().applyMatrix4(m) : at(0, 0, 0);
       put(id, p.add(new THREE.Vector3(0, 0.12, 0)), rnd() * Math.PI * 2);
     }
+    // the big pieces in order: panels together, then seats, then the rest
+    const rank = (id) => (/door|fender|hood|trunk|bumper/.test(id) ? 0 : /seat/.test(id) ? 1 : 2);
+    large.sort((a, b) => rank(a) - rank(b));
     for (const id of large) {
       const p = yard.length ? yard.shift() : new THREE.Vector3((rnd() - 0.5) * 20, 0, 10 + rnd() * 6);
       const w = p.clone().applyMatrix4(m);
       w.y = this.groundHeightAt(w.x, w.z) + 0.35;
-      put(id, w, rnd() * Math.PI * 2);
+      put(id, w, (p.a ?? 0) + (rnd() - 0.5) * 0.12);
     }
     // the engine sits on the scrap pile behind the garage
     for (const [i, id] of heavy.entries()) {
