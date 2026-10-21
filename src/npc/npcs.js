@@ -5,6 +5,7 @@
 // time of day; vagrants also live at camps and other POIs.
 
 import * as THREE from 'three';
+import { GlbAvatar } from '../player/glbAvatar.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { assembleCharacter, DEFINE } from './characters.js';
 import { geometryFromArrays, polygonizeArrays } from './sdfMesh.js';
@@ -1481,7 +1482,19 @@ export class NPCManager {
 
   // ---------------------------------------------------------------- frame
   ensureAvatar() {
-    if (this.avatar || !this.ready('survivor')) return this.avatar;
+    if (this.avatar) return this.avatar;
+    // the rigged model when it has loaded, else the drawn figure
+    const lib = this.g.props;
+    if (lib && lib.ready('survivor')) {
+      const a = new GlbAvatar(this.g);
+      if (a.ok) {
+        this.avatar = a;
+        this.avatar.root.visible = false;
+        this.g.worldGroup.add(this.avatar.root);
+        return this.avatar;
+      }
+    }
+    if (!this.ready('survivor')) return this.avatar;
     const proto = this.protos.survivor[0];
     this.avatar = new PlayerAvatar(this, proto, this.g.player.position.clone());
     this.avatar.root.visible = false;

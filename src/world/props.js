@@ -24,7 +24,10 @@ export const PROPS = {
   pottedPlant: { file: 'potted_plant.glb', size: { h: 0.75 }, collide: 'box', fallback: 0x4a7a3a },
   skull: { file: 'skull.glb', size: { l: 0.22 }, fallback: 0xd8cdb4, tint: 0xd6c8a8 },
   flightHelmet: { file: 'flight_helmet.glb', size: { h: 0.5 }, collide: 'box', fallback: 0x6a4a30 },
-  survivor: { file: 'survivor.glb', size: { h: 1.78 }, animated: true, skinned: true },
+  // the player's body (Ready Player Me avatar) and, for its motion, the Soldier's Mixamo clips
+  // without his mesh: retargeted onto the avatar in glbAvatar.js
+  survivor: { file: 'survivor_rpm.glb', size: { h: 1.8 }, skinned: true },
+  survivorAnim: { file: 'survivor_anim.glb', anim: true },
   // mossy boulders (ez-tree, MIT): normalised to a metre across, scaled where they are used
   rockMoss1: { file: 'rock_moss1.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
   rockMoss2: { file: 'rock_moss2.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
@@ -69,6 +72,12 @@ export class PropLibrary {
   // Check the model, cut it down to the wanted node, scale and seat it on y = 0 centred in xz.
   prepare(id, spec, gltf) {
     let src = gltf.scene;
+    // motion only: the skeleton and its clips, nothing to show
+    if (spec.anim) {
+      if (!gltf.animations || !gltf.animations.length) throw new Error('no animations');
+      this.report[id] = 'ok';
+      return { root: src, size: new THREE.Vector3(), clips: gltf.animations };
+    }
     if (spec.node) {
       const n = src.getObjectByName(spec.node);
       if (!n) throw new Error('no node ' + spec.node);

@@ -1147,14 +1147,24 @@ export class Interaction {
       wq.copy(av.root.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)));
       if (def && def.weapon) wq.copy(cam.quaternion).multiply(localQ);
     }
+    // third person, something big: carried against the body's chest, turned as it would be in
+    // front of the eye (the arms reach for its sides)
+    let from = cam.position;
+    if (pl.tpBlend > 0.5 && av && av.ok && big && !this.dragging) {
+      const bodyQ = av.root.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI));
+      const depth = Math.min(0.32, Math.max(it.size.x, it.size.z) * 0.5);
+      from = av.root.getWorldPosition(V()).add(V(0, 1.3, 0));
+      wp.copy(from).add(V(0, -0.18 - Math.min(0.12, it.size.y * 0.1), -(0.22 + depth)).applyQuaternion(bodyQ));
+      wq.copy(bodyQ).multiply(localQ);
+    }
     // keep big items out of walls: pull toward the eye if the path is blocked
     if (big) {
-      const dir = wp.clone().sub(cam.position);
+      const dir = wp.clone().sub(from);
       const len = dir.length();
       dir.normalize();
-      const hit = this.game.physics.raycast(cam.position, dir, len + 0.3, GROUPS.ground, this.game.player.body);
+      const hit = this.game.physics.raycast(from, dir, len + 0.3, GROUPS.ground, this.game.player.body);
       const rad = Math.max(it.size.x, it.size.z) * 0.45;
-      if (hit && hit.distance < len + rad) wp.copy(cam.position).addScaledVector(dir, Math.max(0.35, hit.distance - rad));
+      if (hit && hit.distance < len + rad) wp.copy(from).addScaledVector(dir, Math.max(0.35, hit.distance - rad));
       // smooth follow (mass makes heavy items lag)
       const follow = Math.min(1, dt * (14 / Math.sqrt(Math.max(1, it.mass / 8))));
       it.mesh.position.lerp(wp, this.holdLerp < 1 ? follow * 0.6 : follow);

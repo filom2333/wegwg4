@@ -146,7 +146,7 @@ export class Game {
     // real models: what the scatter and the items build from is loaded first, the common props
     // start loading now, the rest when a place first needs them
     this.props = new PropLibrary();
-    await Promise.all(['rockMoss1', 'rockMoss2', 'rockMoss3', 'carp'].map((id) => this.props.load(id)));
+    await Promise.all(['rockMoss1', 'rockMoss2', 'rockMoss3', 'carp', 'survivor', 'survivorAnim'].map((id) => this.props.load(id)));
     registerRealModel('carp', this.props.instance('carp'));
     for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant', 'tyre']) this.props.load(id);
     this.scatter = new Scatter(this, this.groundTex, await treeTex);
