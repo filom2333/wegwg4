@@ -1,6 +1,7 @@
 // Thin wrapper around Rapier: world creation, fixed stepping, collision groups and queries.
 
 import RAPIER from '@dimforge/rapier3d-compat';
+import * as THREE from 'three';
 
 export { RAPIER };
 
@@ -52,12 +53,52 @@ export class Physics {
     this.world.numSolverIterations = 4;
     this.fixedDt = 1 / 120;
     this.acc = 0;
-    this.events = new RAPIER.EventQueue(true);
     this.beforeStep = [];
     this.afterStep = [];
     this.colliderOwner = new Map(); // collider handle -> owner object
     this.time = 0;
     this._ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    // bodies drawn between their last two physics states, so they move smoothly at any frame
+    // rate (the world steps at 120 Hz, the screen does not)
+    this.smooth = new Set();
+    this.alpha = 1;
+  }
+
+  // Starts interpolating a body; read its pose with pose().
+  track(body) {
+    const s = { body, p0: new THREE.Vector3(), p1: new THREE.Vector3(), q0: new THREE.Quaternion(), q1: new THREE.Quaternion() };
+    this.snap(s);
+    this.smooth.add(s);
+    return s;
+  }
+
+  untrack(s) {
+    if (s) this.smooth.delete(s);
+  }
+
+  // Forget the motion so far (after a teleport).
+  snap(s) {
+    const t = s.body.translation(),
+      r = s.body.rotation();
+    s.p0.set(t.x, t.y, t.z);
+    s.p1.copy(s.p0);
+    s.q0.set(r.x, r.y, r.z, r.w);
+    s.q1.copy(s.q0);
+  }
+
+  snapAll() {
+    for (const s of this.smooth) this.snap(s);
+  }
+
+  // The interpolated pose of a tracked body into a position and a quaternion.
+  pose(s, pos, quat) {
+    pos.lerpVectors(s.p0, s.p1, this.alpha);
+    quat.slerpQuaternions(s.q0, s.q1, this.alpha);
+    // a jump (teleport, righting) is shown at once
+    if (s.p0.distanceToSquared(s.p1) > 4) {
+      pos.copy(s.p1);
+      quat.copy(s.q1);
+    }
   }
 
   // Advances in fixed steps; returns interpolation alpha.
@@ -66,14 +107,29 @@ export class Physics {
     let steps = 0;
     while (this.acc >= this.fixedDt && steps < 8) {
       for (const f of this.beforeStep) f(this.fixedDt);
-      this.world.step(this.events);
+      for (const s of this.smooth) {
+        const t = s.body.translation(),
+          r = s.body.rotation();
+        s.p0.set(t.x, t.y, t.z);
+        s.q0.set(r.x, r.y, r.z, r.w);
+      }
+      // no event queue: nothing reads collision events, and collecting them costs every step
+      this.world.step();
       this.time += this.fixedDt;
       for (const f of this.afterStep) f(this.fixedDt);
       this.acc -= this.fixedDt;
       steps++;
     }
     if (steps === 8) this.acc = 0;
-    return this.acc / this.fixedDt;
+    if (steps)
+      for (const s of this.smooth) {
+        const t = s.body.translation(),
+          r = s.body.rotation();
+        s.p1.set(t.x, t.y, t.z);
+        s.q1.set(r.x, r.y, r.z, r.w);
+      }
+    this.alpha = Math.min(1, this.acc / this.fixedDt);
+    return this.alpha;
   }
 
   setOwner(collider, owner) {

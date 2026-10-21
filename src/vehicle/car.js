@@ -513,8 +513,10 @@ export class Car {
     const d = this.dyn;
     // hinge animation
     let collidersDirty = false;
-    for (const [id, p] of Object.entries(this.model.parts)) {
-      if (!p.hinge || p.targetOpen === undefined) continue;
+    if (!this.hingedIds) this.hingedIds = Object.keys(this.model.parts).filter((id) => this.model.parts[id].hinge);
+    for (const id of this.hingedIds) {
+      const p = this.model.parts[id];
+      if (!p || !p.hinge || p.targetOpen === undefined) continue;
       const before = p.openT;
       const speed = id.startsWith('door') ? 2.6 : 1.6;
       const t = p.openT + Math.sign(p.targetOpen - p.openT) * Math.min(Math.abs(p.targetOpen - p.openT), dt * speed);
@@ -726,12 +728,17 @@ export class Car {
   }
 
   // Copy physics state to the visual model.
-  syncVisual() {
+  // Puts the model where the body is; `smooth`: between the last two physics steps (per frame).
+  syncVisual(smooth = false) {
     const b = this.dyn.body;
-    const t = b.translation(),
-      r = b.rotation();
-    this.root.position.set(t.x, t.y, t.z);
-    this.root.quaternion.set(r.x, r.y, r.z, r.w);
+    if (!this.smooth) this.smooth = this.game.physics.track(b);
+    if (smooth) this.game.physics.pose(this.smooth, this.root.position, this.root.quaternion);
+    else {
+      const t = b.translation(),
+        r = b.rotation();
+      this.root.position.set(t.x, t.y, t.z);
+      this.root.quaternion.set(r.x, r.y, r.z, r.w);
+    }
     this.root.updateMatrixWorld(true);
     const mw = this.model.wheels;
     for (const w of this.dyn.wheels) {
@@ -793,6 +800,7 @@ export class Car {
   }
 
   dispose() {
+    this.game.physics.untrack(this.smooth);
     for (const l of [...this.headLights, this.headFill, this.tailLight, this.reverseLight, this.cabinLamp]) this.game.lights.remove(l);
     this.dyn.dispose();
     this.root.parent && this.root.parent.remove(this.root);

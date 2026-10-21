@@ -159,7 +159,7 @@ export class Fleet {
   }
 
   syncVisual() {
-    for (const car of this.cars) if (car.active !== false) car.syncVisual();
+    for (const car of this.cars) if (car.active !== false) car.syncVisual(true);
   }
 
   rebase(dx, dz) {

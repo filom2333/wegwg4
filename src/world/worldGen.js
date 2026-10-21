@@ -365,16 +365,17 @@ export class WorldGen {
   // Ground shape per biome. dx: distance from the road. The country along the road is mostly calm
   // (plains, long swells, washes); the bolder shapes (dune fields, mesas, wooded hills) stand
   // further back, and how hilly it gets changes from region to region.
+  // Dry washes draining across the plain toward the road (shallow, meandering).
+  wash(x, z) {
+    const w = Math.abs(this.nB.noise2(x * 0.0006 + this.nC.noise2(x * 0.003, z * 0.003) * 0.25, z * 0.0019 + 5));
+    return -1.3 * (1 - smoothstep(0.0, 0.045, w));
+  }
+
   biomeDetail(b, x, z, dx = Math.abs(x - this.roadX(z))) {
     const n = this.nB,
       m = this.nC;
     const back = smoothstep(60, 520, dx);
     const hilly = smoothstep(-0.25, 0.45, this.nA.noise2(z * 0.00009 + 4, x * 0.00009 - 2));
-    // dry washes draining across the plain toward the road (shallow, meandering)
-    const wash = () => {
-      const w = Math.abs(n.noise2(x * 0.0006 + m.noise2(x * 0.003, z * 0.003) * 0.25, z * 0.0019 + 5));
-      return -1.3 * (1 - smoothstep(0.0, 0.045, w));
-    };
     switch (b) {
       case 'dunes': {
         // sand sheet by the road, an erg further out: transverse dunes across the wind (+x) with a
@@ -396,7 +397,7 @@ export class WorldGen {
       }
       case 'badlands': {
         // flats and washes by the road; mesas and buttes with terraced cliffs further back
-        const flat = n.noise2(x * 0.0013, z * 0.0013) * 2.2 + wash();
+        const flat = n.noise2(x * 0.0013, z * 0.0013) * 2.2 + this.wash(x, z);
         const mm = this.mesaNoise(x, z);
         // each mesa its own height; terraced cliffs over a talus apron
         const top = 22 + 26 * (m.noise2(x * 0.0011 - 5, z * 0.0011 + 8) * 0.5 + 0.5);
@@ -420,7 +421,7 @@ export class WorldGen {
         // high desert plateau: long swells, rocky knolls and a butte now and then
         const swell = n.noise2(x * 0.0011 + 2, z * 0.0011) * 6 + n.noise2(x * 0.004, z * 0.004) * 1.2;
         const knoll = Math.pow(Math.max(0, n.noise2(x * 0.0045 + 5, z * 0.0045) - 0.35) / 0.65, 1.6) * 22;
-        return swell + wash() + knoll * back * (0.4 + 0.6 * hilly);
+        return swell + this.wash(x, z) + knoll * back * (0.4 + 0.6 * hilly);
       }
       case 'prairie':
         // long gentle swells
@@ -446,7 +447,7 @@ export class WorldGen {
         // scrub: open desert plain sloping gently off the ranges, washes, low hills further out
         const plain = n.noise2(x * 0.0011, z * 0.0011) * 3.5 + n.noise2(x * 0.004, z * 0.004) * 0.6 + n.noise2(x * 0.05, z * 0.05) * 0.12;
         const hills = Math.pow(1 - Math.abs(n.noise2(x * 0.0024 + 9, z * 0.0024)), 2.5) * 16;
-        return plain + wash() + hills * back * hilly;
+        return plain + this.wash(x, z) + hills * back * hilly;
       }
     }
   }
@@ -704,6 +705,13 @@ export class WorldGen {
   // ---------------------------------------------------------------- POI planning
   // Points of interest sit in slots along the road. Each slot is deterministic from the seed.
   poiSlot(k) {
+    // the cached path is kept free of closures (a closure would cost an allocation per call,
+    // and the height function asks for slots constantly)
+    const c = this._poi && this._poi.get(k);
+    return c !== undefined ? c : this.makePoiSlot(k);
+  }
+
+  makePoiSlot(k) {
     if (!this._poi) this._poi = new Map();
     if (this._poi.has(k)) return this._poi.get(k);
     let res = null;
@@ -818,7 +826,9 @@ export class WorldGen {
     for (let k = k0 - 1; k <= k0 + 1; k++) {
       const p = this.poiSlot(k);
       if (!p) continue;
-      const d = Math.hypot(x - p.x, z - p.z);
+      const dx = x - p.x,
+        dz = z - p.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < p.padR + p.padBlend) w = Math.max(w, 1 - smoothstep(p.padR, p.padR + p.padBlend, d));
     }
     return w;
@@ -830,7 +840,9 @@ export class WorldGen {
     for (let k = k0 - 1; k <= k0 + 1; k++) {
       const p = this.poiSlot(k);
       if (!p) continue;
-      const d = Math.hypot(x - p.x, z - p.z);
+      const dx = x - p.x,
+        dz = z - p.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < p.padR + p.padBlend) {
         const t = 1 - smoothstep(p.padR, p.padR + p.padBlend, d);
         off += (p.y - nat) * t;

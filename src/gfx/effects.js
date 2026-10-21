@@ -82,7 +82,26 @@ class Particles {
     this.fresh = true;
     const q = this.parts[this.next];
     this.next = (this.next + 1) % this.max;
-    Object.assign(q, { life: p.life, max: p.life, x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.vel ? p.vel.x : 0, vy: p.vel ? p.vel.y : 0, vz: p.vel ? p.vel.z : 0, s0: p.size, s1: p.grow ?? p.size * 2, a0: p.alpha ?? 1, r: p.color[0], g: p.color[1], b: p.color[2], drag: p.drag ?? 1, grav: p.grav ?? 0, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * (p.spin ?? 1), fadeIn: p.fadeIn ?? 0.1, ground: p.ground ?? -1e9 });
+    // fields written one by one: no temporary object per particle
+    q.life = q.max = p.life;
+    q.x = p.pos.x;
+    q.y = p.pos.y;
+    q.z = p.pos.z;
+    q.vx = p.vel ? p.vel.x : 0;
+    q.vy = p.vel ? p.vel.y : 0;
+    q.vz = p.vel ? p.vel.z : 0;
+    q.s0 = p.size;
+    q.s1 = p.grow ?? p.size * 2;
+    q.a0 = p.alpha ?? 1;
+    q.r = p.color[0];
+    q.g = p.color[1];
+    q.b = p.color[2];
+    q.drag = p.drag ?? 1;
+    q.grav = p.grav ?? 0;
+    q.rot = Math.random() * 6.28;
+    q.spin = (Math.random() - 0.5) * (p.spin ?? 1);
+    q.fadeIn = p.fadeIn ?? 0.1;
+    q.ground = p.ground ?? -1e9;
   }
 
   update(dt) {

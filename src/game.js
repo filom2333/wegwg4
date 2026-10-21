@@ -14,6 +14,7 @@ import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
 import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
+import { archMaterials } from './world/buildings/materials.js';
 import { Fleet } from './vehicle/fleet.js';
 import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Campfires } from './world/campfires.js';
@@ -219,7 +220,9 @@ export class Game {
     this.trailers.update();
     this.items.update();
     this.hud.show(!attract);
-    this.lights.warm(this.renderer.renderer, this.renderer.camera, this.renderer.composer.readBuffer);
+    this.warmShaders();
+    // one frame behind the loading screen compiles the passes, shadows and sky as well
+    this.render(0.016);
     if (attract) {
       // title screen: the car drives itself north at dusk with its lights on
       this.interaction.viewRoot.visible = false;
@@ -231,6 +234,27 @@ export class Game {
     }
     onProgress('Ready', 1);
     this.running = true;
+  }
+
+  // Compiles, behind the loading screen, the shaders of things the road shows later (every item,
+  // every building material, the roadside wrecks) for both light states, so the first time each
+  // comes into view does not stall the game.
+  warmShaders() {
+    const zoo = new THREE.Group();
+    for (const id of Object.keys(ITEMS))
+      try {
+        zoo.add(this.items.buildMesh(id, initialState(id, Math.random)));
+      } catch (e) {
+        /* an item that needs more state to build; it compiles when first seen */
+      }
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    for (const m of Object.values(archMaterials())) if (m && m.isMaterial) zoo.add(new THREE.Mesh(box, m));
+    for (const w of this.pois.wreckProtos) zoo.add(w.group.clone());
+    zoo.traverse((o) => {
+      if (o.isMesh) o.castShadow = o.receiveShadow = true;
+    });
+    this.lights.warm(this.renderer.renderer, this.renderer.camera, this.renderer.composer.readBuffer, zoo);
+    box.dispose();
   }
 
   spawnPoint() {
@@ -298,6 +322,7 @@ export class Game {
       b.setTranslation({ x: t.x - dx, y: t.y, z: t.z - dz }, true);
       if (b.isKinematic()) b.setNextKinematicTranslation({ x: t.x - dx, y: t.y, z: t.z - dz });
     });
+    this.physics.snapAll();
     this.terrain.rebase(dx, dz);
     this.scatter.rebase(dx, dz);
     this.pois.rebase(dx, dz);

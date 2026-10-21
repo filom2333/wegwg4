@@ -54,13 +54,15 @@ export class LightPool {
   }
 
   // Compiles the scene's shaders for the pool both off and on (while loading), so the first lamp
-  // to light up does not stall the game. `target` is the render target the scene is drawn into.
-  warm(renderer, camera, target) {
+  // to light up does not stall the game. `target` is the render target the scene is drawn into;
+  // `extra` holds things not in the scene yet that should be ready too (lit by the scene's lights).
+  warm(renderer, camera, target, extra = null) {
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(target);
     for (const on of [true, false]) {
       this.setActive(on);
       renderer.compile(this.scene, camera);
+      if (extra) renderer.compile(extra, camera, this.scene);
     }
     renderer.setRenderTarget(prev);
     this.idle = 0;

@@ -867,9 +867,18 @@ export class UI {
     }
     if (!g || this.mode !== 'play' || g.paused || g.player.dead) return;
     this.autosaveT += dt;
-    if (this.autosaveT > 240) {
-      this.autosaveT = 0;
-      if (writeSave(g)) g.hud && g.hud.toast('Autosaved', 'quiet');
+    // autosave every few minutes at a calm moment (standing, or the car nearly still), in the
+    // browser's idle time, so writing the save never lands in the middle of a drive
+    const calm = (g.player.seat ? Math.abs(g.car.speedKmh) < 8 : true) && !g.interaction.held;
+    if (this.autosaveT > 240 && (calm || this.autosaveT > 330) && !this.savePending) {
+      this.savePending = true;
+      const go = () => {
+        this.savePending = false;
+        this.autosaveT = 0;
+        if (writeSave(g)) g.hud && g.hud.toast('Autosaved', 'quiet');
+      };
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 4000 });
+      else setTimeout(go, 0);
     }
     if (this.current === 'sleep' && this.sleepText) {
       const h = g.env.time;

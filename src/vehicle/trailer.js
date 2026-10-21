@@ -205,16 +205,14 @@ export class Trailer {
   }
 
   sync() {
-    const t = this.body.translation(),
-      r = this.body.rotation();
-    this.root.position.set(t.x, t.y, t.z);
-    this.root.quaternion.set(r.x, r.y, r.z, r.w);
+    // drawn between physics steps, like the cars
+    const ph = this.game.physics;
+    if (!this.smooth) this.smooth = ph.track(this.body);
+    ph.pose(this.smooth, this.root.position, this.root.quaternion);
     this.root.updateMatrixWorld(true);
     for (const w of this.wheels) {
-      const wt = w.body.translation(),
-        wr = w.body.rotation();
-      w.mesh.position.set(wt.x, wt.y, wt.z);
-      w.mesh.quaternion.set(wr.x, wr.y, wr.z, wr.w);
+      if (!w.smooth) w.smooth = ph.track(w.body);
+      ph.pose(w.smooth, w.mesh.position, w.mesh.quaternion);
     }
     // tail lights follow the car's
     const car = this.hitch && this.hitch.car;
@@ -231,7 +229,9 @@ export class Trailer {
   dispose() {
     this.unhitch();
     const W = this.game.physics.world;
+    this.game.physics.untrack(this.smooth);
     for (const w of this.wheels) {
+      this.game.physics.untrack(w.smooth);
       W.removeRigidBody(w.body);
       this.game.worldGroup.remove(w.mesh);
     }

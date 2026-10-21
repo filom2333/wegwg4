@@ -9,6 +9,8 @@ import { RAPIER, GROUPS } from './physics.js';
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
+// scratch vectors for step() (nothing keeps them past the step)
+const S = { pos: new THREE.Vector3(), linvel: new THREE.Vector3(), angvel: new THREE.Vector3(), up: new THREE.Vector3(), fwd: new THREE.Vector3(), right: new THREE.Vector3(), com: new THREE.Vector3(), rp: new THREE.Vector3(), vel: new THREE.Vector3(), cr: new THREE.Vector3(), rayDir: new THREE.Vector3(), ray: null };
 
 // Simplified Pacejka "magic formula" (normalised to peak = 1).
 function magic(x, B, C, E) {
@@ -240,15 +242,15 @@ export class VehicleDynamics {
     const t = body.translation();
     const r = body.rotation();
     const q = tmpQ.set(r.x, r.y, r.z, r.w);
-    const pos = new THREE.Vector3(t.x, t.y, t.z);
+    const pos = S.pos.set(t.x, t.y, t.z);
     const lv = body.linvel();
     const av = body.angvel();
-    const linvel = new THREE.Vector3(lv.x, lv.y, lv.z);
-    const angvel = new THREE.Vector3(av.x, av.y, av.z);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-    const right = new THREE.Vector3(-1, 0, 0).applyQuaternion(q); // car +X is left
-    const comWorld = this.com.clone().applyQuaternion(q).add(pos);
+    const linvel = S.linvel.set(lv.x, lv.y, lv.z);
+    const angvel = S.angvel.set(av.x, av.y, av.z);
+    const up = S.up.set(0, 1, 0).applyQuaternion(q);
+    const fwd = S.fwd.set(0, 0, 1).applyQuaternion(q);
+    const right = S.right.set(-1, 0, 0).applyQuaternion(q); // car +X is left
+    const comWorld = S.com.copy(this.com).applyQuaternion(q).add(pos);
     this.forwardSpeed = linvel.dot(fwd);
     this.speed = linvel.length();
     const speedKmh = Math.abs(this.forwardSpeed) * 3.6;
@@ -278,8 +280,11 @@ export class VehicleDynamics {
     }
 
     // ---- suspension raycasts ----
-    const rayDir = up.clone().negate();
-    const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: rayDir.x, y: rayDir.y, z: rayDir.z });
+    const rayDir = S.rayDir.copy(up).negate();
+    const ray = S.ray || (S.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }));
+    ray.dir.x = rayDir.x;
+    ray.dir.y = rayDir.y;
+    ray.dir.z = rayDir.z;
     const maxLen = p.restLength + p.wheelRadius;
     for (const w of this.wheels) {
       w.prevCompression = w.compression;
@@ -288,8 +293,7 @@ export class VehicleDynamics {
         w.compression = 0;
         continue;
       }
-      const top = new THREE.Vector3(w.local.x, this.topY, w.local.z).applyQuaternion(q).add(pos);
-      w.top = top;
+      const top = (w.top || (w.top = new THREE.Vector3())).set(w.local.x, this.topY, w.local.z).applyQuaternion(q).add(pos);
       ray.origin.x = top.x;
       ray.origin.y = top.y;
       ray.origin.z = top.z;
@@ -358,9 +362,9 @@ export class VehicleDynamics {
       const n = w.contactNormal;
       const wf = fwd.clone().applyAxisAngle(up, w.steerAngle);
       w.f = wf.addScaledVector(n, -wf.dot(n)).normalize();
-      w.s = new THREE.Vector3().crossVectors(n, w.f).normalize(); // points to car +X side (left)
-      const rp = w.contactPoint.clone().sub(comWorld);
-      const vel = linvel.clone().add(new THREE.Vector3().crossVectors(angvel, rp));
+      w.s = (w.s || new THREE.Vector3()).crossVectors(n, w.f).normalize(); // points to car +X side (left)
+      const rp = S.rp.copy(w.contactPoint).sub(comWorld);
+      const vel = S.vel.copy(linvel).add(S.cr.crossVectors(angvel, rp));
       w.vLong = vel.dot(w.f);
       w.vLat = vel.dot(w.s);
     }
