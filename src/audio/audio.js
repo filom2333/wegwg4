@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { GEN } from './synth.js';
+import { Soundscape } from './soundscape.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
 
@@ -53,12 +54,25 @@ export class AudioSystem {
     this.amb = ctx.createGain();
     this.music = ctx.createGain();
     this.sfx.connect(this.master);
-    this.amb.connect(this.master);
+    // the world outside, muffled indoors and in the cabin (the soundscape moves the cutoff)
+    this.ambLP = ctx.createBiquadFilter();
+    this.ambLP.type = 'lowpass';
+    this.ambLP.frequency.value = 20000;
+    this.amb.connect(this.ambLP).connect(this.master);
     this.music.connect(this.master);
+    // a small room answering footsteps and doors when indoors
+    this.room = ctx.createConvolver();
+    this.room.buffer = roomImpulse(ctx);
+    this.roomWet = ctx.createGain();
+    this.roomWet.gain.value = 0;
+    this.sfx.connect(this.room).connect(this.roomWet).connect(this.master);
+    this.windGust = 1;
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
     await this.buildBuffers();
     this.buildLoops();
+    this.scape = new Soundscape(this);
+    await this.scape.build(() => new Promise((r) => setTimeout(r, 0)));
     this.ready = true;
   }
 
@@ -418,7 +432,7 @@ export class AudioSystem {
     // ---- wind / rain ambience
     const carSpeed = car ? Math.abs(car.dyn.forwardSpeed) : 0;
     const wind = env.w.wind;
-    const windGain = 0.05 + wind * 0.25 + (seated ? 0 : 0) + env.w.dust * 0.3;
+    const windGain = (0.05 + wind * 0.25 + env.w.dust * 0.3) * this.windGust;
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
     set(this.loops.wind.f.frequency, 300 + wind * 500 + drive * 600, now);
@@ -494,19 +508,8 @@ export class AudioSystem {
       this.timers.radio -= dt;
       if (this.timers.radio <= 0) this.radioNote();
     }
-    // ---- ambience scheduler
-    this.timers.amb -= dt;
-    if (this.timers.amb <= 0) {
-      this.timers.amb = 0.3 + Math.random() * 2.5;
-      const night = env.isNight;
-      const pos = cam.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 60, 0, (Math.random() - 0.5) * 60));
-      if (night && rain < 0.2) {
-        // crickets in bursts
-        const n = 3 + Math.floor(Math.random() * 5);
-        for (let i = 0; i < n; i++) setTimeout(() => this.play('chirp', { at: pos, volume: 0.12, bus: 'amb', ref: 8 }), i * 90);
-        if (Math.random() < 0.03) this.play('howl', { at: cam.position.clone().add(new THREE.Vector3(200 * (Math.random() - 0.5), 0, 200 * (Math.random() - 0.5))), volume: 0.5, bus: 'amb', ref: 60 });
-      } else if (!night && Math.random() < 0.25 && rain < 0.2) this.play('bird', { at: pos, volume: 0.15, bus: 'amb', ref: 10 });
-    }
+    // ---- the land's sound (ambience layers, creatures, small touches)
+    if (this.scape) this.scape.update(dt);
   }
 
   // ---------------------------------------------------------------- title theme
@@ -684,6 +687,21 @@ export class AudioSystem {
   }
 }
 
+// A short warm room: stereo noise dying away over half a second.
+function roomImpulse(ctx) {
+  const n = Math.floor(ctx.sampleRate * 0.55);
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      lp += (Math.random() * 2 - 1 - lp) * 0.35;
+      d[i] = lp * Math.exp((-i / n) * 6) * (i < 60 ? i / 60 : 1);
+    }
+  }
+  return buf;
+}
+
 const V3 = new THREE.Vector3();
 const V3b = new THREE.Vector3();
 
@@ -729,6 +747,27 @@ const VOL = {
   land: 0.5,
   seat: 0.45,
   thunder: 1.0,
+  // the soundscape passes its own levels
+  song: 1,
+  meadowlark: 1,
+  woodpecker: 1,
+  owl: 1,
+  caw: 1,
+  hawk: 1,
+  yips: 1,
+  chime: 1,
+  signCreak: 1,
+  floorCreak: 1,
+  keys: 1,
+  tick: 1,
+  ping: 1,
+  clunk: 1,
+  squeak: 1,
+  swish: 1,
+  heartbeat: 1,
+  stomach: 1,
+  chatter: 1,
+  pant: 1,
   chirp: 0.5,
   howl: 0.6,
   growl: 0.8,

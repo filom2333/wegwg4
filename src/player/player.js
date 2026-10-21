@@ -228,6 +228,8 @@ export class Player {
     this.carContact(dt);
     // footsteps & head bob
     const hs = Math.hypot(mv.x, mv.z) / Math.max(dt, 1e-4);
+    this.moving = this.grounded && hs > 0.5;
+    this.onWood = this.lastSurface === 'wood';
     if (this.grounded && hs > 0.5) {
       this.bob += dt * hs * 2.1;
       this.bobAmp = lerp(this.bobAmp, Math.min(1, hs / 5), dt * 6);
