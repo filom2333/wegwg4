@@ -19,6 +19,7 @@ import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
 import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
 import { JACK_LOW, JACK_MAX } from '../vehicle/jack.js';
+import { setTune } from '../vehicle/tuning.js';
 
 
 // Part table entry of a part item (it remembers which kind of car it came off).
@@ -439,7 +440,35 @@ export class Interaction {
     }
     if ((it.id === 'repairKit' || it.id === 'extinguisher') && t && (t.kind === 'part' || t.kind === 'hotspot') && car) out.push(['LMB', it.id === 'repairKit' ? 'Repair engine' : 'Extinguish']);
     if (it.id === 'tyreKit' && t && t.kind === 'part' && t.part.startsWith('wheel')) out.push(['LMB', 'Repair tyre']);
+    if (def.tune) {
+      const why = this.tuneBlock(it, t);
+      out.push(why ? ['', why] : ['LMB', 'Bolt on the twin carbs']);
+    }
+    if (it.id === 'wrench' && this.carbsTarget(t)) out.push(['LMB', 'Unbolt the twin carbs']);
     return out;
+  }
+
+  // Engine bay targets: the engine and what sits on it, with the lid open.
+  engineBay(t) {
+    const car = this.game.car;
+    if (!car || !t) return false;
+    if (t.kind === 'part') return ['engine', 'airfilter', 'fanbelt'].includes(t.part);
+    return t.kind === 'hotspot' && t.hotspot.id === 'oil';
+  }
+
+  // Why a tuning kit cannot go on (null when it can).
+  tuneBlock(it, t) {
+    const car = this.game.car;
+    if (!this.engineBay(t)) return 'Look at the engine to fit it';
+    if (!car.isInstalled('engine')) return 'There is no engine';
+    if (!car.lidOpen('hood')) return `Open the ${car.type.lids.hood} first`;
+    if (car.parts.engine.tune === it.def.tune.tune) return 'This engine already has them';
+    return null;
+  }
+
+  carbsTarget(t) {
+    const car = this.game.car;
+    return this.engineBay(t) && car.isInstalled('engine') && car.parts.engine.tune === 'twin' && car.lidOpen('hood');
   }
 
   pourTarget(it, t) {
@@ -503,7 +532,8 @@ export class Interaction {
         const st = car.parts[id];
         const def = car.PARTS[id];
         const cond = st ? Math.round(st.condition * 100) : 100;
-        info = { title: def.label, sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
+        info = { title: car.partLabel(id), sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
+        void def;
         const mp = car.model.parts[id];
         if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open']);
         const rem = car.canRemove(id);
@@ -1332,6 +1362,23 @@ export class Interaction {
       g.audio && g.audio.play('extinguish');
       return;
     }
+    if (def.tune) {
+      const why = this.tuneBlock(it, t);
+      if (why) return g.hud && g.hud.toast(why);
+      setTune(car, def.tune.part, def.tune.tune);
+      this.consumeHeld();
+      g.audio && g.audio.play('install', { at: car.worldPointOf(car.type.POINTS.engine) });
+      g.hud && g.hud.toast('Twin carburettors fitted: more pull up top, and thirstier');
+      return;
+    }
+    if (it.id === 'wrench' && this.carbsTarget(t)) {
+      setTune(car, 'engine', null);
+      const at = car.worldPointOf(car.type.POINTS.engine).add(V(0, 0.35, 0));
+      g.items.spawn('carbKit', at, new THREE.Quaternion());
+      g.audio && g.audio.play('ratchet', { at });
+      g.hud && g.hud.toast('Twin carbs unbolted: the engine runs on its own carburettor again');
+      return;
+    }
     if (def.melee) this.melee(it);
   }
 
@@ -1601,7 +1648,7 @@ export class Interaction {
     if (!fit) return this.hideGhost();
     if (!this.ghost || this.ghostFor !== fit.slot) {
       this.hideGhost();
-      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType);
+      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType, it.state.tune);
       mesh.traverse((o) => {
         if (o.isMesh) {
           o.material = this.ghostMat;
@@ -1650,6 +1697,7 @@ export class Interaction {
     g.player.carryMass = 0;
     g.items.destroy(it);
     car.setInstalled(slot, true, carType(it.state.carType).id);
+    if (it.state.tune) setTune(car, slot, it.state.tune);
     car.owned = true;
     if (it.state.color !== undefined) car.paintPart(slot, it.state.color);
     // a foreign panel keeps the paint of the car it came from (its own material otherwise)
@@ -1663,7 +1711,7 @@ export class Interaction {
     if (w) w.flat = cond < 0.02;
     g.stats.partsInstalled++;
     g.audio && g.audio.play('install', { at: car.worldPointOf(car.model.parts[slot].bbox.getCenter(V(0, 0, 0))) });
-    g.hud && g.hud.toast(`${car.PARTS[slot].label} installed`);
+    g.hud && g.hud.toast(`${car.partLabel(slot)} installed`);
     g.onPartInstalled && g.onPartInstalled(slot);
   }
 
@@ -1692,6 +1740,7 @@ export class Interaction {
     if (id === 'engine') {
       state.oil = car.oil;
     }
+    if (car.parts[id].tune) state.tune = car.parts[id].tune;
     car.setInstalled(id, false);
     car.owned = true;
     const it = g.items.spawnPart(id, pos, q, state);

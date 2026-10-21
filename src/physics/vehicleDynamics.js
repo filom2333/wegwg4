@@ -4,6 +4,7 @@
 // contact points every fixed step (with sub-stepped wheel spin integration).
 
 import * as THREE from 'three';
+import { OFFROAD } from '../vehicle/tuning.js';
 import { RAPIER, GROUPS } from './physics.js';
 
 const tmpV = new THREE.Vector3();
@@ -33,6 +34,8 @@ export const SURFACES = {
   snow: { mu: 0.42, roll: 0.07, wetMu: 0.4, noise: 0.3, dust: 0.0, snow: 1.0, trip: 0.9 },
   ice: { mu: 0.14, roll: 0.008, wetMu: 0.1, noise: 0.1, dust: 0.0 },
 };
+
+const NO_TREAD = [1, 1];
 
 // Engine torque curve (N·m at full throttle) for a 1.6 l 16V.
 const TORQUE_CURVE = [
@@ -127,6 +130,7 @@ export class VehicleDynamics {
       drive: !!h.drive,
       installed: true,
       tyreCondition: 1,
+      tread: null,
       flat: false,
       compression: 0,
       prevCompression: 0,
@@ -432,7 +436,9 @@ export class VehicleDynamics {
           Fy = 0;
         if (w.contact && w.load > 0) {
           const surf = this.surfaces(w.surface);
-          const mu = surf.mu * mu0 * (1 - this.wet * (1 - surf.wetMu / surf.mu)) * (w.flat ? 0.55 : 1) * (0.75 + 0.25 * w.tyreCondition);
+          // off-road tread bites in loose ground and gives a little on tarmac
+          const tread = w.tread ? OFFROAD[w.surface] || NO_TREAD : NO_TREAD;
+          const mu = surf.mu * mu0 * tread[0] * (1 - this.wet * (1 - surf.wetMu / surf.mu)) * (w.flat ? 0.55 : 1) * (0.75 + 0.25 * w.tyreCondition);
           const Fz = w.load;
           const loadSens = 1 - 0.08 * (Fz / 3000 - 1);
           const D = mu * Fz * loadSens;
@@ -456,7 +462,7 @@ export class VehicleDynamics {
           const trip = Math.max(surf.trip || 0, w.flat ? 0.8 : 0);
           if (trip && Math.abs(alpha) > 0.35) Fy *= 1 + trip * Math.min(1.8, Math.max(0, (Math.abs(w.vLat) - 2.5) / 6.5));
           // rolling resistance
-          Fx -= Math.sign(w.vLong) * Math.min(Math.abs(w.vLong) * 2, 1) * surf.roll * Fz;
+          Fx -= Math.sign(w.vLong) * Math.min(Math.abs(w.vLong) * 2, 1) * surf.roll * tread[1] * Fz;
           w.skid = Math.max(0, Math.min(1, (sl - 1.2) / 2.5)) * Math.min(1, Math.hypot(w.vLong, w.vLat) / 3);
           // local longitudinal stiffness dFx/domega for the semi-implicit spin update
           w.kLong = D * tyre.longB * tyre.longC * (p.wheelRadius / vRef) * Math.max(0.05, 1 - Math.min(1, Math.abs(sx)));

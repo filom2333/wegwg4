@@ -12,6 +12,7 @@ import { hash01 } from '../core/noise.js';
 import { RAPIER } from '../physics/physics.js';
 import { ACCESSORIES, fitAccessory, serializeAccessories } from './accessories.js';
 import { serializePlates, restorePlates } from './plates.js';
+import { setTune } from './tuning.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // cars further than this sleep (their bodies off): terrain colliders only exist near the player
@@ -315,6 +316,10 @@ function outfit(car, seed, k) {
   if (r(0) < 0.32) fitAccessory(car, r(1) < 0.35 ? 'roofBox' : 'roofRack');
   if (r(2) < 0.14) fitAccessory(car, 'bullBar');
   if (r(3) < 0.12) fitAccessory(car, 'rearRack');
+  // someone's project car: mud tyres all round, a loud box, now and then twin carbs
+  if (r(4) < 0.1) for (const w of car.dyn.wheels) car.isInstalled(w.id) && setTune(car, w.id, 'offroad');
+  if (r(5) < 0.09 && car.isInstalled('exhaust')) setTune(car, 'exhaust', 'sport');
+  if (r(6) < 0.05 && car.isInstalled('engine')) setTune(car, 'engine', 'twin');
 }
 
 // ------------------------------------------------------------------- car state
@@ -322,7 +327,7 @@ export function serializeCar(car, o) {
   const cp = car.root.position,
     cq = car.root.quaternion;
   const parts = {};
-  for (const [id, st] of Object.entries(car.parts)) parts[id] = { installed: !!st.installed, condition: st.condition ?? 1, from: st.from || null };
+  for (const [id, st] of Object.entries(car.parts)) parts[id] = { installed: !!st.installed, condition: st.condition ?? 1, from: st.from || null, tune: st.tune || null };
   return {
     pos: [cp.x + o.x, cp.y, cp.z + o.z],
     quat: [cq.x, cq.y, cq.z, cq.w],
@@ -359,6 +364,7 @@ export function applyCarState(car, c, g) {
     if (!car.parts[id]) continue;
     if (!!car.parts[id].installed !== st.installed || (st.from || null) !== (car.parts[id].from || null)) car.setInstalled(id, st.installed, st.from || null);
     car.parts[id].condition = st.condition;
+    if (st.installed && (st.tune || null) !== (car.parts[id].tune || null)) setTune(car, id, st.tune);
   }
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
   for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);

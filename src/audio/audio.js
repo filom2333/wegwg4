@@ -6,6 +6,7 @@ import { GEN } from './synth.js';
 import { Soundscape } from './soundscape.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
+import { tunedVoice } from '../vehicle/tuning.js';
 
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
@@ -445,7 +446,8 @@ export class AudioSystem {
     if (car) {
       const p = car.root.position;
       // the voice is the engine's: a swapped engine sounds like the car it came from
-      const ET = car.engineType || car.type;
+      // (with its tunes: a sport muffler rasps, twin carbs roar on the intake)
+      const ET = tunedVoice(car, car.engineType || car.type);
       if (ET !== this.carType) this.setCarType(ET);
       const S = ET.sound;
       const ep = V3.copy(car.type.POINTS.engine).applyMatrix4(car.root.matrixWorld);
@@ -472,18 +474,21 @@ export class AudioSystem {
       // tyres
       let roll = 0,
         skid = 0,
-        rough2 = 0;
+        rough2 = 0,
+        knobs = 0;
       for (const w of d.wheels) {
         if (!w.contact) continue;
         roll += Math.min(1, Math.abs(w.vLong) / 25);
+        if (w.tread) knobs += 0.25;
         skid = Math.max(skid, w.skid);
         const s = d.surfaces(w.surface);
         rough2 += s.noise;
       }
       roll /= 4;
       rough2 /= 4;
-      set(this.loops.tyre.g.gain, roll * (0.25 + rough2 * 0.6), now);
-      set(this.loops.tyre.f.frequency, 200 + rough2 * 1500 + roll * 400, now);
+      // knobbly mud tyres hum on hard ground
+      set(this.loops.tyre.g.gain, roll * (0.25 + rough2 * 0.6 + knobs * 0.35), now);
+      set(this.loops.tyre.f.frequency, 200 + rough2 * 1500 + roll * (400 + knobs * 500), now);
       set(this.loops.skid.g.gain, skid * 0.35, now, 0.03);
       // horn
       if (car.horn && !this._horn) {

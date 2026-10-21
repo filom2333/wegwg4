@@ -451,11 +451,16 @@ export class Effects {
     }
   }
 
-  backfire(car) {
-    const p = car.type.POINTS.exhaust.clone().add(V(0, 0, -0.04)).applyMatrix4(car.root.matrixWorld);
-    for (let i = 0; i < 6; i++) this.fire.emit({ pos: p, vel: V(0, 0, -1).applyQuaternion(car.root.quaternion).multiplyScalar(4 + Math.random() * 3).add(V(Math.random() - 0.5, Math.random() * 0.5, Math.random() - 0.5)), size: 0.25, grow: 0.05, life: 0.18, color: [1, 0.55, 0.2], alpha: 1, drag: 4 });
-    this.smoke.emit({ pos: p, vel: V(0, 0.5, 0), size: 0.3, grow: 1.4, life: 1.5, color: [0.2, 0.2, 0.2], alpha: 0.4, drag: 2, grav: -0.3 });
-    this.flash(p, 0.6);
+  // k: 1 a full bang, less for the small pops of a sport muffler on the overrun (out of either pipe)
+  backfire(car, k = 1) {
+    const P = car.type.POINTS;
+    const pipe = k < 1 && P.exhaust2 && Math.random() < 0.5 ? P.exhaust2 : P.exhaust;
+    const p = pipe.clone().add(V(0, 0, -0.1)).applyMatrix4(car.root.matrixWorld);
+    const back = V(0, 0, -1).applyQuaternion(car.root.quaternion);
+    const n = Math.max(2, Math.round(6 * k));
+    for (let i = 0; i < n; i++) this.fire.emit({ pos: p, vel: back.clone().multiplyScalar((4 + Math.random() * 3) * (0.5 + 0.5 * k)).add(V(Math.random() - 0.5, Math.random() * 0.5, Math.random() - 0.5)).add(car.dyn.lastLinvel), size: 0.25 * (0.5 + 0.5 * k), grow: 0.05, life: 0.18 * (0.6 + 0.4 * k), color: [1, 0.55 + (1 - k) * 0.15, 0.2], alpha: 1, drag: 4 });
+    if (k > 0.5) this.smoke.emit({ pos: p, vel: V(0, 0.5, 0), size: 0.3, grow: 1.4, life: 1.5, color: [0.2, 0.2, 0.2], alpha: 0.4, drag: 2, grav: -0.3 });
+    this.flash(p, 0.6 * k);
   }
 
   impactDebris(car, imp, severity) {

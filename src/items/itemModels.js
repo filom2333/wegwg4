@@ -10,6 +10,7 @@ import { paintOf } from '../vehicle/paints.js';
 import { accessoryItemModel } from '../vehicle/accessories.js';
 import { plateModel } from '../vehicle/plates.js';
 import { jackModel } from '../vehicle/jack.js';
+import { carbKitModel } from '../vehicle/tuning.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -970,6 +971,7 @@ export function sandbag() {
 export const MODEL_BUILDERS = {
   sandbag,
   jack: () => jackModel(),
+  carbKit: () => carbKitModel(),
   accessory: accessoryItemModel,
   plate: (id, variant) => plateModel(id, variant),
   note,

@@ -43,6 +43,7 @@ export const ITEMS = {
   roofBox: { name: 'Roof box', model: ['accessory', 'roofBox'], mass: 17, accessory: 'roofBox', bulky: true, hold: 'side', desc: 'A 50 kg boot that clamps on the roof. High weight rolls easier.' },
   bullBar: { name: 'Bull bar', model: ['accessory', 'bullBar'], mass: 26, accessory: 'bullBar', bulky: true, hold: 'side', desc: 'Bolts across the nose and takes the worst of a head-on hit. Heavy on the front axle.' },
   winchBar: { name: 'Winch bar', model: ['accessory', 'winchBar'], mass: 44, accessory: 'winchBar', bulky: true, hold: 'side', desc: 'A bull bar with an electric winch. Pull the cable out (E at the drum), hook it round a tree or onto another car, wind in from the seat (Y) or at the drum (LMB).' },
+  carbKit: { name: 'Twin carburettor kit', model: ['carbKit'], mass: 4.6, tune: { part: 'engine', tune: 'twin' }, hold: 'side', desc: 'Two carbs with chrome pancake filters on a manifold. Open the engine lid and bolt them on (LMB): more pull up top, an intake roar, a fifth more fuel. A wrench takes them off again.' },
   jack: { name: 'Scissor jack', model: ['jack'], mass: 3.4, jack: true, bulky: true, hold: 'side', desc: 'Set it under the sill beside a wheel (E), crank with LMB, lower with RMB. A wheel carrying the car only comes off with that corner jacked up.' },
   rearRack: { name: 'Rear carrier', model: ['accessory', 'rearRack'], mass: 11, accessory: 'rearRack', bulky: true, hold: 'side', desc: 'A hitch tray behind the bumper for cans and crates.' },
   // sheets and boards that bolt on anywhere (see vehicle/plates.js)
@@ -162,6 +163,8 @@ export const LOOT = {
     ['plasticPanel', 0.6],
     ['oilBottle', 3],
     ['part:fanbelt', 1.2],
+    ['part:wheel_RL:offroad', 0.25],
+    ['carbKit', 0.1],
     ['jerryCan', 1.2],
     ['waterJug', 1.4],
     ['tyreKit', 0.8],
@@ -170,6 +173,9 @@ export const LOOT = {
   ],
   tools: [
     ['jack', 0.7],
+    ['carbKit', 0.25],
+    ['part:exhaust:sport', 0.2],
+    ['part:wheel_RL:offroad', 0.35],
     ['sprayPaint', 0.8],
     ['sponge', 0.8],
     ['wrench', 2],

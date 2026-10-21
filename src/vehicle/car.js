@@ -8,6 +8,7 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
+import { applyTune, refreshTuneVisual, tunedLabel, isSport } from './tuning.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
 import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
 import { carType } from './types.js';
@@ -27,7 +28,7 @@ export class Car {
     if (model.mats) addGlassRain(model.mats.glass);
     this.parts = {};
     for (const id of Object.keys(model.parts)) {
-      this.parts[id] = { installed: true, condition: 1, item: null };
+      this.parts[id] = { installed: true, condition: 1, item: null, tune: null };
     }
     // systems
     this.fuel = opts.fuel ?? 22; // litres
@@ -148,8 +149,19 @@ export class Car {
     if (id === 'engine') this.dyn.engineInstalled = on;
     if (id === 'steeringWheel') this.dyn.steeringInstalled = on;
     if ((id === 'engine' || id === 'battery' || id === 'fueltank') && !on) this.setIgnition(false);
+    // a tune leaves with its part (the remover copies it onto the item first)
+    if (!on) this.parts[id].tune = null;
+    if (this.parts[id].tune || id === 'engine' || id === 'exhaust' || w) {
+      refreshTuneVisual(this, id);
+      applyTune(this);
+    }
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  // Label of a part on this car, with its tune.
+  partLabel(id) {
+    return tunedLabel(this.type, id, this.parts[id] && this.parts[id].tune);
   }
 
   dropPlate(p) {
@@ -594,7 +606,7 @@ export class Car {
     const powerKw = running ? Math.max(0, (d.engine.torqueOut * rpm * 2 * Math.PI) / 60 / 1000) : 0;
     const diff = this.game.difficulty || { consumption: 1, wear: 1 };
     if (running) {
-      const lph = 0.75 + powerKw * 0.36;
+      const lph = (0.75 + powerKw * 0.36) * (this.fuelFactor || 1);
       const burn = Math.min(this.fuel, (lph / 3600) * dt * diff.consumption);
       this.fuel -= burn;
       if (this.game.stats) this.game.stats.fuelUsed += burn;
@@ -638,6 +650,25 @@ export class Car {
       this.engineCondition = Math.max(0, this.engineCondition - wear * dt);
       // the generator charges the battery while the belt turns it
       if (this.isInstalled('battery') && belt > 0.02) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
+      // a sport box pops and crackles on the overrun: lift off high in the revs
+      if (isSport(this)) {
+        const thr = d.controls.throttle;
+        if ((this.lastThrottle ?? 0) > 0.55 && thr < 0.1 && rpm > 3200) {
+          this.pops = 1 + Math.floor(Math.random() * 3);
+          this.liftT = 0;
+        }
+        this.lastThrottle = thr;
+        this.liftT = thr < 0.1 ? (this.liftT ?? 9) + dt : 9;
+        if (this.liftT < 2.5 && rpm > 2600 && Math.random() < dt * 3) this.pops = Math.max(this.pops || 0, 1);
+        this.popT = (this.popT || 0) - dt;
+        if (this.pops > 0 && this.popT <= 0) {
+          this.pops--;
+          this.popT = 0.06 + Math.random() * 0.16;
+          const big = Math.random() < 0.3;
+          this.game.effects && this.game.effects.backfire(this, big ? 1 : 0.35);
+          this.game.audio && this.game.audio.play('backfire', { at: this.worldPointOf(this.type.POINTS.exhaust), volume: big ? 0.65 : 0.28, rate: big ? 1.1 : 1.5 + Math.random() * 0.4 });
+        }
+      }
       // misfires / backfires at low condition
       if (this.engineCondition < 0.35 && Math.random() < dt * (0.35 - this.engineCondition) * 3) {
         this.game.effects && this.game.effects.backfire(this);

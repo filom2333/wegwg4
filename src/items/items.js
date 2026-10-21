@@ -6,6 +6,7 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { ITEMS, LOOT, SPOT_CHANCE, initialState, itemMass, itemLabel } from './itemDefs.js';
 import { MODEL_BUILDERS } from './itemModels.js';
 import { carType } from '../vehicle/types.js';
+import { tunedLabel, tuneVisual } from '../vehicle/tuning.js';
 import { cargoZone, cargoDeck } from '../vehicle/accessories.js';
 import { mulberry32 } from '../core/noise.js';
 
@@ -32,7 +33,7 @@ export class Item {
   }
 
   get name() {
-    if (this.part) return (carType(this.state.carType).PARTS[this.part] || { label: this.part }).label;
+    if (this.part) return tunedLabel(carType(this.state.carType), this.part, this.state.tune);
     return itemLabel(this.id, this.state);
   }
 
@@ -96,7 +97,7 @@ export class ItemSystem {
 
   // Mesh for a removed car part: shares the geometry of a car of its type (the current car if
   // it is one, else any in the fleet, else the type's template model).
-  buildPartMesh(partId, typeId = null) {
+  buildPartMesh(partId, typeId = null, tune = null) {
     const g0 = this.game;
     const tid = carType(typeId || (g0.car && g0.car.type.id)).id;
     let car = g0.car && g0.car.type.id === tid ? g0.car : g0.fleet.cars.find((c) => c.type.id === tid) || g0.fleet.template(tid);
@@ -116,7 +117,7 @@ export class ItemSystem {
     src.pivot.quaternion.identity();
     src.pivot.updateMatrixWorld(true);
     src.inner.traverse((o) => {
-      if (!o.isMesh) return;
+      if (!o.isMesh || o.userData.tuneMesh) return;
       const m = new THREE.Mesh(o.geometry, o.material);
       const local = rootInv.clone().multiply(o.matrixWorld);
       m.applyMatrix4(inv.clone().multiply(local));
@@ -125,6 +126,17 @@ export class ItemSystem {
       m.userData.shared = true;
       g.add(m);
     });
+    // its tune: a wheel's tread rides its spin group, the rest is built in car space
+    if (tune) {
+      const wheel = car.model.wheels && car.model.wheels[partId];
+      const v = tuneVisual(car, partId, tune, wheel ? wheel.spin : null);
+      if (v) {
+        v.updateMatrix();
+        const m = wheel ? rootInv.clone().multiply(wheel.spin.matrixWorld) : new THREE.Matrix4();
+        v.applyMatrix4(inv.clone().multiply(m));
+        g.add(v);
+      }
+    }
     src.pivot.quaternion.copy(savedQ);
     src.pivot.updateMatrixWorld(true);
     void pivotRest;
@@ -148,7 +160,7 @@ export class ItemSystem {
 
   spawnPart(partId, pos, quat = new THREE.Quaternion(), state = {}) {
     if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'beetle';
-    const mesh = this.buildPartMesh(partId, state.carType);
+    const mesh = this.buildPartMesh(partId, state.carType, state.tune);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
     this.group.add(mesh);
     this.items.add(it);
@@ -330,10 +342,13 @@ export class ItemSystem {
       const wp = spot.pos.clone().applyMatrix4(inst.root.matrixWorld);
       if (id.startsWith('part:')) {
         // spare car parts on shelves: used, but serviceable
-        const part = id.slice(5);
+        // 'part:<id>' or 'part:<id>:<tune>' (a tuned part: mud tyres, a sport muffler)
+        const [part, tune] = id.slice(5).split(':');
         if (!this.game.car || !this.game.car.model.parts[part]) return;
         const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), lrnd() * Math.PI * 2);
-        const it = this.spawnPart(part, wp.clone().add(V(0, 0.08, 0)), q, { condition: 0.55 + lrnd() * 0.45 });
+        const st = { condition: 0.55 + lrnd() * 0.45 };
+        if (tune) st.tune = tune;
+        const it = this.spawnPart(part, wp.clone().add(V(0, 0.08, 0)), q, st);
         it.poiKey = key;
         it.spot = i;
         return;
