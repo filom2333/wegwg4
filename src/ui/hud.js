@@ -9,6 +9,7 @@ import { itemIcon } from './itemIcons.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { HAVEN_KM } from '../story/story.js';
 
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -104,6 +105,8 @@ export class HUD {
     this.toasts = el('div', 'hud-toasts', this.root);
     // radio / speech subtitles
     this.sub = el('div', 'hud-sub', this.root);
+    // what the stereo is playing: a small card with the cover, slides in at the top left
+    this.music = el('div', 'hud-music', this.root);
     // vignette for damage handled in post
     this.state = { prompts: '', info: null };
     this.hitTimer = 0;
@@ -172,10 +175,25 @@ export class HUD {
     this._subT = setTimeout(() => this.sub.classList.remove('on'), seconds * 1000);
   }
 
-  // "Now playing" line when a CD track starts.
-  nowPlaying(disc, track) {
+  // "Now playing" card when a track starts (a disc, or a song on a music station).
+  nowPlaying(disc, track, station = null) {
     const al = ALBUMS[disc % ALBUMS.length];
-    this.subtitle('\u266a ' + al.artist, `${al.tracks[track]}  \u00b7  ${al.title}`, 5);
+    const [a, b, c] = al.colors;
+    const tag = station ? `${esc(station.freq)} \u00b7 ${esc(station.name)}` : `CD \u00b7 track ${track + 1} of ${al.tracks.length}`;
+    this.showMusic(`<div class="cover" style="background:linear-gradient(135deg, ${a}, ${b} 62%, ${c})"><i></i></div>
+      <div class="txt"><small>${tag}</small><b>${esc(al.tracks[track])}</b><span>${esc(al.artist)} \u00b7 ${esc(al.title)}</span></div>`);
+  }
+
+  // A station tuned in that is not playing records (talk, the emergency loop, static).
+  tunedTo(station) {
+    this.showMusic(`<div class="cover radio"><i></i></div><div class="txt"><small>Radio</small><b>${esc(station.freq)}</b><span>${esc(station.name)}</span></div>`);
+  }
+
+  showMusic(html) {
+    this.music.innerHTML = html;
+    this.music.classList.add('on');
+    clearTimeout(this._musT);
+    this._musT = setTimeout(() => this.music.classList.remove('on'), 5200);
   }
 
   // Brings the hotbar back to full opacity for a few seconds.

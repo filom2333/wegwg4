@@ -345,6 +345,7 @@ export class AudioSystem {
               car.nextTrack();
             }
           };
+          if (prog) this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(prog.album, prog.track, station);
           if (!prog) {
             this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
             // render the next one in the background

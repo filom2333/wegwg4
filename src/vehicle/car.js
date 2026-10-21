@@ -414,6 +414,8 @@ export class Car {
     s.station = ((s.station ?? 1) + 1) % STATIONS.length;
     s.mode = 'radio';
     this.radioOn = true;
+    const st = STATIONS[s.station];
+    if (st.kind !== 'music') this.game.hud && this.game.hud.tunedTo && this.game.hud.tunedTo(st);
   }
 
   nextTrack() {
