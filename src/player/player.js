@@ -54,8 +54,8 @@ export class Player {
     this.fallStartY = null;
     this.stepAcc = 0;
     this.headlamp = new THREE.SpotLight(0xfff0d8, 0, 26, 0.55, 0.6, 1.6);
-    this.headlamp.castShadow = false;
     game.scene.add(this.headlamp, this.headlamp.target);
+    game.lights.add(this.headlamp);
     this.headlampOn = false;
     this.lastSurface = 'dirt';
     this.carryMass = 0;

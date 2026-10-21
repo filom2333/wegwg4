@@ -56,6 +56,25 @@ export const DEFAULTS = {
   bindings: { ...DEFAULT_BINDINGS },
 };
 
+// A first guess at the quality preset from the graphics chip: software rendering gets low,
+// integrated and mobile chips medium, the rest high. Only used until the player picks one.
+function detectQuality() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) return 'low';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)).toLowerCase();
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    if (/swiftshader|llvmpipe|software|basic render/.test(name)) return 'low';
+    const mobile = /android|iphone|ipad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && !/windows/i.test(navigator.userAgent));
+    if (/intel.*\barc\b/.test(name)) return 'high';
+    if (mobile || /mali|adreno|powervr|intel|uhd|iris|vega \d|radeon\(tm\) graphics|apple gpu/.test(name)) return 'medium';
+    return 'high';
+  } catch (e) {
+    return 'high';
+  }
+}
+
 class Settings {
   constructor() {
     this.data = structuredClone(DEFAULTS);
@@ -68,7 +87,7 @@ class Settings {
       if (raw) {
         const parsed = JSON.parse(raw);
         this.data = { ...structuredClone(DEFAULTS), ...parsed, bindings: { ...DEFAULT_BINDINGS, ...(parsed.bindings || {}) } };
-      }
+      } else this.data.quality = detectQuality();
     } catch (e) {
       /* storage unavailable */
     }

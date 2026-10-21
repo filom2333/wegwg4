@@ -159,6 +159,9 @@ export class Renderer {
   constructor(canvas, quality = 'high') {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    // checking every program after linking waits for each compile; release builds let the driver
+    // compile in parallel
+    this.renderer.debug.checkShaderErrors = !!import.meta.env.DEV;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;

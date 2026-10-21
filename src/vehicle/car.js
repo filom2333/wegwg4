@@ -391,13 +391,9 @@ export class Car {
       const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
       head.position.set(L.headX * sg, L.head[1], L.head[2] + 0.06);
       head.target.position.set(L.headX * sg * 0.6, 0.0, 14);
-      head.castShadow = true;
-      head.shadow.mapSize.set(768, 768);
-      head.shadow.camera.near = 0.25;
-      head.shadow.camera.far = 60;
-      head.shadow.bias = -0.0008;
-      head.shadow.normalBias = 0.03;
       this.root.add(head, head.target);
+      // the real (shadow casting) lights come from the game's light pool
+      this.game.lights.add(head, { shadow: true });
       return head;
     });
     this.headLight = this.headLights[0];
@@ -419,6 +415,7 @@ export class Car {
     cabin.position.copy(this.type.POINTS.dome).add(V(0, -0.08, 0));
     this.root.add(cabin);
     this.cabinLamp = cabin;
+    for (const l of [fill, tail, reverse, cabin]) this.game.lights.add(l);
     this.emissive = {
       head: M.headLens,
       tail: M.tailLens,
@@ -446,7 +443,6 @@ export class Car {
       lamp.distance = hiBeam ? 110 : 65;
       lamp.angle = hiBeam ? 0.5 : 0.6;
       lamp.target.position.y = hiBeam ? 0.6 : 0.0;
-      lamp.castShadow = lit;
     }
     this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
@@ -797,6 +793,7 @@ export class Car {
   }
 
   dispose() {
+    for (const l of [...this.headLights, this.headFill, this.tailLight, this.reverseLight, this.cabinLamp]) this.game.lights.remove(l);
     this.dyn.dispose();
     this.root.parent && this.root.parent.remove(this.root);
   }

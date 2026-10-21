@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
+import { LightPool } from './gfx/lightPool.js';
 import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
 import { buildGroundTextures } from './gfx/groundTextures.js';
@@ -49,6 +50,8 @@ export class Game {
     this.worldGroup = new THREE.Group();
     this.worldGroup.name = 'world';
     this.scene.add(this.worldGroup);
+    // a fixed handful of real lights for all the small lamps in the world
+    this.lights = new LightPool(this.scene);
     this.renderer.setupComposer(this.scene);
     // first-person eye (aim, reach, viewmodel); the rendered camera follows it or orbits in 3rd person
     this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 7000);
@@ -157,7 +160,7 @@ export class Game {
       this.origin.z = Math.round(spawn.z / 1024) * 1024;
     }
     this.terrain.update(spawn.x, spawn.z);
-    this.terrain.ensureCollidersAround(spawn.x, spawn.z, 30);
+    this.terrain.ensureCollidersAround(spawn.x, spawn.z, 100);
     this.scatter.update(spawn.x, spawn.z);
     onProgress('Streaming terrain', 0.55);
     await this.waitForTerrain(spawn.x, spawn.z);
@@ -216,6 +219,7 @@ export class Game {
     this.trailers.update();
     this.items.update();
     this.hud.show(!attract);
+    this.lights.warm(this.renderer.renderer, this.renderer.camera, this.renderer.composer.readBuffer);
     if (attract) {
       // title screen: the car drives itself north at dusk with its lights on
       this.interaction.viewRoot.visible = false;
@@ -387,6 +391,8 @@ export class Game {
     this.terrain.update(gx, gz);
     this.scatter.update(gx, gz);
     this.scatter.setTime(this.time, this.env.w.wind);
+    const sun = this.env.sun;
+    this.scatter.setShadowReach(this.env.shadowExtent, (sun.position.y - sun.target.position.y) / sun.position.distanceTo(sun.target.position));
     this.pois.update(gx, gz);
     this.pois.update2(dt);
     this.env.focus.copy(f);
@@ -764,6 +770,7 @@ export class Game {
       updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
     }
     if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+    this.lights.update(cam);
     this.renderer.render(dt);
   }
 

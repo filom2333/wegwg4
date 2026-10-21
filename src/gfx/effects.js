@@ -79,12 +79,19 @@ class Particles {
   }
 
   emit(p) {
+    this.fresh = true;
     const q = this.parts[this.next];
     this.next = (this.next + 1) % this.max;
     Object.assign(q, { life: p.life, max: p.life, x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.vel ? p.vel.x : 0, vy: p.vel ? p.vel.y : 0, vz: p.vel ? p.vel.z : 0, s0: p.size, s1: p.grow ?? p.size * 2, a0: p.alpha ?? 1, r: p.color[0], g: p.color[1], b: p.color[2], drag: p.drag ?? 1, grav: p.grav ?? 0, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * (p.spin ?? 1), fadeIn: p.fadeIn ?? 0.1, ground: p.ground ?? -1e9 });
   }
 
   update(dt) {
+    // nothing alive and nothing new: the buffers already hold zeros
+    if (!this.live && !this.fresh) {
+      this.points.visible = false;
+      return;
+    }
+    this.fresh = false;
     let n = 0;
     for (let i = 0; i < this.max; i++) {
       const p = this.parts[i];
@@ -122,6 +129,7 @@ class Particles {
       n++;
     }
     this.live = n;
+    this.points.visible = true;
     for (const k of ['position', 'aSize', 'aAlpha', 'aColor', 'aRot']) this.geo.attributes[k].needsUpdate = true;
   }
 
@@ -222,6 +230,7 @@ export class Effects {
     // flashes
     this.flashLight = new THREE.PointLight(0xffc070, 0, 14, 2);
     root.add(this.flashLight);
+    game.lights.add(this.flashLight);
     this.flashT = 0;
     this.flashSprite = new THREE.Mesh(
       new THREE.PlaneGeometry(0.5, 0.5),

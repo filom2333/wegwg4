@@ -61,6 +61,27 @@ const CAP = {
 
 const FAR_BY_QUALITY = { low: 520, medium: 700, high: 880, ultra: 1000 };
 
+const SHADOW = { rings: 99 };
+
+// A cell's entries grouped by how many rings out they show (grass and pebbles only next to the
+// player, trees and rocks to the horizon), so a rebuild never walks the far cells' small things.
+// Returns [[reach (0 = no limit), entries], ...].
+function splitByReach(data) {
+  const count = new Map();
+  for (let k = 0; k < data.length; k += STRIDE) {
+    const r = SPECIES[data[k]].near || 0;
+    count.set(r, (count.get(r) || 0) + 1);
+  }
+  const parts = new Map();
+  for (const [r, n] of count) parts.set(r, { a: new Float32Array(n * STRIDE), i: 0 });
+  for (let k = 0; k < data.length; k += STRIDE) {
+    const p = parts.get(SPECIES[data[k]].near || 0);
+    for (let j = 0; j < STRIDE; j++) p.a[p.i + j] = data[k + j];
+    p.i += STRIDE;
+  }
+  return [...parts].map(([r, p]) => [r, p.a]);
+}
+
 export class Scatter {
   constructor(game, tex, treeTex) {
     this.game = game;
@@ -217,6 +238,16 @@ export class Scatter {
 
   instanced(geo, mat, cap, def) {
     const im = new THREE.InstancedMesh(geo, mat, Math.max(1, cap));
+    // the sun's shadow map only needs the rings it can reach: draw that many instances into it
+    im.userData.ringEnd = [];
+    im.onBeforeShadow = () => {
+      im.userData.full = im.count;
+      const e = im.userData.ringEnd;
+      im.count = Math.min(im.count, e[Math.min(SHADOW.rings, e.length - 1)] ?? im.count);
+    };
+    im.onAfterShadow = () => {
+      im.count = im.userData.full;
+    };
     im.count = 0;
     im.visible = false;
     im.castShadow = false;
@@ -313,69 +344,81 @@ export class Scatter {
     const pv = new THREE.Vector3();
     const col = new THREE.Color();
     const farR = this.farRadius;
+    const meshes = this.meshes.flat(2).filter((m) => m && m.castShadow);
+    for (const im of meshes) im.userData.ringEnd.length = 0;
+    let lastRing = 0;
+    const closeRings = (upTo) => {
+      for (; lastRing < upTo; lastRing++) for (const im of meshes) im.userData.ringEnd[lastRing] = im.userData.n;
+    };
     for (const { c, ring, d } of order) {
-      const data = c.data;
+      closeRings(ring);
       const x0 = c.ci * CELL - o.x,
         z0 = c.cj * CELL - o.z;
-      for (let k = 0; k < data.length; k += STRIDE) {
-        const si = data[k];
-        const def = SPECIES[si];
-        const aux = data[k + 7];
-        let lod;
-        if (def.near) {
-          if (ring > def.near) continue;
-          if (ring === def.near && !def.rock && aux > 0.5) continue;
-          lod = ring <= 1 ? 0 : def.lod1 ? 1 : 0;
-        } else {
-          if (d > farR * (def.far || 1) + CELL * 0.5) continue;
-          lod = ring <= 1 || !def.lod1 ? 0 : def.mid && ring <= def.mid ? 2 : 1;
-        }
-        const im = this.meshes[si][data[k + 1]][lod];
-        if (!im) continue;
-        const idx = im.userData.n;
-        if (idx >= im.instanceMatrix.count) continue;
-        im.userData.n = idx + 1;
-        const s = data[k + 5],
-          rot = data[k + 6];
-        const tx = x0 + data[k + 2],
-          ty = data[k + 3] - sinkOf(def, s),
-          tz = z0 + data[k + 4];
-        const arr = im.instanceMatrix.array;
-        const off = idx * 16;
-        if (def.rock) {
-          q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rot);
-          const tilt = def.id === 'hoodoo' ? 0.2 : 1;
-          qt.setFromEuler(e.set(((rot % 0.3) - 0.15) * tilt, 0, (((rot * 7) % 0.3) - 0.15) * tilt));
-          q.multiply(qt);
-          m4.compose(pv.set(tx, ty, tz), q, sv.setScalar(s));
-          m4.toArray(arr, off);
-          const bi = Math.floor(aux);
-          const t = ROCK_TINT[BIOME_LIST[bi]] || ROCK_TINT.scrub;
-          const vv = 0.9 + (aux - bi) * 0.4;
-          col.setRGB(t[0] * vv, t[1] * vv, t[2] * vv);
-          im.setColorAt(idx, col);
-        } else {
-          const cs = Math.cos(rot) * s,
-            sn = Math.sin(rot) * s;
-          arr[off] = cs;
-          arr[off + 1] = 0;
-          arr[off + 2] = -sn;
-          arr[off + 3] = 0;
-          arr[off + 4] = 0;
-          arr[off + 5] = s;
-          arr[off + 6] = 0;
-          arr[off + 7] = 0;
-          arr[off + 8] = sn;
-          arr[off + 9] = 0;
-          arr[off + 10] = cs;
-          arr[off + 11] = 0;
-          arr[off + 12] = tx;
-          arr[off + 13] = ty;
-          arr[off + 14] = tz;
-          arr[off + 15] = 1;
+      // only the parts of the cell that can show at this ring
+      if (!c.parts) c.parts = splitByReach(c.data);
+      for (const [reach, data] of c.parts) {
+        if (reach && ring > reach) continue;
+        for (let k = 0; k < data.length; k += STRIDE) {
+          const si = data[k];
+          const def = SPECIES[si];
+          const aux = data[k + 7];
+          let lod;
+          if (def.near) {
+            if (ring > def.near) continue;
+            if (ring === def.near && !def.rock && aux > 0.5) continue;
+            lod = ring <= 1 ? 0 : def.lod1 ? 1 : 0;
+          } else {
+            if (d > farR * (def.far || 1) + CELL * 0.5) continue;
+            lod = ring <= 1 || !def.lod1 ? 0 : def.mid && ring <= def.mid ? 2 : 1;
+          }
+          const im = this.meshes[si][data[k + 1]][lod];
+          if (!im) continue;
+          const idx = im.userData.n;
+          if (idx >= im.instanceMatrix.count) continue;
+          im.userData.n = idx + 1;
+          const s = data[k + 5],
+            rot = data[k + 6];
+          const tx = x0 + data[k + 2],
+            ty = data[k + 3] - sinkOf(def, s),
+            tz = z0 + data[k + 4];
+          const arr = im.instanceMatrix.array;
+          const off = idx * 16;
+          if (def.rock) {
+            q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rot);
+            const tilt = def.id === 'hoodoo' ? 0.2 : 1;
+            qt.setFromEuler(e.set(((rot % 0.3) - 0.15) * tilt, 0, (((rot * 7) % 0.3) - 0.15) * tilt));
+            q.multiply(qt);
+            m4.compose(pv.set(tx, ty, tz), q, sv.setScalar(s));
+            m4.toArray(arr, off);
+            const bi = Math.floor(aux);
+            const t = ROCK_TINT[BIOME_LIST[bi]] || ROCK_TINT.scrub;
+            const vv = 0.9 + (aux - bi) * 0.4;
+            col.setRGB(t[0] * vv, t[1] * vv, t[2] * vv);
+            im.setColorAt(idx, col);
+          } else {
+            const cs = Math.cos(rot) * s,
+              sn = Math.sin(rot) * s;
+            arr[off] = cs;
+            arr[off + 1] = 0;
+            arr[off + 2] = -sn;
+            arr[off + 3] = 0;
+            arr[off + 4] = 0;
+            arr[off + 5] = s;
+            arr[off + 6] = 0;
+            arr[off + 7] = 0;
+            arr[off + 8] = sn;
+            arr[off + 9] = 0;
+            arr[off + 10] = cs;
+            arr[off + 11] = 0;
+            arr[off + 12] = tx;
+            arr[off + 13] = ty;
+            arr[off + 14] = tz;
+            arr[off + 15] = 1;
+          }
         }
       }
     }
+    closeRings(lastRing + 1);
     for (const list of this.meshes)
       for (const pair of list)
         for (const im of pair) {
@@ -437,6 +480,12 @@ export class Scatter {
         c.colliders = null;
       }
     }
+  }
+
+  // How many cell rings out the sun's shadow map can see things: the box around the player,
+  // stretched along the ground as the sun gets low (long shadows from far trees at dusk).
+  setShadowReach(extent, sunUp) {
+    SHADOW.rings = Math.floor((extent / Math.max(0.18, sunUp) + 30) / CELL) + 1;
   }
 
   setTime(t, wind) {

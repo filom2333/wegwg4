@@ -186,6 +186,7 @@ export class ItemSystem {
 
   destroy(it) {
     this.removeBody(it);
+    if (it.light) this.game.lights.remove(it.light);
     if (it.stowed) this.unstow(it, false);
     it.mesh.parent && it.mesh.parent.remove(it.mesh);
     this.items.delete(it);
@@ -531,8 +532,10 @@ export class ItemSystem {
         it.light = new THREE.PointLight(0xffc477, 6, 9, 1.6);
         it.light.position.set(0, 0.03, 0);
         it.mesh.add(it.light);
+        this.game.lights.add(it.light);
       } else if (!it.state.on && it.light) {
         it.mesh.remove(it.light);
+        this.game.lights.remove(it.light);
         it.light = null;
       }
     }

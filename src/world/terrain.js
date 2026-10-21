@@ -26,6 +26,7 @@ export class Terrain {
     this.tiles = new Map(); // key -> { mesh, x0, z0, size }
     this.pending = new Map(); // id -> request
     this.wanted = new Set();
+    this.wantedTiles = [];
     this.roadSegs = new Map();
     this.colliders = new Map();
     this.nextId = 1;
@@ -120,8 +121,11 @@ export class Terrain {
     if (sig !== this.lastKeySet) {
       this.lastKeySet = sig;
       const sel = this.selectTiles(px, pz);
-      this.wanted = new Set(sel.map((t) => this.key(t)));
-      this.queue = sel.filter((t) => !this.tiles.has(this.key(t)) && ![...this.pending.values()].some((p) => p.key === this.key(t)));
+      for (const t of sel) t.key = this.key(t);
+      this.wanted = new Set(sel.map((t) => t.key));
+      this.wantedTiles = sel;
+      const asked = new Set([...this.pending.values()].map((p) => p.key));
+      this.queue = sel.filter((t) => !this.tiles.has(t.key) && !asked.has(t.key));
       this.queue.sort((a, b) => a.d - b.d);
       this.pump();
       this.retireCovered();
@@ -145,38 +149,30 @@ export class Terrain {
 
   // Remove tiles that are no longer wanted once the wanted tiles covering them are present.
   retireCovered() {
-    let allPresent = true;
-    for (const k of this.wanted) if (!this.tiles.has(k)) allPresent = false;
+    const missing = this.wantedTiles.filter((w) => !this.tiles.has(w.key));
     for (const [k, t] of this.tiles) {
       if (this.wanted.has(k)) continue;
-      // check coverage by present wanted tiles
-      let covered = allPresent;
-      if (!covered) {
-        covered = true;
-        for (const wk of this.wanted) {
-          const [x0, z0, size] = wk.split(',').map(Number);
-          const overlap = x0 < t.x0 + t.size && x0 + size > t.x0 && z0 < t.z0 + t.size && z0 + size > t.z0;
-          if (overlap && !this.tiles.has(wk)) {
-            covered = false;
-            break;
-          }
+      // covered once no wanted tile overlapping it is still missing
+      let covered = true;
+      for (const w of missing)
+        if (w.x0 < t.x0 + t.size && w.x0 + w.size > t.x0 && w.z0 < t.z0 + t.size && w.z0 + w.size > t.z0) {
+          covered = false;
+          break;
         }
-      }
       if (covered) {
         this.group.remove(t.mesh);
         t.mesh.geometry.dispose();
         this.tiles.delete(k);
       }
     }
-    this.ready = [...this.wanted].filter((k) => this.tiles.has(k)).length >= this.wanted.size * 0.98;
+    this.ready = missing.length <= this.wanted.size * 0.02;
   }
 
   isReadyNear(px, pz, r = 150) {
-    for (const k of this.wanted) {
-      const [x0, z0, size] = k.split(',').map(Number);
-      const dx = Math.max(Math.abs(px - (x0 + size / 2)) - size / 2, 0);
-      const dz = Math.max(Math.abs(pz - (z0 + size / 2)) - size / 2, 0);
-      if (Math.hypot(dx, dz) < r && !this.tiles.has(k)) return false;
+    for (const t of this.wantedTiles) {
+      const dx = Math.max(Math.abs(px - (t.x0 + t.size / 2)) - t.size / 2, 0);
+      const dz = Math.max(Math.abs(pz - (t.z0 + t.size / 2)) - t.size / 2, 0);
+      if (Math.hypot(dx, dz) < r && !this.tiles.has(t.key)) return false;
     }
     return true;
   }
@@ -316,15 +312,17 @@ export class Terrain {
     }
   }
 
+  // Builds (now) the collider tiles that touch the square of `radius` around a point.
   ensureCollidersAround(px, pz, radius = 40) {
     const T = COLLIDER_TILE;
-    const r = Math.ceil(radius / T) + 1;
-    const ci = Math.floor(px / T),
-      cj = Math.floor(pz / T);
-    for (let j = -r; j <= r; j++)
-      for (let i = -r; i <= r; i++) {
-        const x0 = (ci + i) * T,
-          z0 = (cj + j) * T;
+    const i0 = Math.floor((px - radius) / T),
+      i1 = Math.floor((px + radius) / T);
+    const j0 = Math.floor((pz - radius) / T),
+      j1 = Math.floor((pz + radius) / T);
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const x0 = i * T,
+          z0 = j * T;
         const k = x0 + ',' + z0;
         if (!this.colliders.has(k)) this.colliders.set(k, this.buildCollider(x0, z0));
       }

@@ -57,8 +57,8 @@ export class Campfires {
     this.group.name = 'campfires';
     game.worldGroup.add(this.group);
     this.light = new THREE.PointLight(0xff9a4a, 0, 14, 1.6);
-    this.light.castShadow = false;
     this.group.add(this.light);
+    game.lights.add(this.light);
   }
 
   // Lights a fire at a point on the ground (scene coordinates).
