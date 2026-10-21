@@ -29,6 +29,8 @@ export const DEFAULT_BINDINGS = {
   sleep: 'KeyB',
   view: 'KeyV',
   winch: 'KeyY',
+  atlas: 'KeyM',
+  photo: 'KeyP',
 };
 
 export const DEFAULTS = {

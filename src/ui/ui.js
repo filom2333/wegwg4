@@ -7,6 +7,7 @@ import { InventoryUI } from './inventoryUI.js';
 import { input } from '../core/input.js';
 import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
 import { NOTES, HAVEN_KM } from '../story/story.js';
+import { drawAtlas } from '../story/atlas.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -67,6 +68,8 @@ const LABELS = {
   lookBack: 'Look back',
   winch: 'Wind in the winch',
   journal: 'Journal',
+  atlas: 'Road atlas',
+  photo: 'Photo mode',
   inventory: 'Inventory',
   nextTrack: 'Next CD track',
   stow: 'Put in backpack',
@@ -621,6 +624,8 @@ export class UI {
           [keyName(b.ignition), 'Ignition, hold to crank'],
           [keyName(b.lights), 'Headlights'],
           [keyName(b.journal), 'Journal'],
+          [keyName(b.atlas || 'KeyM'), 'Road atlas'],
+          [keyName(b.photo || 'KeyP'), 'Photo mode'],
         ];
         for (const [kk, t] of rows) k.innerHTML += `<kbd>${esc(kk)}</kbd><span>${esc(t)}</span>`;
       }
@@ -639,6 +644,8 @@ export class UI {
   onLockChange() {
     const locked = !!document.pointerLockElement;
     if (this.mode !== 'play' || !this.game) return;
+    // Escape out of photo mode lands on the pause menu like anywhere else
+    if (!locked && this.game.photo && this.game.photo.active) this.game.photo.exit();
     if (!locked && !this.current && !this.game.player.dead) this.showPause();
   }
 
@@ -752,6 +759,179 @@ export class UI {
       el('div', 'ui-loadtext', act, `${keyName(settings.data.bindings.journal)} to close`);
     });
     this.show('journal');
+  }
+
+  // ---------------------------------------------------------------- road atlas
+  // The strip map of Route 9: drag to move, wheel to zoom, click to pin a note.
+  showAtlas() {
+    const g = this.game;
+    const A = g.atlas;
+    g.paused = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const here = A.here();
+    const view = this.atlasView || { s: 0.06 };
+    view.cx = here.x;
+    view.cz = here.z;
+    this.atlasView = view;
+    let pending = null; // world point waiting for a note
+    let layout = null;
+    this.screen('atlas', (s) => {
+      s.classList.add('ui-shade-full');
+      const pnl = el('div', 'ui-panel center ui-atlas', s);
+      const head = el('div', 'ui-atlas-head', pnl);
+      el('h2', 'ui-h', head, 'Road atlas');
+      el('p', 'ui-sub', head, `Route 9 · ${Math.max(0, HAVEN_KM - here.z / 1000).toFixed(0)} km to Haven · day ${g.env.day}`);
+      const row = el('div', 'ui-atlas-row', pnl);
+      const wrap = el('div', 'ui-atlas-map', row);
+      const cv = el('canvas', '', wrap);
+      const side = el('div', 'ui-atlas-side', row);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const draw = () => {
+        const r = wrap.getBoundingClientRect();
+        cv.width = Math.max(10, Math.round(r.width * dpr));
+        cv.height = Math.max(10, Math.round(r.height * dpr));
+        layout = drawAtlas(cv, g, { cx: view.cx, cz: view.cz, s: view.s * dpr }, { dpr });
+        if (pending) {
+          const x = cv.width / 2 - (pending.x - view.cx) * view.s * dpr,
+            y = cv.height / 2 - (pending.z - view.cz) * view.s * dpr;
+          const c = cv.getContext('2d');
+          c.strokeStyle = '#c63d2f';
+          c.lineWidth = 2 * dpr;
+          c.beginPath();
+          c.arc(x, y, 7 * dpr, 0, Math.PI * 2);
+          c.stroke();
+        }
+      };
+      // notes and photos
+      const list = () => {
+        side.innerHTML = '';
+        el('div', 'ui-label', side, 'Notes');
+        const form = el('div', 'ui-atlas-form', side);
+        const inp = el('input', 'ui-atlas-input', form);
+        inp.placeholder = pending ? 'Note for the marked spot…' : 'Note for where you are…';
+        inp.maxLength = 140;
+        inp.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && inp.value.trim()) add(inp.value.trim());
+          if (e.key === 'Escape') this.resume();
+        });
+        this.item(form, pending ? 'Pin it there' : 'Pin it here', () => inp.value.trim() && add(inp.value.trim()));
+        if (pending) inp.focus();
+        if (!A.notes.length) el('div', 'ui-sub', side, 'Click the map to mark a spot, or pin a note where you stand: fuel, water, a good camp, trouble.');
+        A.notes.forEach((n, i) => {
+          const r = el('div', 'ui-atlas-note', side, `<b>${i + 1}</b><span>${esc(n.text)}<small>day ${n.day} · ${Math.max(0, HAVEN_KM - n.z / 1000).toFixed(1)} km to Haven</small></span>`);
+          r.onclick = () => {
+            view.cx = n.x;
+            view.cz = n.z;
+            draw();
+          };
+          const x = el('button', 'ui-atlas-del', r, '×');
+          x.title = 'Rub it out';
+          x.onclick = (e) => {
+            e.stopPropagation();
+            A.removeNote(n);
+            list();
+            draw();
+          };
+        });
+        const photos = A.photos.filter((p) => p.seed === g.seed);
+        if (photos.length) {
+          el('div', 'ui-label', side, `Photos · ${photos.length}`);
+          const grid = el('div', 'ui-atlas-photos', side);
+          for (const ph of photos) {
+            const im = el('img', '', grid);
+            im.src = ph.thumb;
+            im.title = `Day ${ph.day}`;
+            im.onclick = () => {
+              view.cx = ph.x;
+              view.cz = ph.z;
+              draw();
+              this.showPhoto(ph);
+            };
+          }
+        }
+      };
+      const add = (text) => {
+        const at = pending || A.here();
+        A.addNote(at.x, at.z, text);
+        pending = null;
+        g.audio && g.audio.play('pocket', { volume: 0.5 });
+        list();
+        draw();
+      };
+      // drag, zoom, click
+      let drag = null;
+      cv.addEventListener('pointerdown', (e) => {
+        drag = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz, moved: 0 };
+        cv.setPointerCapture(e.pointerId);
+      });
+      cv.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x,
+          dy = e.clientY - drag.y;
+        drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+        view.cx = drag.cx + dx / view.s;
+        view.cz = drag.cz + dy / view.s;
+        draw();
+      });
+      cv.addEventListener('pointerup', (e) => {
+        const d = drag;
+        drag = null;
+        if (!d || d.moved > 4 || !layout) return;
+        const r = cv.getBoundingClientRect();
+        const px = (e.clientX - r.left) * dpr,
+          py = (e.clientY - r.top) * dpr;
+        const hit = layout.hits.find((h) => Math.hypot(h.x - px, h.y - py) < h.r);
+        if (hit && hit.kind === 'photo') return this.showPhoto(hit.photo);
+        if (hit && hit.kind === 'note') {
+          g.hud && g.hud.toast(hit.note.text);
+          return;
+        }
+        pending = layout.toWorld(px, py);
+        list();
+        draw();
+      });
+      cv.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const r = cv.getBoundingClientRect();
+        const mx = e.clientX - r.left - r.width / 2,
+          my = e.clientY - r.top - r.height / 2;
+        const k = Math.exp(-e.deltaY * 0.0015);
+        const s1 = Math.min(0.6, Math.max(0.004, view.s * k));
+        // keep the point under the cursor where it is
+        view.cx += -mx / view.s + mx / s1;
+        view.cz += -my / view.s + my / s1;
+        view.s = s1;
+        draw();
+      });
+      const act = el('div', 'ui-actions', pnl);
+      this.item(act, 'Close', () => this.resume());
+      this.item(act, 'Where am I', () => {
+        const h = A.here();
+        view.cx = h.x;
+        view.cz = h.z;
+        draw();
+      });
+      el('div', 'spacer', act);
+      el('div', 'ui-loadtext', act, `Drag to move · wheel to zoom · click to mark · ${keyName(settings.data.bindings.atlas || 'KeyM')} to close`);
+      list();
+      requestAnimationFrame(draw);
+    });
+    this.show('atlas');
+  }
+
+  // A photo from the atlas, big, with when it was taken.
+  showPhoto(ph) {
+    const s = this.screens.atlas;
+    if (!s) return;
+    const old = s.querySelector('.ui-atlas-photo');
+    if (old) old.remove();
+    const box = el('div', 'ui-atlas-photo', s);
+    const im = el('img', '', box);
+    im.src = ph.thumb;
+    const h = ph.time || 12;
+    el('div', 'ui-sub', box, `Day ${ph.day}, ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')} · click to put it back`);
+    box.onclick = () => box.remove();
   }
 
   // ---------------------------------------------------------------- notes
@@ -930,10 +1110,20 @@ export class UI {
       this.inventory.close();
       return;
     }
+    const atlasKey = settings.data.bindings.atlas || 'KeyM';
+    if (e.code === atlasKey && !e.repeat) {
+      if (this.current === 'atlas') this.resume();
+      else if (!this.current && !this.game.player.dead && !(this.game.photo && this.game.photo.active)) this.showAtlas();
+    }
     const journalKey = settings.data.bindings.journal;
     if (e.code === journalKey && !e.repeat) {
       if (this.current === 'journal') this.resume();
       else if (!this.current && !this.game.player.dead) this.showJournal();
+    }
+    if (e.code === 'Escape' && this.current === 'atlas') {
+      e.preventDefault();
+      this.resume();
+      return;
     }
     if (e.code === 'Escape' && this.current === 'note') {
       e.preventDefault();

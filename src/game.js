@@ -21,6 +21,8 @@ import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
 import { Tents } from './world/tents.js';
+import { Atlas } from './story/atlas.js';
+import { PhotoMode, loadPhotos } from './ui/photoMode.js';
 import { Winches } from './vehicle/winch.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
@@ -154,6 +156,9 @@ export class Game {
     this.campfires = new Campfires(this);
     this.jacks = new Jacks(this);
     this.tents = new Tents(this);
+    this.atlas = new Atlas(this);
+    this.atlas.photos = loadPhotos();
+    this.photo = new PhotoMode(this);
     this.winches = new Winches(this);
     onProgress('Building the cars', 0.35);
     await tick();
@@ -366,8 +371,16 @@ export class Game {
 
   frame(dt) {
     if (!this.running) return;
+    // photo mode: the world holds still while the camera roams
+    const ph = this.photo;
+    if (ph && input.wasPressed('photo') && !(this.ui && this.ui.current)) {
+      if (ph.active) ph.exit();
+      else if (!this.paused && !this.attract) ph.enter();
+    }
+    if (ph && ph.active) ph.update(dt);
     if (!this.paused) this.step(dt);
     this.render(dt);
+    if (ph && ph.pendingShot) ph.capture();
     this.ui && this.ui.update(dt);
     input.endFrame();
   }
@@ -476,6 +489,7 @@ export class Game {
       }
     }
     this.updateSleep(dt);
+    this.atlas && !this.attract && this.atlas.update();
     if (!this.attract) {
       this.story.update(dt);
       this.roadSigns = this.roadSigns || new RoadSigns(this);

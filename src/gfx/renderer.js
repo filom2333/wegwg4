@@ -39,6 +39,8 @@ const GradeShader = {
     uGrain: { value: 0.02 },
     uDamage: { value: 0 },
     uGrit: { value: 0 },
+    uFilm: { value: 0 },
+    uBars: { value: 0 },
     uFade: { value: 0 },
     uWarm: { value: 0 },
     uNight: { value: 0 },
@@ -51,7 +53,7 @@ const GradeShader = {
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 uTexel; uniform float uAspect; uniform float uSharpen;
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
-    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit;
+    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit; uniform float uFilm; uniform float uBars;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
     uniform float uHeat; uniform float uNear; uniform float uFar;
     varying vec2 vUv;
@@ -141,6 +143,16 @@ const GradeShader = {
         col *= 1.0 - uGrit * 0.5 * smoothstep(0.2, 0.75, length(d) * 1.5);
         col += (h(vUv * 730.0 + uTime) - 0.5) * 0.08 * uGrit;
       }
+      // photo mode looks
+      if (uFilm > 0.5) {
+        float L = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        if (uFilm < 1.5) col = vec3(smoothstep(0.03, 0.97, L));
+        else if (uFilm < 2.5) col = vec3(L) * vec3(1.08, 0.93, 0.72) + vec3(0.035, 0.02, 0.0);
+        else if (uFilm < 3.5) col = (mix(vec3(L), col, 0.72) * vec3(1.04, 0.98, 0.86)) * 0.86 + vec3(0.075, 0.065, 0.05);
+        else if (uFilm < 4.5) col = mix(vec3(L), col, 0.8) * vec3(0.9, 1.0, 1.1) + vec3(0.0, 0.01, 0.025);
+        else col = clamp(mix(vec3(L), col, 1.38) * 1.03, 0.0, 1.0);
+      }
+      if (uBars > 0.0) col *= step(uBars, vUv.y) * step(vUv.y, 1.0 - uBars);
       col = mix(col, vec3(0.0), uFade);
       gl_FragColor = vec4(col, c.a);
     }`,
