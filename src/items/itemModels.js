@@ -112,6 +112,10 @@ export function jerryCan(color = 'red') {
   spout.rotateX(0.5);
   spout.translate(0, 0.205, 0.13);
   g.add(mesh(spout, M.darkSteel));
+  // the screw cap (off while pouring)
+  const cap = mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.024, 16).rotateX(0.5).translate(0, 0.27, 0.165), mat);
+  cap.name = 'cap';
+  g.add(cap);
   g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 6).rotateZ(Math.PI / 2).translate(0, 0.25, 0.1), M.darkSteel));
   grip(g, 'side', 'wrap12', V(0, 0.28, -0.05), V(0, 0, 1), V(-1, 0, 0));
   return centered(g);

@@ -15,6 +15,7 @@ import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
+import { STATIONS } from '../audio/stations.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
 import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
@@ -380,9 +381,10 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
-      if (p.seat && g.car && !blocked && input.wasPressed('nextTrack') && g.car.stereo.disc >= 0) {
-        if (g.car.stereo.mode === 'cd') g.car.nextTrack();
-        else g.car.stereo.mode = 'cd';
+      if (p.seat && g.car && !blocked && input.wasPressed('nextTrack')) {
+        // N: next track on a disc, else the next station
+        if (g.car.stereo.mode === 'cd' && g.car.stereo.disc >= 0) g.car.nextTrack();
+        else g.car.nextStation();
         g.car.radioOn = true;
         g.audio && g.audio.play('click');
       }
@@ -623,12 +625,23 @@ export class Interaction {
         } else if (h.id === 'wipers') {
           info.sub = car.wipers ? 'On' : 'Off';
           prompts.push(['E', 'Switch']);
+        } else if (h.id === 'hazard') {
+          info.sub = car.hazards ? 'Blinking' : 'Off';
+          prompts.push(['E', 'Switch']);
+        } else if (h.id === 'heater') {
+          info.sub = !car.heater ? 'Off' : car.dyn.engine.running && car.engineTemp > 55 ? 'Blowing warm' : 'On · cold until the engine warms up';
+          prompts.push(['E', 'Switch']);
+        } else if (h.id === 'dome') {
+          info.sub = car.cabinLight ? 'On' : 'Off · comes on with a door open';
+          prompts.push(['E', 'Switch']);
         } else if (h.id === 'radio') {
           const st = car.stereo;
           info.title = 'Stereo';
-          info.sub = !car.radioOn ? 'Off' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : 'FM 98.1' + (st.disc >= 0 ? ' · disc in' : '');
+          const stn = STATIONS[st.station ?? 1];
+          info.sub = !car.radioOn ? 'Off' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : `${stn.freq} ${stn.name}` + (st.disc >= 0 ? ' · disc in' : '');
           prompts.push(['E', car.radioOn ? 'Turn off' : 'Turn on']);
-          if (st.disc >= 0) prompts.push(['LMB', st.mode === 'cd' ? 'Next track' : 'Play the CD'], ['R', 'Eject disc']);
+          if (car.radioOn) prompts.push(['LMB', st.mode === 'cd' && st.disc >= 0 ? 'Next track' : 'Next station']);
+          if (st.disc >= 0) prompts.push(['F', st.mode === 'cd' ? 'Radio' : 'Play the CD'], ['R', 'Eject disc']);
           else if (car.radioOn) prompts.push(['', 'Hold a CD and click to put it in']);
         }
         break;
@@ -795,12 +808,16 @@ export class Interaction {
     }
     if (t.kind === 'hotspot' && t.hotspot.id === 'radio') {
       const st = car.stereo;
-      if (input.mousePressed(0) && st.disc >= 0) {
-        if (st.mode === 'cd') car.nextTrack();
-        else {
-          st.mode = 'cd';
-          car.radioOn = true;
-        }
+      if (input.mousePressed(0) && car.radioOn) {
+        if (st.mode === 'cd' && st.disc >= 0) car.nextTrack();
+        else car.nextStation();
+        g.audio && g.audio.play('click');
+        return;
+      }
+      if (input.pressed.has('KeyF') && st.disc >= 0) {
+        if (st.mode === 'cd') st.mode = 'radio';
+        else st.mode = 'cd';
+        car.radioOn = true;
         g.audio && g.audio.play('click');
         return;
       }
@@ -840,6 +857,9 @@ export class Interaction {
         if (h === 'ignition') car.setIgnition(!car.ignition);
         if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
         if (h === 'wipers') car.wipers = !car.wipers;
+        if (h === 'hazard') car.hazards = !car.hazards;
+        if (h === 'heater') car.heater = !car.heater;
+        if (h === 'dome') car.cabinLight = !car.cabinLight;
         if (h === 'radio') {
           car.radioOn = !car.radioOn;
           g.audio && g.audio.setRadio(car.radioOn);
@@ -1155,6 +1175,10 @@ export class Interaction {
         const tgt = this.pourTarget(it, this.target);
         if (input.mouseDown(0)) this.pour(it, tgt, dt);
         else this.pouring = 0;
+        // the cap comes off while it pours, and the liquid runs in a stream to where it goes
+        const cap = it.mesh.getObjectByName('cap');
+        if (cap) cap.visible = !(this.pouring && this.pourKind === 'pour');
+        if (this.pouring && this.pourKind === 'pour' && tgt && this.game.effects) this.pourStream(it, tgt);
       } else if (def.clean) {
         const car = this.game.car;
         const t = this.target;
@@ -1519,6 +1543,37 @@ export class Interaction {
     if (!this.pouring) g.audio && g.audio.play('pour', { loop: true });
     this.pouring = 1;
     g.items.refreshVisual(it);
+  }
+
+  // A stream from the held container's mouth to the filler (or the other container), drawn as a
+  // run of short-lived droplets along a falling arc.
+  pourStream(it, tgt) {
+    const g = this.game;
+    const fx = g.effects;
+    const from = new THREE.Vector3();
+    it.mesh.getWorldPosition(from);
+    const size = it.mesh.userData.size || V(0.2, 0.3, 0.2);
+    from.y += size.y * 0.45;
+    let to = null;
+    const t = this.target;
+    if (t && t.kind === 'hotspot' && g.car) to = g.car.worldPointOf(t.hotspot.pos);
+    else if (t && t.kind === 'item') {
+      to = new THREE.Vector3();
+      t.item.mesh.getWorldPosition(to);
+      to.y += (t.item.mesh.userData.size ? t.item.mesh.userData.size.y * 0.4 : 0.1);
+    }
+    if (!to) return;
+    // start a little toward the target from the mouth
+    from.addScaledVector(to.clone().sub(from).setY(0).normalize(), 0.08);
+    const type = it.state.liquidType;
+    const col = type === 'fuel' ? [0.85, 0.68, 0.32] : type === 'oil' ? [0.22, 0.14, 0.05] : type === 'coolant' ? [0.35, 0.85, 0.45] : [0.75, 0.85, 0.95];
+    const sag = Math.max(0.05, from.distanceTo(to) * 0.25);
+    for (let i = 0; i < 14; i++) {
+      const k = (i + Math.random()) / 14;
+      const p = from.clone().lerp(to, k);
+      p.y -= Math.sin(k * Math.PI) * sag * 0.5 + k * k * 0.02;
+      fx.blood.emit({ pos: p, size: 0.022, grow: 0.01, life: 0.05, color: col, alpha: type === 'fuel' || type === 'water' ? 0.55 : 0.9, drag: 0 });
+    }
   }
 
   // Fishing: LMB casts toward open water in view; the float bobs, dips when a fish bites, and LMB

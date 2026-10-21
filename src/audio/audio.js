@@ -7,6 +7,7 @@ import { Soundscape } from './soundscape.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
 import { tunedVoice } from '../vehicle/tuning.js';
+import { STATIONS, stationProgram } from './stations.js';
 
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
@@ -298,7 +299,15 @@ export class AudioSystem {
     const now = this.ctx.currentTime;
     const st = car && car.stereo;
     const powered = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03;
-    const want = powered && st.mode === 'cd' && st.disc >= 0 ? st.disc + ':' + st.track : null;
+    let want = powered && st.mode === 'cd' && st.disc >= 0 ? st.disc + ':' + st.track : null;
+    // a music station: the albums on the air, picked by the clock
+    this.radioClock = (this.radioClock ?? 1e4 + Math.random() * 5e4) + dt;
+    const station = st && st.mode !== 'cd' ? STATIONS[st.station ?? 1] : null;
+    let prog = null;
+    if (powered && station && station.kind === 'music') {
+      prog = stationProgram(station, this.radioClock + (st.radioShift || 0));
+      want = 'fm:' + prog.album + ':' + prog.track;
+    }
     if (cd.key !== want || st?.restart) {
       if (cd.src) {
         try {
@@ -311,33 +320,44 @@ export class AudioSystem {
       cd.key = null;
       if (st) st.restart = false;
       if (want) {
-        const buf = this.cdTrack(st.disc, st.track);
+        const buf = prog ? this.cdTrack(prog.album, prog.track) : this.cdTrack(st.disc, st.track);
         if (buf) {
           const src = this.ctx.createBufferSource();
           src.buffer = buf;
           src.connect(cd.in);
-          const off = Math.min(st.pos || 0, buf.duration - 0.5);
+          const off = Math.min(prog ? prog.pos : st.pos || 0, buf.duration - 0.5);
           src.start(now + 0.05, Math.max(0, off));
           cd.src = src;
           cd.key = want;
           cd.startedAt = now + 0.05 - Math.max(0, off);
           cd.duration = buf.duration;
+          const radioSlot = prog ? prog.slot : null;
           src.onended = () => {
-            if (cd.src === src && car.stereo.disc >= 0) {
+            if (cd.src !== src) return;
+            if (radioSlot !== null) {
+              // the song is over before its slot: the station moves on to the next one
+              const now2 = stationProgram(STATIONS[car.stereo.station ?? 1], this.radioClock + (car.stereo.radioShift || 0));
+              if (now2.slot === radioSlot) car.stereo.radioShift = (car.stereo.radioShift || 0) + (210 - now2.pos);
+              return;
+            }
+            if (car.stereo.disc >= 0) {
               car.stereo.pos = 0;
               car.nextTrack();
             }
           };
-          this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
-          // render the next one in the background
-          this.cdTrack(st.disc, (st.track + 1) % 3);
+          if (!prog) {
+            this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
+            // render the next one in the background
+            this.cdTrack(st.disc, (st.track + 1) % 3);
+          }
         }
       }
     }
-    if (cd.key && st) st.pos = Math.max(0, now - cd.startedAt);
-    set(cd.g.gain, cd.key ? 0.85 * (seated ? 1 : 0.4) : 0, now, 0.08);
-    set(cd.lp.frequency, seated ? 14000 : 1600, now, 0.2);
-    return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0 };
+    if (cd.key && st && !prog) st.pos = Math.max(0, now - cd.startedAt);
+    set(cd.g.gain, cd.key ? (prog ? 0.7 : 0.85) * (seated ? 1 : 0.4) : 0, now, 0.08);
+    // over the air: no deep bass, no sparkle
+    set(cd.lp.frequency, seated ? (prog ? 5200 : 14000) : 1600, now, 0.2);
+    return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0, prog };
   }
 
   // ------------------------------------------------------------------ one-shots
@@ -382,6 +402,40 @@ export class AudioSystem {
 
   setRadio(on) {
     this.radioOn = on;
+  }
+
+  // The emergency system's attention signal: two tones together, through the radio.
+  ebsTone(seconds = 2.5) {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const g = c.createGain();
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(0.12, c.currentTime, 0.02);
+    g.gain.setTargetAtTime(0, c.currentTime + seconds, 0.03);
+    g.connect(this.radio.in);
+    for (const f of [853, 960]) {
+      const o = c.createOscillator();
+      o.frequency.value = f;
+      o.connect(g);
+      o.start();
+      o.stop(c.currentTime + seconds + 0.3);
+    }
+  }
+
+  // A short pip for the numbers station.
+  pip(freq = 1200) {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const g = c.createGain();
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(0.1, c.currentTime, 0.005);
+    g.gain.setTargetAtTime(0, c.currentTime + 0.12, 0.01);
+    g.connect(this.radio.in);
+    const o = c.createOscillator();
+    o.frequency.value = freq;
+    o.connect(g);
+    o.start();
+    o.stop(c.currentTime + 0.3);
   }
 
   // ------------------------------------------------------------------ update
@@ -509,9 +563,10 @@ export class AudioSystem {
     if (car) car.stereoState = this.updateCd(car, dt, seated);
     // ---- radio
     const radioOn = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03 && !(car.stereo && car.stereo.mode === 'cd');
+    const kind = radioOn ? STATIONS[car.stereo.station ?? 1].kind : null;
     set(this.radio.g.gain, radioOn ? 0.5 * (seated ? 1 : 0.35) : 0, now, 0.1);
-    set(this.loops.static.g.gain, radioOn ? 0.03 : 0, now, 0.1);
-    if (radioOn) {
+    set(this.loops.static.g.gain, kind === 'numbers' ? 0.14 : kind === 'ebs' ? 0.06 : radioOn ? 0.03 : 0, now, 0.1);
+    if (kind === 'haven') {
       this.timers.radio -= dt;
       if (this.timers.radio <= 0) this.radioNote();
     }

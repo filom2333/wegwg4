@@ -125,6 +125,9 @@ def material_key(src, part, inf):
     key = MESH_KEY.get(inf.get('mesh'), 'trim')
     if part == 'chassis':
         return 'under'
+    # the instrument cluster's own backlight pieces: dark glass, not lamp lenses
+    if part == 'body' and key in ('lens', 'amber'):
+        return 'dash'
     return key
 
 

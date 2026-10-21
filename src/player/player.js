@@ -423,6 +423,9 @@ export class Player {
       const car = this.car;
       const seatPos = car.seatWorld(this.seat);
       const q = car.root.quaternion.clone();
+      // RMB: lean in and look closer (read the gauges, the road far ahead)
+      const zoomWant = input.mouseDown(2) && !(g.interaction && g.interaction.held) ? 1 : 0;
+      this.seatZoom = lerp(this.seatZoom || 0, zoomWant, Math.min(1, dt * 7));
       const hd = this.seatHead(dt, car);
       cam.position.copy(seatPos).add(hd.o.clone().applyQuaternion(q));
       const e = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.seatPitch, this.seatYaw + Math.PI, 0, 'YXZ'));
@@ -558,7 +561,9 @@ export class Player {
     if (car) {
       // a closed cabin keeps the wind off; a warm engine runs the heater
       air = air + 6;
-      if (car.dyn.engine.running && car.engineTemp > 55) air = Math.max(air, 22);
+      // the heater (a switch on cars that have one) blows warm once the engine is warm
+      const hasSwitch = car.type.HOTSPOTS && car.type.HOTSPOTS.some((h) => h.id === 'heater');
+      if (car.dyn.engine.running && car.engineTemp > 55 && (car.heater || !hasSwitch)) air = Math.max(air, 22);
     } else if (this.indoors) air = air + 7;
     // a tent keeps the wind and rain off; a made bed has its own blankets
     const lying = this.lying && this.lying.kind;

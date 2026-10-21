@@ -37,6 +37,9 @@ const HOTSPOTS = [
   { id: 'lights', label: 'Light switch', pos: V(0.6, 0.82, 0.62), r: 0.05, part: 'body', inside: true },
   { id: 'wipers', label: 'Wiper switch', pos: V(0.12, 0.8, 0.64), r: 0.05, part: 'body', inside: true },
   { id: 'radio', label: 'Radio', pos: V(...STEREO.center), r: 0.08, part: 'body', inside: true },
+  { id: 'hazard', label: 'Hazard lights', pos: V(0.0, 0.82, 0.74), r: 0.035, part: 'body', inside: true },
+  { id: 'heater', label: 'Heater', pos: V(0.0, 0.68, 0.76), r: 0.05, part: 'body', inside: true },
+  { id: 'dome', label: 'Cabin light', pos: V(0, 1.27, -0.12), r: 0.06, part: 'body', inside: true },
 ];
 const POINTS = {
   exhaust: V(...META.exhaust),

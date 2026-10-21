@@ -39,6 +39,9 @@ const HOTSPOTS = [
   { id: 'lights', label: 'Light switch', pos: V(0.66, 0.78, 0.5), r: 0.05, part: 'body', inside: true },
   { id: 'wipers', label: 'Wiper switch', pos: V(sw.center[0] - 0.13, 0.82, 0.4), r: 0.05, part: 'body', inside: true },
   { id: 'radio', label: 'Radio', pos: V(...STEREO.center), r: 0.08, part: 'body', inside: true },
+  { id: 'hazard', label: 'Hazard lights', pos: V(0.0, 0.79, 0.57), r: 0.035, part: 'body', inside: true },
+  { id: 'heater', label: 'Heater', pos: V(-0.07, 0.64, 0.5), r: 0.05, part: 'body', inside: true },
+  { id: 'dome', label: 'Cabin light', pos: V(0, 1.33, 0.12), r: 0.06, part: 'body', inside: true },
 ];
 const POINTS = {
   exhaust: V(...META.exhaust),
@@ -145,7 +148,7 @@ export const W203 = {
     trunk: { axis: [1, 0, 0], max: 1.15 },
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
-  GAUGES: { speedo: { center: [0.38, 0.845, 0.52], normal: [0, 0.3, -1], radius: 0.05, face: true, odo: '1 8 4 3 0 7' } },
+  GAUGES: { speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.056, face: true, odo: '1 8 4 3 0 7' } },
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_FR'],
   fuelCap: 62,

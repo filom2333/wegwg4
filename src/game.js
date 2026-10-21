@@ -849,7 +849,7 @@ export class Game {
 
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = this.debugFov || verticalFov(settings.data.hfov, cam.aspect);
+    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
     cam.far = 7000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;

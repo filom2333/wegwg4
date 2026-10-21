@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { ALBUMS } from '../audio/music/albums.js';
+import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
@@ -60,7 +61,7 @@ export class Car {
     this.cranking = 0;
     this.radioOn = false;
     // head unit: FM radio or the CD in the slot (album index), track and position in it
-    this.stereo = { disc: -1, track: 0, pos: 0, mode: 'radio', restart: false };
+    this.stereo = { disc: -1, track: 0, pos: 0, mode: 'radio', restart: false, station: 1 };
     this.stereoState = { loading: false, playing: false, pos: 0 };
     this.fire = 0;
     this.smoke = 0;
@@ -69,6 +70,8 @@ export class Car {
     this.wipers = false;
     this.wiperPhase = 0;
     this.cabinLight = false;
+    this.hazards = false;
+    this.heater = false;
     // physics
     const pos = opts.position || V(0, 0.5, 0);
     const q = opts.quaternion || new THREE.Quaternion();
@@ -217,6 +220,33 @@ export class Car {
       it.body.setAngvel({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 }, true);
     }
     return it;
+  }
+
+  // The fuel filler flap on the body: swings out while someone fills up.
+  updateFuelFlap(dt, open) {
+    const h = this.type.HOTSPOTS && this.type.HOTSPOTS.find((x) => x.id === 'fuel');
+    if (!h || !this.mats || !this.mats.color) return;
+    if (!this.fuelFlap) {
+      const side = Math.sign(h.pos.x) || 1;
+      const pivot = new THREE.Group();
+      pivot.position.copy(h.pos).add(V(0, 0, 0.055));
+      const mat = new THREE.MeshStandardMaterial({ color: this.mats.color, roughness: 0.35, metalness: 0.4, side: THREE.DoubleSide });
+      const flap = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), mat);
+      flap.rotation.y = side * Math.PI * 0.5;
+      flap.position.set(0, 0, -0.055);
+      flap.castShadow = true;
+      pivot.add(flap);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 12).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 }));
+      cap.position.copy(h.pos).add(V(side * 0.01, 0, 0));
+      cap.visible = false;
+      this.root.add(pivot, cap);
+      this.fuelFlap = { pivot, cap, side, t: 0 };
+    }
+    const f = this.fuelFlap;
+    f.t += Math.sign((open ? 1 : 0) - f.t) * Math.min(Math.abs((open ? 1 : 0) - f.t), dt * 4);
+    f.pivot.rotation.y = -f.side * f.t * 1.7;
+    f.pivot.visible = f.t > 0.01;
+    f.cap.visible = f.t > 0.3;
   }
 
   // Label of a part on this car, with its tune.
@@ -378,6 +408,14 @@ export class Car {
     return a;
   }
 
+  // Tune to the next station (leaves CD mode).
+  nextStation() {
+    const s = this.stereo;
+    s.station = ((s.station ?? 1) + 1) % STATIONS.length;
+    s.mode = 'radio';
+    this.radioOn = true;
+  }
+
   nextTrack() {
     const s = this.stereo;
     if (s.disc < 0) return;
@@ -438,7 +476,13 @@ export class Car {
       const p = Math.floor(this.stereoState.pos || 0);
       return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[s.track].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
     }
-    return { a: 'FM', b: '98.1  HAVEN', t: s.disc >= 0 ? 'CD IN' : '' };
+    const st = STATIONS[s.station ?? 1];
+    const prog = this.stereoState.prog;
+    if (st.kind === 'music' && prog) {
+      if (this.stereoState.loading) return { a: st.freq, b: 'TUNING\u2026', t: s.disc >= 0 ? 'CD IN' : '' };
+      return { a: st.freq + '  ' + st.name, b: ALBUMS[prog.album].tracks[prog.track].toUpperCase(), t: s.disc >= 0 ? 'CD IN' : '' };
+    }
+    return { a: st.freq, b: st.name, t: s.disc >= 0 ? 'CD IN' : '' };
   }
 
   // The luggage space under the front lid is reachable standing at the nose with the lid up.
@@ -523,8 +567,14 @@ export class Car {
     const e = this.emissive;
     e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
     // tail lamps and brake lights share the bulb housings
-    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
-    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : 0) : 0;
+    // hazards: both tail lamps blinking
+    const blink = this.hazards && powered && performance.now() % 800 < 400;
+    if (this.hazards && powered && blink !== this._blinkWas) {
+      this._blinkWas = blink;
+      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.25 : 0.18 });
+    }
+    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : blink ? 3.0 : on ? 1.1 : 0) : 0;
+    this.tailLight.intensity = powered ? (braking ? 2.2 : blink ? 2.0 : on ? 0.7 : 0) : 0;
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
@@ -587,6 +637,10 @@ export class Car {
   update(dt, controls) {
     const d = this.dyn;
     if (this.pendingTears) this.processTears();
+    // the filler flap opens while a can is held to it
+    const ia = this.game.interaction;
+    const filling = ia && ia.target && ia.target.kind === 'hotspot' && ia.target.hotspot.id === 'fuel' && ia.held && ia.held.def && ia.held.def.liquid && this === this.game.car;
+    this.updateFuelFlap(dt, !!filling);
     // hinge animation
     let collidersDirty = false;
     if (!this.hingedIds) this.hingedIds = Object.keys(this.model.parts).filter((id) => this.model.parts[id].hinge);

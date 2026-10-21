@@ -2,6 +2,8 @@
 // and a destination (Haven) far to the north. Notes are handed out in order as you find them, so
 // the story reads front to back whichever places you search.
 
+import { STATIONS, EBS_LINES, NUMBERS } from '../audio/stations.js';
+
 export const HAVEN_KM = 150;
 
 export const NOTES = [
@@ -179,7 +181,32 @@ export class Story {
     const km = this.km();
     // radio broadcasts while the radio plays
     const car = g.car;
-    if (car && car.radioOn && g.player.seat && car.ignition && !(car.stereo && car.stereo.mode === 'cd')) {
+    const on = car && car.radioOn && g.player.seat && car.ignition && car.isInstalled('battery') && car.battery > 0.03 && !(car.stereo && car.stereo.mode === 'cd');
+    const station = on ? STATIONS[car.stereo.station ?? 1] : null;
+    // the other stations' voices
+    if (station && station.kind !== this.lastStation) {
+      this.lastStation = station.kind;
+      this.voiceT = 1.5;
+    }
+    if (!station) this.lastStation = null;
+    if (station && (station.kind === 'ebs' || station.kind === 'numbers')) {
+      this.voiceT = (this.voiceT ?? 1.5) - dt;
+      if (this.voiceT <= 0) {
+        if (station.kind === 'ebs') {
+          this.voiceT = 26;
+          this.ebsLine = ((this.ebsLine ?? -1) + 1) % EBS_LINES.length;
+          g.audio && g.audio.ebsTone(2.2);
+          setTimeout(() => g.hud && g.hud.subtitle && g.hud.subtitle('AM 640 · Emergency Broadcast', EBS_LINES[this.ebsLine], 11), 2400);
+        } else {
+          this.voiceT = 16 + Math.random() * 8;
+          const grp = Array.from({ length: 5 }, () => NUMBERS[Math.floor(Math.random() * NUMBERS.length)]);
+          const text = grp.map((w) => w[0].toUpperCase() + w.slice(1)).join('. ') + '.';
+          g.audio && [0, 0.35, 0.7].forEach((t) => setTimeout(() => g.audio.pip(t === 0.7 ? 900 : 1200), t * 1000));
+          setTimeout(() => g.hud && g.hud.subtitle && g.hud.subtitle('FM 88.3', text, 6), 1200);
+        }
+      }
+    }
+    if (station && station.kind === 'haven') {
       this.radioT -= dt;
       if (this.radioT <= 0) {
         this.radioT = 45 + Math.random() * 40;
