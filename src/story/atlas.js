@@ -5,7 +5,7 @@
 // the photo mode are taped in where they were taken.
 
 import { HAVEN_KM } from './story.js';
-import { POI_SPACING, RIVER_SPACING, LAKE_CELL } from '../world/worldGen.js';
+import { POI_SPACING, RIVER_SPACING, LAKE_CELL, TRACK } from '../world/worldGen.js';
 
 // Printed in the atlas: places a 1980s road atlas would list. The rest are only marked once visited.
 const PRINTED = new Set(['homestead', 'gasStation', 'motel', 'diner', 'church', 'outpost', 'lodge', 'ranch', 'farm', 'sawmill', 'radioTower', 'waterTower']);
@@ -228,6 +228,24 @@ export function drawAtlas(cv, game, view, opts = {}) {
     ctx.setLineDash([]);
   }
 
+  // dirt side tracks: brown dashes; where the highway is closed, a black bar across it
+  ctx.lineWidth = px(2);
+  ctx.strokeStyle = '#8a6a44';
+  ctx.setLineDash([px(4), px(3)]);
+  const tracks = [];
+  for (let t = Math.floor(zBot / TRACK.every) - 1; t <= Math.ceil(zTop / TRACK.every) + 1; t++) {
+    const tr = gen.track(t);
+    if (!tr) continue;
+    tracks.push(tr);
+    ctx.beginPath();
+    for (let z = tr.z0, i = 0; z <= tr.z1; z += Math.max(4, 5 / view.s), i++) {
+      if (i === 0) ctx.moveTo(sx(gen.trackX(tr, z)), sy(z));
+      else ctx.lineTo(sx(gen.trackX(tr, z)), sy(z));
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
   // Route 9: a white-cased red line
   const road = () => {
     ctx.beginPath();
@@ -244,6 +262,14 @@ export function drawAtlas(cv, game, view, opts = {}) {
   ctx.strokeStyle = '#b8352a';
   ctx.lineWidth = px(3);
   ctx.stroke();
+
+  for (const tr of tracks) {
+    if (!tr.block) continue;
+    const x = sx(gen.roadX(tr.block.z)),
+      y = sy(tr.block.z);
+    ctx.fillStyle = '#1d1a16';
+    ctx.fillRect(x - px(6), y - px(1.5), px(12), px(3));
+  }
 
   // distance signs every 5 km, and route shields
   ctx.font = `${px(10)}px Barlow, Arial, sans-serif`;

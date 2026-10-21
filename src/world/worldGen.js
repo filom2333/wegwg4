@@ -38,6 +38,8 @@ export const RIVER_SPACING = 4300;
 export const LAKE_CELL = 1700;
 
 export const ROAD = { halfWidth: 3.6, shoulder: 1.6, laneMark: 0.12 };
+// dirt side tracks: one may leave the highway in every stretch of TRACK.every metres
+export const TRACK = { halfWidth: 2.4, shoulder: 1.1, every: 3400 };
 const BIOME_CELL = 2600;
 
 // Value noise with its analytic derivatives: [value -1..1, d/dx, d/dy].
@@ -328,7 +330,110 @@ export class WorldGen {
 
   macroHeight(x, z) {
     const n = this.nB;
-    return n.noise2(x * 0.00045, z * 0.00045) * 26 + n.noise2(x * 0.0012 + 31, z * 0.0012) * 7;
+    // hill country comes and goes along the way: long climbs and steep drops for the road
+    const hilly = smoothstep(-0.05, 0.45, this.nA.noise2(z * 0.000085 + 40, 1.7));
+    const hills = hilly > 0 ? hilly * (n.noise2(x * 0.0007 + 11, z * 0.0007 - 4) * 30 + n.noise2(x * 0.0019 - 7, z * 0.0019 + 2) * 6) : 0;
+    return n.noise2(x * 0.00045, z * 0.00045) * 26 + n.noise2(x * 0.0012 + 31, z * 0.0012) * 7 + hills;
+  }
+
+  // ---------------------------------------------------------------- side tracks
+  // Every few kilometres a dirt track may leave the highway, swing a few hundred metres out over
+  // the open country (up and over whatever is there) and come back to it. On over half of them
+  // the highway between their ends is blocked — trees down across it, a rockslide, a trailer on
+  // its side — and the track is the way round.
+  track(t) {
+    if (!this._tracks) this._tracks = new Map();
+    if (this._tracks.has(t)) return this._tracks.get(t);
+    let res = null;
+    const r = (i) => hash01(this.seed, t, 1401 + i);
+    if (t >= 1 && r(0) < 0.85) {
+      const len = 900 + r(1) * 700;
+      const z0 = t * TRACK.every + (r(2) - 0.5) * 700;
+      res = { t, z0, z1: z0 + len, len, side: r(3) < 0.5 ? -1 : 1, D: 130 + r(4) * 190, wob: r(6) * 6.28 };
+      const blocked = z0 > 1800 && r(5) < 0.6;
+      if (blocked) {
+        const zb = z0 + len * 0.5 + (r(8) - 0.5) * len * 0.2;
+        // what comes down depends on the country right there
+        const bw = this.biomeWeights(this.roadX(zb), zb);
+        const wooded = bw.forest + bw.taiga + bw.tundra * 0.6;
+        const rocky = bw.highland + bw.badlands + bw.scrub * 0.3;
+        const kind = wooded > 0.45 ? 'trees' : rocky > 0.45 || r(7) < 0.3 ? 'rocks' : 'trailer';
+        res.block = { kind, z: zb };
+      }
+      // no fords, no lakes, nowhere near the start
+      if (z0 < 1500) res = null;
+      for (let z = z0; res && z <= z0 + len; z += 30) {
+        const x = this.trackX(res, z);
+        if (this.waterAt(x, z) || this.waterAt(this.roadX(z), z)) res = null;
+        else {
+          const rv = this.riverAt(x, z);
+          if (rv && rv.d < rv.r.w + 30) res = null;
+        }
+      }
+      if (res && this.bridgeNear(res.z0) && this.bridgeNear(res.z1)) res = null;
+    }
+    this._tracks.set(t, res);
+    return res;
+  }
+
+  // The track whose span contains z, if any.
+  trackAt(z) {
+    const t0 = Math.floor(z / TRACK.every);
+    for (let t = t0 + 1; t >= t0 - 1; t--) {
+      const tr = this.track(t);
+      if (tr && z > tr.z0 && z < tr.z1) return tr;
+    }
+    return null;
+  }
+
+  // Sideways offset of the track from the highway at z (0 at both junctions).
+  trackOffset(tr, z) {
+    const u = (z - tr.z0) / tr.len;
+    if (u <= 0 || u >= 1) return 0;
+    const b = Math.sin(Math.PI * u);
+    return tr.side * tr.D * b * (1 + 0.18 * Math.sin(u * 9.4 + tr.wob) * b);
+  }
+
+  trackX(tr, z) {
+    return this.roadX(z) + this.trackOffset(tr, z);
+  }
+
+  // Along-track profile: the lie of the land, smoothed a little; the highway's level at the ends.
+  trackY(tr, z) {
+    const key = tr.t * 1e6 + Math.round(z);
+    if (!this._trackYCache) this._trackYCache = new Map();
+    const c = this._trackYCache.get(key);
+    if (c !== undefined) return c;
+    let s = 0,
+      w = 0;
+    for (let k = -5; k <= 5; k++) {
+      const zz = Math.round(z) + k * 9;
+      const g = Math.exp(-(k * k) / 8);
+      s += this.naturalHeight(this.trackX(tr, zz), zz) * g;
+      w += g;
+    }
+    const u = (z - tr.z0) / tr.len;
+    const e = smoothstep(0.02, 0.2, u) * smoothstep(0.98, 0.8, u);
+    const y = lerp(this.roadY(z), s / w, e);
+    if (this._trackYCache.size > 300000) this._trackYCache.clear();
+    this._trackYCache.set(key, y);
+    return y;
+  }
+
+  // Distance across the nearest track at (x, z) and the track: { d, tr } or null.
+  trackNear(x, z) {
+    const tr = this.trackAt(z);
+    if (!tr) return null;
+    const e = 1;
+    const sl = (this.trackX(tr, z + e) - this.trackX(tr, z - e)) / (2 * e);
+    const d = Math.abs(x - this.trackX(tr, z)) / Math.sqrt(1 + sl * sl);
+    return { d, tr };
+  }
+
+  // Is the highway blocked at z? (where the obstacle of a detour stands)
+  blockAt(z, margin = 0) {
+    const tr = this.trackAt(z);
+    return tr && tr.block && Math.abs(z - tr.block.z) < 14 + margin ? tr : null;
   }
 
   // Road elevation: Gaussian-smoothed macro height sampled along the road.
@@ -699,7 +804,19 @@ export class WorldGen {
     const width = 10 + jag + Math.min(60, Math.abs(diff) * 1.6);
     const t = Math.max(smoothstep(flat + Math.max(0, jag * 0.3), flat + width, dx), pw * smoothstep(flat, flat + 2.5, dx));
     const edge = roadY - ROAD.shoulder * 0.07 * (1 - pw) - 0.25 * smoothstep(flat, flat + 3, dx) * (1 - t) * (1 - pw);
-    return lerp(edge, nat, t);
+    let h = lerp(edge, nat, t);
+    // a dirt track cuts its own narrow bed through the land; the highway's corridor wins
+    const tn = this.trackNear(x, z);
+    if (tn && tn.d < 45) {
+      const ty = this.trackY(tn.tr, z);
+      const tf = TRACK.halfWidth + TRACK.shoulder;
+      const tw = 5 + Math.min(30, Math.abs(h - ty) * 1.3);
+      const tt = smoothstep(tf, tf + tw, tn.d);
+      const keep = smoothstep(flat + 0.3, flat + 6, dx);
+      const tedge = ty - Math.max(0, tn.d - TRACK.halfWidth) * 0.08;
+      h = lerp(h, tedge, (1 - tt) * keep);
+    }
+    return h;
   }
 
   // ---------------------------------------------------------------- POI planning
@@ -799,6 +916,11 @@ export class WorldGen {
 
   // No river bank or lake basin within R metres of (x, z).
   poiClear(x, z, R) {
+    // keep pads off the side tracks
+    for (let dz = -R - 20; dz <= R + 20; dz += 10) {
+      const tr = this.trackAt(z + dz);
+      if (tr && Math.abs(x - this.trackX(tr, z + dz)) < R + 14) return false;
+    }
     const rv = this.riverAt(x, z);
     if (rv && rv.d < rv.r.w + 12 + rv.r.w * 0.6 + R) return false;
     for (const l of this.lakesNear(z, 1)) {
@@ -931,6 +1053,8 @@ export class WorldGen {
       return ri.dirt ? 'gravel' : 'asphalt';
     }
     if (dx < ROAD.halfWidth + ROAD.shoulder) return this.roadInfo(z).snow > 0.5 ? 'snow' : 'gravel';
+    const tn = this.trackNear(x, z);
+    if (tn && tn.d < TRACK.halfWidth + 0.4) return this.roadInfo(z).snow > 0.5 ? 'snowRoad' : 'dirt';
     const bw = this.biomeWeights(x, z);
     const n = this.normal(x, z, 1.0);
     const m = this.groundMaterial(x, z, n[1], bw);

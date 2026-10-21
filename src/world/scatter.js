@@ -85,6 +85,8 @@ function splitByReach(data) {
 export class Scatter {
   constructor(game, tex, treeTex) {
     this.game = game;
+    this.tex = tex;
+    this.treeTex = treeTex;
     this.gen = game.gen;
     this.group = new THREE.Group();
     this.group.name = 'scatter';

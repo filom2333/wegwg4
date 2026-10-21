@@ -5,7 +5,7 @@
 // yaw, and a random 0..1 used for distance thinning / tinting.
 
 import { hashInts, mulberry32 } from '../core/noise.js';
-import { ROAD } from './worldGen.js';
+import { ROAD, TRACK } from './worldGen.js';
 
 export const CELL = 64;
 export const STRIDE = 8;
@@ -91,6 +91,8 @@ export function cellInstances(gen, ci, cj) {
       const rx = gen.roadX(z);
       const dRoad = Math.abs(x - rx);
       if (dRoad < ROAD.halfWidth + ROAD.shoulder + (def.solid ? 6 : 1.5)) continue;
+      const tn = gen.trackNear(x, z);
+      if (tn && tn.d < TRACK.halfWidth + TRACK.shoulder + (def.solid ? 4 : 0.8)) continue;
       if (def.place && !def.place(gen, x, z, dRoad)) continue;
       let blocked = false;
       for (const p of pois) if (Math.hypot(x - p.x, z - p.z) < p.padR + (def.solid ? 8 : 2)) blocked = true;

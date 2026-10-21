@@ -38,6 +38,7 @@ import { NPCManager } from './npc/npcs.js';
 import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
 import { Lures } from './story/lures.js';
+import { Obstacles } from './world/obstacles.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
@@ -359,6 +360,7 @@ export class Game {
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.lures && this.lures.rebase(dx, dz);
+    this.obstacles && this.obstacles.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
@@ -508,6 +510,8 @@ export class Game {
       this.roadSigns.update();
       this.lures.update(dt);
     }
+    this.obstacles = this.obstacles || new Obstacles(this);
+    this.obstacles.update();
   }
 
   // "Build it first": a body on its wheels in the garage; everything else is somewhere about the
