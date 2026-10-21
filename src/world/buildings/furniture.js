@@ -597,34 +597,97 @@ export function workbench(rnd) {
 }
 
 // ------------------------------------------------------------------ shop
+// A product in its packaging: uvs squeezed into one cell of the goods atlas.
+function inCell(g, cell) {
+  const n = 8;
+  const cx = cell % n,
+    cy = Math.floor(cell / n);
+  const uv = g.attributes.uv;
+  // the atlas's first row is at the top of the canvas (uv v = 1)
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (cx + 0.02 + uv.getX(i) * 0.96) / n, 1 - (cy + 0.98 - uv.getY(i) * 0.96) / n);
+  return g;
+}
+
+// One kind of product as the shop stocks it: cans, boxes, bags, bottles, sized to their row.
+function product(cell, x, y, z, rnd, rotY = 0) {
+  const row = Math.floor(cell / 8);
+  let g;
+  if (row < 2 || row === 4 || row === 5) {
+    // cans and bottles: label round the side
+    const r = row === 5 ? 0.055 : row === 4 ? 0.033 : 0.038;
+    const h = row === 5 ? 0.24 : row === 4 ? 0.12 : 0.11;
+    g = new THREE.CylinderGeometry(r, r, h, 12, 1, false);
+    g.translate(0, h / 2, 0);
+  } else if (row === 2) {
+    g = new THREE.BoxGeometry(0.19, 0.27, 0.07);
+    g.translate(0, 0.135, 0);
+  } else if (row === 3) {
+    // crisp bags: puffed, wider at the middle
+    g = new THREE.BoxGeometry(0.16, 0.24, 0.07, 1, 3, 1);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) * (0.6 + 0.8 * (1 - Math.abs(p.getY(i)) / 0.12)));
+    g.computeVertexNormals();
+    g.translate(0, 0.12, 0);
+  } else {
+    g = new THREE.BoxGeometry(0.1 + (cell % 3) * 0.02, 0.07 + (cell % 2) * 0.05, 0.04);
+    g.translate(0, 0.045 + (cell % 2) * 0.025, 0);
+  }
+  inCell(g, cell);
+  g.rotateY(rotY + (rnd() - 0.5) * 0.15);
+  g.translate(x, y, z);
+  return g;
+}
+
 export function gondola(rnd, len = 2.4) {
   const M = archMaterials();
   const it = new Item([len, 1.5, 0.9]);
-  it.rbox(len, 1.45, 0.08, 0, 0.75, 0, M.metalWhite, 0.008);
+  it.rbox(len, 1.45, 0.08, 0, 0.75, 0, M.metalPainted, 0.008);
   it.rbox(len, 0.12, 0.9, 0, 0.06, 0, M.metalWhite, 0.01);
-  const prodMats = [M.metalRed, M.fabricBlue, M.mattress, M.metalGreen, M.sidingYellow || M.trimWhite];
+  // end caps
+  for (const s of [-1, 1]) it.rbox(0.04, 1.5, 0.9, s * (len / 2 + 0.02), 0.75, 0, M.metalWhite, 0.008);
   for (const side of [-1, 1]) {
     for (let i = 0; i < 4; i++) {
       const y = 0.15 + i * 0.36;
       it.rbox(len - 0.04, 0.02, 0.38, 0, y, side * 0.23, M.metalWhite, 0.004);
+      // price strip along the shelf edge
+      it.rbox(len - 0.04, 0.035, 0.008, 0, y - 0.005, side * 0.42, M.trimWhite || M.plastic, 0.002);
       if (i > 0) it.lootAt((rnd() - 0.5) * len * 0.6, y + 0.02, side * 0.24, 'shop');
-      let x = -len / 2 + 0.05;
-      while (x < len / 2 - 0.1) {
-        if (rnd() < 0.45) {
-          x += 0.12 + rnd() * 0.2;
-          continue;
+      // facings: runs of the same product, gaps where the shelf was picked over
+      let x = -len / 2 + 0.06;
+      const rowKinds = i === 3 ? [2, 3] : i === 2 ? [0, 1, 6] : i === 1 ? [0, 1, 7] : [4, 5];
+      while (x < len / 2 - 0.12) {
+        const kind = rowKinds[Math.floor(rnd() * rowKinds.length)];
+        const cell = kind * 8 + Math.floor(rnd() * 8);
+        const n = 2 + Math.floor(rnd() * 5);
+        const wdt = kind === 2 ? 0.2 : kind === 3 ? 0.17 : kind === 5 ? 0.12 : kind >= 6 ? 0.12 : 0.085;
+        for (let k = 0; k < n && x < len / 2 - 0.08; k++) {
+          // the odd missing one, the odd one knocked over
+          if (rnd() < 0.3) {
+            x += wdt;
+            continue;
+          }
+          const front = side * (0.38 - wdt * 0.2);
+          if (rnd() < 0.05) {
+            const g = product(cell, 0, 0, 0, rnd);
+            g.rotateZ(Math.PI / 2);
+            g.translate(x, y + 0.04, front);
+            it.add(g, M.goods);
+          } else it.add(product(cell, x, y + 0.01, front, rnd, side > 0 ? 0 : Math.PI), M.goods);
+          // a second row behind the first
+          if (rnd() < 0.6) it.add(product(cell, x, y + 0.01, front - side * 0.1, rnd, side > 0 ? 0 : Math.PI), M.goods);
+          x += wdt;
         }
-        const pw = 0.06 + rnd() * 0.08,
-          ph = 0.08 + rnd() * 0.18;
-        const m = prodMats[Math.floor(rnd() * prodMats.length)];
-        if (rnd() < 0.5) {
-          const c = new THREE.CylinderGeometry(pw / 2, pw / 2, ph, 10);
-          c.translate(x + pw / 2, y + 0.01 + ph / 2, side * (0.12 + rnd() * 0.2));
-          it.add(c, m);
-        } else it.rbox(pw, ph, 0.08 + rnd() * 0.12, x + pw / 2, y + 0.01 + ph / 2, side * (0.15 + rnd() * 0.15), m, 0.004);
-        x += pw + 0.01;
+        x += 0.02 + (rnd() < 0.35 ? 0.2 + rnd() * 0.3 : 0);
       }
     }
+  }
+  // dropped on the floor when the place was picked over
+  for (let k = 0; k < 2 + Math.floor(rnd() * 4); k++) {
+    const g = product(Math.floor(rnd() * 48), 0, 0, 0, rnd);
+    g.rotateZ(rnd() < 0.6 ? Math.PI / 2 : 0);
+    g.rotateY(rnd() * 6.28);
+    g.translate((rnd() - 0.5) * len, 0.04, (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.3));
+    it.add(g, M.goods);
   }
   it.col(len, 1.5, 0.9, 0, 0.75, 0);
   return it;
@@ -642,11 +705,10 @@ export function cooler(rnd, doors = 2) {
     for (let s = 0; s < 4; s++) {
       it.rbox(0.62, 0.015, 0.6, x, 0.4 + s * 0.38, 0, M.metal, 0.003);
       it.lootAt(x, 0.42 + s * 0.38, 0.1, 'drinks');
+      const brand = 32 + Math.floor(rnd() * 8);
       for (let b = 0; b < 6; b++) {
         if (rnd() < 0.4) continue;
-        const c = new THREE.CylinderGeometry(0.032, 0.032, 0.2, 10);
-        c.translate(x - 0.25 + b * 0.1, 0.51 + s * 0.38, 0.1);
-        it.add(c, [M.metalRed, M.fabricBlue, M.metalGreen][b % 3]);
+        it.add(product(b % 3 === 2 ? 32 + Math.floor(rnd() * 8) : brand, x - 0.25 + b * 0.1, 0.42 + s * 0.38, 0.1, rnd), M.goods);
       }
     }
   }
