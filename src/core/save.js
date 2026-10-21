@@ -76,6 +76,8 @@ export function serializeGame(g) {
       food: p.food,
       water: p.water,
       energy: p.energy,
+      warmth: p.warmth,
+      wet: p.wet,
       bleeding: p.bleeding,
       seat: p.seat,
       seatCar: p.seat && p.car ? p.car.id : null,
@@ -83,9 +85,17 @@ export function serializeGame(g) {
     },
     inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
     fleet: g.fleet.serialize(),
+    trailers: g.trailers ? g.trailers.serialize() : [],
+    tents: g.tents ? g.tents.serialize(o) : [],
+    atlas: g.atlas ? g.atlas.serialize() : null,
     // loot that never left its spot is regenerated deterministically when the POI loads
-    items: g.items.serialize().filter((it) => it.poi === null || it.poi === undefined),
+    // jacks standing under cars are kept as jacks lying where they stood
+    items: g.items
+      .serialize()
+      .filter((it) => it.poi === null || it.poi === undefined)
+      .concat((g.jacks ? g.jacks.list : []).map((j) => ({ id: 'jack', part: null, state: {}, pos: [j.base.x + g.origin.x, j.base.y + 0.06, j.base.z + g.origin.z], quat: [0, 0, 0, 1], stowed: false, poi: null, spot: null }))),
     itemsSaved: [...g.items.saved.entries()],
+    itemsPending: [...(g.items.pending || new Map()).entries()],
     pois: [...g.pois.state.entries()].map(([k, st]) => [k, { ...st, taken: [...st.taken] }]),
     stats: { ...g.stats },
     story: g.story ? g.story.serialize() : null,
@@ -96,6 +106,7 @@ export function serializeGame(g) {
 export function applyWorldState(g, d) {
   for (const [k, st] of d.pois || []) g.pois.state.set(+k, { ...st, taken: new Set(st.taken || []) });
   for (const [k, list] of d.itemsSaved || []) g.items.saved.set(+k, list);
+  for (const [k, list] of d.itemsPending || []) g.items.addPending(+k, list);
 }
 
 // Restores player, car, items and stats once the car and player exist.
@@ -107,6 +118,8 @@ export function applySave(g, d) {
   g.env.time = d.env.time;
   g.env.day = d.env.day;
   if (d.env.weather) g.env.setWeather(d.env.weather, true);
+  if (g.tents) g.tents.restore(d.tents, o);
+  if (g.atlas) g.atlas.restore(d.atlas);
   // items
   for (const s of d.items || []) {
     if (s.part && !(s.state && s.state.carType) && !car.model.parts[s.part]) continue;
@@ -122,7 +135,7 @@ export function applySave(g, d) {
   }
   // player
   const p = g.player;
-  for (const k of ['health', 'food', 'water', 'energy', 'bleeding', 'headlampOn']) if (d.player[k] !== undefined) p[k] = d.player[k];
+  for (const k of ['health', 'food', 'water', 'energy', 'warmth', 'wet', 'bleeding', 'headlampOn']) if (d.player[k] !== undefined) p[k] = d.player[k];
   p.yaw = d.player.yaw;
   p.pitch = d.player.pitch;
   const inv = d.inventory || {};

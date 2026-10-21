@@ -250,6 +250,30 @@ export class BeetleModel {
       this.parts[h.id] = { id: h.id, pivot, inner: knuckle, hinge: null, openT: 0, installed: true };
       this.wheels[h.id] = { pivot, knuckle, spin, side, group: spin };
     }
+    this.addWheelWells();
+  }
+
+  // Dark wheel-house liners in the arches: without them you could see into the front boot (and
+  // the battery) through the arch, especially with a corner jacked up.
+  addWheelWells() {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x141312, roughness: 1, side: THREE.DoubleSide });
+    const R = SPEC.wheelR + 0.1,
+      W = 0.26;
+    for (const h of HARDPOINTS) {
+      const side = h.x > 0 ? 1 : -1;
+      const g = new THREE.Group();
+      g.position.set(h.x - side * 0.02, SPEC.wheelY + 0.07, h.z);
+      // the arched roof of the well over the tyre
+      const roof = new THREE.Mesh(new THREE.CylinderGeometry(R, R, W, 20, 1, true, -0.15, Math.PI + 0.3).rotateX(Math.PI / 2).rotateY(Math.PI / 2), mat);
+      // and its inner wall, closing the well toward the middle of the car
+      const wall = new THREE.Mesh(new THREE.CircleGeometry(R, 20, -0.15, Math.PI + 0.3).rotateY(Math.PI / 2), mat);
+      wall.position.x = -side * (W / 2);
+      g.add(roof, wall);
+      g.traverse((o) => {
+        if (o.isMesh) o.receiveShadow = true;
+      });
+      this.parts.body.inner.add(g);
+    }
   }
 
   // Speedometer face (0-140 km/h with the fuel gauge in its top arc), needles and two warning
@@ -334,7 +358,7 @@ export class BeetleModel {
   addBattery() {
     const M = this.mats;
     const g = new THREE.Group();
-    const x = 0.432,
+    const x = 0.405,
       y = 0.585,
       z = 1.33;
     const lab = makeCanvas(256, 128);

@@ -249,61 +249,133 @@ What to fix:
 - Judge every change by screenshots against this picture. The user wants it to look **beautiful**,
   like a real road trip through the American Southwest.
 
+## 4d. Landscape pass done in the next session (commits after 36d4730, all verified by screenshots)
+
+What was done in reply to 4c (and 4b), checked with headless renders of scrub 1200, dunes 4300,
+badlands 6500, highland 11500, forest 16500, prairie 19500, taiga 63500, golden hour 18.3–18.4:
+
+- **Hoodoos** (`F.hoodoo`, SPECIES `hoodoo`): squat pillars on a talus cone, 2–5 m, grey vertex
+  colour so the rock material tints them like local cliffs. Placement uses the new `place()` hook
+  in scatterGen: only at mesa feet (`gen.mesaNoise` 0.17–0.29) and ≥120 m from the road; removed
+  from highland. Collider shrunk to match. Tilt reduced.
+- **Colour harmony**: `ROCK_TINT` in scatter.js is now derived from `BIOME_INFO.ground` with the
+  same formula the terrain shader uses for rock, so boulders/hoodoos/cliffs match. Badlands ground
+  is `[0.62, 0.43, 0.32]` (less orange). Saguaro and barrel cactus are dusty olive. Base rock
+  texture warmer.
+- **Light**: sun 4.1 (+0.8 warm), hemi 0.3 + 0.24·day, day exposure 0.98, horizon/fog colour bluer
+  `(0.71, 0.77, 0.85)`. The terrain far fade now uses the sun-tinted fog colour `fogC`, which
+  fixed the flat white "cardboard" mountains at sunset.
+- **Ground**: 8th ground layer **gravel** (`mat2.w`, texture layer 4): desert pavement patches
+  and scree on moderate slopes; `surfaceAt` can return `gravel`. Soil-crust blotches on dirt,
+  `gen.tintDrift(x,z)` broad colour drift baked into the tint attribute, dirt pebbles cut to a few
+  stones, irregular strata beds (value noise, not sine stripes).
+- **No tiling on far slopes**: beyond 70 m the shader blends the far scale into a very coarse one
+  (`uvX`, ×0.043), and from 450–1400 m textures settle to the layer mean (`flatT`, textureLod 12).
+- **Landforms**: dunes cover most of the dune sea and reach the road as low drifts (8–24 m);
+  mesas vary in height with talus aprons and erosion notches; low banded clay hills near the
+  badlands road. Mountains: ridged multifractal on top of `erodedFbm`, tanh soft clip instead of a
+  flat cap, start 550–1300 m from the road (`start = 1300 - 750 * close`), lower in the dune sea.
+- **Vegetation**: denser, clumped grass/shrubs (shrubs drawn to ring 4), more cacti/Joshua/pines/
+  birch; new species `yucca` (rosette, sometimes a flower stalk) and `ocotillo` (impostor far).
+- **Far vegetation in the terrain shader**: `tint` is now a vec4; `.a` = shrub cover from
+  `BIOME_INFO.shrubs`. Past the scatter rings (210–330 m) dark shrub crowns speckle the ground on
+  4 m cells, averaging to a tone when cells get small (no shimmer). In wooded ground (forest-floor
+  weight) the speckle becomes a dense canopy beyond 760–980 m, so forests don't end in bare land.
+  Grass drifts between golden dry stretches and lush hollows.
+- FPS: not measurable headless (SwiftShader). Costs added: ~1 extra fetch per layer far away,
+  a few value-noise evaluations, ~2× shrub instances. **Ask the user to check FPS on their GPU.**
+
+Known leftovers: highland mixes pines, Joshua trees and cacti fairly evenly (could cluster per
+biome); looking straight into a high sun the glare/bloom is large; a desert-type tan mountain can
+stand inside the forest biome (mountain colour follows local biome weights).
+
+## 4e. The big update after 4d (commits 67c000d … 0d5ce3d, verified headless)
+
+**Push status:** this session could not push (GitHub refused: the repo is not in the session's
+authorised set). All commits are local on `claude/task-4exkyg`; the user got a git bundle. If you
+can push, push first.
+
+Everything below was asked for in one long user message (hands, HUD, menu, The-Long-Drive start,
+trailer, entities, item handling, headlights, survival, music, FPS):
+
+- **Menu** (`ui.js`, `menu.css`, `public/menu/*.webp`): no live world on the title screen; 9
+  pre-rendered WebP landscapes with a Ken Burns slideshow (`showBackdrop`, every 9 s); frosted
+  cards, tile buttons with an amber accent; credits list every asset with links; news "Update
+  0.10". `main.js` boots the menu with `ui.game = { audio: new AudioSystem({}) }`.
+- **Effects** (`glassRain.js`, `effects.js`, `renderer.js` GradeShader): rain beads on car glass
+  (streak with speed, wiped on the windscreen), heat shimmer over hot ground at midday (depth band
+  90–5200 m, off on low), tyre smoke on asphalt skids, dust motes in sunbeams.
+- **Hands** (`grips.js`, `interaction.js`): left-hand anchor frame was mirrored wrong (sleeve
+  showed); `anchorQFor(side, …)`. Big items are carried with both hands from their camera-space
+  box (`carriedBig`). Small items can float: mouse wheel moves them in/out within limits, RMB-drag
+  rotates (`holdRot`), LMB brings them back to the hand.
+- **Headlights** (`car.js`): one spot per lamp at ±`headX` (each throws its own shadow) plus a
+  wide fill; no more beam from the middle of the bonnet.
+- **New game start** (`game.setupUnassembled`, `items.addPending/placePending`): the car (chassis,
+  body, wheels) stands in the yard; small parts are hidden in loot spots, big ones around the yard,
+  heavy ones behind the garage; 1–2 small parts are in the next place up the road; 45 % chance of a
+  donor car of the other type with some parts missing. Default start is `parts`.
+- **HUD** (`hud.js`, `style.css`): vitals as rings (health, food, water, rest, warmth with °C),
+  vehicle cluster (speed, gear, rev bar, fuel/temp/battery, warning chips), compass with Haven
+  distance and a progress bar, bigger hotbar, toast cards.
+- **Survival** (`player.updateWarmth`, `campfires.js`, `itemDefs.js`): body warmth vs air
+  temperature (`env.airTemp(biome)`, AIR table), shelter/heater/fire/rain/wet, hypothermia below
+  12, heat thirst above 32 °C; campfire kit → `campfires.kindle()` (fire, smoke, sparks, warmth,
+  burns 3 game hours, rain shortens it); raw meat cooks over a fire (`def.cooksTo`), raw food can
+  make you sick (`poison`), thermos (3 hot drinks), blanket (wrap for warmth), cooked meat/fish.
+- **Trailer** (`src/vehicle/trailer.js`, `G.TRAILER`): modelled utility trailer with two wheel
+  bodies on revolute joints and a spherical-joint hitch; hitch/unhitch with E at the tow ball of
+  either car, pull it by hand, load things on it; found at farms, ranches, junkyards (55 %); one
+  at the homestead; saved. Towing: the Beetle reaches ~47 km/h in 12 s with it (66 without).
+- **Fishing and siphoning** (`interaction.updateFishing`, pourTarget kind `siphon`): cast with a
+  rod at water, wait for a bite, reel in; siphon fuel from any car with a hose into a jerry can.
+- **Entities** (`characters.js`, `npcs.js`): wolves (packs in the north at night, scale 1.32),
+  rattlesnakes (desert by day, coil and strike, venom = poison), the tall one ("stalker", some
+  deep nights: moves only while unseen, vanishes in light, when hurt or under a long stare,
+  strikes at close range). Death texts for each.
+- **Music** (`src/audio/music/arrange.js`, `engine.js`): all 18 tracks rewritten as arrangements.
+  `Song` frame (form, swing, human timing, memoised notes), `voicing()` voice leading, `tune()`
+  builds A A′ A cadence from a 2-bar hook with a leap (`line()`), `improv()` for solos, drum
+  patterns as strings with fills/rolls/crashes. Per album: synthwave (sidechain pump, key lift in
+  the last chorus), rock (riffs, doubled guitars, harmony lead, solo), country (waltz / train beat
+  / piano ballad), ambient (harp ostinato, piano, downtempo), blues (shuffle with harp head and
+  stop-time, 12/8 slow blues, jump blues with a horn riff), lo-fi (rootless 9ths, sub slides, tape
+  stop at the end of "Slow Exit"). New instruments: piano, FM bell/vibes, tom, crash, shaker, rim,
+  riser; master loudness matching. Tracks are 1:45–2:55 and render in 1–3 s in the worker; the CD
+  cache keeps 2 buffers. Check them by ear: `node` can import arrange.js and write WAVs.
+- **Performance** (commit 0d5ce3d), measured with CPU profiles while streaming at 90 km/h:
+  - `src/gfx/lightPool.js`: every small light is a proxy registered with `game.lights.add(light,
+    {shadow})`; 4 point + 1 spot + 2 shadowed spot real lights go to the most important ones each
+    frame; with nothing lit the pool is hidden (daylight pixels pay for no extra lights). Both
+    states are compiled while loading (`lights.warm`). **Never add a real PointLight/SpotLight to
+    the scene any more** — the light count is part of every shader key (cars coming into view used
+    to recompile every shader).
+  - POI content hooks (items, NPCs, parked car, trailer) run one per frame after the place is
+    assembled (`inst.pending`); the spawn place is still built at once.
+  - `terrain.ensureCollidersAround` builds only the tiles touching the radius (a waking parked car
+    cost 25 tiles ≈ 50 ms). `retireCovered` no longer parses string keys (`wantedTiles`).
+  - Scatter: cell entries split by reach (`splitByReach`), the sun shadow pass draws only the rings
+    it can reach (`onBeforeShadow`, `setShadowReach`).
+  - Idle particle systems skip update/upload; `checkShaderErrors` only in dev; first-run quality
+    preset from the GPU name (`detectQuality` in settings.js). `tools/play.mjs` pins `high`
+    (env `QUALITY`) because SwiftShader would pick `low`.
+  - Remaining single-frame costs: creating a parked car (~10–30 ms, procedural fan belt, controls,
+    plates) and assembling a place (~8 ms); a GC now and then.
+
 ## 5. NEXT STEPS (in this order)
 
-1. Serve the build, then render the dev query at z=1200 (scrub), 3800/4300 (dunes),
-   6500 (badlands), 11500 (highland), 16500 (forest), 40000 (saltflat) and 63500 (taiga), at
-   time 16.5 and 18.3. Take road-level views and one high view. Compare with the user's
-   complaints.
-2. Check the new rock texture (above). Make sure no tiling grid or dots are visible on far mountains.
-   If needed, add a very-far texture scale or fade to the lowest mip beyond about 400 m.
-3. Mountains:
-   - real-looking ridges, gullies and scree (dirt/gravel at slope bases);
-   - textured;
-   - **not too close everywhere**: some regions are open plains to the horizon, others bring rock
-     outcrops and cliffs closer;
-   - higher ground can begin as a gradual change of country ("there it's a different land, the
-     cliffs start higher up");
-   - silhouettes are coarse on the 64 m-spaced far tiles; consider N=48 for ≥1024 m tiles if FPS
-     allows.
-4. Plains and dunes: verify that they feel calm and beautiful; the distance needs something to
-   look at (mountains, mesas).
-5. **Vegetation: more of it and more variety** (the user stressed this). Ideas:
-   - raise `SPECIES.dens` (desert shrubs, grass, cacti, Joshua trees; forest density);
-   - more species variants (sagebrush, yucca, ocotillo, tumbleweed, aspen groves, autumn colours);
-   - far vegetation: extend the impostor radius beyond 880 m, and add a dark forest canopy tint on
-     terrain in forest areas so distant hills are not bare.
-   - Keep FPS.
-6. Streaming and pop-in: make sure terrain, scatter and POIs near the player are always ready (no
-   holes or late pop-in while driving at 100+ km/h). Check `terrain.isReadyNear` and the scatter
-   ring sizes.
-7. Commit the landscape once it looks good, then push.
-8. Remaining items from the user's list for THIS update:
-   - **Menu with beautiful pre-rendered pictures** instead of the live scene:
-     - render 6+ shots at 1920×1080 with high quality and the HUD hidden (`game.hud.show(false)`);
-       ideas: golden-hour road with the Beetle and a roof rack, gas station at dusk with lights,
-       a mountain vista, a forest road in the morning, the snowy taiga with the sedan, a night
-       road with headlights;
-     - save them as WebP in `public/menu/`;
-     - show them with a CSS Ken-Burns pan/zoom and a crossfade every ~9 s;
-     - then stop initialising the world on the title screen (faster menu). Create audio with
-       `new AudioSystem({})` for the menu music, and guard `ui.applySettings` against a missing
-       `game.renderer`.
-   - **Prettier menu and UI hotfixes**:
-     - Credits must also credit the sedan model ("88 American Sedan – Low poly model" by Daniel
-       Zhabotinsky, CC-BY-4.0) and the tree textures (`public/textures/trees/LICENSE.txt`).
-     - Update the news text on the title screen.
-   - **Graphics**: finish 4a (sharpness and effects). The user said sharpness and graphics are poor
-     and wants more special effects. Ideas: heat haze over the asphalt at midday, dust motes in
-     sunbeams, rain drops on the windscreen, tyre smoke.
-   - **Hands and held items look strange**:
-     - fix how hands hold items (grips in `src/player/grips.js`, holdPose);
-     - big items (> 0.55 m) float in front of the camera with no hands, so add two-hand carry poses;
-     - fit the hands on the wheel per car (`type.DRIVER`).
-   - Sedan polish: a driving test, its sound in game, hands.
-   - Clean up dead code and raise FPS.
-   - Fix the garage roof underside, which shows a shingle texture.
-9. Old pending items: character look and animations; sound design overhaul.
+1. **Push** the local commits if GitHub access works (see 4e). Refresh `build/` after any change
+   (`rm -rf build && cp -r dist build` after `npx vite build`).
+2. Ask the user to try it on their GPU: FPS (the in-game FPS counter is in Settings), the music
+   (all 6 discs), the parts hunt at the start, the trailer, nights with wolves and the tall one.
+   Fix what they report first.
+3. If FPS is still low on their machine: look at fill rate first (MSAA 4× on `high`, the terrain
+   splat with 8 layers, bloom), then at the shadow pass (`renderer.info` with `autoReset=false`).
+   Parked-car creation could cache its procedural sub-geometries per car type.
+4. Streaming at very high speed on slow CPUs can briefly show a coarse terrain tile next to a fine
+   one (a step with a stretched skirt) until the worker catches up; it settles by itself.
+5. Old pending items: character looks and animations; sound design overhaul.
+6. Only when the user asks: more buildings, a third retro car, the ideas in section 7.
 
 ## 6. Answers already given to the user
 
@@ -314,8 +386,7 @@ What to fix:
 
 ## 7. Ideas the session proposed to the user for later (only when the user asks)
 
-- Trailer and tow hitch.
-- Siphoning fuel from abandoned cars.
+- (Done in 4e: trailer and tow hitch, siphoning fuel.)
 - Car jack and winch to pull out stuck cars.
 - Sandstorms and fog events.
 - Tuning parts (carburettor, exhaust, off-road tyres).
@@ -325,6 +396,14 @@ What to fix:
 - Also later: more buildings (towers, 2–3 storey houses), new game features, a new third retro car.
 
 ## 8. Gotchas learned the hard way
+
+- Lights: use `game.lights.add(light)` (see 4e). A real light added or shown/hidden changes the
+  light count and recompiles every shader on screen.
+- Headless step loops must yield (`await new Promise(r => setTimeout(r, 5))` every few steps) or
+  worker results (POIs, terrain, scatter) never arrive.
+- Profiling: Chrome CPU profiles through Playwright CDP (`Profiler.start/stop`) find hot spots
+  quickly; SwiftShader render times are only a rough proxy for GPU cost, and scenes must be fully
+  streamed (`settle()`) before timing.
 
 - Parked cars have disabled bodies. The vehicle `beforeStep` hook must skip them (`body.isEnabled()`),
   otherwise impulses pile up and the car launches when it wakes. `fleet.wake()` zeroes velocities.
@@ -343,3 +422,39 @@ What to fix:
 - `debugSimulate` steps physics without rendering. Call `game.terrain.ready` / `waitFor` before
   taking shots.
 - vite preview serves `dist/`. Rebuild before headless tests.
+
+## 9. Session status (latest)
+
+### Done this session (all committed)
+- Music: all 6 albums reworked (src/audio/music/arrange.js, engine.js).
+- FPS and freeze fixes: light pool with fixed shader keys, shader warm-up, physics interpolation, deferred POI hooks, fewer allocations.
+- Sound atmosphere (src/audio/soundscape.js): layered biome ambience, creatures, small car and body sounds, room reverb.
+- Weather: sandstorm wall (haboob), fog and morning mist.
+- Car jack (src/vehicle/jack.js) and winch bar with cable (src/vehicle/winch.js); wheel-well liners on the Beetle.
+- Tuning (src/vehicle/tuning.js):
+  - twin carbs kit (wrench removes it);
+  - sport muffler (overrun pops and flames);
+  - mud tyres (grip per surface);
+  - tunes are stored on the part and its item state, and saved.
+- Tent (src/world/tents.js): pitch, crawl in, pack up with R; sleeping in beds (POI bed loot spots); sleep quality differs by place; new sleep screen.
+- Road atlas (M) at src/story/atlas.js and ui.showAtlas: hill-shaded strip map with notes and photos.
+- Photo mode (P) at src/ui/photoMode.js: film looks, bars, time of day; saves a PNG and a thumbnail to the atlas.
+
+### In progress
+- src/world/buildings/tall.js is written but NOT wired in yet. It contains buildStoreyed (2–3 floors with stairs), buildLookout (fire tower), buildChurch (bell tower and spire), buildSilo, buildCabin, buildSawmill and storeyStyle.
+- POI types farm, cabin, church, sawmill, lodge and lookout currently have no layout, so they fall back to LAYOUTS.house.
+- Next steps:
+  1. Add layouts in src/world/poiLayouts.js:
+     - lookout: buildLookout;
+     - church: buildChurch;
+     - cabin: buildCabin;
+     - sawmill: buildSawmill;
+     - lodge: buildStoreyed with storeyStyle 'lodge', 2 floors, porch;
+     - farm: buildStoreyed 'farm' plus ST.buildBarn, buildSilo and ST.buildWindmill;
+     - houses: sometimes buildStoreyed 'town' with 2–3 floors.
+  2. Build and fix runtime errors (it runs in the POI worker too, so use only archMaterials materials).
+  3. Check visually with tools/play.mjs, especially that the stair ramp colliders can be climbed (rotX sign: ascending toward local +z uses -slope).
+
+### Still to do
+- Extra ideas and small tricks (task #28).
+- Update this HANDOFF in detail, then refresh build/ (`rm -rf build && cp -r dist build`).

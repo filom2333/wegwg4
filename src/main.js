@@ -3,11 +3,12 @@ import './ui/menu.css';
 import { Game } from './game.js';
 import { UI } from './ui/ui.js';
 import { readSave } from './core/save.js';
+import { AudioSystem } from './audio/audio.js';
 import * as THREE from 'three';
 window.__THREE = THREE;
 
 // Boot modes
-//   (no params)        title screen over a live scene of the parked car
+//   (no params)        title screen over pre-rendered pictures (public/menu/)
 //   ?play=1&...        loading screen, then the game (new game or ?load=1)
 //   ?seed=..&z=..      developer / test start straight into the world (no menus)
 const params = new URLSearchParams(location.search);
@@ -20,6 +21,15 @@ window.ui = ui;
 async function boot() {
   const play = params.get('play');
   const dev = !play && (params.has('seed') || params.has('z') || params.has('time') || params.has('manual'));
+  if (!play && !dev) {
+    // title screen: pictures from the road behind the menu; no world is built until a game starts
+    ui.mode = 'menu';
+    ui.game = { audio: new AudioSystem({}) };
+    ui.showBackdrop();
+    ui.showSplash();
+    window.__ready = true;
+    return;
+  }
   const game = new Game(canvas);
   game.ui = ui;
   ui.game = game;
@@ -34,10 +44,13 @@ async function boot() {
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
       car: params.get('car') || 'beetle',
+      trailer: params.has('trailer'),
       onProgress: (t, p) => console.log('load', t, p),
     });
     if (!params.get('manual')) game.start();
     else game.clock.start();
+    // headless captures (menu pictures, tests) fit kit to the car from outside
+    if (params.get('manual')) window.dev = { fitAccessory: (await import('./vehicle/accessories.js')).fitAccessory, setTune: (await import('./vehicle/tuning.js')).setTune, input: (await import('./core/input.js')).input };
     canvas.addEventListener('click', () => ui.resume());
     window.__ready = true;
     return;
@@ -48,7 +61,7 @@ async function boot() {
     await game.init({
       seed: +(params.get('seed') || 1234),
       difficulty: params.get('difficulty') || 'normal',
-      start: params.get('start') || 'assembled',
+      start: params.get('start') || 'parts',
       car: params.get('car') || 'beetle',
       time: 8.2,
       weather: 'clear',
@@ -61,18 +74,6 @@ async function boot() {
     window.__ready = true;
     return;
   }
-  // title screen: the world loads behind a dark veil, then fades in
-  ui.mode = 'menu';
-  ui.showSplash();
-  const veil = document.createElement('div');
-  veil.style.cssText = 'position:fixed;inset:0;background:#0d0c0b;z-index:5;transition:opacity 1.6s ease';
-  document.body.appendChild(veil);
-  await game.init({ seed: 1234, time: 18.2, weather: 'clear', startZ: 1880, attract: true });
-  game.env.timeScale = 0.12; // dusk lingers on the title screen
-  game.start();
-  requestAnimationFrame(() => (veil.style.opacity = '0'));
-  setTimeout(() => veil.remove(), 1800);
-  window.__ready = true;
 }
 
 boot();

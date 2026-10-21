@@ -35,9 +35,8 @@ export class POIManager {
     this.lightPool = [];
     for (let i = 0; i < 4; i++) {
       const l = new THREE.PointLight(0xffd9a0, 0, 14, 1.6);
-      l.visible = true;
       this.group.add(l);
-      this.lightPool.push(l);
+      this.lightPool.push(game.lights.add(l));
     }
     this.startWorker();
   }
@@ -81,7 +80,13 @@ export class POIManager {
         if (!this.loaded.has(k)) this.load(k);
       }
     }
-    // assemble at most one finished POI per frame
+    // finish one waiting place, or else assemble at most one finished POI per frame
+    for (const inst of this.loaded.values())
+      if (inst.pending) {
+        inst.pending.shift()();
+        if (!inst.pending.length) inst.pending = null;
+        return;
+      }
     for (const [k, msg] of this.ready) {
       this.ready.delete(k);
       const p = gen.poiSlot(k);
@@ -193,9 +198,18 @@ export class POIManager {
     for (let i = 0; i < nW && this.wreckProtos.length; i++) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
     this.loaded.set(k, inst);
-    this.game.items && this.game.items.onPoiLoaded && this.game.items.onPoiLoaded(inst, rnd);
-    this.game.npcs && this.game.npcs.onPoiLoaded && this.game.npcs.onPoiLoaded(inst, rnd);
-    this.game.fleet && this.game.fleet.onPoiLoaded(inst);
+    // what lives in the place (loot, animals, a parked car, a trailer) follows in the next frames,
+    // one kind a frame, so a place streaming in never costs one long frame; the start is built
+    // at once
+    const g = this.game;
+    const hooks = [
+      () => g.items && g.items.onPoiLoaded && g.items.onPoiLoaded(inst, rnd),
+      () => g.npcs && g.npcs.onPoiLoaded && g.npcs.onPoiLoaded(inst, rnd),
+      () => g.fleet && g.fleet.onPoiLoaded(inst),
+      () => g.trailers && g.trailers.onPoiLoaded(inst),
+    ];
+    if (tokens) inst.pending = hooks;
+    else for (const h of hooks) h();
   }
 
   addWreck(inst, rnd, i, type) {
@@ -380,6 +394,25 @@ export class POIManager {
           best = { pump: p, world: w, inst };
         }
       }
+    return best;
+  }
+
+  // The nearest bed (its loot spot on the mattress) to a point, within maxDist.
+  nearestBed(pos, maxDist = 1.2) {
+    let best = null,
+      bd = maxDist;
+    for (const inst of this.loaded.values()) {
+      if (inst.root.position.distanceToSquared(pos) > 3600) continue;
+      for (const l of inst.loot) {
+        if (l.kind !== 'bed') continue;
+        const w = l.pos.clone().applyMatrix4(inst.root.matrixWorld);
+        const d = w.distanceTo(pos);
+        if (d < bd) {
+          bd = d;
+          best = { world: w, inst };
+        }
+      }
+    }
     return best;
   }
 

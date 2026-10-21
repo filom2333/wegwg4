@@ -38,26 +38,43 @@ const GradeShader = {
     uVignette: { value: 0.3 },
     uGrain: { value: 0.02 },
     uDamage: { value: 0 },
+    uGrit: { value: 0 },
+    uFilm: { value: 0 },
+    uBars: { value: 0 },
     uFade: { value: 0 },
     uWarm: { value: 0 },
     uNight: { value: 0 },
     uOvercast: { value: 0 },
+    uHeat: { value: 0 },
+    uNear: { value: 0.1 },
+    uFar: { value: 10000 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 uTexel; uniform float uAspect; uniform float uSharpen;
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
-    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade;
+    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit; uniform float uFilm; uniform float uBars;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
+    uniform float uHeat; uniform float uNear; uniform float uFar;
     varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
     // open sky (nothing drawn in front of the cleared far plane)
     float sky(vec2 uv){ return step(0.999999, texture2D(tDepth, clamp(uv, 0.001, 0.999)).r); }
     void main(){
-      vec4 c = texture2D(tDiffuse, vUv);
+      // heat shimmer: on a hot clear day the air over the ground wobbles from ~100 m out to the
+      // horizon (where the far road turns to a mirage of the sky)
+      vec2 uv = vUv;
+      if (uHeat > 0.001) {
+        float dz = texture2D(tDepth, vUv).r;
+        float z = uNear * uFar / (uFar - dz * (uFar - uNear));
+        float band = smoothstep(90.0, 320.0, z) * (1.0 - smoothstep(2600.0, 5200.0, z)) * step(dz, 0.999999);
+        float wob = sin(vUv.y * 950.0 - uTime * 7.0 + sin(vUv.x * 55.0 + uTime * 1.3) * 3.0) * 0.55 + sin(vUv.y * 1830.0 - uTime * 11.0 + vUv.x * 37.0) * 0.45;
+        uv += vec2(0.0004, 0.0007) * wob * band * uHeat;
+      }
+      vec4 c = texture2D(tDiffuse, uv);
       // contrast-adaptive sharpening: a cross of neighbours, limited where the contrast is already high
-      vec3 n = texture2D(tDiffuse, vUv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tDiffuse, vUv - vec2(0.0, uTexel.y)).rgb;
-      vec3 e = texture2D(tDiffuse, vUv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tDiffuse, vUv - vec2(uTexel.x, 0.0)).rgb;
+      vec3 n = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tDiffuse, uv - vec2(0.0, uTexel.y)).rgb;
+      vec3 e = texture2D(tDiffuse, uv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tDiffuse, uv - vec2(uTexel.x, 0.0)).rgb;
       vec3 mn = min(c.rgb, min(min(n, s), min(e, w))), mx = max(c.rgb, max(max(n, s), max(e, w)));
       vec3 amt = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-3), 0.0, 1.0)) * uSharpen;
       vec3 col = clamp(c.rgb + (4.0 * c.rgb - n - s - e - w) * amt * 0.25, 0.0, 1.0);
@@ -120,6 +137,22 @@ const GradeShader = {
       float edge = smoothstep(0.25, 0.75, length(d) * 1.6);
       col = mix(col, vec3(l2) * vec3(1.0, 0.75, 0.72), uDamage * 0.5);
       col = mix(col, vec3(0.35, 0.02, 0.01), uDamage * edge * 0.6);
+      // sand in the eyes: a dusty tint, edges closing in, gritty speckle
+      if (uGrit > 0.0) {
+        col = mix(col, col * vec3(1.04, 0.86, 0.66), uGrit * 0.6);
+        col *= 1.0 - uGrit * 0.5 * smoothstep(0.2, 0.75, length(d) * 1.5);
+        col += (h(vUv * 730.0 + uTime) - 0.5) * 0.08 * uGrit;
+      }
+      // photo mode looks
+      if (uFilm > 0.5) {
+        float L = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        if (uFilm < 1.5) col = vec3(smoothstep(0.03, 0.97, L));
+        else if (uFilm < 2.5) col = vec3(L) * vec3(1.08, 0.93, 0.72) + vec3(0.035, 0.02, 0.0);
+        else if (uFilm < 3.5) col = (mix(vec3(L), col, 0.72) * vec3(1.04, 0.98, 0.86)) * 0.86 + vec3(0.075, 0.065, 0.05);
+        else if (uFilm < 4.5) col = mix(vec3(L), col, 0.8) * vec3(0.9, 1.0, 1.1) + vec3(0.0, 0.01, 0.025);
+        else col = clamp(mix(vec3(L), col, 1.38) * 1.03, 0.0, 1.0);
+      }
+      if (uBars > 0.0) col *= step(uBars, vUv.y) * step(vUv.y, 1.0 - uBars);
       col = mix(col, vec3(0.0), uFade);
       gl_FragColor = vec4(col, c.a);
     }`,
@@ -145,6 +178,9 @@ export class Renderer {
   constructor(canvas, quality = 'high') {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    // checking every program after linking waits for each compile; release builds let the driver
+    // compile in parallel
+    this.renderer.debug.checkShaderErrors = !!import.meta.env.DEV;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
@@ -263,6 +299,15 @@ export class Renderer {
       this.grade.uniforms.uTexel.value.set(1 / (w * pr), 1 / (h * pr));
       this.grade.uniforms.uAspect.value = w / h;
     }
+  }
+
+  // Heat shimmer strength 0..1 (midday in the desert).
+  setHeat(v) {
+    if (!this.grade) return;
+    const u = this.grade.uniforms;
+    u.uHeat.value = v;
+    u.uNear.value = this.camera.near;
+    u.uFar.value = this.camera.far;
   }
 
   // Where the sun is on screen and how much of it shows (0 behind the camera, set or overcast).

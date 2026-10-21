@@ -13,10 +13,13 @@ import { fitMatrix } from '../vehicle/swap.js';
 import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate } from '../vehicle/plates.js';
 import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
-import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, defaultArms } from './grips.js';
+import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
+import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
+import { JACK_LOW, JACK_MAX } from '../vehicle/jack.js';
+import { setTune } from '../vehicle/tuning.js';
 
 
 // Part table entry of a part item (it remembers which kind of car it came off).
@@ -26,6 +29,14 @@ function partDefOf(it) {
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const REACH = 2.6;
+
+// Big things are carried out in front with both hands; long tools (guns, a fishing rod) are held
+// by their grip like anything small.
+function carriedBig(it) {
+  if (it.part) return true;
+  if (it.def && (it.def.weapon || it.def.fishing)) return false;
+  return Math.max(it.size.x, it.size.y, it.size.z) > 0.55;
+}
 // where thumb and index meet in the pinch pose (hand space)
 const PINCH_TIP = V(0, -0.028, -0.135);
 const tmpM = new THREE.Matrix4();
@@ -70,6 +81,22 @@ export class Interaction {
     return this.held;
   }
 
+  // Where the winch hook is held: low and to the right in front of the eye.
+  hookHand(out = V(0, 0, 0)) {
+    const q = this.cam.quaternion;
+    return out.copy(this.cam.position).add(V(0.17, -0.27, -0.55).applyQuaternion(q));
+  }
+
+  // Where the held jack would go: the corner of the current car you are looking at.
+  jackSpot() {
+    const g = this.game;
+    const car = g.car;
+    const hit = this.lookHit;
+    if (!car || !hit || hit.distance > REACH + 0.4 || g.player.seat) return null;
+    if (car.root.position.distanceTo(this.cam.position) > 5) return null;
+    return g.jacks.spotFor(car, V(hit.point.x, hit.point.y, hit.point.z));
+  }
+
   // ------------------------------------------------------------------ targeting
   findTarget() {
     const g = this.game;
@@ -108,6 +135,17 @@ export class Interaction {
       const pump = g.pois.nearestPump(tip, 0.9);
       if (pump && pump.world.distanceTo(origin) < reach + 0.6) best = { kind: 'pump', pump, dist: pump.world.distanceTo(origin) };
     }
+    // a jack standing under a car
+    if (hit && hit.owner && hit.owner.kind === 'jack' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist + 0.1)) best = { kind: 'jack', jack: hit.owner.jack, dist: hit.distance };
+    // a pitched tent; a bed in a house
+    if (hit && hit.owner && hit.owner.kind === 'tent' && hit.distance <= reach + 0.4 && (!best || hit.distance < best.dist)) best = { kind: 'tent', tent: hit.owner.tent, dist: hit.distance };
+    if (g.pois && !p.seat && (!best || best.kind === 'poiDoor')) {
+      const tip = origin.clone().addScaledVector(dir, Math.min(reach, hitDist));
+      const bed = g.pois.nearestBed(tip, 1.1);
+      if (bed && (!best || bed.world.distanceTo(origin) < best.dist)) best = { kind: 'bed', bed, dist: bed.world.distanceTo(origin) };
+    }
+    // trailers
+    if (hit && hit.owner && hit.owner.kind === 'trailer' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist)) best = { kind: 'trailer', trailer: hit.owner.trailer, dist: hit.distance };
     // npcs (for melee / corpses)
     if (hit && hit.owner && hit.owner.kind === 'npc' && hit.distance <= reach && (!best || hit.distance < best.dist)) best = { kind: 'npc', npc: hit.owner.npc, dist: hit.distance, zone: hit.owner.zone };
     // lootable bodies are small and low: accept a near miss
@@ -216,13 +254,55 @@ export class Interaction {
     const p = g.player;
     if (p.dead) return;
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    // pulling a trailer by its drawbar for as long as E is held
+    if (this.pullingTrailer) {
+      const tr = this.pullingTrailer;
+      if (!input.isDown('interact') || this.held || p.seat || tr.hitch) this.pullingTrailer = null;
+      else {
+        const fwd = V(0, 0, -1).applyQuaternion(this.cam.quaternion).setY(0).normalize();
+        tr.pull(p.position.clone().addScaledVector(fwd, 1.1).add(V(0, 0.45, 0)), dt);
+        const c = tr.hitchableCar();
+        g.hud && c && !this._hitchHint && (this._hitchHint = true) && g.hud.toast('Over the tow ball: let go and press E to hitch');
+      }
+    } else this._hitchHint = false;
+    if (this.fishing && !(this.held && this.held.def && this.held.def.fishing)) this.endFishing();
+    // lying in a tent or on a bed: get up, or sleep
+    if (p.lying) {
+      this.target = null;
+      const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
+      const prompts = [[kn('interact'), p.lying.kind === 'tent' ? 'Crawl out' : 'Get up']];
+      if (!(g.sleepHours > 0)) prompts.push([kn('sleep'), 'Sleep']);
+      if (!blocked && input.wasPressed('interact')) p.getUp();
+      if (ui) {
+        ui.setPrompts(prompts);
+        ui.setTargetInfo({ title: p.lying.kind === 'tent' ? 'In the tent' : 'In bed', sub: `${Math.round(p.energy)}% rested` });
+        ui.setCrosshair('none');
+      }
+      this.updateOutline(null);
+      return;
+    }
     this.target = this.findTarget();
     const t = this.target;
     const prompts = [];
     let info = null;
     const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
-    // ---- held item logic
-    if (this.held) {
+    // ---- carrying the winch hook out to an anchor
+    const W = g.winches;
+    if (W && W.cable && !W.cable.anchor && !this.held) {
+      const hit = this.lookHit;
+      const owner = hit && hit.owner;
+      const own = owner && owner.kind === 'car' && owner.car === W.cable.car;
+      const label = hit && hit.distance <= REACH + 0.6 && !own ? anchorLabel(owner) : null;
+      const drum = W.drumOf(W.cable.car);
+      info = { title: 'Winch hook', sub: `${drum ? Math.round(drum.distanceTo(this.hookHand())) : 0} of ${CABLE_MAX} m of cable out` };
+      if (label) prompts.push(['E', `Hook it round ${label}`]);
+      else prompts.push(['', 'Walk it to a tree, a rock, a building or another car']);
+      prompts.push(['R', 'Let it wind back']);
+      if (!blocked) {
+        if (label && input.wasPressed('interact')) W.attach(hit);
+        else if (input.wasPressed('reload')) W.release();
+      }
+    } else if (this.held) {
       const it = this.held;
       this.updateHeld(dt);
       const def = it.def;
@@ -246,6 +326,16 @@ export class Interaction {
           this.hideGhost();
           prompts.push(['', 'Aim at any part of a car to bolt it on']);
         }
+      } else if (def && def.jack) {
+        info = this.heldInfo(it);
+        const spot = this.jackSpot();
+        if (spot && !spot.blocked) {
+          prompts.push(['E', 'Set it under the car']);
+          if (!blocked && input.wasPressed('interact')) {
+            g.jacks.place(spot);
+            this.consumeHeld();
+          }
+        } else prompts.push(['', spot ? spot.blocked : 'Aim under the sill beside a wheel']);
       } else if (def && def.accessory) {
         const fit = this.accessoryFit(it);
         info = this.heldInfo(it);
@@ -264,7 +354,7 @@ export class Interaction {
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
       prompts.push(['G', 'Drop', 'hold to throw']);
-      if (!def || !def.weapon) prompts.push(['RMB', 'Rotate']);
+      if (!def || !def.weapon) prompts.push(['RMB', 'Rotate'], ['Wheel', this.floating ? 'Closer / further, back into the hand' : 'Hold out / closer']);
       if (def && !it.part) prompts.push([kn('stow'), fitsInBag(it.id, it.state) ? 'Put in backpack' : 'Too bulky for the backpack']);
       if (!blocked) {
         if (input.isDown('drop')) this.dropHold += dt;
@@ -294,6 +384,8 @@ export class Interaction {
         g.car.radioOn = true;
         g.audio && g.audio.play('click');
       }
+      const W2 = g.winches;
+      if (p.seat === 'driver' && W2 && W2.cable && W2.cable.anchor && W2.cable.car === g.car) prompts.push([kn('winch'), 'Wind in the winch (hold)']);
       if (!t && p.seat && g.car && Math.abs(g.car.speedKmh) < 3) {
         prompts.push([kn('interact'), 'Get out']);
         if (g.car && !g.car.dyn.engine.running) prompts.push([kn('sleep'), 'Sleep']);
@@ -344,7 +436,11 @@ export class Interaction {
       return out;
     }
     if (def.melee) out.push(['LMB', 'Swing']);
-    if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
+    if (def.raw && this.game.campfires && this.game.campfires.near(this.game.player.position, 2.6)) out.push(['LMB', 'Cook']);
+    else if (def.consume) out.push(['LMB', def.consume.smoke ? 'Smoke' : def.consume.food > 0 ? 'Eat' : def.consume.health > 0 ? 'Use' : 'Drink']);
+    if (def.campfire) out.push(['LMB', 'Light a fire']);
+    if (def.fishing) out.push(['LMB', this.fishing ? 'Strike / reel in' : 'Cast']);
+    if (def.wrap) out.push(['LMB', 'Wrap up']);
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
@@ -366,11 +462,58 @@ export class Interaction {
     }
     if ((it.id === 'repairKit' || it.id === 'extinguisher') && t && (t.kind === 'part' || t.kind === 'hotspot') && car) out.push(['LMB', it.id === 'repairKit' ? 'Repair engine' : 'Extinguish']);
     if (it.id === 'tyreKit' && t && t.kind === 'part' && t.part.startsWith('wheel')) out.push(['LMB', 'Repair tyre']);
+    if (def.tune) {
+      const why = this.tuneBlock(it, t);
+      out.push(why ? ['', why] : ['LMB', 'Bolt on the twin carbs']);
+    }
+    if (def.tent) {
+      const site = this.tentSite();
+      out.push(site.blocked ? ['', site.blocked] : ['LMB', 'Pitch the tent here']);
+    }
+    if (it.id === 'wrench' && this.carbsTarget(t)) out.push(['LMB', 'Unbolt the twin carbs']);
     return out;
+  }
+
+  // Where the held tent would go: a couple of metres ahead, door toward the player.
+  tentSite() {
+    const g = this.game;
+    const p = g.player;
+    if (p.seat || p.indoors) return { blocked: 'Pitch it outside' };
+    return g.tents.site(p.position, p.yaw);
+  }
+
+  // Engine bay targets: the engine and what sits on it, with the lid open.
+  engineBay(t) {
+    const car = this.game.car;
+    if (!car || !t) return false;
+    if (t.kind === 'part') return ['engine', 'airfilter', 'fanbelt'].includes(t.part);
+    return t.kind === 'hotspot' && t.hotspot.id === 'oil';
+  }
+
+  // Why a tuning kit cannot go on (null when it can).
+  tuneBlock(it, t) {
+    const car = this.game.car;
+    if (!this.engineBay(t)) return 'Look at the engine to fit it';
+    if (!car.isInstalled('engine')) return 'There is no engine';
+    if (!car.lidOpen('hood')) return `Open the ${car.type.lids.hood} first`;
+    if (car.parts.engine.tune === it.def.tune.tune) return 'This engine already has them';
+    return null;
+  }
+
+  carbsTarget(t) {
+    const car = this.game.car;
+    return this.engineBay(t) && car.isInstalled('engine') && car.parts.engine.tune === 'twin' && car.lidOpen('hood');
   }
 
   pourTarget(it, t) {
     const type = it.state.liquidType;
+    // siphon: a can (empty or holding fuel) against another car draws fuel out of its tank
+    const h = this.lookHit;
+    const other = h && h.owner && h.owner.kind === 'car' && h.owner.car !== this.game.car ? h.owner.car : null;
+    if (other && it.def.liquid.cap >= 5 && (type === 'fuel' || (it.state.liquid || 0) < 0.01) && h.distance < REACH + 0.4) {
+      if (other.fuel > 0.05 && other.isInstalled('fueltank')) return { kind: 'siphon', car: other, label: `Siphon fuel · ${other.fuel.toFixed(1)} L in the tank` };
+      return null;
+    }
     if (!t) return null;
     const car = this.game.car;
     if (t.kind === 'hotspot') {
@@ -400,12 +543,41 @@ export class Interaction {
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
         break;
       }
+      case 'tent': {
+        info = { title: 'Tent', sub: 'Out of the wind and the rain. Sleep the night through', progress: this.removing && this.removing.tent === t.tent ? this.removing.t / 1.6 : undefined };
+        prompts.push(['E', 'Crawl in'], ['R', 'Pack it up (hold)']);
+        break;
+      }
+      case 'bed': {
+        info = { title: 'Bed', sub: 'Sleeps best of all, and warm' };
+        prompts.push(['E', 'Lie down']);
+        break;
+      }
+      case 'jack': {
+        const j = t.jack;
+        const up = j.h - JACK_LOW;
+        info = { title: 'Scissor jack', sub: up > 0.01 ? `Raised ${Math.round(up * 100)} cm` : 'Down', bar: up / (JACK_MAX - JACK_LOW) };
+        if (j.h < JACK_MAX - 0.005) prompts.push(['LMB', 'Crank up (hold)']);
+        if (up > 0.005) prompts.push(['RMB', 'Lower (hold)']);
+        if (up < 0.01) prompts.push(['E', 'Pick it up']);
+        break;
+      }
+      case 'trailer': {
+        const tr = t.trailer;
+        const near = !tr.hitch && tr.hitchableCar();
+        info = { title: 'Utility trailer', sub: tr.hitch ? 'Hitched' : near ? 'The coupler is over the tow ball' : 'Unhitched · 260 kg' };
+        if (tr.hitch) prompts.push(['E', 'Unhitch']);
+        else if (near) prompts.push(['E', 'Hitch to the car']);
+        else prompts.push(['E', 'Pull by the drawbar (hold)']);
+        break;
+      }
       case 'part': {
         const id = t.part;
         const st = car.parts[id];
         const def = car.PARTS[id];
         const cond = st ? Math.round(st.condition * 100) : 100;
-        info = { title: def.label, sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
+        info = { title: car.partLabel(id), sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
+        void def;
         const mp = car.model.parts[id];
         if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open']);
         const rem = car.canRemove(id);
@@ -482,6 +654,15 @@ export class Interaction {
           if (n) info.sub += ` · ${n} strapped on`;
           else prompts.push(['', 'Drop things on it to strap them down']);
         }
+        if (def.winch) {
+          const W = this.game.winches;
+          const c = W.cable && W.cable.car === car ? W.cable : null;
+          if (!c) prompts.push(['E', 'Pull out the winch cable']);
+          else {
+            info.sub = c.anchor ? `Cable hooked · ${Math.round(c.length)} m out${c.tension > 1000 ? ` · ${Math.round(c.tension / 1000)} kN` : ''}` : 'Cable out';
+            if (c.anchor) prompts.push(['LMB', 'Wind in (hold)'], ['E', 'Unhook and wind the cable back']);
+          }
+        }
         const rem = canRemoveAccessory(car, t.mount);
         if (rem.ok) prompts.push(['R', 'Take off (hold)']);
         else prompts.push(['', rem.reason]);
@@ -533,6 +714,25 @@ export class Interaction {
       }
       return;
     }
+    if (t.kind === 'tent' && input.isDown('reload')) {
+      if (!this.removing || this.removing.tent !== t.tent) this.removing = { tent: t.tent, t: 0 };
+      this.removing.t += dt;
+      if (Math.floor((this.removing.t - dt) / 0.4) !== Math.floor(this.removing.t / 0.4)) g.audio && g.audio.play('pocket', { at: t.tent.pos });
+      if (this.removing.t >= 1.6) {
+        const pos = t.tent.pos.clone().add(V(0, 0.3, 0));
+        g.tents.strike(t.tent);
+        this.removing = null;
+        const it = g.items.spawn('tent', pos, new THREE.Quaternion(), { variant: t.tent.variant });
+        it.poiKey = null;
+        if (!this.held) this.pick(it);
+      }
+      return;
+    }
+    if (t.kind === 'tent' && input.wasPressed('interact') && !this.held) return g.player.lieDown(g.tents.berth(t.tent));
+    if (t.kind === 'bed' && input.wasPressed('interact') && !this.held) {
+      const pl = g.player;
+      return pl.lieDown({ kind: 'bed', eye: t.bed.world.clone().add(V(0, 0.06, 0)), yaw: pl.yaw, exit: pl.position });
+    }
     if (t.kind === 'plate' && input.isDown('reload')) {
       if (!this.removing || this.removing.plate !== t.plate) this.removing = { plate: t.plate, t: 0 };
       this.removing.t += dt;
@@ -556,6 +756,41 @@ export class Interaction {
       return;
     }
     if (!input.isDown('reload')) this.removing = null;
+    if (t.kind === 'jack') {
+      const j = t.jack;
+      if (input.mouseDown(0)) g.jacks.crank(j, 1, dt);
+      else if (input.mouseDown(2)) g.jacks.crank(j, -1, dt);
+      else if (input.wasPressed('interact') && j.h - JACK_LOW < 0.01) {
+        const pos = j.base.clone().add(V(0, 0.1, 0));
+        g.jacks.remove(j);
+        const it = g.items.spawn('jack', pos);
+        it.poiKey = null;
+        this.pick(it);
+      }
+      return;
+    }
+    if (t.kind === 'accessory' && car.accessories[t.mount] && ACCESSORIES[car.accessories[t.mount].id].winch && !input.isDown('reload')) {
+      const W = g.winches;
+      const c = W.cable && W.cable.car === car ? W.cable : null;
+      if (input.wasPressed('interact')) {
+        if (!c && !this.held) W.takeHook(car);
+        else if (c) W.release();
+        return;
+      }
+      if (c && c.anchor && input.mouseDown(0)) this.reelFromDrum = true;
+    }
+    if (t.kind === 'trailer') {
+      const tr = t.trailer;
+      if (input.wasPressed('interact')) {
+        if (tr.hitch) tr.unhitch();
+        else {
+          const c = tr.hitchableCar();
+          if (c) tr.hitchTo(c);
+          else this.pullingTrailer = tr;
+        }
+      }
+      return;
+    }
     if (t.kind === 'hotspot' && t.hotspot.id === 'radio') {
       const st = car.stereo;
       if (input.mousePressed(0) && st.disc >= 0) {
@@ -651,6 +886,7 @@ export class Interaction {
     }
     g.items.take(it);
     this.held = it;
+    this.floating = false;
     // keep the current orientation relative to the camera so the item doesn't snap
     const camQ = this.cam.quaternion.clone();
     this.holdRot.copy(camQ.clone().invert().multiply(it.mesh.quaternion));
@@ -658,7 +894,8 @@ export class Interaction {
     this.userRotated = false;
     this.hangAng = 0;
     this.hangVel = 0;
-    this.holdDist = it.part || Math.max(it.size.x, it.size.y, it.size.z) > 0.55 ? 0.9 + Math.max(it.size.x, it.size.y, it.size.z) * 0.55 : 0.75;
+    // big things are carried close, within arm's reach, whatever their length
+    this.holdDist = carriedBig(it) ? 0.62 + Math.min(1, Math.max(it.size.x, it.size.y, it.size.z)) * 0.1 : 0.75;
     this.holdLerp = 0;
     g.player.carryMass = it.mass;
     g.audio && g.audio.play('pickup', { mass: it.mass });
@@ -824,19 +1061,34 @@ export class Interaction {
       this.holdRot.premultiply(qx).premultiply(qy);
     }
     if (input.mouse.wheel && def && def.plate && this.plateAim) this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
-    else if (input.mouse.wheel && !weapon) this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, 0.5, it.part ? 3 : 1.6);
+    else if (input.mouse.wheel && !weapon) {
+      const isBig = carriedBig(it);
+      if (!isBig && !this.floating) {
+        // the wheel takes a small thing out of the hand: it floats in front to be turned and moved
+        this.floating = true;
+        this.holdDist = 0.5;
+        this.holdRot.copy(this.cam.quaternion.clone().invert().multiply(it.mesh.quaternion));
+      }
+      this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, isBig ? 0.5 : 0.38, it.part ? 3 : 1.6);
+      // pulled all the way back in: into the hand again
+      if (!isBig && this.holdDist < 0.42) this.floating = false;
+    }
     this.aim = lerp(this.aim, weapon && input.mouseDown(2) ? 1 : 0, Math.min(1, dt * 10));
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
-    const big = it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !weapon);
+    const big = carriedBig(it);
     // look sway: the item lags a little behind fast turns
     const lookDx = input.mouse.dx,
       lookDy = input.mouse.dy;
     this.sway.lerp(V(clamp(-lookDx * 0.0006, -0.03, 0.03), clamp(lookDy * 0.0006, -0.03, 0.03), 0), Math.min(1, dt * 8));
     this.holdLerp = Math.min(1, (this.holdLerp || 0) + dt * 4);
     this.heldPose = null;
-    if (!big) {
+    if (!big && this.floating) {
+      // out of the hand: in front of the eye at holdDist, turned with RMB
+      local = V(0, -0.06, -this.holdDist).add(this.sway);
+      localQ = this.holdRot.clone();
+    } else if (!big) {
       if (this.rotating) this.userRotated = true;
       const st = this.holdState(it, dt);
       const pose = holdPose(it.mesh, st);
@@ -850,8 +1102,8 @@ export class Interaction {
       }
       this.heldPose = pose;
     } else {
-      // big items float in front at holdDist, slightly below centre
-      local = V(0, -0.18 - Math.min(0.25, it.size.y * 0.25), -this.holdDist);
+      // big items are carried in front at holdDist, a little below eye level
+      local = V(0, -0.2 - Math.min(0.2, it.size.y * 0.22), -this.holdDist);
       localQ = this.holdRot.clone();
       if (this.useAnim > 0) {
         const k = Math.sin(Math.min(1, this.useAnim) * Math.PI);
@@ -915,6 +1167,7 @@ export class Interaction {
           }
         }
       } else if (def.paint) this.updateSpray(it, dt);
+      else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
     }
   }
@@ -1024,11 +1277,63 @@ export class Interaction {
   useHeld() {
     const it = this.held;
     if (!it || !it.def) return;
+    // using a floating thing takes it back into the hand first
+    if (this.floating) {
+      this.floating = false;
+      this.holdDist = 0.75;
+      return;
+    }
     const def = it.def;
     const g = this.game;
     const p = g.player;
+    // raw meat held over a burning fire is cooked instead of eaten
+    if (def.raw && g.campfires && g.campfires.near(p.position, 2.6)) {
+      const pos = it.mesh.position.clone();
+      this.consumeHeld();
+      const cooked = g.items.spawn(def.cooksTo || 'cookedMeat', pos);
+      this.pick(cooked);
+      g.hud && g.hud.toast('Cooked over the fire');
+      g.audio && g.audio.play('ignite', { volume: 0.4 });
+      return;
+    }
+    if (def.campfire) {
+      // on open, fairly flat ground in front, not indoors or in the car
+      const cam = this.cam;
+      const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion).setY(0).normalize();
+      const at = p.position.clone().addScaledVector(fwd, 1.6);
+      at.y = g.groundHeightAt(at.x, at.z, p.position.y + 2);
+      if (p.seat || p.indoors || Math.abs(at.y - p.position.y) > 0.8) {
+        g.hud && g.hud.toast('Find open, level ground for a fire');
+        return;
+      }
+      if (g.env.w.rain > 0.6) {
+        g.hud && g.hud.toast('Too wet to light a fire');
+        return;
+      }
+      g.campfires.kindle(at);
+      this.consumeHeld();
+      g.hud && g.hud.toast('The kindling catches. Stand close to warm up; hold raw meat over it and use it to cook');
+      return;
+    }
+    if (def.wrap) {
+      if ((p.wrapCooldown || 0) > 0) {
+        g.hud && g.hud.toast('Already wrapped up');
+        return;
+      }
+      p.consume({ warmth: def.wrap });
+      p.wrapCooldown = 1;
+      g.hud && g.hud.toast('You wrap up in the blanket');
+      g.audio && g.audio.play('pocket');
+      return;
+    }
     if (def.consume) {
       p.consume(def.consume);
+      // raw meat: a fair chance of a bad stomach
+      if (def.raw && Math.random() < 0.4) {
+        p.consume({ water: -16, food: -12, energy: -10 });
+        g.hud && g.hud.toast('That meat was off. You feel sick');
+        g.audio && g.audio.play('hurt');
+      }
       if (def.consume.smoke) {
         // a cigarette: a few puffs of smoke drifting up past the view
         const cam = this.cam;
@@ -1043,6 +1348,14 @@ export class Interaction {
       if (def.consume.food > 0) g.stats.meals++;
       else g.stats.drinks++;
       g.audio && g.audio.play(def.consume.food > 0 ? 'eat' : def.consume.health > 0 ? 'bandage' : 'drink');
+      // a flask has several cups in it
+      if (def.charges !== undefined) {
+        it.state.charges = (it.state.charges ?? def.charges) - 1;
+        if (it.state.charges > 0) {
+          this.useAnim = 1;
+          return;
+        }
+      }
       this.consumeHeld();
       return;
     }
@@ -1112,6 +1425,31 @@ export class Interaction {
       g.audio && g.audio.play('extinguish');
       return;
     }
+    if (def.tent) {
+      const site = this.tentSite();
+      if (site.blocked) return g.hud && g.hud.toast(site.blocked);
+      g.tents.pitch(site.pos, site.yaw, it.state.variant || 0, site.tilt);
+      this.consumeHeld();
+      g.hud && g.hud.toast('Tent pitched. Crawl in (E) to get out of the weather and sleep');
+      return;
+    }
+    if (def.tune) {
+      const why = this.tuneBlock(it, t);
+      if (why) return g.hud && g.hud.toast(why);
+      setTune(car, def.tune.part, def.tune.tune);
+      this.consumeHeld();
+      g.audio && g.audio.play('install', { at: car.worldPointOf(car.type.POINTS.engine) });
+      g.hud && g.hud.toast('Twin carburettors fitted: more pull up top, and thirstier');
+      return;
+    }
+    if (it.id === 'wrench' && this.carbsTarget(t)) {
+      setTune(car, 'engine', null);
+      const at = car.worldPointOf(car.type.POINTS.engine).add(V(0, 0.35, 0));
+      g.items.spawn('carbKit', at, new THREE.Quaternion());
+      g.audio && g.audio.play('ratchet', { at });
+      g.hud && g.hud.toast('Twin carbs unbolted: the engine runs on its own carburettor again');
+      return;
+    }
     if (def.melee) this.melee(it);
   }
 
@@ -1159,6 +1497,12 @@ export class Interaction {
         car.coolant += amount;
       }
       if (tgt.sys === 'fuel') car.updateMass();
+    } else if (tgt.kind === 'siphon') {
+      amount = Math.min(rate * dt, it.def.liquid.cap - (s.liquid || 0), tgt.car.fuel);
+      tgt.car.fuel -= amount;
+      s.liquid = (s.liquid || 0) + amount;
+      s.liquidType = 'fuel';
+      amount = 0;
     } else if (tgt.kind === 'pump') {
       const st = this.target.pump.inst.state;
       amount = Math.min(rate * 2 * dt, it.def.liquid.cap - s.liquid, st.fuel);
@@ -1175,6 +1519,93 @@ export class Interaction {
     if (!this.pouring) g.audio && g.audio.play('pour', { loop: true });
     this.pouring = 1;
     g.items.refreshVisual(it);
+  }
+
+  // Fishing: LMB casts toward open water in view; the float bobs, dips when a fish bites, and LMB
+  // during the bite lands it (into the backpack, or at your feet when that is full). LMB before a
+  // bite reels in. Walking off or putting the rod away ends it.
+  updateFishing(it, dt) {
+    const g = this.game;
+    const p = g.player;
+    const f = this.fishing;
+    if (f && (p.position.distanceTo(f.from) > 3 || p.seat)) return this.endFishing();
+    if (!f) {
+      if (!input.mousePressed(0)) return;
+      const at = this.waterInView();
+      if (!at) {
+        g.hud && g.hud.toast('Cast toward open water: a river or a lake');
+        return;
+      }
+      if (at.frozen) {
+        g.hud && g.hud.toast('The water is frozen');
+        return;
+      }
+      const bob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8321e, roughness: 0.4 }));
+      bob.position.copy(at.pos);
+      g.worldGroup.add(bob);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(), V()]), new THREE.LineBasicMaterial({ color: 0xdcdcd0, transparent: true, opacity: 0.6 }));
+      line.frustumCulled = false;
+      g.worldGroup.add(line);
+      this.fishing = { at: at.pos.clone(), from: p.position.clone(), t: 0, bite: 4 + Math.random() * 12, bob, line };
+      this.useAnim = 1;
+      g.audio && g.audio.play('swing', { volume: 0.5 });
+      g.hud && g.hud.toast('Line out. Wait for the float to dip, then press LMB');
+      return;
+    }
+    f.t += dt;
+    const biting = f.t > f.bite && f.t < f.bite + 1.6;
+    f.bob.position.y = f.at.y + 0.02 + Math.sin(f.t * 2.2) * 0.008 - (biting ? 0.05 + Math.abs(Math.sin(f.t * 18)) * 0.03 : 0);
+    if (biting && !f.splashed) {
+      f.splashed = true;
+      g.audio && g.audio.play('pour', { at: f.at, volume: 0.25 });
+    }
+    // the line from the rod tip to the float
+    const tip = V(0, 0.75, 0).applyQuaternion(it.mesh.quaternion).add(it.mesh.position);
+    const pos = f.line.geometry.attributes.position;
+    pos.setXYZ(0, tip.x, tip.y, tip.z);
+    pos.setXYZ(1, f.bob.position.x, f.bob.position.y, f.bob.position.z);
+    pos.needsUpdate = true;
+    if (f.t > f.bite + 1.6) {
+      // missed it: wait for the next one
+      f.t = 0;
+      f.bite = 3 + Math.random() * 10;
+      f.splashed = false;
+    }
+    if (!input.mousePressed(0)) return;
+    if (biting) {
+      const fish = g.items.spawn('fish', p.position.clone().add(V(0, 0.4, 0)));
+      if (g.inventory.addSmart({ id: 'fish', state: fish.state }) >= 0) g.items.destroy(fish);
+      g.stats && (g.stats.fish = (g.stats.fish || 0) + 1);
+      g.hud && g.hud.toast('Caught a fish');
+      g.audio && g.audio.play('pour', { volume: 0.5 });
+    } else g.hud && g.hud.toast('Reeled in');
+    this.endFishing();
+  }
+
+  endFishing() {
+    const f = this.fishing;
+    if (!f) return;
+    this.game.worldGroup.remove(f.bob, f.line);
+    f.bob.geometry.dispose();
+    f.line.geometry.dispose();
+    this.fishing = null;
+  }
+
+  // Where the view meets open water within casting range (scene coordinates), or null.
+  waterInView() {
+    const g = this.game;
+    const o = g.origin;
+    const cam = this.cam;
+    const dir = V(0, 0, -1).applyQuaternion(cam.quaternion);
+    for (let d = 3; d < 22; d += 0.5) {
+      const x = cam.position.x + dir.x * d,
+        z = cam.position.z + dir.z * d;
+      const w = g.gen.waterAt(x + o.x, z + o.z);
+      if (!w) continue;
+      if (cam.position.y + dir.y * d > w.level + 2.5) continue;
+      return { pos: V(x, w.level, z), frozen: w.frozen };
+    }
+    return null;
   }
 
   melee(it) {
@@ -1288,7 +1719,7 @@ export class Interaction {
     if (!fit) return this.hideGhost();
     if (!this.ghost || this.ghostFor !== fit.slot) {
       this.hideGhost();
-      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType);
+      const mesh = this.game.items.buildPartMesh(it.part, it.state.carType, it.state.tune);
       mesh.traverse((o) => {
         if (o.isMesh) {
           o.material = this.ghostMat;
@@ -1337,6 +1768,7 @@ export class Interaction {
     g.player.carryMass = 0;
     g.items.destroy(it);
     car.setInstalled(slot, true, carType(it.state.carType).id);
+    if (it.state.tune) setTune(car, slot, it.state.tune);
     car.owned = true;
     if (it.state.color !== undefined) car.paintPart(slot, it.state.color);
     // a foreign panel keeps the paint of the car it came from (its own material otherwise)
@@ -1350,7 +1782,7 @@ export class Interaction {
     if (w) w.flat = cond < 0.02;
     g.stats.partsInstalled++;
     g.audio && g.audio.play('install', { at: car.worldPointOf(car.model.parts[slot].bbox.getCenter(V(0, 0, 0))) });
-    g.hud && g.hud.toast(`${car.PARTS[slot].label} installed`);
+    g.hud && g.hud.toast(`${car.partLabel(slot)} installed`);
     g.onPartInstalled && g.onPartInstalled(slot);
   }
 
@@ -1379,6 +1811,7 @@ export class Interaction {
     if (id === 'engine') {
       state.oil = car.oil;
     }
+    if (car.parts[id].tune) state.tune = car.parts[id].tune;
     car.setInstalled(id, false);
     car.owned = true;
     const it = g.items.spawnPart(id, pos, q, state);
@@ -1687,7 +2120,7 @@ export class Interaction {
         const shoulderW = arms[side].shoulder.clone().applyQuaternion(camQ).add(cam.position);
         const dir = tp.clone().sub(shoulderW).normalize();
         const upW = V(0, 1, 0).applyQuaternion(car.root.quaternion);
-        const qReach = inv.clone().multiply(anchorQ(upW.addScaledVector(dir, -upW.dot(dir)), dir.clone().negate()));
+        const qReach = inv.clone().multiply(anchorQFor(side, upW.addScaledVector(dir, -upW.dot(dir)), dir.clone().negate()));
         const placedR = handFromAnchor(side, 'pinch', { p: toCam(tp), q: qReach });
         // move from the palm contact point to the pinching fingertips
         placedR.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placedR.q));
@@ -1713,13 +2146,28 @@ export class Interaction {
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;
     const h = this.hands;
-    const big = it && (it.part || (Math.max(it.size.x, it.size.y, it.size.z) > 0.55 && !(it.def && it.def.weapon)));
+    const big = it && carriedBig(it);
     const seated = !!this.game.player.seat;
     const driving = seated && this.game.player.seat === 'driver';
     h.right.visible = true;
     h.left.visible = false;
     const inv = cam.quaternion.clone().invert();
-    if (it && !big && !this.dragging) {
+    if (it && !big && this.floating && !this.dragging) {
+      // reaching for the floating thing while it is within arm's length
+      const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
+      const near = c.length() < 0.62;
+      h.right.visible = near;
+      if (near) {
+        const anchor = { p: c.clone().add(V(0.05, -0.04, 0.03)), q: anchorQ(V(-0.2, 1, 0.1), V(0.45, -0.3, 0.85)) };
+        const placed = handFromAnchor('right', 'pinch', anchor);
+        placed.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placed.q));
+        h.setPose('right', 'pinch');
+        h.place('right', placed.p, placed.q);
+        const arms = defaultArms();
+        h.solveArm('right', arms.right.shoulder, arms.right.pole);
+      }
+      if (driving) this.updateDriverHands(dt, 'left');
+    } else if (it && !big && !this.dragging) {
       // both hands are derived from where the item actually is, so they never drift off it
       const local = { p: it.mesh.position.clone().sub(cam.position).applyQuaternion(inv), q: inv.clone().multiply(it.mesh.quaternion) };
       const pose = this.heldPose;
@@ -1738,17 +2186,31 @@ export class Interaction {
       h.right.visible = false;
       h.left.visible = false;
     } else if (it && big) {
-      // carried from below: both hands under the lower edge, palms up, fingers forward
+      // carried in both hands: each hand takes the lower part of a side of the item as the camera
+      // sees it, no further out than the arms reach; palms in, fingers forward
       const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
-      const box = new THREE.Box3().setFromObject(it.mesh);
-      const sz = box.getSize(V(0, 0, 0));
-      const half = Math.min(0.3, Math.max(0.13, Math.max(sz.x, sz.z) * 0.32));
-      const bottom = c.y - Math.min(0.45, sz.y * 0.5) + 0.01;
+      const q = inv.clone().multiply(it.mesh.quaternion);
+      const sz = it.size;
+      const lo = V(Infinity, Infinity, Infinity),
+        hi = V(-Infinity, -Infinity, -Infinity);
+      for (let k = 0; k < 8; k++) {
+        const v = V(k & 1 ? sz.x / 2 : -sz.x / 2, k & 2 ? sz.y / 2 : -sz.y / 2, k & 4 ? sz.z / 2 : -sz.z / 2).applyQuaternion(q).add(c);
+        lo.min(v);
+        hi.max(v);
+      }
       const arms = defaultArms();
       h.left.visible = true;
       for (const side of ['right', 'left']) {
         const sg = side === 'left' ? -1 : 1;
-        const anchor = { p: V(c.x + half * sg, bottom, c.z + 0.1), q: anchorQ(V(sg, 0.1, 0.25), V(0.25 * sg, -0.5, 0.85)) };
+        const edge = sg > 0 ? hi.x : lo.x;
+        const x = clamp(edge - sg * 0.03, c.x - 0.32, c.x + 0.32);
+        // round the sides a little below the middle (a wheel at three and nine o'clock)
+        const y = c.y - Math.min(0.12, (hi.y - lo.y) * 0.12);
+        // palm toward the item when the hand is at its edge; from below when the item is too wide
+        const wide = Math.abs(edge - x) > 0.08 ? 1 : 0;
+        const thumb = wide ? V(sg, 0.1, 0.25) : V(0.15 * sg, 1, 0.2);
+        const wrist = wide ? V(0.25 * sg, -0.5, 0.85) : V(0.45 * sg, -0.35, 0.8);
+        const anchor = { p: V(x, wide ? lo.y + 0.01 : y, clamp(c.z + 0.05, -0.6, -0.3)), q: anchorQFor(side, thumb, wrist) };
         const placed = handFromAnchor(side, 'carry', anchor);
         h.setPose(side, 'carry');
         h.place(side, placed.p, placed.q);

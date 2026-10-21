@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
+import { LightPool } from './gfx/lightPool.js';
 import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
 import { buildGroundTextures } from './gfx/groundTextures.js';
@@ -13,8 +14,16 @@ import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
 import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
+import { archMaterials } from './world/buildings/materials.js';
 import { Fleet } from './vehicle/fleet.js';
 import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
+import { Campfires } from './world/campfires.js';
+import { Trailers } from './vehicle/trailer.js';
+import { Jacks } from './vehicle/jack.js';
+import { Tents } from './world/tents.js';
+import { Atlas } from './story/atlas.js';
+import { PhotoMode, loadPhotos } from './ui/photoMode.js';
+import { Winches } from './vehicle/winch.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
@@ -30,13 +39,13 @@ import { RoadSigns } from './story/roadSigns.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
-import { clamp } from './core/noise.js';
+import { clamp, mulberry32 } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
 
 export const DIFFICULTY = {
-  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
-  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
-  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
+  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, cold: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
+  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, cold: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
+  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, cold: 1.3, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
 };
 
 export class Game {
@@ -47,6 +56,8 @@ export class Game {
     this.worldGroup = new THREE.Group();
     this.worldGroup.name = 'world';
     this.scene.add(this.worldGroup);
+    // a fixed handful of real lights for all the small lamps in the world
+    this.lights = new LightPool(this.scene);
     this.renderer.setupComposer(this.scene);
     // first-person eye (aim, reach, viewmodel); the rendered camera follows it or orbits in 3rd person
     this.eyeCam = new THREE.PerspectiveCamera(75, 1, 0.05, 7000);
@@ -74,13 +85,14 @@ export class Game {
       daysSurvived: 1,
     };
     this.systems = [new Water(), new Bridges()];
+    this.campfires = null;
     window.addEventListener('resize', () => this.renderer.resize());
     input.attach(canvas);
     this.__input = input;
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', trailer = false, onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
@@ -141,6 +153,13 @@ export class Game {
     this.hud = new HUD(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
+    this.campfires = new Campfires(this);
+    this.jacks = new Jacks(this);
+    this.tents = new Tents(this);
+    this.atlas = new Atlas(this);
+    this.atlas.photos = loadPhotos();
+    this.photo = new PhotoMode(this);
+    this.winches = new Winches(this);
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
@@ -153,7 +172,7 @@ export class Game {
       this.origin.z = Math.round(spawn.z / 1024) * 1024;
     }
     this.terrain.update(spawn.x, spawn.z);
-    this.terrain.ensureCollidersAround(spawn.x, spawn.z, 30);
+    this.terrain.ensureCollidersAround(spawn.x, spawn.z, 100);
     this.scatter.update(spawn.x, spawn.z);
     onProgress('Streaming terrain', 0.55);
     await this.waitForTerrain(spawn.x, spawn.z);
@@ -169,6 +188,25 @@ export class Game {
         state: load ? load.car : null,
       });
       this.fleet.setCurrent(car);
+    }
+    // a trailer stands beside the homestead garage; restored ones come back where they were left
+    this.trailers = new Trailers(this);
+    if (load && load.trailers) this.trailers.restore(load.trailers);
+    else if (!this.startZ && !load) {
+      const inst = this.pois.loaded.get(0);
+      if (inst) {
+        inst.root.updateMatrixWorld(true);
+        const w = new THREE.Vector3(13.6, 0, 3.5).applyMatrix4(inst.root.matrixWorld);
+        w.y = this.groundHeightAt(w.x, w.z) + 0.05;
+        this.trailers.spawn(w, inst.poi.rot + Math.PI);
+      }
+    } else if (this.startZ && trailer) {
+      // dev: hitched behind the car
+      const c = this.car;
+      c.root.updateMatrixWorld(true);
+      const w = new THREE.Vector3(0, 0.1, c.type.SPEC.rearTip - 2.4).applyMatrix4(c.root.matrixWorld);
+      const t = this.trailers.spawn(w, new THREE.Euler().setFromQuaternion(c.root.quaternion, 'YXZ').y);
+      t.hitchTo(c);
     }
     // cars waiting at the places already streamed in
     for (const inst of this.pois.loaded.values()) this.fleet.onPoiLoaded(inst);
@@ -190,8 +228,12 @@ export class Game {
     this.fleet.wake();
     for (let i = 0; i < 150; i++) this.physics.update(1 / 60);
     this.fleet.syncVisual();
+    this.trailers.update();
     this.items.update();
     this.hud.show(!attract);
+    this.warmShaders();
+    // one frame behind the loading screen compiles the passes, shadows and sky as well
+    this.render(0.016);
     if (attract) {
       // title screen: the car drives itself north at dusk with its lights on
       this.interaction.viewRoot.visible = false;
@@ -203,6 +245,27 @@ export class Game {
     }
     onProgress('Ready', 1);
     this.running = true;
+  }
+
+  // Compiles, behind the loading screen, the shaders of things the road shows later (every item,
+  // every building material, the roadside wrecks) for both light states, so the first time each
+  // comes into view does not stall the game.
+  warmShaders() {
+    const zoo = new THREE.Group();
+    for (const id of Object.keys(ITEMS))
+      try {
+        zoo.add(this.items.buildMesh(id, initialState(id, Math.random)));
+      } catch (e) {
+        /* an item that needs more state to build; it compiles when first seen */
+      }
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    for (const m of Object.values(archMaterials())) if (m && m.isMaterial) zoo.add(new THREE.Mesh(box, m));
+    for (const w of this.pois.wreckProtos) zoo.add(w.group.clone());
+    zoo.traverse((o) => {
+      if (o.isMesh) o.castShadow = o.receiveShadow = true;
+    });
+    this.lights.warm(this.renderer.renderer, this.renderer.camera, this.renderer.composer.readBuffer, zoo);
+    box.dispose();
   }
 
   spawnPoint() {
@@ -270,11 +333,18 @@ export class Game {
       b.setTranslation({ x: t.x - dx, y: t.y, z: t.z - dz }, true);
       if (b.isKinematic()) b.setNextKinematicTranslation({ x: t.x - dx, y: t.y, z: t.z - dz });
     });
+    this.physics.snapAll();
     this.terrain.rebase(dx, dz);
     this.scatter.rebase(dx, dz);
     this.pois.rebase(dx, dz);
     this.items.rebase(dx, dz);
     this.effects && this.effects.rebase(dx, dz);
+    this.campfires && this.campfires.rebase(dx, dz);
+    this.jacks.rebase(dx, dz);
+    this.tents.rebase(dx, dz);
+    const ly = this.player && this.player.lying;
+    if (ly) for (const v of [ly.eye, ly.exit]) (v.x -= dx), (v.z -= dz);
+    this.winches.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
@@ -301,8 +371,16 @@ export class Game {
 
   frame(dt) {
     if (!this.running) return;
+    // photo mode: the world holds still while the camera roams
+    const ph = this.photo;
+    if (ph && input.wasPressed('photo') && !(this.ui && this.ui.current)) {
+      if (ph.active) ph.exit();
+      else if (!this.paused && !this.attract) ph.enter();
+    }
+    if (ph && ph.active) ph.update(dt);
     if (!this.paused) this.step(dt);
     this.render(dt);
+    if (ph && ph.pendingShot) ph.capture();
     this.ui && this.ui.update(dt);
     input.endFrame();
   }
@@ -315,12 +393,21 @@ export class Game {
       const h = Math.min(this.sleepHours, dt * 2.5);
       hours += h;
       this.sleepHours -= h;
-      this.player.energy = Math.min(100, this.player.energy + h * 12);
+      // a bed rests you best, a tent well, a car seat least
+      this.player.energy = Math.min(100, this.player.energy + h * 12 * ({ car: 0.85, tent: 1, bed: 1.2 }[this.sleepPlace] || 1));
     }
     this.gameHoursDelta = hours;
     const prevDay = this.env.day;
     this.env.update(dt, hours);
     if (this.env.day !== prevDay) this.stats.daysSurvived = this.env.day;
+    // a sandstorm showing on the horizon: say where from, once
+    const storm = this.env.storm;
+    if (storm.active && !storm.announced && storm.approach > 0.08 && storm.approach < 0.9) {
+      storm.announced = true;
+      const deg = (((Math.round(((Math.atan2(-storm.dir.x, storm.dir.z) * 180) / Math.PI) / 45) * 45) % 360) + 360) % 360;
+      const from = { 0: 'north', 45: 'northeast', 90: 'east', 135: 'southeast', 180: 'south', 225: 'southwest', 270: 'west', 315: 'northwest' }[deg];
+      this.hud && this.hud.toast(`A wall of dust is rolling in from the ${from}. Get in the car or under a roof.`, 'warn');
+    }
     if (!this.attract) this.player.update(dt);
     // leave the car
     if (this.player.seat && input.wasPressed('interact') && !(this.ui && this.ui.blocksMove)) {
@@ -338,8 +425,18 @@ export class Game {
     else if (this.player.seat === 'driver' && this.car.isInstalled('seat_FL')) controls = this.driveControls(dt);
     this.fleet.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
+    this.campfires && this.campfires.update(dt);
+    this.jacks.update();
+    // winding in: from the driver's seat with the winch key, or at the drum with LMB
+    const cable = this.winches.cable;
+    if (cable) {
+      const p = this.player;
+      cable.reel = !!cable.anchor && (this.interaction.reelFromDrum || (p.seat === 'driver' && p.car === cable.car && input.isDown('winch') && !(this.ui && this.ui.blocksMove)));
+      this.interaction.reelFromDrum = false;
+    }
     this.physics.update(dt);
     this.fleet.syncVisual();
+    this.trailers && this.trailers.update();
     this.items.update(dt);
     if (this.attract) {
       this.updateAttractCamera(dt);
@@ -348,6 +445,7 @@ export class Game {
       this.player.updateCamera(dt);
       this.interaction.update(dt);
       this.interaction.updateView(dt);
+      this.winches.update(dt, this.interaction.hookHand());
     }
     this.updateRefuel(dt);
     this.effects.update(dt);
@@ -360,6 +458,8 @@ export class Game {
     this.terrain.update(gx, gz);
     this.scatter.update(gx, gz);
     this.scatter.setTime(this.time, this.env.w.wind);
+    const sun = this.env.sun;
+    this.scatter.setShadowReach(this.env.shadowExtent, (sun.position.y - sun.target.position.y) / sun.position.distanceTo(sun.target.position));
     this.pois.update(gx, gz);
     this.pois.update2(dt);
     this.env.focus.copy(f);
@@ -389,6 +489,7 @@ export class Game {
       }
     }
     this.updateSleep(dt);
+    this.atlas && !this.attract && this.atlas.update();
     if (!this.attract) {
       this.story.update(dt);
       this.roadSigns = this.roadSigns || new RoadSigns(this);
@@ -396,41 +497,58 @@ export class Game {
     }
   }
 
-  // "Build it first": a rolling chassis in the garage, everything else laid out in the yard.
+  // "Build it first": a body on its wheels in the garage; everything else is somewhere about the
+  // place, the way it was left: small parts on shelves and tables in the house and garage, panels
+  // and seats around the yard, the engine on the scrap pile, a few things at the neighbours' down
+  // the road. Sometimes an old donor car stands behind the house.
   setupUnassembled() {
     const car = this.car;
-    const keep = new Set(['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
-    // taken apart in reverse assembly order
+    const rnd = mulberry32((this.seed | 0) * 31 + 7);
+    const keep = new Set(['chassis', 'body', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR']);
     const order = [...car.type.ASSEMBLY_ORDER].reverse();
     for (const id of order) if (car.parts[id] && car.isInstalled(id) && !keep.has(id)) car.setInstalled(id, false);
-    car.fuel = 6;
+    car.fuel = 4;
     car.battery = 0.7;
     const inst = this.pois.loaded.get(0);
-    if (!inst) return;
+    if (!inst) return this.spawnStarterItems();
     inst.root.updateMatrixWorld(true);
     const m = inst.root.matrixWorld;
     const at = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(m);
     const rq = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), inst.poi.rot + a);
-    // heavy pieces first, near the garage mouth; small parts in two rows across the yard
-    const spots = [
-      ['body', 8.6, 0.9, 8.4, Math.PI / 2],
-      ['engine', 4.6, 0.6, 4.4, 0],
-      ['fueltank', 12.6, 0.4, 6.6, 0.3],
-      ['exhaust', 12.4, 0.3, 8.6, Math.PI / 2],
-    ];
-    const small = order.filter((id) => !spots.some((s) => s[0] === id) && car.parts[id] && !keep.has(id));
-    small.forEach((id, i) => {
-      const row = Math.floor(i / 8),
-        col = i % 8;
-      spots.push([id, 5.2 + col * 1.0, 0.45, 4.2 + row * 1.5 + (col % 2) * 0.25, (col * 0.7) % 1]);
-    });
-    // lay thin panels on their faces the way someone would put them down
+    const shuffle = (a) => {
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    const missing = order.filter((id) => car.parts[id] && !keep.has(id));
+    const def = (id) => car.type.PARTS[id] || {};
+    const heavy = missing.filter((id) => (def(id).mass || 0) > 60);
+    const small = shuffle(missing.filter((id) => (def(id).mass || 0) <= 8 && !/door|fender|hood|trunk|bumper|seat|spare|exhaust|fueltank/.test(id)));
+    const large = shuffle(missing.filter((id) => !heavy.includes(id) && !small.includes(id)));
+    // indoor spots: the house's tables, shelves and counters, the garage's bench and kit corner
+    const indoor = shuffle(inst.loot.filter((l) => l.kind !== 'wreck').map((l) => l.pos.clone()));
+    // yard spots: a ring around the buildings, kept off roofs, floors and fences
+    const yard = [];
+    for (let i = 0; i < 60 && yard.length < 24; i++) {
+      const a = rnd() * Math.PI * 2,
+        r = 9 + rnd() * 16;
+      const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r * 0.8);
+      const w = p.clone().applyMatrix4(m);
+      const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
+      const owner = hit && this.physics.ownerOf(hit.collider);
+      if (owner && owner.kind === 'structure') continue;
+      if (yard.some((q) => q.distanceTo(p) < 1.8)) continue;
+      yard.push(p);
+    }
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
       door_RL: [0, 0, Math.PI / 2],
       door_RR: [0, 0, -Math.PI / 2],
       hood: [Math.PI, 0, 0],
+      trunk: [Math.PI, 0, 0],
       fender_FL: [0, 0, Math.PI / 2],
       fender_FR: [0, 0, -Math.PI / 2],
       fender_RL: [0, 0, Math.PI / 2],
@@ -440,12 +558,47 @@ export class Game {
       spare: [0, 0, Math.PI / 2],
       steeringWheel: [-0.45, 0, 0],
     };
-    for (const [id, x, y, z, a] of spots) {
+    const put = (id, wpos, a) => {
       const q = rq(a);
       if (lay[id]) q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...lay[id])));
-      const it = this.items.spawnPart(id, at(x, y + 0.25, z), q, { condition: 0.75 + Math.random() * 0.25 });
+      const it = this.items.spawnPart(id, wpos, q, { condition: 0.6 + rnd() * 0.4 });
       it.poiKey = null;
+    };
+    // the neighbours down the road keep one or two of the small things
+    const away = small.splice(0, rnd() < 0.5 ? 1 : 2);
+    let k = 1;
+    while (k < 8 && !this.gen.poiSlot(k)) k++;
+    if (k < 8) this.items.addPending(k, away.map((id) => ({ part: id, carType: car.type.id, condition: 0.55 + rnd() * 0.4 })));
+    else small.push(...away);
+    for (const id of small) {
+      const p = indoor.length ? indoor.shift().applyMatrix4(m) : at(0, 0, 0);
+      put(id, p.add(new THREE.Vector3(0, 0.12, 0)), rnd() * Math.PI * 2);
     }
+    for (const id of large) {
+      const p = yard.length ? yard.shift() : new THREE.Vector3((rnd() - 0.5) * 20, 0, 10 + rnd() * 6);
+      const w = p.clone().applyMatrix4(m);
+      w.y = this.groundHeightAt(w.x, w.z) + 0.35;
+      put(id, w, rnd() * Math.PI * 2);
+    }
+    // the engine sits on the scrap pile behind the garage
+    for (const [i, id] of heavy.entries()) {
+      const w = at(11.5 + i * 2.2, 0, -8.5);
+      w.y = this.groundHeightAt(w.x, w.z) + 0.6;
+      put(id, w, 0.4);
+    }
+    // a donor car behind the house in some worlds: the other model, tired and missing bits
+    if (rnd() < 0.45) {
+      const other = CAR_TYPE_LIST.find((t) => t.id !== car.type.id);
+      if (other) {
+        const w = at(-7 + (rnd() - 0.5) * 3, 0, -12.5);
+        w.y = this.groundHeightAt(w.x, w.z) + 0.05;
+        const donor = this.fleet.create(other.id, w, rq(Math.PI / 2 + (rnd() - 0.5) * 0.5), { owned: false });
+        for (const id of [...other.ASSEMBLY_ORDER].reverse()) if (donor.parts[id] && !/chassis|body/.test(id) && rnd() < 0.35 && donor.isInstalled(id)) donor.setInstalled(id, false);
+        donor.fuel = 0;
+        donor.battery = rnd() * 0.2;
+      }
+    }
+    this.hud && this.hud.toast && setTimeout(() => this.hud.toast('Your car is in pieces. Look around the house, the garage and the yard. Some parts may be further down the road.'), 1500);
     this.spawnStarterItems();
   }
 
@@ -465,6 +618,7 @@ export class Game {
     const gx = 8.5,
       gz = -1.5; // garage centre in POI space
     const list = [
+      ['jack', gx + 1.6, 0.1, gz - 2.6, null],
       ['jerryCan', gx - 2.4, 0.4, gz + 2.0, { liquid: 12, liquidType: 'fuel' }],
       ['oilBottle', gx - 1.6, 1.1, gz - 3.2, null],
       ['waterBottle', gx - 2.0, 1.1, gz - 3.2, null],
@@ -478,23 +632,32 @@ export class Game {
     }
   }
 
-  // Sleeping in the car: time runs fast until morning (or a few hours by day); damage wakes you.
+  // Sleeping in the car, a tent or a bed: time runs fast until morning (or a few hours by day);
+  // damage wakes you.
   updateSleep(dt) {
     const p = this.player;
     const blocked = this.ui && this.ui.blocksMove && !(this.ui.current === 'sleep');
-    if (!this.sleepHours && p.seat && !blocked && input.wasPressed('sleep')) {
-      if (this.car.dyn.engine.running) this.hud.toast('Turn the engine off first');
+    const place = p.seat ? 'car' : p.lying ? p.lying.kind : null;
+    if (!this.sleepHours && place && !blocked && input.wasPressed('sleep')) {
+      if (place === 'car' && this.car.dyn.engine.running) this.hud.toast('Turn the engine off first');
       else if (p.energy > 85) this.hud.toast('You are not tired');
       else {
         const t = this.env.time;
         this.sleepHours = t >= 19 || t < 5 ? (t >= 19 ? 24 - t + 6.5 : 6.5 - t) : 3;
         this.sleepHealth = p.health;
+        this.sleepPlace = place;
+        this.sleepEnergy = p.energy;
         this.ui && this.ui.showSleep(true);
       }
     }
-    if (this.sleepHours > 0 && (p.health < this.sleepHealth - 0.5 || !p.seat)) {
+    if (this.sleepHours > 0 && (p.health < this.sleepHealth - 0.5 || (this.sleepPlace === 'car' ? !p.seat : !p.lying))) {
       this.sleepHours = 0;
-      this.hud.toast(p.seat ? 'Something woke you' : 'You wake up');
+      this.hud.toast(p.seat || p.lying ? 'Something woke you' : 'You wake up');
+    } else if (this.sleepHours > 0 && this.sleepHours <= dt * 2.5 + 1e-6) {
+      // a night in a proper bed leaves you better off than one curled up on a car seat
+      const gain = p.energy - (this.sleepEnergy ?? p.energy);
+      const how = { car: 'Stiff neck from the seat, but rested', tent: 'You wake to canvas and birdsong', bed: 'You slept like a log' }[this.sleepPlace];
+      if (gain > 10 && how) this.hud.toast(how);
     }
     if (this.sleepHours <= 0 && this.ui && this.ui.current === 'sleep') this.ui.showSleep(false);
     if (this.sleepHours > 0) this.sleepHealth = Math.min(this.sleepHealth, p.health + 0.5);
@@ -680,9 +843,35 @@ export class Game {
       const up = E.sunDir.y;
       const clear = (1 - E.w.overcast * 0.9) * (1 - E.w.dust * 0.6) * (1 - E.w.rain * 0.8);
       this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
-      updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
+      const hot = E.biome === 'dunes' || E.biome === 'badlands' || E.biome === 'saltflat' ? 1 : E.biome === 'scrub' || E.biome === 'highland' ? 0.7 : 0;
+      this.renderer.setHeat(hot * THREE.MathUtils.smoothstep(up, 0.45, 0.85) * clear * (1 - E.w.rain) * (settings.data.quality === 'low' ? 0 : 1));
+      // mist lies in the low ground: its base follows the land under you slowly, so it stays put
+      // in a valley as you drive down into it
+      const gy = this.gen.height(cam.position.x + this.origin.x, cam.position.z + this.origin.z);
+      if (E.mistBase === null || Math.abs(E.mistBase - gy) > 60) E.mistBase = gy - 3;
+      E.mistBase += (gy - 3 - E.mistBase) * Math.min(1, dt * 0.04);
+      const mistD = E.mist * 0.045;
+      const S = E.storm;
+      const wallAmt = S.active ? THREE.MathUtils.smoothstep(S.approach, 0.0, 0.12) * (1 - THREE.MathUtils.smoothstep(S.approach, 0.9, 1)) : 0;
+      updateFogSun(
+        cam,
+        E.sunDir,
+        E.sun.color,
+        THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))),
+        { density: mistD, base: E.mistBase, color: E.mistColor },
+        { amount: wallAmt, dir: S.dir, dist: THREE.MathUtils.lerp(4500, 60, S.approach), color: E.wallColor }
+      );
+      // the sky is milky only from inside the mist
+      E.sky.uniforms.uMist.value = E.mist * (1 - THREE.MathUtils.smoothstep(cam.position.y - E.mistBase, 6, 40));
     }
-    if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+    if (this.player) {
+      this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+      // out in a sandstorm with nothing between you and the wind
+      const exposed = !this.player.seat && !this.player.indoors ? 1 : 0;
+      const gr = this.renderer.grade.uniforms.uGrit;
+      gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
+    }
+    this.lights.update(cam);
     this.renderer.render(dt);
   }
 

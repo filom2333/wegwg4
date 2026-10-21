@@ -74,6 +74,19 @@ function faceUV(sx, sy, sz) {
   return (lx, ly, lz, nx, ny) => (nx !== 0 ? [lz + sz / 2, ly + sy / 2] : ny !== 0 ? [lx + sx / 2, lz + sz / 2] : [lx + sx / 2, ly + sy / 2]);
 }
 
+// The faces of a BoxGeometry by group (+x, -x, +y, -y, +z, -z) as their own geometry.
+function faces(box, groups) {
+  const g = box.clone();
+  const idx = [];
+  for (const gi of groups) {
+    const gr = box.groups[gi];
+    for (let k = 0; k < gr.count; k++) idx.push(box.index.array[gr.start + k]);
+  }
+  g.setIndex(idx);
+  g.clearGroups();
+  return g;
+}
+
 export class Builder {
   constructor(name = 'building') {
     this.name = name;
@@ -377,7 +390,10 @@ export class Builder {
       if (!alongX) slab.rotateY(Math.PI / 2);
       if (alongX) slab.translate(cxm, yC, czm + off);
       else slab.translate(cxm + off, yC, czm);
-      this.add(slab, mat);
+      // roofing only on top: boards underneath (seen from inside and under the eaves), trim on the edges
+      this.add(faces(slab, [2]), mat);
+      this.add(faces(slab, [3]), under || mat);
+      this.add(faces(slab, [0, 1, 4, 5]), fascia || under || mat);
       // underside soffit for the overhang parts handled by slab underside
       if (alongX) this.collider(cxm, yC, czm + off, len, th, slopeLen, 0, 'roof', pitch * s);
       else this.collider(cxm + off, yC, czm, len, th, slopeLen, Math.PI / 2, 'roof', pitch * s);
@@ -390,10 +406,13 @@ export class Builder {
     const gm = gableMat;
     if (gm) {
       for (const e of [-1, 1]) {
+        // the gable reaches 0.3 m down into the wall below, so no underside shows at the joint
         const shape = new THREE.Shape();
-        shape.moveTo(-span / 2, 0);
+        shape.moveTo(-span / 2, -0.3);
+        shape.lineTo(span / 2, -0.3);
         shape.lineTo(span / 2, 0);
         shape.lineTo(0, rise);
+        shape.lineTo(-span / 2, 0);
         shape.closePath();
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false });
         // uv in metres
@@ -406,6 +425,29 @@ export class Builder {
           geo.translate(e > 0 ? x1 - 0.09 : x0 + 0.09, y, czm);
         } else geo.translate(cxm, y, e > 0 ? z1 - 0.09 : z0 + 0.09);
         this.add(geo, gm);
+        // seen from inside (no ceiling) the gable is boarded like the roof, not sided
+        if (under) {
+          const tri = new THREE.Shape();
+          tri.moveTo(-span / 2, -0.3);
+          tri.lineTo(span / 2, -0.3);
+          tri.lineTo(span / 2, 0);
+          tri.lineTo(0, rise);
+          tri.lineTo(-span / 2, 0);
+          tri.closePath();
+          const inner = new THREE.ShapeGeometry(tri);
+          const ip = inner.attributes.position,
+            iu = inner.attributes.uv;
+          for (let i = 0; i < ip.count; i++) iu.setXY(i, ip.getX(i), ip.getY(i) + y);
+          const d = 0.184;
+          if (alongX) {
+            inner.rotateY(e > 0 ? -Math.PI / 2 : Math.PI / 2);
+            inner.translate(e > 0 ? x1 - d : x0 + d, y, czm);
+          } else {
+            if (e > 0) inner.rotateY(Math.PI);
+            inner.translate(cxm, y, e > 0 ? z1 - d : z0 + d);
+          }
+          this.add(inner, under);
+        }
       }
     }
     // fascia boards along eaves

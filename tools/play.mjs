@@ -7,6 +7,10 @@ const steps = fs.existsSync(scriptArg) ? JSON.parse(fs.readFileSync(scriptArg, '
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: +w, height: +h } });
 const logs = [];
+// software GL would pick the low preset on its own; tests look at the default high one
+await page.addInitScript((q) => {
+  if (!localStorage.getItem('dustroad.settings.v1')) localStorage.setItem('dustroad.settings.v1', JSON.stringify({ quality: q }));
+}, process.env.QUALITY || 'high');
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
 await page.goto((process.env.BASE || 'http://127.0.0.1:5173/') + '?' + query, { waitUntil: 'load', timeout: 120000 });
@@ -33,7 +37,7 @@ for (const s of steps) {
   if (s.wait) await page.waitForTimeout(s.wait);
   if (s.shot) {
     fs.mkdirSync('shots', { recursive: true });
-    await page.evaluate('window.game.renderNow()');
+    if (await page.evaluate('!!(window.game && window.game.renderNow)')) await page.evaluate('window.game.renderNow()');
     await page.screenshot({ path: s.shot, timeout: 180000 });
     console.log('shot', s.shot);
   }

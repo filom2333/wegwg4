@@ -3,6 +3,7 @@
 // meteors and moths. Everything is pooled; nothing allocates per frame in steady state.
 
 import * as THREE from 'three';
+import { GLASS_RAIN } from './glassRain.js';
 import { mulberry32 } from '../core/noise.js';
 import { tubeAlong } from './geom.js';
 
@@ -78,12 +79,38 @@ class Particles {
   }
 
   emit(p) {
+    this.fresh = true;
     const q = this.parts[this.next];
     this.next = (this.next + 1) % this.max;
-    Object.assign(q, { life: p.life, max: p.life, x: p.pos.x, y: p.pos.y, z: p.pos.z, vx: p.vel ? p.vel.x : 0, vy: p.vel ? p.vel.y : 0, vz: p.vel ? p.vel.z : 0, s0: p.size, s1: p.grow ?? p.size * 2, a0: p.alpha ?? 1, r: p.color[0], g: p.color[1], b: p.color[2], drag: p.drag ?? 1, grav: p.grav ?? 0, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * (p.spin ?? 1), fadeIn: p.fadeIn ?? 0.1, ground: p.ground ?? -1e9 });
+    // fields written one by one: no temporary object per particle
+    q.life = q.max = p.life;
+    q.x = p.pos.x;
+    q.y = p.pos.y;
+    q.z = p.pos.z;
+    q.vx = p.vel ? p.vel.x : 0;
+    q.vy = p.vel ? p.vel.y : 0;
+    q.vz = p.vel ? p.vel.z : 0;
+    q.s0 = p.size;
+    q.s1 = p.grow ?? p.size * 2;
+    q.a0 = p.alpha ?? 1;
+    q.r = p.color[0];
+    q.g = p.color[1];
+    q.b = p.color[2];
+    q.drag = p.drag ?? 1;
+    q.grav = p.grav ?? 0;
+    q.rot = Math.random() * 6.28;
+    q.spin = (Math.random() - 0.5) * (p.spin ?? 1);
+    q.fadeIn = p.fadeIn ?? 0.1;
+    q.ground = p.ground ?? -1e9;
   }
 
   update(dt) {
+    // nothing alive and nothing new: the buffers already hold zeros
+    if (!this.live && !this.fresh) {
+      this.points.visible = false;
+      return;
+    }
+    this.fresh = false;
     let n = 0;
     for (let i = 0; i < this.max; i++) {
       const p = this.parts[i];
@@ -121,6 +148,7 @@ class Particles {
       n++;
     }
     this.live = n;
+    this.points.visible = true;
     for (const k of ['position', 'aSize', 'aAlpha', 'aColor', 'aRot']) this.geo.attributes[k].needsUpdate = true;
   }
 
@@ -131,6 +159,10 @@ class Particles {
     }
   }
 }
+
+const moteFwd = new THREE.Vector3(),
+  motePos = new THREE.Vector3(),
+  moteVel = new THREE.Vector3();
 
 // ------------------------------------------------------------------ tumbleweed mesh
 function tumbleweedGeo(seed) {
@@ -217,6 +249,7 @@ export class Effects {
     // flashes
     this.flashLight = new THREE.PointLight(0xffc070, 0, 14, 2);
     root.add(this.flashLight);
+    game.lights.add(this.flashLight);
     this.flashT = 0;
     this.flashSprite = new THREE.Mesh(
       new THREE.PlaneGeometry(0.5, 0.5),
@@ -345,6 +378,20 @@ export class Effects {
           const p = w.contactPoint;
           const back = V(0, 0, -1).applyQuaternion(car.root.quaternion);
           const col = powder ? [0.93, 0.95, 0.98] : w.surface === 'asphalt' ? [0.55, 0.53, 0.5] : w.surface === 'salt' ? [0.85, 0.84, 0.8] : w.surface === 'grass' ? [0.55, 0.5, 0.38] : [0.72, 0.6, 0.45];
+          // a hard skid on tarmac burns rubber: thick pale smoke that hangs and drifts
+          if (w.skid > 0.3 && (w.surface === 'asphalt' || w.surface === 'concrete') && Math.random() < 0.6)
+            this.smoke.emit({
+              pos: V(p.x + back.x * 0.2, p.y + 0.2, p.z + back.z * 0.2),
+              vel: V(back.x * speed * 0.15 + (Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.5, back.z * speed * 0.15 + (Math.random() - 0.5) * 0.6),
+              size: 0.7,
+              grow: 4.5,
+              life: 2.6 + Math.random() * 1.8,
+              color: [0.86, 0.86, 0.85],
+              alpha: 0.3 * Math.min(1, w.skid),
+              drag: 0.9,
+              grav: -0.05,
+              fadeIn: 0.1,
+            });
           this.dust.emit({
             pos: V(p.x + back.x * 0.3, p.y + 0.15, p.z + back.z * 0.3),
             vel: V(back.x * speed * 0.3 + (Math.random() - 0.5), 0.6 + Math.random() * 0.8, back.z * speed * 0.3 + (Math.random() - 0.5)),
@@ -404,11 +451,16 @@ export class Effects {
     }
   }
 
-  backfire(car) {
-    const p = car.type.POINTS.exhaust.clone().add(V(0, 0, -0.04)).applyMatrix4(car.root.matrixWorld);
-    for (let i = 0; i < 6; i++) this.fire.emit({ pos: p, vel: V(0, 0, -1).applyQuaternion(car.root.quaternion).multiplyScalar(4 + Math.random() * 3).add(V(Math.random() - 0.5, Math.random() * 0.5, Math.random() - 0.5)), size: 0.25, grow: 0.05, life: 0.18, color: [1, 0.55, 0.2], alpha: 1, drag: 4 });
-    this.smoke.emit({ pos: p, vel: V(0, 0.5, 0), size: 0.3, grow: 1.4, life: 1.5, color: [0.2, 0.2, 0.2], alpha: 0.4, drag: 2, grav: -0.3 });
-    this.flash(p, 0.6);
+  // k: 1 a full bang, less for the small pops of a sport muffler on the overrun (out of either pipe)
+  backfire(car, k = 1) {
+    const P = car.type.POINTS;
+    const pipe = k < 1 && P.exhaust2 && Math.random() < 0.5 ? P.exhaust2 : P.exhaust;
+    const p = pipe.clone().add(V(0, 0, -0.1)).applyMatrix4(car.root.matrixWorld);
+    const back = V(0, 0, -1).applyQuaternion(car.root.quaternion);
+    const n = Math.max(2, Math.round(6 * k));
+    for (let i = 0; i < n; i++) this.fire.emit({ pos: p, vel: back.clone().multiplyScalar((4 + Math.random() * 3) * (0.5 + 0.5 * k)).add(V(Math.random() - 0.5, Math.random() * 0.5, Math.random() - 0.5)).add(car.dyn.lastLinvel), size: 0.25 * (0.5 + 0.5 * k), grow: 0.05, life: 0.18 * (0.6 + 0.4 * k), color: [1, 0.55 + (1 - k) * 0.15, 0.2], alpha: 1, drag: 4 });
+    if (k > 0.5) this.smoke.emit({ pos: p, vel: V(0, 0.5, 0), size: 0.3, grow: 1.4, life: 1.5, color: [0.2, 0.2, 0.2], alpha: 0.4, drag: 2, grav: -0.3 });
+    this.flash(p, 0.6 * k);
   }
 
   impactDebris(car, imp, severity) {
@@ -592,7 +644,7 @@ export class Effects {
   updateWeeds(dt, cam) {
     const g = this.game;
     const env = g.env;
-    const want = env.w.wind > 0.3 && env.w.rain < 0.3 ? 4 : 1;
+    const want = env.w.dust > 0.4 ? 8 : env.w.wind > 0.3 && env.w.rain < 0.3 ? 4 : 1;
     if (this.weeds.length < want && Math.random() < dt * 0.2) {
       const a = Math.random() * Math.PI * 2;
       const d = 30 + Math.random() * 60;
@@ -603,10 +655,10 @@ export class Effects {
       this.root.add(m);
       this.weeds.push({ m, x: cam.position.x + Math.cos(a) * d, z: cam.position.z + Math.sin(a) * d, y: 0, vy: 0, s, life: 60 });
     }
-    const wdir = V(1, 0, 0.3).normalize();
+    const wdir = env.windDir;
     for (const w of this.weeds) {
       w.life -= dt;
-      const sp = 1.5 + env.w.wind * 5;
+      const sp = 1.5 + env.w.wind * 5 + env.w.dust * 6;
       w.x += wdir.x * sp * dt;
       w.z += wdir.z * sp * dt;
       const gy = g.gen.height(w.x + g.origin.x, w.z + g.origin.z) + 0.33 * w.s;
@@ -713,6 +765,27 @@ export class Effects {
     }
   }
 
+  // Dust motes: a few specks drifting in the air around you, lit up when you look toward the sun.
+  updateMotes(dt, cam) {
+    const env = this.game.env;
+    if (env.isNight || env.w.rain > 0.1 || env.sunDir.y < 0.02) return;
+    const fwd = moteFwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    const facing = THREE.MathUtils.smoothstep(fwd.dot(env.sunDir), 0.35, 0.9);
+    if (facing <= 0) return;
+    const n = dt * 26 * facing * (1 + env.w.dust * 2);
+    const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+    const c = env.sun.color;
+    for (let i = 0; i < count; i++) {
+      const r = 0.8 + Math.random() * 4.5;
+      motePos.copy(fwd).multiplyScalar(r).add(cam.position);
+      motePos.x += (Math.random() - 0.5) * r;
+      motePos.y += (Math.random() - 0.5) * r * 0.7;
+      motePos.z += (Math.random() - 0.5) * r;
+      moteVel.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.3) * 0.08, (Math.random() - 0.5) * 0.12);
+      this.moths.emit({ pos: motePos, vel: moteVel, size: 0.008 + Math.random() * 0.01, grow: 0.012, life: 3 + Math.random() * 4, color: [c.r, c.g * 0.95, c.b * 0.85], alpha: 0.35 * facing, drag: 0.4, spin: 0, fadeIn: 0.3 });
+    }
+  }
+
   // ------------------------------------------------------------------ frame
   update(dt) {
     this.t += dt;
@@ -791,16 +864,38 @@ export class Effects {
     this.updateBirds(dt, cam);
     this.updateMeteors(dt, cam);
     this.updateMoths(dt);
-    // sandstorm: dense moving dust around the camera
+    this.updateMotes(dt, cam);
+    // rain on the glass of the car you are near
+    GLASS_RAIN.time.value += dt;
+    GLASS_RAIN.rain.value += ((g.env.w.rain > 0.05 ? Math.min(1, 0.35 + g.env.w.rain) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
+    GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
+    GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
+    // sandstorm: billows of dust and fast streaks of sand driven along the wind, born upwind of
+    // the camera so they stream through the view; dust settles on the car's glass
     const dust = g.env.w.dust;
+    const wd = g.env.windDir;
     if (dust > 0.2) {
-      const n = dust * 60 * dt;
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2,
-          r = 4 + Math.random() * 30;
-        this.dust.emit({ pos: cam.position.clone().add(V(Math.cos(a) * r - 15, (Math.random() - 0.3) * 6, Math.sin(a) * r)), vel: V(12 + Math.random() * 6, (Math.random() - 0.5), 3), size: 3, grow: 6, life: 2.5, color: [0.74, 0.6, 0.44], alpha: 0.12 * dust, drag: 0.2, fadeIn: 0.3 });
+      const day = 0.25 + 0.75 * g.env.daylight;
+      const col = [0.66 * day, 0.5 * day, 0.34 * day];
+      for (let i = 0, n = dust * 80 * dt; i < n; i++) {
+        const side = (Math.random() - 0.5) * 50,
+          back = 8 + Math.random() * 30;
+        const p = cam.position.clone().add(V(-wd.x * back - wd.z * side, (Math.random() - 0.25) * 7, -wd.z * back + wd.x * side));
+        const sp = 11 + Math.random() * 8;
+        this.dust.emit({ pos: p, vel: V(wd.x * sp, (Math.random() - 0.4) * 1.2, wd.z * sp), size: 2.5 + Math.random() * 2, grow: 7, life: 3, color: col, alpha: 0.13 * dust, drag: 0.15, fadeIn: 0.35 });
+      }
+      for (let i = 0, n = dust * 140 * dt; i < n; i++) {
+        const side = (Math.random() - 0.5) * 16,
+          back = 4 + Math.random() * 10;
+        const p = cam.position.clone().add(V(-wd.x * back - wd.z * side, (Math.random() - 0.5) * 3, -wd.z * back + wd.x * side));
+        const sp = 20 + Math.random() * 10;
+        this.dust.emit({ pos: p, vel: V(wd.x * sp, (Math.random() - 0.5) * 2, wd.z * sp), size: 0.12, grow: 0.25, life: 0.9, color: [col[0] * 1.2, col[1] * 1.2, col[2] * 1.2], alpha: 0.35 * dust, drag: 0.1, fadeIn: 0.1 });
       }
     }
+    const coat = dust > 0.35 ? 1 : 0;
+    GLASS_RAIN.dust.value += (coat - GLASS_RAIN.dust.value) * Math.min(1, dt * (coat ? 0.03 : 0.004 + g.env.w.rain * 0.2));
+    const wiping = g.car && g.car.wipers;
+    GLASS_RAIN.dustFront.value = wiping ? Math.max(0, GLASS_RAIN.dustFront.value - dt * 0.8) : GLASS_RAIN.dustFront.value + (GLASS_RAIN.dust.value - GLASS_RAIN.dustFront.value) * Math.min(1, dt * 0.03);
   }
 
   rebase(dx, dz) {

@@ -1,4 +1,4 @@
-// Menu layer: title (over the live attract-mode scene), new game setup, settings, career
+// Menu layer: title (over pre-rendered pictures from the road), new game setup, settings, career
 // statistics, multiplayer placeholder, loading, click-to-play, pause, journal, sleep and death.
 
 import { CAR_TYPE_LIST } from '../vehicle/types.js';
@@ -7,6 +7,7 @@ import { InventoryUI } from './inventoryUI.js';
 import { input } from '../core/input.js';
 import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
 import { NOTES, HAVEN_KM } from '../story/story.js';
+import { drawAtlas } from '../story/atlas.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -17,7 +18,21 @@ const el = (tag, cls, parent, html) => {
 };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-const VERSION = '0.9';
+const VERSION = '0.10';
+
+// Pictures behind the title menu (public/menu/), each with its own slow camera move.
+const MENU_SHOTS = [
+  { src: 'menu/golden.webp', move: 'in', origin: '42% 58%' },
+  { src: 'menu/gas.webp', move: 'left', origin: '50% 55%' },
+  { src: 'menu/vista.webp', move: 'out', origin: '48% 60%' },
+  { src: 'menu/forest.webp', move: 'in', origin: '52% 62%' },
+  { src: 'menu/taiga.webp', move: 'right', origin: '40% 64%' },
+  { src: 'menu/night.webp', move: 'in', origin: '50% 52%' },
+  { src: 'menu/dunes.webp', move: 'right', origin: '40% 55%' },
+  { src: 'menu/mesas.webp', move: 'out', origin: '55% 50%' },
+  { src: 'menu/valley.webp', move: 'left', origin: '60% 55%' },
+];
+const SLIDE_SECONDS = 9;
 
 const TIPS = [
   'A jerry can holds 20 litres. The tank holds 50. Fill both when you find a working pump.',
@@ -26,7 +41,7 @@ const TIPS = [
   'Coolant and oil are cheap. Engines are not.',
   'Rain turns dirt roads to grease. Brake earlier.',
   'Aim for the head. It is a long way to the next box of cartridges.',
-  'Sleep in the car with the doors shut and the engine off.',
+  'Sleep in the car with the engine off, in a tent you pitch, or in a bed in an empty house: a bed rests you best.',
   'Abandoned cars still have parts worth taking.',
   'The road always goes north. Everything else is a detour.',
 ];
@@ -51,11 +66,14 @@ const LABELS = {
   handbrake: 'Handbrake',
   wipers: 'Wipers',
   lookBack: 'Look back',
+  winch: 'Wind in the winch',
   journal: 'Journal',
+  atlas: 'Road atlas',
+  photo: 'Photo mode',
   inventory: 'Inventory',
   nextTrack: 'Next CD track',
   stow: 'Put in backpack',
-  sleep: 'Sleep (in the car)',
+  sleep: 'Sleep (car, tent or bed)',
   view: 'First / third person',
 };
 
@@ -136,6 +154,37 @@ export class UI {
     return `<svg class="ui-shield" viewBox="0 0 100 110" aria-hidden="true"><path d="M50 4 C62 12 78 12 92 8 C96 40 92 74 50 106 C8 74 4 40 8 8 C22 12 38 12 50 4 Z" fill="none" stroke="currentColor" stroke-width="5"/><text x="50" y="40" text-anchor="middle" font-size="15" letter-spacing="2" fill="currentColor">ROUTE</text><text x="50" y="82" text-anchor="middle" font-size="44" font-weight="600" fill="currentColor">9</text></svg>`;
   }
 
+  // Title backdrop: stills from the road that slowly pan and zoom, cross-fading every few seconds.
+  showBackdrop() {
+    if (this.backdrop) return;
+    const b = (this.backdrop = el('div', 'ui-backdrop', document.body));
+    const start = Math.floor(Math.random() * MENU_SHOTS.length);
+    const slides = MENU_SHOTS.map((m) => {
+      const d = el('div', 'ui-slide', b);
+      d.style.backgroundImage = `url(${m.src})`;
+      d.style.transformOrigin = m.origin;
+      d.dataset.move = m.move;
+      return d;
+    });
+    let i = start;
+    const next = () => {
+      const prev = slides.find((d) => d.classList.contains('on'));
+      const d = slides[i % slides.length];
+      // restart the camera move from its first frame
+      d.classList.remove('moving');
+      void d.offsetWidth;
+      d.classList.add('on', 'moving');
+      if (prev && prev !== d) setTimeout(() => prev.classList.remove('on'), 50);
+      setTimeout(() => prev && prev !== d && prev.classList.remove('moving'), 3000);
+      i++;
+    };
+    // show the first picture once it has loaded, so the menu never opens on a blank frame
+    const img = new Image();
+    img.onload = img.onerror = () => next();
+    img.src = MENU_SHOTS[start].src;
+    this.backdropTimer = setInterval(next, SLIDE_SECONDS * 1000);
+  }
+
   // First screen: wait for a key/click (also unlocks audio and starts the title theme).
   showSplash() {
     this.mode = 'menu';
@@ -181,8 +230,8 @@ export class UI {
       this.item(m, 'Statistics', () => this.showCareer(() => this.showTitle()));
       this.item(m, 'Credits', () => this.showCredits());
       const news = el('div', 'ui-news', s);
-      news.innerHTML = `<div class="ui-news-k">Update 0.9 · The Haven update</div>
-        <div class="ui-news-t">Notes along the road, radio broadcasts from Haven, a third-person view, hands on the wheel, new clouds and light.</div>
+      news.innerHTML = `<div class="ui-news-k">Update 0.10 · The open country update</div>
+        <div class="ui-news-t">A second car, parts that fit any car, spray paint, roof racks and bolt-on plates, rollovers. New land: real dunes, ridged mountains, mesas, denser brush, yucca and ocotillo, forests to the horizon.</div>
         <div class="ui-news-k dim">Next: co-op on Route 9</div>`;
       el('div', 'ui-foot', s, `v${VERSION} · keyboard and mouse · ↑ ↓ Enter`);
       this.menuNav(m);
@@ -211,9 +260,14 @@ export class UI {
       const p = el('div', 'ui-panel', s);
       el('h2', 'ui-h', p, 'Credits');
       const body = el('div', 'ui-body', p);
-      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time. The car is a 1960s Beetle based on <a href="https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e" target="_blank" rel="noopener">"Beetle/Fusca (Version 1)"</a> by soujagah, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY-4.0</a>, split into parts and re-textured for repainting.</p>
+      const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+      const ccby = link('http://creativecommons.org/licenses/by/4.0/', 'CC-BY-4.0');
+      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time.</p>
+        <p class="ui-sub">The 1960s Beetle is based on ${link('https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e', '"Beetle/Fusca (Version 1)"')} by ${link('https://sketchfab.com/soujagah', 'soujagah')}, and the '88 Riverside sedan on "88 American Sedan - Low poly model" by ${link('https://sketchfab.com/DanielZhabotinsky', 'Daniel Zhabotinsky')}, both licensed under ${ccby}; scaled, split into parts and re-textured for repainting.</p>
+        <p class="ui-sub">Tree bark from ${link('https://www.texturecan.com/', 'TextureCan')} and ${link('https://polyhaven.com/a/bark_brown_02', 'Poly Haven')} (CC0); twig cards from ${link('https://github.com/dgreenheck/ez-tree', 'ez-tree')} by Daniel Greenheck (MIT).</p>
         <div class="ui-cols">
-          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div><div class="ui-stat"><span>Car model</span><span>soujagah (CC-BY-4.0)</span></div></div>
+          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div></div>
+          <div><div class="ui-label">Models and textures</div><div class="ui-stat"><span>Beetle</span><span>soujagah · CC-BY-4.0</span></div><div class="ui-stat"><span>Sedan</span><span>D. Zhabotinsky · CC-BY-4.0</span></div><div class="ui-stat"><span>Bark</span><span>TextureCan, Poly Haven · CC0</span></div><div class="ui-stat"><span>Twigs</span><span>ez-tree · MIT</span></div></div>
           <div><div class="ui-label">Inspired by</div><div class="ui-stat"><span>Road trips</span><span>The Long Drive</span></div><div class="ui-stat"><span>Dust</span><span>Route 66, 89, 95</span></div></div>
         </div>`;
       const a = el('div', 'ui-actions', p);
@@ -235,7 +289,7 @@ export class UI {
 
   // ---------------------------------------------------------------- new game
   showNewGame() {
-    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'assembled', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
+    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
     this.screen('newgame', (s) => {
       s.classList.add('ui-shade-panel');
       const p = el('div', 'ui-panel', s);
@@ -259,8 +313,8 @@ export class UI {
       this.choices(
         body,
         [
+          ['parts', 'Build it first', 'The body stands on its wheels in the garage. Everything else is somewhere about the place, and a few parts are down the road.'],
           ['assembled', 'Ready to drive', 'Start with the car assembled in the garage, a little fuel in the tank.'],
-          ['parts', 'Build it first', 'Start with a rolling chassis. Every panel, seat and the engine are in the yard.'],
         ],
         cfg.start,
         (v) => (cfg.start = v)
@@ -524,6 +578,8 @@ export class UI {
     if (k === 'showFps') this.fpsEl.style.display = d.showFps ? '' : 'none';
     if (!g) return;
     if (/Volume$/.test(k) && g.audio && g.audio.applyVolumes) g.audio.applyVolumes();
+    // on the title screen there is no world yet: the rest applies when a game starts
+    if (!g.renderer) return;
     if (k === 'transmission' && g.car) g.car.dyn.automatic = d.transmission === 'auto';
     if (k === 'resolutionScale' && g.renderer.setScale) g.renderer.setScale(d.resolutionScale);
     if (k === 'bloom') g.renderer.applyPassSettings();
@@ -568,6 +624,8 @@ export class UI {
           [keyName(b.ignition), 'Ignition, hold to crank'],
           [keyName(b.lights), 'Headlights'],
           [keyName(b.journal), 'Journal'],
+          [keyName(b.atlas || 'KeyM'), 'Road atlas'],
+          [keyName(b.photo || 'KeyP'), 'Photo mode'],
         ];
         for (const [kk, t] of rows) k.innerHTML += `<kbd>${esc(kk)}</kbd><span>${esc(t)}</span>`;
       }
@@ -586,6 +644,8 @@ export class UI {
   onLockChange() {
     const locked = !!document.pointerLockElement;
     if (this.mode !== 'play' || !this.game) return;
+    // Escape out of photo mode lands on the pause menu like anywhere else
+    if (!locked && this.game.photo && this.game.photo.active) this.game.photo.exit();
     if (!locked && !this.current && !this.game.player.dead) this.showPause();
   }
 
@@ -699,6 +759,179 @@ export class UI {
       el('div', 'ui-loadtext', act, `${keyName(settings.data.bindings.journal)} to close`);
     });
     this.show('journal');
+  }
+
+  // ---------------------------------------------------------------- road atlas
+  // The strip map of Route 9: drag to move, wheel to zoom, click to pin a note.
+  showAtlas() {
+    const g = this.game;
+    const A = g.atlas;
+    g.paused = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const here = A.here();
+    const view = this.atlasView || { s: 0.06 };
+    view.cx = here.x;
+    view.cz = here.z;
+    this.atlasView = view;
+    let pending = null; // world point waiting for a note
+    let layout = null;
+    this.screen('atlas', (s) => {
+      s.classList.add('ui-shade-full');
+      const pnl = el('div', 'ui-panel center ui-atlas', s);
+      const head = el('div', 'ui-atlas-head', pnl);
+      el('h2', 'ui-h', head, 'Road atlas');
+      el('p', 'ui-sub', head, `Route 9 · ${Math.max(0, HAVEN_KM - here.z / 1000).toFixed(0)} km to Haven · day ${g.env.day}`);
+      const row = el('div', 'ui-atlas-row', pnl);
+      const wrap = el('div', 'ui-atlas-map', row);
+      const cv = el('canvas', '', wrap);
+      const side = el('div', 'ui-atlas-side', row);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const draw = () => {
+        const r = wrap.getBoundingClientRect();
+        cv.width = Math.max(10, Math.round(r.width * dpr));
+        cv.height = Math.max(10, Math.round(r.height * dpr));
+        layout = drawAtlas(cv, g, { cx: view.cx, cz: view.cz, s: view.s * dpr }, { dpr });
+        if (pending) {
+          const x = cv.width / 2 - (pending.x - view.cx) * view.s * dpr,
+            y = cv.height / 2 - (pending.z - view.cz) * view.s * dpr;
+          const c = cv.getContext('2d');
+          c.strokeStyle = '#c63d2f';
+          c.lineWidth = 2 * dpr;
+          c.beginPath();
+          c.arc(x, y, 7 * dpr, 0, Math.PI * 2);
+          c.stroke();
+        }
+      };
+      // notes and photos
+      const list = () => {
+        side.innerHTML = '';
+        el('div', 'ui-label', side, 'Notes');
+        const form = el('div', 'ui-atlas-form', side);
+        const inp = el('input', 'ui-atlas-input', form);
+        inp.placeholder = pending ? 'Note for the marked spot…' : 'Note for where you are…';
+        inp.maxLength = 140;
+        inp.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && inp.value.trim()) add(inp.value.trim());
+          if (e.key === 'Escape') this.resume();
+        });
+        this.item(form, pending ? 'Pin it there' : 'Pin it here', () => inp.value.trim() && add(inp.value.trim()));
+        if (pending) inp.focus();
+        if (!A.notes.length) el('div', 'ui-sub', side, 'Click the map to mark a spot, or pin a note where you stand: fuel, water, a good camp, trouble.');
+        A.notes.forEach((n, i) => {
+          const r = el('div', 'ui-atlas-note', side, `<b>${i + 1}</b><span>${esc(n.text)}<small>day ${n.day} · ${Math.max(0, HAVEN_KM - n.z / 1000).toFixed(1)} km to Haven</small></span>`);
+          r.onclick = () => {
+            view.cx = n.x;
+            view.cz = n.z;
+            draw();
+          };
+          const x = el('button', 'ui-atlas-del', r, '×');
+          x.title = 'Rub it out';
+          x.onclick = (e) => {
+            e.stopPropagation();
+            A.removeNote(n);
+            list();
+            draw();
+          };
+        });
+        const photos = A.photos.filter((p) => p.seed === g.seed);
+        if (photos.length) {
+          el('div', 'ui-label', side, `Photos · ${photos.length}`);
+          const grid = el('div', 'ui-atlas-photos', side);
+          for (const ph of photos) {
+            const im = el('img', '', grid);
+            im.src = ph.thumb;
+            im.title = `Day ${ph.day}`;
+            im.onclick = () => {
+              view.cx = ph.x;
+              view.cz = ph.z;
+              draw();
+              this.showPhoto(ph);
+            };
+          }
+        }
+      };
+      const add = (text) => {
+        const at = pending || A.here();
+        A.addNote(at.x, at.z, text);
+        pending = null;
+        g.audio && g.audio.play('pocket', { volume: 0.5 });
+        list();
+        draw();
+      };
+      // drag, zoom, click
+      let drag = null;
+      cv.addEventListener('pointerdown', (e) => {
+        drag = { x: e.clientX, y: e.clientY, cx: view.cx, cz: view.cz, moved: 0 };
+        cv.setPointerCapture(e.pointerId);
+      });
+      cv.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x,
+          dy = e.clientY - drag.y;
+        drag.moved = Math.max(drag.moved, Math.hypot(dx, dy));
+        view.cx = drag.cx + dx / view.s;
+        view.cz = drag.cz + dy / view.s;
+        draw();
+      });
+      cv.addEventListener('pointerup', (e) => {
+        const d = drag;
+        drag = null;
+        if (!d || d.moved > 4 || !layout) return;
+        const r = cv.getBoundingClientRect();
+        const px = (e.clientX - r.left) * dpr,
+          py = (e.clientY - r.top) * dpr;
+        const hit = layout.hits.find((h) => Math.hypot(h.x - px, h.y - py) < h.r);
+        if (hit && hit.kind === 'photo') return this.showPhoto(hit.photo);
+        if (hit && hit.kind === 'note') {
+          g.hud && g.hud.toast(hit.note.text);
+          return;
+        }
+        pending = layout.toWorld(px, py);
+        list();
+        draw();
+      });
+      cv.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const r = cv.getBoundingClientRect();
+        const mx = e.clientX - r.left - r.width / 2,
+          my = e.clientY - r.top - r.height / 2;
+        const k = Math.exp(-e.deltaY * 0.0015);
+        const s1 = Math.min(0.6, Math.max(0.004, view.s * k));
+        // keep the point under the cursor where it is
+        view.cx += -mx / view.s + mx / s1;
+        view.cz += -my / view.s + my / s1;
+        view.s = s1;
+        draw();
+      });
+      const act = el('div', 'ui-actions', pnl);
+      this.item(act, 'Close', () => this.resume());
+      this.item(act, 'Where am I', () => {
+        const h = A.here();
+        view.cx = h.x;
+        view.cz = h.z;
+        draw();
+      });
+      el('div', 'spacer', act);
+      el('div', 'ui-loadtext', act, `Drag to move · wheel to zoom · click to mark · ${keyName(settings.data.bindings.atlas || 'KeyM')} to close`);
+      list();
+      requestAnimationFrame(draw);
+    });
+    this.show('atlas');
+  }
+
+  // A photo from the atlas, big, with when it was taken.
+  showPhoto(ph) {
+    const s = this.screens.atlas;
+    if (!s) return;
+    const old = s.querySelector('.ui-atlas-photo');
+    if (old) old.remove();
+    const box = el('div', 'ui-atlas-photo', s);
+    const im = el('img', '', box);
+    im.src = ph.thumb;
+    const h = ph.time || 12;
+    el('div', 'ui-sub', box, `Day ${ph.day}, ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')} · click to put it back`);
+    box.onclick = () => box.remove();
   }
 
   // ---------------------------------------------------------------- notes
@@ -815,9 +1048,18 @@ export class UI {
     }
     if (!g || this.mode !== 'play' || g.paused || g.player.dead) return;
     this.autosaveT += dt;
-    if (this.autosaveT > 240) {
-      this.autosaveT = 0;
-      if (writeSave(g)) g.hud && g.hud.toast('Autosaved', 'quiet');
+    // autosave every few minutes at a calm moment (standing, or the car nearly still), in the
+    // browser's idle time, so writing the save never lands in the middle of a drive
+    const calm = (g.player.seat ? Math.abs(g.car.speedKmh) < 8 : true) && !g.interaction.held;
+    if (this.autosaveT > 240 && (calm || this.autosaveT > 330) && !this.savePending) {
+      this.savePending = true;
+      const go = () => {
+        this.savePending = false;
+        this.autosaveT = 0;
+        if (writeSave(g)) g.hud && g.hud.toast('Autosaved', 'quiet');
+      };
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 4000 });
+      else setTimeout(go, 0);
     }
     if (this.current === 'sleep' && this.sleepText) {
       const h = g.env.time;
@@ -868,10 +1110,20 @@ export class UI {
       this.inventory.close();
       return;
     }
+    const atlasKey = settings.data.bindings.atlas || 'KeyM';
+    if (e.code === atlasKey && !e.repeat) {
+      if (this.current === 'atlas') this.resume();
+      else if (!this.current && !this.game.player.dead && !(this.game.photo && this.game.photo.active)) this.showAtlas();
+    }
     const journalKey = settings.data.bindings.journal;
     if (e.code === journalKey && !e.repeat) {
       if (this.current === 'journal') this.resume();
       else if (!this.current && !this.game.player.dead) this.showJournal();
+    }
+    if (e.code === 'Escape' && this.current === 'atlas') {
+      e.preventDefault();
+      this.resume();
+      return;
     }
     if (e.code === 'Escape' && this.current === 'note') {
       e.preventDefault();
@@ -900,6 +1152,11 @@ export function causeText(c) {
       crash: 'Killed in a crash',
       starvation: 'Starved',
       dehydration: 'Died of thirst',
+      hypothermia: 'Froze to death',
+      venom: 'Snake venom',
+      snake: 'Snakebite',
+      wolf: 'Wolves',
+      stalker: 'Taken in the dark',
       exhaustion: 'Exhaustion',
       bleeding: 'Bled out',
       creature: 'Taken by something in the dark',

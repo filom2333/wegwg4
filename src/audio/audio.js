@@ -3,8 +3,10 @@
 
 import * as THREE from 'three';
 import { GEN } from './synth.js';
+import { Soundscape } from './soundscape.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
+import { tunedVoice } from '../vehicle/tuning.js';
 
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
@@ -53,12 +55,25 @@ export class AudioSystem {
     this.amb = ctx.createGain();
     this.music = ctx.createGain();
     this.sfx.connect(this.master);
-    this.amb.connect(this.master);
+    // the world outside, muffled indoors and in the cabin (the soundscape moves the cutoff)
+    this.ambLP = ctx.createBiquadFilter();
+    this.ambLP.type = 'lowpass';
+    this.ambLP.frequency.value = 20000;
+    this.amb.connect(this.ambLP).connect(this.master);
     this.music.connect(this.master);
+    // a small room answering footsteps and doors when indoors
+    this.room = ctx.createConvolver();
+    this.room.buffer = roomImpulse(ctx);
+    this.roomWet = ctx.createGain();
+    this.roomWet.gain.value = 0;
+    this.sfx.connect(this.room).connect(this.roomWet).connect(this.master);
+    this.windGust = 1;
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
     await this.buildBuffers();
     this.buildLoops();
+    this.scape = new Soundscape(this);
+    await this.scape.build(() => new Promise((r) => setTimeout(r, 0)));
     this.ready = true;
   }
 
@@ -117,6 +132,7 @@ export class AudioSystem {
     B.pour = GEN.pourLoop(c, { len: 2 });
     B.bandage = GEN.crunch(c, { grains: 60, cut: 5000, len: 0.9, spread: 0.8, seed: 62 });
     B.extinguish = GEN.noise(c, 1.5, 'white', 63);
+    B.ignite = GEN.whoosh(c, { len: 0.9, f0: 160, f1: 900, seed: 90 });
     B.hurt = GEN.breath(c, { len: 0.45, seed: 64 });
     B.land = GEN.thump(c, { f: 60, decay: 0.08, click: 0.6, seed: 65, len: 0.4, noiseCut: 1500 });
     B.seat = GEN.crunch(c, { grains: 20, cut: 1500, len: 0.5, spread: 0.4, seed: 66, body: 0.4, bodyF: 70 });
@@ -267,7 +283,7 @@ export class AudioSystem {
           b.copyToChannel(d.L, 0);
           b.copyToChannel(d.R, 1);
           cd.buffers.set(k, b);
-          while (cd.buffers.size > 3) cd.buffers.delete(cd.buffers.keys().next().value);
+          while (cd.buffers.size > 2) cd.buffers.delete(cd.buffers.keys().next().value);
         };
       }
       cd.pending.set(key, true);
@@ -412,12 +428,13 @@ export class AudioSystem {
     const env = g.env;
     const player = g.player;
     const car = g.car;
-    const seated = !!player.seat;
+    // a tent muffles the outside like a cabin does, and the rain drums on the canvas
+    const seated = !!player.seat || !!(player.lying && player.lying.kind === 'tent');
     this.inCabin = lerp(this.inCabin, seated ? 1 : 0, Math.min(1, dt * 5));
     // ---- wind / rain ambience
     const carSpeed = car ? Math.abs(car.dyn.forwardSpeed) : 0;
     const wind = env.w.wind;
-    const windGain = 0.05 + wind * 0.25 + (seated ? 0 : 0) + env.w.dust * 0.3;
+    const windGain = (0.05 + wind * 0.25 + env.w.dust * 0.3) * this.windGust;
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
     set(this.loops.wind.f.frequency, 300 + wind * 500 + drive * 600, now);
@@ -430,7 +447,8 @@ export class AudioSystem {
     if (car) {
       const p = car.root.position;
       // the voice is the engine's: a swapped engine sounds like the car it came from
-      const ET = car.engineType || car.type;
+      // (with its tunes: a sport muffler rasps, twin carbs roar on the intake)
+      const ET = tunedVoice(car, car.engineType || car.type);
       if (ET !== this.carType) this.setCarType(ET);
       const S = ET.sound;
       const ep = V3.copy(car.type.POINTS.engine).applyMatrix4(car.root.matrixWorld);
@@ -457,18 +475,21 @@ export class AudioSystem {
       // tyres
       let roll = 0,
         skid = 0,
-        rough2 = 0;
+        rough2 = 0,
+        knobs = 0;
       for (const w of d.wheels) {
         if (!w.contact) continue;
         roll += Math.min(1, Math.abs(w.vLong) / 25);
+        if (w.tread) knobs += 0.25;
         skid = Math.max(skid, w.skid);
         const s = d.surfaces(w.surface);
         rough2 += s.noise;
       }
       roll /= 4;
       rough2 /= 4;
-      set(this.loops.tyre.g.gain, roll * (0.25 + rough2 * 0.6), now);
-      set(this.loops.tyre.f.frequency, 200 + rough2 * 1500 + roll * 400, now);
+      // knobbly mud tyres hum on hard ground
+      set(this.loops.tyre.g.gain, roll * (0.25 + rough2 * 0.6 + knobs * 0.35), now);
+      set(this.loops.tyre.f.frequency, 200 + rough2 * 1500 + roll * (400 + knobs * 500), now);
       set(this.loops.skid.g.gain, skid * 0.35, now, 0.03);
       // horn
       if (car.horn && !this._horn) {
@@ -493,19 +514,8 @@ export class AudioSystem {
       this.timers.radio -= dt;
       if (this.timers.radio <= 0) this.radioNote();
     }
-    // ---- ambience scheduler
-    this.timers.amb -= dt;
-    if (this.timers.amb <= 0) {
-      this.timers.amb = 0.3 + Math.random() * 2.5;
-      const night = env.isNight;
-      const pos = cam.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 60, 0, (Math.random() - 0.5) * 60));
-      if (night && rain < 0.2) {
-        // crickets in bursts
-        const n = 3 + Math.floor(Math.random() * 5);
-        for (let i = 0; i < n; i++) setTimeout(() => this.play('chirp', { at: pos, volume: 0.12, bus: 'amb', ref: 8 }), i * 90);
-        if (Math.random() < 0.03) this.play('howl', { at: cam.position.clone().add(new THREE.Vector3(200 * (Math.random() - 0.5), 0, 200 * (Math.random() - 0.5))), volume: 0.5, bus: 'amb', ref: 60 });
-      } else if (!night && Math.random() < 0.25 && rain < 0.2) this.play('bird', { at: pos, volume: 0.15, bus: 'amb', ref: 10 });
-    }
+    // ---- the land's sound (ambience layers, creatures, small touches)
+    if (this.scape) this.scape.update(dt);
   }
 
   // ---------------------------------------------------------------- title theme
@@ -683,6 +693,21 @@ export class AudioSystem {
   }
 }
 
+// A short warm room: stereo noise dying away over half a second.
+function roomImpulse(ctx) {
+  const n = Math.floor(ctx.sampleRate * 0.55);
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      lp += (Math.random() * 2 - 1 - lp) * 0.35;
+      d[i] = lp * Math.exp((-i / n) * 6) * (i < 60 ? i / 60 : 1);
+    }
+  }
+  return buf;
+}
+
 const V3 = new THREE.Vector3();
 const V3b = new THREE.Vector3();
 
@@ -728,6 +753,27 @@ const VOL = {
   land: 0.5,
   seat: 0.45,
   thunder: 1.0,
+  // the soundscape passes its own levels
+  song: 1,
+  meadowlark: 1,
+  woodpecker: 1,
+  owl: 1,
+  caw: 1,
+  hawk: 1,
+  yips: 1,
+  chime: 1,
+  signCreak: 1,
+  floorCreak: 1,
+  keys: 1,
+  tick: 1,
+  ping: 1,
+  clunk: 1,
+  squeak: 1,
+  swish: 1,
+  heartbeat: 1,
+  stomach: 1,
+  chatter: 1,
+  pant: 1,
   chirp: 0.5,
   howl: 0.6,
   growl: 0.8,

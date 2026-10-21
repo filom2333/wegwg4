@@ -4,11 +4,14 @@
 // contact points every fixed step (with sub-stepped wheel spin integration).
 
 import * as THREE from 'three';
+import { OFFROAD } from '../vehicle/tuning.js';
 import { RAPIER, GROUPS } from './physics.js';
 
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
+// scratch vectors for step() (nothing keeps them past the step)
+const S = { pos: new THREE.Vector3(), linvel: new THREE.Vector3(), angvel: new THREE.Vector3(), up: new THREE.Vector3(), fwd: new THREE.Vector3(), right: new THREE.Vector3(), com: new THREE.Vector3(), rp: new THREE.Vector3(), vel: new THREE.Vector3(), cr: new THREE.Vector3(), rayDir: new THREE.Vector3(), ray: null };
 
 // Simplified Pacejka "magic formula" (normalised to peak = 1).
 function magic(x, B, C, E) {
@@ -31,6 +34,8 @@ export const SURFACES = {
   snow: { mu: 0.42, roll: 0.07, wetMu: 0.4, noise: 0.3, dust: 0.0, snow: 1.0, trip: 0.9 },
   ice: { mu: 0.14, roll: 0.008, wetMu: 0.1, noise: 0.1, dust: 0.0 },
 };
+
+const NO_TREAD = [1, 1];
 
 // Engine torque curve (N·m at full throttle) for a 1.6 l 16V.
 const TORQUE_CURVE = [
@@ -125,6 +130,7 @@ export class VehicleDynamics {
       drive: !!h.drive,
       installed: true,
       tyreCondition: 1,
+      tread: null,
       flat: false,
       compression: 0,
       prevCompression: 0,
@@ -240,15 +246,15 @@ export class VehicleDynamics {
     const t = body.translation();
     const r = body.rotation();
     const q = tmpQ.set(r.x, r.y, r.z, r.w);
-    const pos = new THREE.Vector3(t.x, t.y, t.z);
+    const pos = S.pos.set(t.x, t.y, t.z);
     const lv = body.linvel();
     const av = body.angvel();
-    const linvel = new THREE.Vector3(lv.x, lv.y, lv.z);
-    const angvel = new THREE.Vector3(av.x, av.y, av.z);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-    const right = new THREE.Vector3(-1, 0, 0).applyQuaternion(q); // car +X is left
-    const comWorld = this.com.clone().applyQuaternion(q).add(pos);
+    const linvel = S.linvel.set(lv.x, lv.y, lv.z);
+    const angvel = S.angvel.set(av.x, av.y, av.z);
+    const up = S.up.set(0, 1, 0).applyQuaternion(q);
+    const fwd = S.fwd.set(0, 0, 1).applyQuaternion(q);
+    const right = S.right.set(-1, 0, 0).applyQuaternion(q); // car +X is left
+    const comWorld = S.com.copy(this.com).applyQuaternion(q).add(pos);
     this.forwardSpeed = linvel.dot(fwd);
     this.speed = linvel.length();
     const speedKmh = Math.abs(this.forwardSpeed) * 3.6;
@@ -278,8 +284,11 @@ export class VehicleDynamics {
     }
 
     // ---- suspension raycasts ----
-    const rayDir = up.clone().negate();
-    const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: rayDir.x, y: rayDir.y, z: rayDir.z });
+    const rayDir = S.rayDir.copy(up).negate();
+    const ray = S.ray || (S.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }));
+    ray.dir.x = rayDir.x;
+    ray.dir.y = rayDir.y;
+    ray.dir.z = rayDir.z;
     const maxLen = p.restLength + p.wheelRadius;
     for (const w of this.wheels) {
       w.prevCompression = w.compression;
@@ -288,8 +297,7 @@ export class VehicleDynamics {
         w.compression = 0;
         continue;
       }
-      const top = new THREE.Vector3(w.local.x, this.topY, w.local.z).applyQuaternion(q).add(pos);
-      w.top = top;
+      const top = (w.top || (w.top = new THREE.Vector3())).set(w.local.x, this.topY, w.local.z).applyQuaternion(q).add(pos);
       ray.origin.x = top.x;
       ray.origin.y = top.y;
       ray.origin.z = top.z;
@@ -358,9 +366,9 @@ export class VehicleDynamics {
       const n = w.contactNormal;
       const wf = fwd.clone().applyAxisAngle(up, w.steerAngle);
       w.f = wf.addScaledVector(n, -wf.dot(n)).normalize();
-      w.s = new THREE.Vector3().crossVectors(n, w.f).normalize(); // points to car +X side (left)
-      const rp = w.contactPoint.clone().sub(comWorld);
-      const vel = linvel.clone().add(new THREE.Vector3().crossVectors(angvel, rp));
+      w.s = (w.s || new THREE.Vector3()).crossVectors(n, w.f).normalize(); // points to car +X side (left)
+      const rp = S.rp.copy(w.contactPoint).sub(comWorld);
+      const vel = S.vel.copy(linvel).add(S.cr.crossVectors(angvel, rp));
       w.vLong = vel.dot(w.f);
       w.vLat = vel.dot(w.s);
     }
@@ -428,7 +436,9 @@ export class VehicleDynamics {
           Fy = 0;
         if (w.contact && w.load > 0) {
           const surf = this.surfaces(w.surface);
-          const mu = surf.mu * mu0 * (1 - this.wet * (1 - surf.wetMu / surf.mu)) * (w.flat ? 0.55 : 1) * (0.75 + 0.25 * w.tyreCondition);
+          // off-road tread bites in loose ground and gives a little on tarmac
+          const tread = w.tread ? OFFROAD[w.surface] || NO_TREAD : NO_TREAD;
+          const mu = surf.mu * mu0 * tread[0] * (1 - this.wet * (1 - surf.wetMu / surf.mu)) * (w.flat ? 0.55 : 1) * (0.75 + 0.25 * w.tyreCondition);
           const Fz = w.load;
           const loadSens = 1 - 0.08 * (Fz / 3000 - 1);
           const D = mu * Fz * loadSens;
@@ -452,7 +462,7 @@ export class VehicleDynamics {
           const trip = Math.max(surf.trip || 0, w.flat ? 0.8 : 0);
           if (trip && Math.abs(alpha) > 0.35) Fy *= 1 + trip * Math.min(1.8, Math.max(0, (Math.abs(w.vLat) - 2.5) / 6.5));
           // rolling resistance
-          Fx -= Math.sign(w.vLong) * Math.min(Math.abs(w.vLong) * 2, 1) * surf.roll * Fz;
+          Fx -= Math.sign(w.vLong) * Math.min(Math.abs(w.vLong) * 2, 1) * surf.roll * tread[1] * Fz;
           w.skid = Math.max(0, Math.min(1, (sl - 1.2) / 2.5)) * Math.min(1, Math.hypot(w.vLong, w.vLat) / 3);
           // local longitudinal stiffness dFx/domega for the semi-implicit spin update
           w.kLong = D * tyre.longB * tyre.longC * (p.wheelRadius / vRef) * Math.max(0.05, 1 - Math.min(1, Math.abs(sx)));

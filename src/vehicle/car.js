@@ -8,10 +8,12 @@ import { RAPIER, GROUPS } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
+import { applyTune, refreshTuneVisual, tunedLabel, isSport } from './tuning.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
 import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
 import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
+import { addGlassRain } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -23,9 +25,10 @@ export class Car {
     this.model = model;
     this.root = model.root;
     game.worldGroup.add(this.root);
+    if (model.mats) addGlassRain(model.mats.glass);
     this.parts = {};
     for (const id of Object.keys(model.parts)) {
-      this.parts[id] = { installed: true, condition: 1, item: null };
+      this.parts[id] = { installed: true, condition: 1, item: null, tune: null };
     }
     // systems
     this.fuel = opts.fuel ?? 22; // litres
@@ -124,6 +127,9 @@ export class Car {
     const lid = this.lidBlocking(id);
     if (lid) return { ok: false, reason: lid };
     if (this.game.player && this.game.player.seat) return { ok: false, reason: 'Get out of the car first' };
+    // a wheel standing on the ground carries the car: jack that corner up first
+    const w = this.dyn.wheels.find((x) => x.id === id);
+    if (w && w.contact && w.load > 900 && this.dyn.body.isEnabled()) return { ok: false, reason: 'It carries the car: jack this corner up first' };
     return { ok: true };
   }
 
@@ -143,8 +149,19 @@ export class Car {
     if (id === 'engine') this.dyn.engineInstalled = on;
     if (id === 'steeringWheel') this.dyn.steeringInstalled = on;
     if ((id === 'engine' || id === 'battery' || id === 'fueltank') && !on) this.setIgnition(false);
+    // a tune leaves with its part (the remover copies it onto the item first)
+    if (!on) this.parts[id].tune = null;
+    if (this.parts[id].tune || id === 'engine' || id === 'exhaust' || w) {
+      refreshTuneVisual(this, id);
+      applyTune(this);
+    }
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  // Label of a part on this car, with its tune.
+  partLabel(id) {
+    return tunedLabel(this.type, id, this.parts[id] && this.parts[id].tune);
   }
 
   dropPlate(p) {
@@ -382,23 +399,21 @@ export class Car {
   // ---------------------------------------------------------------- lights
   setupLights() {
     const M = this.model.mats;
-    // one spot between the round headlamps does the beam; a wide dim fill lights the verge
-    const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
+    // a beam from each headlamp (each with its own shadows, so posts and bodies throw two soft
+    // shadows like real lamps), and a wide dim fill out in front lighting the verge
     const L = this.type.lights;
-    head.position.set(...L.head);
-    head.target.position.set(0, 0.0, 14);
-    head.castShadow = true;
-    head.shadow.mapSize.set(1024, 1024);
-    head.shadow.camera.near = 0.3;
-    head.shadow.camera.far = 60;
-    head.shadow.bias = -0.0008;
-    head.shadow.normalBias = 0.03;
-    // the beam's shadow map only needs redrawing while the car moves
-    head.shadow.autoUpdate = true;
-    this.root.add(head, head.target);
-    this.headLight = head;
+    this.headLights = [1, -1].map((sg) => {
+      const head = new THREE.SpotLight(0xfff1dc, 0, 70, 0.6, 0.55, 1.3);
+      head.position.set(L.headX * sg, L.head[1], L.head[2] + 0.06);
+      head.target.position.set(L.headX * sg * 0.6, 0.0, 14);
+      this.root.add(head, head.target);
+      // the real (shadow casting) lights come from the game's light pool
+      this.game.lights.add(head, { shadow: true });
+      return head;
+    });
+    this.headLight = this.headLights[0];
     const fill = new THREE.SpotLight(0xffe9d0, 0, 26, 1.15, 0.9, 1.6);
-    fill.position.set(L.head[0], L.head[1], L.head[2] + 0.08);
+    fill.position.set(L.head[0], L.head[1] + 0.15, L.head[2] + 0.45);
     fill.target.position.set(0, 0, 8);
     this.root.add(fill, fill.target);
     this.headFill = fill;
@@ -415,6 +430,7 @@ export class Car {
     cabin.position.copy(this.type.POINTS.dome).add(V(0, -0.08, 0));
     this.root.add(cabin);
     this.cabinLamp = cabin;
+    for (const l of [fill, tail, reverse, cabin]) this.game.lights.add(l);
     this.emissive = {
       head: M.headLens,
       tail: M.tailLens,
@@ -435,16 +451,17 @@ export class Car {
     const hcount = (leftH ? 1 : 0) + (rightH ? 1 : 0);
     // 6-volt-era lamps: a little dimmer and yellower at idle with a weak battery
     const dim = clamp(this.battery * 3, 0.2, 1) * (this.dyn.engine.running ? 1 : 0.8);
-    this.headLight.intensity = on ? (hiBeam ? 230 : 135) * (hcount / 2) * dim : 0;
-    this.headLight.distance = hiBeam ? 110 : 65;
-    this.headLight.angle = hiBeam ? 0.5 : 0.6;
-    this.headLight.target.position.y = hiBeam ? 0.6 : 0.0;
-    const hx = this.type.lights.headX;
-    this.headLight.position.x = leftH && !rightH ? hx : rightH && !leftH ? -hx : 0;
-    this.headLight.castShadow = on;
+    // +X is the car's left: lamp 0 is the left one
+    for (const [i, lamp] of this.headLights.entries()) {
+      const lit = on && (i === 0 ? leftH : rightH);
+      lamp.intensity = lit ? (hiBeam ? 120 : 72) * dim : 0;
+      lamp.distance = hiBeam ? 110 : 65;
+      lamp.angle = hiBeam ? 0.5 : 0.6;
+      lamp.target.position.y = hiBeam ? 0.6 : 0.0;
+    }
     this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
-    e.head.emissiveIntensity = on ? (hiBeam ? 3.2 : 2.2) * dim : 0;
+    e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
     // tail lamps and brake lights share the bulb housings
     e.tail.emissiveIntensity = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
     this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : 0) : 0;
@@ -511,8 +528,10 @@ export class Car {
     const d = this.dyn;
     // hinge animation
     let collidersDirty = false;
-    for (const [id, p] of Object.entries(this.model.parts)) {
-      if (!p.hinge || p.targetOpen === undefined) continue;
+    if (!this.hingedIds) this.hingedIds = Object.keys(this.model.parts).filter((id) => this.model.parts[id].hinge);
+    for (const id of this.hingedIds) {
+      const p = this.model.parts[id];
+      if (!p || !p.hinge || p.targetOpen === undefined) continue;
       const before = p.openT;
       const speed = id.startsWith('door') ? 2.6 : 1.6;
       const t = p.openT + Math.sign(p.targetOpen - p.openT) * Math.min(Math.abs(p.targetOpen - p.openT), dt * speed);
@@ -587,7 +606,7 @@ export class Car {
     const powerKw = running ? Math.max(0, (d.engine.torqueOut * rpm * 2 * Math.PI) / 60 / 1000) : 0;
     const diff = this.game.difficulty || { consumption: 1, wear: 1 };
     if (running) {
-      const lph = 0.75 + powerKw * 0.36;
+      const lph = (0.75 + powerKw * 0.36) * (this.fuelFactor || 1);
       const burn = Math.min(this.fuel, (lph / 3600) * dt * diff.consumption);
       this.fuel -= burn;
       if (this.game.stats) this.game.stats.fuelUsed += burn;
@@ -631,6 +650,25 @@ export class Car {
       this.engineCondition = Math.max(0, this.engineCondition - wear * dt);
       // the generator charges the battery while the belt turns it
       if (this.isInstalled('battery') && belt > 0.02) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
+      // a sport box pops and crackles on the overrun: lift off high in the revs
+      if (isSport(this)) {
+        const thr = d.controls.throttle;
+        if ((this.lastThrottle ?? 0) > 0.55 && thr < 0.1 && rpm > 3200) {
+          this.pops = 1 + Math.floor(Math.random() * 3);
+          this.liftT = 0;
+        }
+        this.lastThrottle = thr;
+        this.liftT = thr < 0.1 ? (this.liftT ?? 9) + dt : 9;
+        if (this.liftT < 2.5 && rpm > 2600 && Math.random() < dt * 3) this.pops = Math.max(this.pops || 0, 1);
+        this.popT = (this.popT || 0) - dt;
+        if (this.pops > 0 && this.popT <= 0) {
+          this.pops--;
+          this.popT = 0.06 + Math.random() * 0.16;
+          const big = Math.random() < 0.3;
+          this.game.effects && this.game.effects.backfire(this, big ? 1 : 0.35);
+          this.game.audio && this.game.audio.play('backfire', { at: this.worldPointOf(this.type.POINTS.exhaust), volume: big ? 0.65 : 0.28, rate: big ? 1.1 : 1.5 + Math.random() * 0.4 });
+        }
+      }
       // misfires / backfires at low condition
       if (this.engineCondition < 0.35 && Math.random() < dt * (0.35 - this.engineCondition) * 3) {
         this.game.effects && this.game.effects.backfire(this);
@@ -724,12 +762,17 @@ export class Car {
   }
 
   // Copy physics state to the visual model.
-  syncVisual() {
+  // Puts the model where the body is; `smooth`: between the last two physics steps (per frame).
+  syncVisual(smooth = false) {
     const b = this.dyn.body;
-    const t = b.translation(),
-      r = b.rotation();
-    this.root.position.set(t.x, t.y, t.z);
-    this.root.quaternion.set(r.x, r.y, r.z, r.w);
+    if (!this.smooth) this.smooth = this.game.physics.track(b);
+    if (smooth) this.game.physics.pose(this.smooth, this.root.position, this.root.quaternion);
+    else {
+      const t = b.translation(),
+        r = b.rotation();
+      this.root.position.set(t.x, t.y, t.z);
+      this.root.quaternion.set(r.x, r.y, r.z, r.w);
+    }
     this.root.updateMatrixWorld(true);
     const mw = this.model.wheels;
     for (const w of this.dyn.wheels) {
@@ -791,6 +834,8 @@ export class Car {
   }
 
   dispose() {
+    this.game.physics.untrack(this.smooth);
+    for (const l of [...this.headLights, this.headFill, this.tailLight, this.reverseLight, this.cabinLamp]) this.game.lights.remove(l);
     this.dyn.dispose();
     this.root.parent && this.root.parent.remove(this.root);
   }

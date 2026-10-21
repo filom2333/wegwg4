@@ -356,7 +356,7 @@ export function defineRabbit(seed = 3) {
 }
 
 // ------------------------------------------------------------------ coyote
-export function defineCoyote(seed = 5) {
+export function defineCoyote(seed = 5, { fur: furBase = [0.6, 0.46, 0.3], light: lightCol = [0.82, 0.77, 0.68], eye = [0.62, 0.45, 0.14], earLen = 0.13 } = {}) {
   const r = mulberry32(seed);
   const m = new SDFModel();
   const sk = skeleton([
@@ -381,10 +381,10 @@ export function defineCoyote(seed = 5) {
   ]);
   const J = sk.world;
   const P = (n) => J[n].clone();
-  const fur = [0.6, 0.46, 0.3].map((c) => c * (0.9 + r() * 0.2));
+  const fur = furBase.map((c) => c * (0.9 + r() * 0.2));
   m.material('fur', fur, 1, 0.2);
   m.material('dark', fur.map((c) => c * 0.62), 1, 0.2);
-  m.material('light', [0.82, 0.77, 0.68], 1, 0.1);
+  m.material('light', lightCol, 1, 0.1);
   m.material('eye', [0.12, 0.08, 0.03], 0.15, 0);
   m.material('nose', [0.06, 0.05, 0.05], 0.4, 0);
   m.ell(P('chest').add(V(0, -0.02, 0)), V(0.12, 0.15, 0.17), 'chest', 'fur', { blend: 0.06 });
@@ -401,8 +401,8 @@ export function defineCoyote(seed = 5) {
   m.cone(P('jaw').add(V(0, -0.015, 0.0)), P('jaw').add(V(0, -0.035, 0.09)), 0.025, 0.012, 'jaw', 'light', { blend: 0.02 });
   for (const s of [-1, 1]) {
     m.ell(hc.clone().add(V(0.033 * s, 0.022, 0.056)), V(0.013, 0.009, 0.008), 'head', 'dark', { sub: true, blend: 0.006 });
-    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.033 * s, 0.022, 0.05)).toArray(), r: 0.0085, color: [0.62, 0.45, 0.14], look: [0, 0.35 * s] });
-    m.cone(hc.clone().add(V(0.04 * s, 0.04, -0.01)), hc.clone().add(V(0.05 * s, 0.13, -0.02)), 0.028, 0.004, 'head', 'fur', { blend: 0.015 });
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.033 * s, 0.022, 0.05)).toArray(), r: 0.0085, color: eye, look: [0, 0.35 * s] });
+    m.cone(hc.clone().add(V(0.04 * s, 0.04, -0.01)), hc.clone().add(V(0.05 * s, 0.04 + earLen, -0.02)), 0.028, 0.004, 'head', 'fur', { blend: 0.015 });
   }
   for (const leg of ['FL', 'FR', 'HL', 'HR']) {
     const front = leg[0] === 'F';
@@ -426,10 +426,108 @@ export function defineCoyote(seed = 5) {
   };
 }
 
+// ------------------------------------------------------------------ wolf
+// A grey timber wolf: the coyote's frame (scaled up by its type) with a heavier, paler coat,
+// short ears and amber eyes.
+export function defineWolf(seed = 21) {
+  return defineCoyote(seed, { fur: [0.46, 0.44, 0.41], light: [0.8, 0.79, 0.76], eye: [0.85, 0.6, 0.18], earLen: 0.1 });
+}
+
+// ------------------------------------------------------------------ the tall one
+// A gaunt figure well over two metres: long thin limbs, a narrow head without a face but for two
+// pale points of eyes, skin like wet ash. It stands still when you look at it.
+export function defineStalker(seed = 31) {
+  const m = new SDFModel();
+  const H = 1.42;
+  const sk = skeleton(humanJoints(H, { hunch: 0.12, armLen: 1.55, legLen: 1.2 }));
+  const J = sk.world;
+  const P = (n) => J[n].clone();
+  m.material('ash', [0.075, 0.07, 0.07], 0.55, 0.12);
+  m.material('dark', [0.03, 0.028, 0.028], 0.6, 0.05);
+  const hc = P('head').add(V(0, 0.07, 0.02));
+  m.ell(hc, V(0.07, 0.13, 0.085), 'head', 'ash', { blend: 0.02 });
+  for (const sgn of [-1, 1]) {
+    m.ell(hc.clone().add(V(0.028 * sgn, 0.02, 0.07)), V(0.016, 0.012, 0.012), 'head', 'dark', { sub: true, blend: 0.01 });
+    m.attach({ type: 'eye', bone: 'head', pos: hc.clone().add(V(0.028 * sgn, 0.02, 0.066)).toArray(), r: 0.006, color: [0.92, 0.94, 1.0], glow: 3.5 });
+  }
+  m.cone(P('neck'), P('head'), 0.03, 0.028, 'neck', 'ash', { blend: 0.03 });
+  m.ell(P('chest').add(V(0, -0.02, 0)), V(0.12, 0.2, 0.075), 'chest', 'ash', { blend: 0.05 });
+  m.cone(P('spine'), P('hips'), 0.055, 0.07, 'spine', 'ash', { blend: 0.05 });
+  m.ell(P('hips'), V(0.1, 0.08, 0.07), 'hips', 'ash', { blend: 0.04 });
+  m.cone(P('upperArmL').add(V(-0.03, 0, 0)), P('upperArmR').add(V(0.03, 0, 0)), 0.04, 0.04, 'chest', 'ash', { blend: 0.04 });
+  for (const sd of ['L', 'R']) {
+    m.cone(P('upperArm' + sd), P('foreArm' + sd), 0.032, 0.024, 'upperArm' + sd, 'ash', { blend: 0.02 });
+    m.cone(P('foreArm' + sd), P('hand' + sd), 0.024, 0.017, 'foreArm' + sd, 'ash', { blend: 0.015 });
+    const hp = P('hand' + sd);
+    for (let f = 0; f < 4; f++) m.cone(hp.clone().add(V(0, -0.02, -0.02 + f * 0.013)), hp.clone().add(V(0, -0.2, -0.015 + f * 0.016)), 0.006, 0.0025, 'hand' + sd, 'ash', { blend: 0.008 });
+    m.cone(P('thigh' + sd), P('shin' + sd), 0.05, 0.032, 'thigh' + sd, 'ash', { blend: 0.03 });
+    m.cone(P('shin' + sd), P('foot' + sd), 0.032, 0.022, 'shin' + sd, 'ash', { blend: 0.02 });
+    m.cone(P('foot' + sd), P('foot' + sd).add(V(0, -0.06, 0.15)), 0.025, 0.014, 'foot' + sd, 'ash', { blend: 0.02 });
+  }
+  const hb = humanHitboxes().map((h) => ({ ...h, r: h.r * 0.8 }));
+  return { ...finish(m, sk, 0.0105), height: 2.55, kind: 'human', hitboxes: hb };
+}
+
+// ------------------------------------------------------------------ rattlesnake
+// Coiled on itself with the head raised in an S over the coils and the rattle up at the back.
+// The spine is a chain of bones along the coil, so the neck can sway and strike and the tail can
+// buzz.
+export function defineSnake(seed = 41) {
+  const r = mulberry32(seed);
+  const m = new SDFModel();
+  const defs = [['root', null, [0, 0.02, 0]]];
+  const pts = [];
+  // the coil: from the tail in the middle outward and around, then up into the neck
+  const turns = 2.1,
+    n = 16;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const a = t * turns * Math.PI * 2;
+    const rad = 0.05 + t * 0.12;
+    pts.push(V(Math.cos(a) * rad, 0.03 + (1 - t) * 0.05, Math.sin(a) * rad));
+  }
+  const end = pts[n - 1];
+  pts.push(end.clone().lerp(V(0, 0.1, 0.06), 0.4).setY(0.1));
+  pts.push(V(0.02, 0.17, 0.05));
+  pts.push(V(0.0, 0.2, 0.12));
+  for (let i = 0; i < pts.length; i++) defs.push(['s' + i, i === 0 ? 'root' : 's' + (i - 1), pts[i].toArray()]);
+  const head = pts[pts.length - 1].clone().add(V(0, 0.005, 0.045));
+  defs.push(['head', 's' + (pts.length - 1), head.toArray()]);
+  defs.push(['rattle', 'root', pts[0].clone().add(V(0, 0.07, 0)).toArray()]);
+  const sk = skeleton(defs);
+  const base = [0.55, 0.47, 0.34].map((c) => c * (0.9 + r() * 0.2));
+  m.material('scale', base, 0.55, 0.15);
+  m.material('band', base.map((c) => c * 0.45), 0.55, 0.15);
+  m.material('belly', [0.78, 0.72, 0.58], 0.5, 0.08);
+  m.material('rattle', [0.66, 0.6, 0.48], 0.5, 0.2);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const t = i / (pts.length - 1);
+    const r0 = 0.012 + Math.sin(Math.min(1, t * 1.2) * Math.PI * 0.85) * 0.022;
+    const r1 = 0.012 + Math.sin(Math.min(1, (t + 1 / pts.length) * 1.2) * Math.PI * 0.85) * 0.022;
+    m.cone(pts[i], pts[i + 1], r0, r1, 's' + i, i % 3 === 1 ? 'band' : 'scale', { blend: 0.012 });
+  }
+  // flat diamond head
+  m.ell(head, V(0.028, 0.014, 0.036), 'head', 'scale', { blend: 0.012 });
+  m.ell(head.clone().add(V(0, -0.006, 0.005)), V(0.022, 0.006, 0.03), 'head', 'belly', { blend: 0.006, layer: 1 });
+  for (const sgn of [-1, 1]) m.attach({ type: 'eye', bone: 'head', pos: head.clone().add(V(0.019 * sgn, 0.006, 0.012)).toArray(), r: 0.0045, color: [0.55, 0.42, 0.12], look: [0, 0.9 * sgn] });
+  // the rattle: stacked buttons
+  const rp = pts[0].clone();
+  for (let k = 0; k < 5; k++) m.ell(rp.clone().add(V(0, 0.02 + k * 0.013, 0)), V(0.011 - k * 0.001, 0.008, 0.009 - k * 0.0008), 'rattle', 'rattle', { blend: 0.004 });
+  return {
+    ...finish(m, sk, 0.0038),
+    height: 0.22,
+    kind: 'snake',
+    hitboxes: [
+      { bone: 'root', zone: 'torso', r: 0.13, a: [0, 0.02, 0], b: [0, 0.06, 0] },
+      { bone: 'head', zone: 'head', r: 0.04, a: [0, 0, 0], b: [0, 0, 0.03] },
+    ],
+  };
+}
+
 // The player's own body (third-person view, future co-op): upright, no pack, work jacket.
 export function defineSurvivor(seed = 11) {
   return defineVagrant(seed, { pack: false, hunch: 0.02, coat: [0.27, 0.3, 0.22] });
 }
 
-export const DEFINE = { vagrant: defineVagrant, creature: defineCreature, rabbit: defineRabbit, coyote: defineCoyote, survivor: defineSurvivor };
+export const DEFINE = { vagrant: defineVagrant, creature: defineCreature, rabbit: defineRabbit, coyote: defineCoyote, survivor: defineSurvivor, wolf: defineWolf, stalker: defineStalker, snake: defineSnake };
 export const CHARACTER_BUILDERS = Object.fromEntries(Object.keys(DEFINE).map((k) => [k, (seed) => buildCharacter(k, seed)]));

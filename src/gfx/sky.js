@@ -26,6 +26,10 @@ uniform float uStars;
 uniform vec3 uDustColor;
 uniform float uOvercast;
 uniform float uFlash;
+uniform float uWall;
+uniform float uWallUp;
+uniform vec3 uWallDir;
+uniform float uMist;
 
 // Hash / noise
 float hash(vec3 p){ p = fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
@@ -134,7 +138,22 @@ void main() {
   vec3 grey = mix(vec3(0.03, 0.035, 0.045), vec3(0.55, 0.57, 0.6), smoothstep(-0.1, 0.3, sun.y));
   col = mix(col, grey * (0.85 + 0.15 * dir.y), uOvercast * 0.85);
   vec3 dustC = uDustColor * mix(0.06, 1.0, smoothstep(-0.1, 0.3, sun.y));
-  col = mix(col, dustC, uDust * (0.55 + 0.45 * (1.0 - max(dir.y, 0.0))));
+  col = mix(col, dustC, uDust * (0.72 + 0.28 * (1.0 - max(dir.y, 0.0))));
+  // a sandstorm rolling in: a billowing brown wall across one side of the horizon, climbing as
+  // it comes, its top catching the sun
+  if (uWall > 0.0) {
+    vec2 hz = normalize(dir.xz + 1e-5);
+    float side = smoothstep(-0.3, 0.5, dot(hz, normalize(uWallDir.xz)));
+    float az = atan(hz.y, hz.x);
+    float billow = fbm(vec3(az * 3.0, uTime * 0.05, 3.1)) - 0.5;
+    float top = uWallUp * (0.75 + 0.5 * side) + billow * (0.04 + uWallUp * 0.25);
+    float inWall = smoothstep(top + 0.02, top - 0.03, dir.y) * side;
+    vec3 wallLit = mix(uDustColor * 0.35, uDustColor * 1.05, smoothstep(top - 0.25, top, dir.y)) * mix(0.08, 1.0, smoothstep(-0.1, 0.3, sun.y));
+    col = mix(col, wallLit, inWall * uWall);
+  }
+  // inside a mist the sky goes milky toward the horizon
+  vec3 mistC = mix(vec3(0.05, 0.055, 0.07), vec3(0.8, 0.82, 0.85), smoothstep(-0.1, 0.25, sun.y));
+  col = mix(col, mistC, uMist * 0.85 * (1.0 - smoothstep(0.0, 0.6, dir.y) * 0.65));
   col += vec3(0.6, 0.65, 0.8) * uFlash;
   gl_FragColor = vec4(col, 1.0);
 }
@@ -154,6 +173,10 @@ export class Sky {
       uDustColor: { value: new THREE.Color(0.78, 0.62, 0.45) },
       uOvercast: { value: 0 },
       uFlash: { value: 0 },
+      uWall: { value: 0 },
+      uWallUp: { value: 0.02 },
+      uWallDir: { value: new THREE.Vector3(1, 0, 0) },
+      uMist: { value: 0 },
     };
     const mat = new THREE.ShaderMaterial({
       vertexShader: skyVert,

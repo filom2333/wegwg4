@@ -28,6 +28,9 @@ const TYPES = {
   coyote: { name: 'Coyote', hp: 40, walk: 1.3, run: 9.5, turn: 7, reach: 1.1, deathLift: 0.11, seeds: [5], radius: 0.3 },
   rabbit: { name: 'Jackrabbit', hp: 8, walk: 1.2, run: 9, turn: 9, reach: 0.3, deathLift: 0.06, seeds: [3, 4], radius: 0.12 },
   survivor: { name: 'You', hp: 100, walk: 3.1, run: 5.8, turn: 12, reach: 1, deathLift: 0.15, seeds: [11], radius: 0.3, avatar: true },
+  wolf: { name: 'Wolf', hp: 75, walk: 1.5, run: 11, turn: 7, reach: 1.3, deathLift: 0.14, seeds: [21, 22], radius: 0.38, scale: 1.32 },
+  stalker: { name: 'The tall one', hp: 400, walk: 0, run: 0, turn: 3, reach: 2.2, deathLift: 0.15, seeds: [31], radius: 0.3 },
+  snake: { name: 'Rattlesnake', hp: 12, walk: 0, run: 0, turn: 5, reach: 1.25, deathLift: 0.02, seeds: [41, 42], radius: 0.18 },
 };
 
 const VAGRANT_LOOT = [
@@ -71,6 +74,7 @@ export class NPC {
     this.proto = proto;
     const inst = assembleCharacter(proto.geo, proto.defs, proto.attachments);
     this.mesh = inst.mesh;
+    this.mesh.scale.setScalar(this.T.scale || 1);
     this.bones = inst.bones;
     this.root = new THREE.Group();
     this.root.add(this.mesh);
@@ -104,7 +108,7 @@ export class NPC {
       const n = 1 + Math.floor(this.rnd() * 3);
       for (let i = 0; i < n; i++) this.loot.push(pick(VAGRANT_LOOT, this.rnd));
     }
-    if (type === 'rabbit') this.loot.push('meat');
+    if (type === 'rabbit' || type === 'wolf') this.loot.push('meat');
     // animation state
     this.anim = { phase: this.rnd() * 6, crouch: 0, attack: -1, attackKind: 0, flinch: V(), death: -1, deathDir: 1, look: V(), lookW: 0, hop: -1, hopLen: 1, hopDur: 0.4, t: this.rnd() * 10, jaw: 0, ear: 0 };
     this.avoid = 0;
@@ -133,8 +137,9 @@ export class NPC {
     for (const h of this.proto.hitboxes) {
       const a = V(...h.a),
         b = V(...h.b);
-      const len = a.distanceTo(b);
-      const desc = len > 1e-4 ? RAPIER.ColliderDesc.capsule(len / 2, h.r) : RAPIER.ColliderDesc.ball(h.r);
+      const sc = this.T.scale || 1;
+      const len = a.distanceTo(b) * sc;
+      const desc = len > 1e-4 ? RAPIER.ColliderDesc.capsule(len / 2, h.r * sc) : RAPIER.ColliderDesc.ball(h.r * sc);
       desc.setCollisionGroups(HITBOX_GROUPS).setSolverGroups(HITBOX_GROUPS);
       const col = ph.world.createCollider(desc);
       ph.setOwner(col, { kind: 'npc', npc: this, zone: h.zone });
@@ -205,7 +210,12 @@ export class NPC {
       case 'rabbit':
         return this.aiRabbit(dt, tgt);
       case 'coyote':
+      case 'wolf':
         return this.aiCoyote(dt, tgt, night, diff);
+      case 'stalker':
+        return this.aiStalker(dt, tgt, night);
+      case 'snake':
+        return this.aiSnake(dt, tgt);
       case 'creature':
         return this.aiCreature(dt, tgt, night, diff);
       default:
@@ -307,6 +317,80 @@ export class NPC {
     if (this.state === 'attack') return this.updateAttack(dt, tgt);
     if (night && this.rnd() < dt * 0.01) this.g.audio && this.g.audio.play('howl', { at: this.pos, volume: 1 });
     this.wander(dt, 25, this.T.walk * 1.1, [2, 7]);
+  }
+
+  // The tall one never walks. It stands at the edge of sight, facing you, and whenever nobody is
+  // looking it is simply nearer. Light drives it off; at dawn it is gone. Close enough and unseen,
+  // it takes you.
+  aiStalker(dt, tgt, night) {
+    const g = this.g;
+    this.desiredSpeed = 0;
+    if (!night || this.mgr.litBy(this) || this.hp < this.maxHp) {
+      if (!this.vanishing) {
+        this.vanishing = true;
+        g.audio && g.audio.play('screech', { at: this.pos, volume: 0.5, rate: 0.6 });
+      }
+      this.mgr.toRemove.add(this);
+      return;
+    }
+    if (!tgt) return;
+    this.faceTo(tgt.pos);
+    const cam = g.renderer.camera;
+    const to = V(this.pos.x - cam.position.x, this.pos.y + 1.6 - cam.position.y, this.pos.z - cam.position.z);
+    const dist = to.length();
+    const looked = to.normalize().dot(V(0, 0, -1).applyQuaternion(cam.quaternion)) > 0.62 && this.canSee(cam.position.clone().setY(cam.position.y - 1), 200);
+    if (looked) {
+      this.watched = (this.watched || 0) + dt;
+      // a long stare and it is gone too
+      if (this.watched > 9) this.mgr.toRemove.add(this);
+      return;
+    }
+    this.watched = 0;
+    this.unseenT = (this.unseenT || 0) + dt;
+    if (this.unseenT < 2.5 + this.rnd() * 2) return;
+    this.unseenT = 0;
+    if (tgt.dist < 4 && !tgt.inCar) {
+      g.player.damage(28, 'stalker');
+      g.player.damageFlash = 1;
+      g.audio && g.audio.play('screech', { at: this.pos, volume: 1, rate: 0.5 });
+      this.mgr.toRemove.add(this);
+      return;
+    }
+    // closer, somewhere off to the side of the line between you
+    const step = Math.min(tgt.dist - 2.5, 8 + this.rnd() * 10);
+    const a = Math.atan2(this.pos.x - tgt.pos.x, this.pos.z - tgt.pos.z) + (this.rnd() - 0.5) * 0.7;
+    const d = Math.max(3, tgt.dist - step);
+    const wx = tgt.pos.x + Math.sin(a) * d,
+      wz = tgt.pos.z + Math.cos(a) * d;
+    this.pos.set(wx, g.groundHeightAt(wx, wz), wz);
+    if (tgt.dist < 25) g.audio && g.audio.play('vagrant', { at: this.pos, volume: 0.25, rate: 0.5 });
+  }
+
+  // Coiled by the rocks: buzzes its rattle when you come near, strikes if you step in, never chases.
+  aiSnake(dt, tgt) {
+    this.desiredSpeed = 0;
+    if (!tgt || tgt.inCar) {
+      this.state = 'idle';
+      return;
+    }
+    if (tgt.dist < 6) this.faceTo(tgt.pos);
+    if (this.state === 'attack') return this.updateAttack(dt, tgt);
+    if (tgt.dist < this.T.reach + 0.3 && this.cooldown <= 0) {
+      this.startAttack(1);
+      return;
+    }
+    const warn = tgt.dist < 5.5;
+    if (warn && this.state !== 'rattle') {
+      this.state = 'rattle';
+      this.stateT = 0;
+    } else if (!warn && this.state === 'rattle') this.state = 'idle';
+    if (this.state === 'rattle') {
+      this.rattleT = (this.rattleT || 0) - dt;
+      if (this.rattleT <= 0) {
+        this.rattleT = 0.9;
+        this.g.audio && this.g.audio.play('ratchet', { at: this.pos, volume: 0.55, rate: 2.6 });
+      }
+    }
   }
 
   aiCreature(dt, tgt, night, diff) {
@@ -455,24 +539,24 @@ export class NPC {
     this.anim.attackKind = kind;
     this.struck = false;
     this.desiredSpeed = 0;
-    if (this.type === 'coyote') this.g.audio && this.g.audio.play('growl', { at: this.pos, volume: 0.9 });
+    if (this.type === 'coyote' || this.type === 'wolf') this.g.audio && this.g.audio.play('growl', { at: this.pos, volume: this.type === 'wolf' ? 1 : 0.9, rate: this.type === 'wolf' ? 0.8 : 1 });
     if (this.type === 'vagrant') this.g.audio && this.g.audio.play('swing', { at: this.pos, volume: 0.8 });
   }
 
   updateAttack(dt, tgt) {
-    const dur = this.type === 'coyote' ? 0.55 : this.type === 'creature' ? 0.8 : 0.9;
+    const dur = this.type === 'snake' ? 0.35 : this.type === 'coyote' || this.type === 'wolf' ? 0.55 : this.type === 'creature' ? 0.8 : 0.9;
     this.anim.attack = this.stateT / dur;
     if (tgt) this.faceTo(tgt.pos);
-    this.desiredSpeed = this.type === 'coyote' && this.anim.attack < 0.5 ? 3 : 0;
-    const hitAt = this.type === 'coyote' ? 0.45 : 0.55;
+    this.desiredSpeed = (this.type === 'coyote' || this.type === 'wolf') && this.anim.attack < 0.5 ? 3 : 0;
+    const hitAt = this.type === 'coyote' || this.type === 'wolf' ? 0.45 : 0.55;
     if (!this.struck && this.anim.attack >= hitAt) {
       this.struck = true;
       if (tgt) this.strike(tgt);
     }
     if (this.anim.attack >= 1) {
       this.anim.attack = -1;
-      this.cooldown = this.type === 'creature' ? 0.6 : this.type === 'coyote' ? 1.2 : 1.1;
-      this.state = this.type === 'creature' ? 'retreat' : this.type === 'coyote' ? 'circle' : 'chase';
+      this.cooldown = this.type === 'creature' ? 0.6 : this.type === 'coyote' || this.type === 'wolf' ? 1.2 : this.type === 'snake' ? 2.5 : 1.1;
+      this.state = this.type === 'creature' ? 'retreat' : this.type === 'coyote' || this.type === 'wolf' ? 'circle' : this.type === 'snake' ? 'rattle' : 'chase';
       this.stateT = 0;
     }
   }
@@ -501,9 +585,14 @@ export class NPC {
       g.audio && g.audio.play('swing', { at: this.pos, volume: 0.6 });
       return;
     }
-    const base = this.type === 'creature' ? 18 : this.type === 'coyote' ? 7 : 10;
+    const base = this.type === 'creature' ? 18 : this.type === 'wolf' ? 11 : this.type === 'coyote' ? 7 : this.type === 'snake' ? 6 : 10;
     const dmg = base * (0.8 + this.rnd() * 0.4) * (0.75 + 0.25 * diff.enemies);
     g.player.damage(dmg, this.type);
+    // venom: a slow burn that a medkit or painkillers stop
+    if (this.type === 'snake') {
+      g.player.poison = Math.min(1.5, (g.player.poison || 0) + 1);
+      g.hud && g.hud.toast('Bitten by a rattlesnake: venom. Use a medkit or painkillers');
+    }
     if (this.type !== 'vagrant' || this.rnd() < 0.3) g.player.bleeding = Math.min(3, (g.player.bleeding || 0) + (this.type === 'creature' ? 0.8 : 0.35));
     g.audio && g.audio.play('hitFlesh', { at: g.player.position, volume: 0.9 });
     // shove
@@ -682,6 +771,7 @@ export class NPC {
     if (near || (this.frameSkip = ((this.frameSkip || 0) + 1) % 3) === 0) {
       if (this.kind === 'human') this.animHuman(near ? dt : dt * 3);
       else if (this.kind === 'quad') this.animQuad(near ? dt : dt * 3);
+      else if (this.kind === 'snake') this.animSnake(near ? dt : dt * 3);
       else this.animRabbit(near ? dt : dt * 3);
       this.applyDeathPose();
     }
@@ -932,6 +1022,29 @@ export class NPC {
     this.headLook(B.neck, B.head, dt, 0.9, this.dead ? 0 : 1);
   }
 
+  // The neck sways and tastes the air; the rattle buzzes when warning; a strike throws the head
+  // forward along the neck and back.
+  animSnake(dt) {
+    const B = this.bones,
+      a = this.anim;
+    const n = Object.keys(B).filter((k) => /^s\d+$/.test(k)).length;
+    const warn = this.state === 'rattle' ? 1 : 0;
+    a.crouch += (warn - a.crouch) * Math.min(1, dt * 4);
+    for (let i = n - 3; i < n; i++) {
+      const b = B['s' + i];
+      b.rotation.set(0, 0, 0);
+      b.rotation.y = Math.sin(a.t * 1.3 + i * 0.6) * 0.12 * (1 - a.crouch * 0.5);
+      b.rotation.x = -a.crouch * 0.18;
+    }
+    if (a.attack >= 0) {
+      const t = Math.min(1, a.attack);
+      const k = t < 0.4 ? t / 0.4 : 1 - (t - 0.4) / 0.6;
+      for (let i = n - 3; i < n; i++) B['s' + i].rotation.x = 0.55 * k - 0.1;
+    }
+    B.rattle.rotation.set(0, 0, warn ? Math.sin(a.t * 90) * 0.12 : 0);
+    B.head.rotation.x = Math.sin(a.t * 3.1) * 0.05;
+  }
+
   animRabbit(dt) {
     const B = this.bones,
       a = this.anim;
@@ -1051,7 +1164,7 @@ export class NPCManager {
     const jobs = [];
     for (const [type, T] of Object.entries(TYPES)) for (const seed of T.seeds) jobs.push({ type, seed });
     // the most common first
-    const order = { survivor: 0, rabbit: 1, vagrant: 2, coyote: 3, creature: 4 };
+    const order = { survivor: 0, rabbit: 1, vagrant: 2, coyote: 3, snake: 4, wolf: 5, creature: 6, stalker: 7 };
     jobs.sort((a, b) => order[a.type] - order[b.type]);
     // first-person hand poses go first: they are on screen from the first frame
     const hands = HAND_POSES.map((pose) => ({ type: 'hand', pose, seed: 0 }));
@@ -1322,6 +1435,28 @@ export class NPCManager {
         const n = night ? 2 + Math.floor(this.rnd() * 2) : 1;
         for (let i = 0; i < n; i++) this.spawn('coyote', p.clone().add(V(this.rnd() * 3, 0, this.rnd() * 3)), { hostile: night });
       }
+    }
+    // wolves: packs in the north at night, now and then by day on the tundra
+    const north = biome === 'taiga' || biome === 'tundra' || biome === 'forest';
+    const wolfTarget = north ? (night ? Math.round(3 * diff.enemies) : biome === 'tundra' ? 1 : 0) : 0;
+    if (this.ready('wolf') && count('wolf') < wolfTarget && this.rnd() < 0.2) {
+      const p = spot(90, 150);
+      if (p) {
+        const n = night ? 2 + Math.floor(this.rnd() * 3) : 1;
+        for (let i = 0; i < n; i++) this.spawn('wolf', p.clone().add(V(this.rnd() * 4, 0, this.rnd() * 4)), { hostile: night });
+      }
+    }
+    // rattlesnakes coiled in the warm rocky desert, by day
+    const snakeBiome = biome === 'scrub' || biome === 'badlands' || biome === 'highland' || biome === 'dunes';
+    if (this.ready('snake') && snakeBiome && !night && count('snake') < 2 && this.rnd() < 0.08 && !driving) {
+      const p = spot(20, 45);
+      if (p) this.spawn('snake', p);
+    }
+    // the tall one: some nights, standing out in the dark facing the road
+    const stalkerNight = night && (env.time > 22 || env.time < 4) && ((g.seed + env.day * 7) % 3 !== 0);
+    if (this.ready('stalker') && stalkerNight && count('stalker') < 1 && this.rnd() < 0.03) {
+      const p = spot(60, 110, 1.2);
+      if (p) this.spawn('stalker', p, { hostile: true, state: 'watch' });
     }
     // the creature hunts at night, away from the lights of settlements
     const deep = env.time > 21.5 || env.time < 4.5;

@@ -1,5 +1,5 @@
 /* Menus: title, new game, settings, pause, journal, death, loading.
-   Quiet by design: a single column of type over the live scene, thin rules, one accent colour. */
+   Quiet by design: a single column of type over pictures from the road, thin rules, one accent colour. */
 
 .ui {
   position: fixed;
@@ -27,7 +27,63 @@
   opacity: 1;
 }
 
-/* shading for legibility over the 3D backdrop */
+/* title backdrop: stills from the road, a slow Ken Burns move and a long cross-fade */
+.ui-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  background: #0d0c0b;
+  pointer-events: none;
+}
+.ui-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 2.6s ease;
+  will-change: transform, opacity;
+}
+.ui-slide.on {
+  opacity: 1;
+}
+.ui-slide.moving[data-move='in'] {
+  animation: kb-in 12s linear forwards;
+}
+.ui-slide.moving[data-move='out'] {
+  animation: kb-out 12s linear forwards;
+}
+.ui-slide.moving[data-move='left'] {
+  animation: kb-left 12s linear forwards;
+}
+.ui-slide.moving[data-move='right'] {
+  animation: kb-right 12s linear forwards;
+}
+@keyframes kb-in {
+  from { transform: scale(1.04); }
+  to { transform: scale(1.14); }
+}
+@keyframes kb-out {
+  from { transform: scale(1.15); }
+  to { transform: scale(1.05); }
+}
+@keyframes kb-left {
+  from { transform: scale(1.12) translateX(2.2%); }
+  to { transform: scale(1.12) translateX(-2.2%); }
+}
+@keyframes kb-right {
+  from { transform: scale(1.12) translateX(-2.2%); }
+  to { transform: scale(1.12) translateX(2.2%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-slide.moving[data-move] {
+    animation: none;
+    transform: scale(1.06);
+  }
+}
+
+/* shading for legibility over the backdrop */
 .ui-shade-left {
   background: linear-gradient(90deg, rgba(10, 9, 8, 0.82) 0%, rgba(10, 9, 8, 0.55) 34%, rgba(10, 9, 8, 0) 62%);
 }
@@ -69,49 +125,100 @@
 .ui-menu {
   position: absolute;
   left: clamp(32px, 7vw, 120px);
-  bottom: 14vh;
+  bottom: 12vh;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 300px;
+  gap: 6px;
+  width: 340px;
+  padding: 12px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(24, 22, 19, 0.6), rgba(12, 11, 10, 0.52));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .ui-item {
   all: unset;
   cursor: pointer;
+  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 14px;
-  padding: 9px 0;
-  font-size: 21px;
-  letter-spacing: 0.08em;
+  padding: 13px 18px;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-2);
-  transition: color 0.15s, transform 0.15s;
+  border: 1px solid transparent;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, transform 0.15s;
 }
 .ui-item::before {
   content: '';
-  width: 0;
-  height: 1px;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  margin-top: 0;
+  border-radius: 2px;
   background: var(--amber);
-  align-self: center;
-  transition: width 0.18s ease;
+  transition: height 0.18s ease, margin-top 0.18s ease;
+}
+.ui-item::after {
+  content: '\203A';
+  font-size: 22px;
+  line-height: 1;
+  color: var(--amber);
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.15s, transform 0.15s;
 }
 .ui-item:hover,
 .ui-item:focus-visible {
   color: var(--ink);
+  background: rgba(236, 230, 218, 0.07);
+  border-color: rgba(236, 230, 218, 0.1);
 }
 .ui-item:hover::before,
 .ui-item:focus-visible::before {
-  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+}
+.ui-item:hover::after,
+.ui-item:focus-visible::after {
+  opacity: 1;
+  transform: none;
 }
 .ui-item small {
-  font-size: 12px;
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 400;
   letter-spacing: 0.06em;
   text-transform: none;
   color: var(--ink-3);
 }
 .ui-item.primary {
-  color: var(--ink);
+  color: #1b1712;
+  background: linear-gradient(180deg, #e3b06a, #cf9446);
+  box-shadow: 0 8px 22px rgba(217, 163, 91, 0.28);
+}
+.ui-item.primary small {
+  color: rgba(27, 23, 18, 0.7);
+}
+.ui-item.primary::before,
+.ui-item.primary::after {
+  color: #1b1712;
+  background: none;
+}
+.ui-item.primary:hover,
+.ui-item.primary:focus-visible {
+  color: #120f0b;
+  background: linear-gradient(180deg, #ecbd7a, #d99c4e);
+  border-color: transparent;
 }
 .ui-item[disabled] {
   opacity: 0.35;
@@ -131,11 +238,18 @@
 .ui-panel {
   position: absolute;
   left: clamp(32px, 7vw, 120px);
-  top: 12vh;
-  bottom: 10vh;
-  width: min(720px, calc(100vw - 64px));
+  top: 10vh;
+  bottom: 9vh;
+  width: min(760px, calc(100vw - 64px));
   display: flex;
   flex-direction: column;
+  padding: 30px 34px 24px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(24, 22, 19, 0.72), rgba(12, 11, 10, 0.66));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .ui-panel.center {
   left: 50%;
@@ -165,14 +279,20 @@
 }
 .ui-actions {
   display: flex;
-  gap: 28px;
-  padding-top: 22px;
+  gap: 10px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
   align-items: center;
 }
 .ui-actions .ui-item {
-  font-size: 17px;
-  padding: 6px 0;
+  font-size: 15px;
+  padding: 10px 18px;
+  background: rgba(236, 230, 218, 0.05);
+  border-color: rgba(236, 230, 218, 0.08);
+}
+.ui-actions .ui-item.primary {
+  background: linear-gradient(180deg, #e3b06a, #cf9446);
+  border-color: transparent;
 }
 .ui-actions .spacer {
   flex: 1;
@@ -608,12 +728,31 @@
   color: var(--ink-3);
   pointer-events: none;
 }
+/* eyes shut: the night still goes by faintly behind the lids, breathing slow */
 .ui-sleep {
-  background: #000;
+  background: transparent;
   transition: opacity 1.2s ease;
+}
+.ui-sleep::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 55% at 50% 42%, rgba(6, 5, 10, 0.8) 0%, rgba(3, 3, 6, 0.93) 60%, #000 100%);
+  animation: ui-sleep-breathe 6s ease-in-out infinite;
+}
+@keyframes ui-sleep-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 .ui-sleep .ui-loadtext {
   color: var(--ink-2);
+  letter-spacing: 0.08em;
+  opacity: 0.75;
 }
 
 /* ------------------------------------------------------------------ notes */
@@ -739,9 +878,20 @@
 }
 .ui-item.kb {
   color: var(--ink);
+  background: rgba(236, 230, 218, 0.07);
+  border-color: rgba(236, 230, 218, 0.1);
 }
 .ui-item.kb::before {
-  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+}
+.ui-item.kb::after {
+  opacity: 1;
+  transform: none;
+}
+.ui-item.primary.kb {
+  color: #120f0b;
+  background: linear-gradient(180deg, #ecbd7a, #d99c4e);
 }
 .ui-item {
   outline: none;
@@ -750,13 +900,16 @@
   position: absolute;
   right: 28px;
   bottom: 58px;
-  width: 320px;
-  padding: 16px 18px;
-  border-left: 2px solid var(--amber);
-  background: rgba(13, 12, 11, 0.5);
-  backdrop-filter: blur(4px);
+  width: 340px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(24, 22, 19, 0.62), rgba(12, 11, 10, 0.55));
+  border: 1px solid rgba(236, 230, 218, 0.1);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), inset 3px 0 0 var(--amber);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--ink-2);
 }
 .ui-news-k {
@@ -776,5 +929,187 @@
 @media (max-width: 900px) {
   .ui-news {
     display: none;
+  }
+}
+
+/* links in panels (credits): warm accent, quiet underline */
+.ui-body a {
+  color: var(--amber);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(217, 163, 91, 0.35);
+  pointer-events: auto;
+}
+.ui-body a:hover {
+  border-bottom-color: currentColor;
+}
+
+/* ------------------------------------------------------------------ road atlas */
+.ui-panel.ui-atlas {
+  width: min(1180px, calc(100vw - 48px));
+  top: 6vh;
+  bottom: 6vh;
+}
+.ui-atlas-head {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+.ui-atlas-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 18px;
+  margin: 10px 0 12px;
+}
+.ui-atlas-map {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 40px rgba(90, 60, 20, 0.25);
+  cursor: crosshair;
+}
+.ui-atlas-map canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.ui-atlas-side {
+  width: 270px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ui-atlas-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ui-atlas-input {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(236, 230, 218, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  outline: none;
+}
+.ui-atlas-input:focus {
+  border-color: rgba(236, 200, 140, 0.6);
+}
+.ui-atlas-note {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: 8px 28px 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-size: 14px;
+}
+.ui-atlas-note:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.ui-atlas-note b {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #c63d2f;
+  color: #fff;
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+}
+.ui-atlas-note small {
+  display: block;
+  opacity: 0.55;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.ui-atlas-del {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.ui-atlas-photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.ui-atlas-photos img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 3px solid #f4efe2;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+.ui-atlas-photo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+.ui-atlas-photo img {
+  max-width: min(960px, 86vw);
+  max-height: 72vh;
+  border: 10px solid #f4efe2;
+  border-bottom-width: 34px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  transform: rotate(-1.2deg);
+}
+
+/* ------------------------------------------------------------------ photo mode */
+.ui-photo-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: rgba(10, 9, 8, 0.55);
+  color: var(--ink-2);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.ui-photo-hud b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.ui-photo-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.ui-photo-flash.go {
+  animation: ui-photo-flash 0.45s ease-out;
+}
+@keyframes ui-photo-flash {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
   }
 }
