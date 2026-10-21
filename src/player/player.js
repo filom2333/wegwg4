@@ -78,6 +78,7 @@ export class Player {
     this.seat = seat;
     this.car = car;
     car.owned = true;
+    this.head = null;
     this.seatYaw = 0;
     this.seatPitch = -0.08;
     this.collider.setEnabled(false);
@@ -350,6 +351,68 @@ export class Player {
     }
   }
 
+  // Head of a seated occupant: it lags the car's accelerations on a soft, underdamped spring
+  // (pressed back pulling away, thrown forward under braking, leaning out of bends, dropping over
+  // a crest) and picks the road up through the seat: rough surfaces buzz, potholes and kerbs jolt,
+  // a crash snaps it. Offsets are in car space (+x left, +y up, +z forward).
+  seatHead(dt, car) {
+    const h = this.head || (this.head = { o: V(0, 0, 0), v: V(0, 0, 0), acc: V(0, 0, 0), lastV: null, t: 0, shake: V(0, 0, 0), imp: 0 });
+    const lv = car.dyn.body.linvel();
+    if (!h.lastV || dt <= 0 || h.car !== car) {
+      h.lastV = V(lv.x, lv.y, lv.z);
+      h.car = car;
+      h.o.set(0, 0, 0);
+      h.v.set(0, 0, 0);
+      h.acc.set(0, 0, 0);
+      return h;
+    }
+    const a = V(lv.x - h.lastV.x, lv.y - h.lastV.y, lv.z - h.lastV.z).divideScalar(Math.max(dt, 1 / 240));
+    h.lastV.set(lv.x, lv.y, lv.z);
+    h.acc.lerp(a, Math.min(1, dt * 14));
+    const al = h.acc.clone().applyQuaternion(car.root.quaternion.clone().invert());
+    const amt = settings.data.headBob ? 1 : 0.4;
+    const target = V(clamp(-al.x * 0.0085, -0.07, 0.07), clamp(-al.y * 0.0045, -0.045, 0.03), clamp(-al.z * 0.0075, -0.06, 0.065)).multiplyScalar(amt);
+    // a crash throws the head against the way the car was stopped
+    const li = car.lastImpact;
+    if (li && li.time !== h.imp) {
+      h.imp = li.time;
+      if (li.dirLocal && li.severity > 2.5) h.v.addScaledVector(li.dirLocal, -Math.min(li.severity, 16) * 0.07 * amt);
+    }
+    // road input through the suspension: how fast the wheels were pushed up this step
+    let rough = 0,
+      jolt = 0,
+      n = 0;
+    for (const w of car.dyn.wheels) {
+      if (!w.installed) continue;
+      n++;
+      if (!w.contact) continue;
+      rough += car.dyn.surfaces(w.surface).noise;
+      jolt += Math.max(0, w.compression - (w.prevCompression || 0));
+    }
+    rough = n ? rough / n : 0;
+    if (jolt > 0.004) h.v.y -= Math.min(0.5, jolt * 9) * amt;
+    // underdamped spring, sub-stepped for stability at low frame rates
+    const steps = Math.min(8, Math.ceil(dt * 240));
+    const sdt = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      const fx = (target.x - h.o.x) * 150 - h.v.x * 10;
+      const fy = (target.y - h.o.y) * 220 - h.v.y * 13;
+      const fz = (target.z - h.o.z) * 150 - h.v.z * 10;
+      h.v.x += fx * sdt;
+      h.v.y += fy * sdt;
+      h.v.z += fz * sdt;
+      h.o.addScaledVector(h.v, sdt);
+    }
+    if (h.o.length() > 0.13) h.o.setLength(0.13);
+    // fine buzz of the surface, stronger with speed (radians, applied as tilt)
+    h.t += dt;
+    const spd = Math.min(1, car.dyn.speed / 22);
+    const buzz = rough * spd * 0.004 * amt;
+    const t = h.t;
+    h.shake.set((Math.sin(t * 61.3) + Math.sin(t * 37.1 + 1.3)) * buzz, (Math.sin(t * 53.7 + 0.4) + Math.sin(t * 29.3 + 2.1)) * buzz, 0);
+    return h;
+  }
+
   updateCamera(dt) {
     // `eye` is the first-person view used for aiming, reach and the viewmodel; the rendered
     // camera either copies it or orbits behind the body (third person).
@@ -359,11 +422,13 @@ export class Player {
     if (this.seat && this.car) {
       const car = this.car;
       const seatPos = car.seatWorld(this.seat);
-      cam.position.copy(seatPos);
       const q = car.root.quaternion.clone();
+      const hd = this.seatHead(dt, car);
+      cam.position.copy(seatPos).add(hd.o.clone().applyQuaternion(q));
       const e = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.seatPitch, this.seatYaw + Math.PI, 0, 'YXZ'));
-      // car faces +z; camera looks down -z, so add PI
-      cam.quaternion.copy(q).multiply(e);
+      // car faces +z; camera looks down -z, so add PI. The head tilts with its sway.
+      const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(hd.o.z * 0.9 + hd.shake.y * 0.6, 0, -hd.o.x * 1.1 + hd.shake.x * 0.8, 'XYZ'));
+      cam.quaternion.copy(q).multiply(tilt).multiply(e);
       // look back key
       if (input.isDown('lookBack')) cam.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0, 0, 'YXZ')));
     } else if (this.lying && !this.dead) {

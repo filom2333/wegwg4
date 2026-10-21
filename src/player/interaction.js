@@ -169,15 +169,7 @@ export class Interaction {
 
   // Current world matrix of a part's rest content.
   partMatrix(car, id) {
-    const part = car.model.parts[id];
-    const m = new THREE.Matrix4().copy(car.root.matrixWorld);
-    if (part.hinge) {
-      const o = part.hinge.origin;
-      m.multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z))
-        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(part.pivot.quaternion))
-        .multiply(new THREE.Matrix4().makeTranslation(-o.x, -o.y, -o.z));
-    }
-    return m;
+    return car.partWorldMatrix(id);
   }
 
   carTarget(origin, dir, maxDist) {
@@ -1796,33 +1788,8 @@ export class Interaction {
   remove(id) {
     const g = this.game;
     const car = g.car;
-    const mp = car.model.parts[id];
-    const c = mp.bbox.getCenter(V(0, 0, 0));
-    const m = this.partMatrix(car, id).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
-    const pos = V(0, 0, 0),
-      q = new THREE.Quaternion(),
-      s = V(0, 0, 0);
-    m.decompose(pos, q, s);
-    if (mp.hinge) car.model.setOpen(id, 0);
-    const state = { condition: car.parts[id].condition, carType: car.parts[id].from || car.type.id };
-    if (car.partColors && car.partColors[id] !== undefined) state.color = car.partColors[id];
-    else if (car.paintable(id)) state.color = car.mats.color.getHex();
-    if (id === 'battery') {
-      state.charge = car.battery;
-    }
-    if (id === 'fueltank') {
-      state.fuel = car.fuel;
-      car.fuel = 0;
-    }
-    if (id === 'fanbelt') state.condition = car.fanbeltCondition;
-    if (id === 'engine') {
-      state.oil = car.oil;
-    }
-    if (car.parts[id].tune) state.tune = car.parts[id].tune;
-    car.setInstalled(id, false);
-    car.owned = true;
-    const it = g.items.spawnPart(id, pos, q, state);
-    g.audio && g.audio.play('remove', { at: pos });
+    const it = car.detachPart(id);
+    g.audio && g.audio.play('remove', { at: it.mesh.position });
     if (car.PARTS[id].mass <= 60) this.pick(it);
     else g.hud && g.hud.toast(`${car.PARTS[id].label} removed — too heavy to carry`);
   }

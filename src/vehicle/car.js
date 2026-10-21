@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { ALBUMS } from '../audio/music/albums.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
-import { RAPIER, GROUPS } from '../physics/physics.js';
+import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
@@ -16,6 +16,17 @@ import { clamp } from '../core/noise.js';
 import { addGlassRain } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// Exterior parts a crash can rip off, with the sudden change of speed (m/s) it takes. Lights and
+// bumpers go first, fenders and lids next, doors and wheels only in a heavy smash.
+const TEARABLE = {
+  headlight_L: 7, headlight_R: 7, taillight_L: 7, taillight_R: 7,
+  bumper_F: 8.5, bumper_R: 8.5,
+  fender_FL: 10.5, fender_FR: 10.5, fender_RL: 10.5, fender_RR: 10.5,
+  hood: 11.5, trunk: 11.5, exhaust: 10,
+  door_FL: 13.5, door_FR: 13.5, door_RL: 13.5, door_RR: 13.5,
+  wheel_FL: 17, wheel_FR: 17, wheel_RL: 17, wheel_RR: 17,
+};
 
 // type: a car type (see types.js) with its spec, part table and model; model: its scene graph.
 export class Car {
@@ -157,6 +168,55 @@ export class Car {
     }
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  // Current world matrix of a part's rest content (a hinged part where it is swung to).
+  partWorldMatrix(id) {
+    const part = this.model.parts[id];
+    const m = new THREE.Matrix4().copy(this.root.matrixWorld);
+    if (part.hinge) {
+      const o = part.hinge.origin;
+      m.multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z))
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(part.pivot.quaternion))
+        .multiply(new THREE.Matrix4().makeTranslation(-o.x, -o.y, -o.z));
+    }
+    return m;
+  }
+
+  // Takes a part off and leaves it as an item where it was, carrying everything it holds (charge,
+  // fuel, oil, tune, paint). `fling`: the part is torn off in a crash and flies with the car's
+  // velocity plus that kick (world m/s).
+  detachPart(id, fling = null) {
+    const mp = this.model.parts[id];
+    const c = mp.bbox.getCenter(V(0, 0, 0));
+    const m = this.partWorldMatrix(id).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+    const pos = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      s = V(0, 0, 0);
+    m.decompose(pos, q, s);
+    if (mp.hinge) this.model.setOpen(id, 0);
+    const st = this.parts[id];
+    const state = { condition: st.condition, carType: st.from || this.type.id };
+    if (this.partColors && this.partColors[id] !== undefined) state.color = this.partColors[id];
+    else if (this.paintable(id)) state.color = this.mats.color.getHex();
+    if (id === 'battery') state.charge = this.battery;
+    if (id === 'fueltank') {
+      state.fuel = this.fuel;
+      this.fuel = 0;
+    }
+    if (id === 'fanbelt') state.condition = this.fanbeltCondition;
+    if (id === 'engine') state.oil = this.oil;
+    if (st.tune) state.tune = st.tune;
+    if (fling) state.condition = Math.max(0, state.condition - 0.15 - Math.random() * 0.25);
+    this.setInstalled(id, false);
+    this.owned = true;
+    const it = this.game.items.spawnPart(id, pos, q, state);
+    if (fling && it.body) {
+      const v = this.dyn.body.linvel();
+      it.body.setLinvel({ x: v.x + fling.x, y: v.y + fling.y, z: v.z + fling.z }, true);
+      it.body.setAngvel({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 }, true);
+    }
+    return it;
   }
 
   // Label of a part on this car, with its tune.
@@ -526,6 +586,7 @@ export class Car {
   // ---------------------------------------------------------------- simulation
   update(dt, controls) {
     const d = this.dyn;
+    if (this.pendingTears) this.processTears();
     // hinge animation
     let collidersDirty = false;
     if (!this.hingedIds) this.hingedIds = Object.keys(this.model.parts).filter((id) => this.model.parts[id].hinge);
@@ -552,11 +613,18 @@ export class Car {
     // on its side or roof the engine starves of oil and stalls, and the tank breather weeps fuel
     const upY = 1 - 2 * (this.root.quaternion.x ** 2 + this.root.quaternion.z ** 2);
     this.inverted = upY < 0.3 ? (this.inverted || 0) + dt : 0;
+    if (this.inverted > 0 && d.engine.running && this.isInstalled('engine')) {
+      // the pump sucks air: running dry scores the bearings until it stalls
+      this.engineCondition = Math.max(0, this.engineCondition - dt * 0.012 * (this.game.difficulty ? this.game.difficulty.wear : 1));
+    }
     if (this.inverted > 2.5 && d.engine.running) {
       d.engine.running = false;
       d.onStall && d.onStall();
     }
     if (this.inverted > 0 && this.isInstalled('fueltank')) this.fuel = Math.max(0, this.fuel - dt * 0.03);
+    // oil seeps past the breather and the seals, battery acid out of the vents
+    if (this.inverted > 0.5 && this.isInstalled('engine')) this.oil = Math.max(0, this.oil - dt * 0.012);
+    if (this.inverted > 0.5 && this.isInstalled('battery')) this.parts.battery.condition = Math.max(0, this.parts.battery.condition - dt * 0.002);
 
     // controls -> dynamics
     const running = d.engine.running;
@@ -755,10 +823,85 @@ export class Car {
       hit(this.type.crash.rear, (this.isInstalled('bumper_R') ? 0.5 : 1) * plateArmour(this, 'rear'));
       for (const h of ['taillight_L', 'taillight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
     }
-    this.lastImpact = { severity, time: performance.now() };
+    this.panelDamage(dirLocal, severity, dmg);
+    this.lastImpact = { severity, dirLocal, time: performance.now() };
     this.game.audio && this.game.audio.play(severity > 6 ? 'crashHeavy' : 'crash', { at: this.root.position, volume: clamp(severity / 10, 0.2, 1) });
     this.game.effects && this.game.effects.impactDebris(this, imp, severity);
     this.game.onCarImpact && this.game.onCarImpact(severity);
+  }
+
+  // The outside parts facing the obstacle take the blow. A hard one rips the loosest of them off
+  // (queued: bodies cannot change inside the physics step) and a side or roof hit can spring a door.
+  panelDamage(dirLocal, severity, dmg) {
+    const n = dirLocal.clone().negate(); // towards what was hit, car space
+    const bb = this.model.parts.body ? this.model.parts.body.bbox : this.model.parts.chassis.bbox;
+    const cen = bb.getCenter(V(0, 0, 0));
+    const half = bb.getSize(V(0, 0, 0)).multiplyScalar(0.5).max(V(0.3, 0.3, 0.3));
+    const facing = [];
+    for (const id of Object.keys(TEARABLE)) {
+      if (!this.isInstalled(id) || !this.model.parts[id] || !this.model.parts[id].bbox) continue;
+      // in body-normalised coordinates, so the corner of a long car still faces the front
+      const c = this.model.parts[id].bbox.getCenter(V(0, 0, 0)).sub(cen).divide(half);
+      const f = c.normalize().dot(n);
+      if (f > 0.35) facing.push({ id, f });
+    }
+    for (const c of facing) this.parts[c.id].condition = Math.max(0, this.parts[c.id].condition - dmg * c.f * 1.6);
+    // the roof caves: the body takes it, the glass and lights with it
+    if (n.y > 0.5 && this.isInstalled('body')) this.parts.body.condition = Math.max(0, this.parts.body.condition - dmg * 1.2);
+    // locks burst on a side or roof hit
+    if (severity > 6 && (Math.abs(n.x) > 0.5 || n.y > 0.5))
+      for (const id of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) {
+        const p = this.model.parts[id];
+        if (!p || !p.hinge || !this.isInstalled(id) || p.openT > 0.1) continue;
+        if (Math.random() < clamp((severity - 6) / 14, 0, 0.45)) p.targetOpen = 1;
+      }
+    if (severity < 7) return;
+    facing.sort((a, b) => b.f - a.f);
+    let budget = severity > 15 ? 3 : severity > 11 ? 2 : 1;
+    const tear = (this.pendingTears = this.pendingTears || []);
+    for (const c of facing) {
+      if (budget <= 0) break;
+      const need = TEARABLE[c.id];
+      if (severity < need || tear.some((t) => t.id === c.id)) continue;
+      // worn, already battered parts come away first
+      const loose = 1 - this.parts[c.id].condition;
+      const chance = clamp((severity - need) / 7 + loose * 0.35, 0, 0.85) * c.f;
+      if (Math.random() > chance) continue;
+      tear.push({ id: c.id, n: n.clone(), severity });
+      budget--;
+    }
+  }
+
+  // Rip off the parts the last crash broke loose: whatever hangs on them goes with them, and they
+  // fly on with the speed the car had before it was stopped.
+  processTears() {
+    const list = this.pendingTears;
+    this.pendingTears = null;
+    if (!list || !this.game.items) return;
+    const torn = [];
+    const q = this.root.quaternion;
+    const rip = (id, t) => {
+      if (!this.isInstalled(id) || this.PARTS[id].fixed) return;
+      // things bolted to it first (a fender's lamp)
+      for (const d of dependentsOf(this.PARTS, id)) if (this.isInstalled(d) && !this.PARTS[d].fixed) {
+        if (TEARABLE[d] === undefined) return; // held on by something that does not tear
+        rip(d, t);
+      }
+      const away = t.n.clone().negate().applyQuaternion(q); // the velocity change, world
+      const kick = away.multiplyScalar(-Math.min(t.severity, 18) * 0.55).add(V((Math.random() - 0.5) * 2, 1.2 + Math.random() * 1.8, (Math.random() - 0.5) * 2));
+      const it = this.detachPart(id, kick);
+      // keep clear of the hull it just left for a moment, or it would shove the car
+      if (it && it.collider) {
+        it.collider.setCollisionGroups(groups(G.ITEM, G.WORLD | G.ITEM | G.NPC | G.DEBRIS));
+        const col = it.collider;
+        setTimeout(() => {
+          if (it.collider === col) col.setCollisionGroups(GROUPS.item);
+        }, 700);
+      }
+      torn.push(this.PARTS[id].label.toLowerCase());
+    };
+    for (const t of list) rip(t.id, t);
+    if (torn.length) this.game.hud && this.game.hud.toast(`Torn off: ${torn.join(', ')}`, 'warn');
   }
 
   // Copy physics state to the visual model.
