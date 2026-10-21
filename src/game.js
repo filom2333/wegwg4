@@ -22,6 +22,7 @@ import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
 import { Tents } from './world/tents.js';
 import { PropLibrary } from './world/props.js';
+import { registerRealModel } from './items/itemModels.js';
 import { Atlas } from './story/atlas.js';
 import { PhotoMode, loadPhotos } from './ui/photoMode.js';
 import { Winches } from './vehicle/winch.js';
@@ -142,10 +143,13 @@ export class Game {
     });
     const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
-    this.scatter = new Scatter(this, this.groundTex, await treeTex);
-    // real models: the common ones start loading now, the rest when a place first needs them
+    // real models: what the scatter and the items build from is loaded first, the common props
+    // start loading now, the rest when a place first needs them
     this.props = new PropLibrary();
-    for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant']) this.props.load(id);
+    await Promise.all(['rockMoss1', 'rockMoss2', 'rockMoss3', 'carp'].map((id) => this.props.load(id)));
+    registerRealModel('carp', this.props.instance('carp'));
+    for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant', 'tyre']) this.props.load(id);
+    this.scatter = new Scatter(this, this.groundTex, await treeTex);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);

@@ -754,17 +754,13 @@ export function crate(rnd, s = 0.6) {
   return it;
 }
 
+// A stack of worn tyres (real model), one collider for the whole stack.
 export function tirePile(rnd) {
-  const M = archMaterials();
   const it = new Item([0.8, 1.0, 0.8]);
   const n = 2 + Math.floor(rnd() * 4);
-  for (let i = 0; i < n; i++) {
-    const t = new THREE.TorusGeometry(0.26, 0.1, 10, 24);
-    t.rotateX(Math.PI / 2);
-    t.translate((rnd() - 0.5) * 0.08, 0.1 + i * 0.19, (rnd() - 0.5) * 0.08);
-    it.add(t, M.rubber);
-  }
-  it.col(0.72, n * 0.19, 0.72, 0, (n * 0.19) / 2, 0);
+  const h = 0.168;
+  for (let i = 0; i < n; i++) it.props.push({ id: 'tyre', pos: [(rnd() - 0.5) * 0.08, i * h, (rnd() - 0.5) * 0.08], rot: rnd() * 6.28, collide: false, ground: true });
+  it.col(0.66, n * h, 0.66, 0, (n * h) / 2, 0);
   return it;
 }
 
@@ -851,7 +847,9 @@ export function place(builder, item, x, y, z, rotY = 0) {
   }
   for (const p of item.props) {
     q.set(...p.pos).applyMatrix4(m);
-    builder.prop(p.id, q.x, q.y, q.z, (p.rot || 0) + rotY);
+    const { id, pos, rot, ...opts } = p;
+    void pos;
+    builder.prop(id, q.x, q.y, q.z, (rot || 0) + rotY, opts);
   }
 }
 

@@ -26,7 +26,9 @@ export const SPECIES = [
   { id: 'reeds', variants: 3, near: 2, dens: {}, shore: 260, scale: [0.8, 1.3], sway: 'grass', shadow: false },
   { id: 'pebble', variants: 3, near: 2, dens: { scrub: 2, dunes: 0.3, badlands: 5, saltflat: 0.2, highland: 7, prairie: 0.8, forest: 1, tundra: 2.5 }, scale: [0.12, 0.35], rock: true, shadow: false },
   { id: 'barrel', variants: 2, near: 3, dens: { scrub: 0.4, dunes: 0.05, badlands: 0.6, highland: 0.2 }, scale: [0.8, 1.3] },
-  { id: 'boulder', variants: 4, lod1: 'mesh', dens: { scrub: 0.25, dunes: 0.04, badlands: 1.1, saltflat: 0.02, highland: 1.6, prairie: 0.12, forest: 0.45 }, scale: [0.6, 2.2], rock: true, solid: 'ball' },
+  { id: 'boulder', variants: 4, lod1: 'mesh', dens: { scrub: 0.25, dunes: 0.04, badlands: 1.1, saltflat: 0.02, highland: 1.6, prairie: 0.05, forest: 0.12 }, scale: [0.6, 2.2], rock: true, solid: 'ball' },
+  // photographed, mossy boulders in the green country (real models)
+  { id: 'mossrock', variants: 3, lod1: 'mesh', glb: 'rockMoss', dens: { forest: 0.6, prairie: 0.12, taiga: 0.3, tundra: 0.15 }, scale: [0.6, 2.0], rock: true, solid: 'ball' },
   { id: 'snowrock', variants: 3, lod1: 'mesh', dens: { taiga: 0.55, tundra: 1.3 }, scale: [0.6, 2.4], rock: true, solid: 'ball' },
   { id: 'slab', variants: 3, lod1: 'mesh', dens: { scrub: 0.1, dunes: 0.02, badlands: 0.4, saltflat: 0.01, highland: 0.5, tundra: 0.15 }, scale: [0.8, 2.4], rock: true, solid: 'ball' },
   { id: 'saguaro', variants: 3, lod1: 'impostor', dens: { scrub: 0.3, dunes: 0.05, badlands: 0.35, highland: 0.12 }, scale: [0.85, 1.25], solid: 'trunk', cluster: -0.1 },

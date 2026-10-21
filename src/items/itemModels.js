@@ -413,7 +413,28 @@ export function fishingRod() {
 }
 
 // A trout: raw (silvery, speckled) or grilled (golden brown, charred stripes).
+// Real models handed over by the prop library once loaded (an item built before that, or when
+// one failed to load, keeps its drawn model).
+const REAL = {};
+export function registerRealModel(id, obj) {
+  if (obj) REAL[id] = obj;
+}
+
 export function fish(cooked = false) {
+  if (REAL.carp) {
+    const g = new THREE.Group();
+    const m = REAL.carp.clone();
+    m.position.set(0, 0, 0);
+    if (cooked)
+      m.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = o.material.clone();
+        o.material.color.multiply(new THREE.Color(0.62, 0.4, 0.22));
+        o.material.roughness = 0.75;
+      });
+    g.add(m);
+    return g;
+  }
   const g = new THREE.Group();
   const mat = cached('fishMat' + (cooked ? 'C' : 'R'), () => {
     const tex = labelTex('fishSkin' + (cooked ? 'C' : 'R'), 128, 64, (c, w, h) => {

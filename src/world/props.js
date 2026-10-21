@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 
 const BASE = (import.meta.env.BASE_URL || '/') + 'models/props/';
@@ -24,6 +25,12 @@ export const PROPS = {
   skull: { file: 'skull.glb', size: { l: 0.22 }, fallback: 0xd8cdb4, tint: 0xd6c8a8 },
   flightHelmet: { file: 'flight_helmet.glb', size: { h: 0.5 }, collide: 'box', fallback: 0x6a4a30 },
   survivor: { file: 'survivor.glb', size: { h: 1.78 }, animated: true, skinned: true },
+  // mossy boulders (ez-tree, MIT): normalised to a metre across, scaled where they are used
+  rockMoss1: { file: 'rock_moss1.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
+  rockMoss2: { file: 'rock_moss2.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
+  rockMoss3: { file: 'rock_moss3.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
+  tyre: { file: 'tyre.glb', size: { w: 0.66 }, collide: 'cyl', fallback: 0x1b1b1b, surface: 'rubber' },
+  carp: { file: 'carp.glb', size: { w: 0.42 }, fallback: 0x8a8460 },
 };
 
 const MAP_KEYS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'sheenColorMap', 'clearcoatMap'];
@@ -100,6 +107,11 @@ export class PropLibrary {
           }
         }
         if (spec.tint) m.color && m.color.setHex(spec.tint);
+        // dark photographed albedo lifted to sit with the drawn scenery
+        if (spec.brighten && m.color && !m.userData.brightened) {
+          m.color.multiplyScalar(spec.brighten);
+          m.userData.brightened = true;
+        }
         o.castShadow = o.receiveShadow = true;
       }
     });
@@ -141,6 +153,36 @@ export class PropLibrary {
     return o;
   }
 
+  // One geometry with the model's transforms baked in (for instancing), and its material.
+  geometryOf(id) {
+    const p = this.protos.get(id);
+    if (!p) return null;
+    const geos = [];
+    p.root.updateMatrixWorld(true);
+    p.root.traverse((o) => {
+      if (!o.isMesh) return;
+      let g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      // a mirrored node turns the triangles inside out once its transform is baked in
+      if (o.matrixWorld.determinant() < 0) {
+        if (!g.index) g = mergeGeometries([g]) || g;
+        if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
+        const ix = g.index.array.slice();
+        for (let i = 0; i < ix.length; i += 3) [ix[i + 1], ix[i + 2]] = [ix[i + 2], ix[i + 1]];
+        g.setIndex(new THREE.BufferAttribute(ix, 1));
+      }
+      geos.push(g);
+    });
+    return geos.length === 1 ? geos[0] : mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)));
+  }
+
+  materialOf(id) {
+    const p = this.protos.get(id);
+    let m = null;
+    p && p.root.traverse((o) => o.isMesh && !m && (m = Array.isArray(o.material) ? o.material[0] : o.material));
+    return m;
+  }
+
   sizeOf(id) {
     const p = this.protos.get(id);
     return p ? p.size : null;
@@ -158,7 +200,7 @@ export function placeProp(game, inst, prop) {
     if (!o) return;
     // things standing on the ground sit on the real ground, not on the pad's nominal level
     let y = p.pos[1];
-    if (y < 0.2) {
+    if (y < 0.2 || p.ground) {
       const w = new THREE.Vector3(p.pos[0], 0, p.pos[2]).applyMatrix4(inst.root.matrixWorld);
       const o2 = game.origin;
       y += game.gen.height(w.x + o2.x, w.z + o2.z) - inst.root.position.y;
