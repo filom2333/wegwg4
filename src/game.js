@@ -95,7 +95,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', trailer = false, onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'w203', trailer = false, onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
@@ -171,7 +171,8 @@ export class Game {
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
-    await this.fleet.preload(this.renderer.renderer);
+    const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [];
+    await this.fleet.preload(this.renderer.renderer, saved);
     this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
     // spawn
     const spawn = this.spawnPoint();

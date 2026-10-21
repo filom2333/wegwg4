@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { Car } from './car.js';
-import { CAR_TYPES, carType } from './types.js';
+import { CAR_TYPES, CAR_TYPE_LIST, carType } from './types.js';
 import { Container } from '../items/inventory.js';
 import { hash01 } from '../core/noise.js';
 import { RAPIER } from '../physics/physics.js';
@@ -31,8 +31,13 @@ export class Fleet {
 
   // Loads every type's asset once (and warms its materials), so cars found later appear without
   // a hitch.
-  async preload(renderer) {
-    for (const t of Object.values(CAR_TYPES)) this.assets[t.id] = await t.load(renderer);
+  async preload(renderer, extra = []) {
+    for (const t of new Set([...CAR_TYPE_LIST, ...extra.map((id) => CAR_TYPES[id]).filter(Boolean)])) this.assets[t.id] = await t.load(renderer);
+  }
+
+  // A type a save brought along that was not loaded up front.
+  async ensure(typeId, renderer) {
+    if (!this.assets[typeId] && CAR_TYPES[typeId]) this.assets[typeId] = await CAR_TYPES[typeId].load(renderer);
   }
 
   build(typeId, { color } = {}) {
@@ -178,14 +183,14 @@ export class Fleet {
     const g = this.game;
     const hosts = ['house', 'houses', 'gasStation', 'motel', 'diner', 'farm', 'ranch', 'cabin', 'sawmill', 'lodge', 'outpost'];
     if (!hosts.includes(poi.type) || poi.k < 1) return null;
-    const others = Object.keys(CAR_TYPES).filter((t) => t !== g.startCarType);
+    const others = CAR_TYPE_LIST.map((t) => t.id).filter((t) => t !== g.startCarType);
     // the first host slots after the start get one each of the other types
     const order = this.hostOrder || (this.hostOrder = this.firstHosts(hosts, others.length));
     const i = order.indexOf(poi.k);
     if (i >= 0) return others[i];
     // later on a car is a rare find, and rarer the harder the game
     const chance = { Easy: 0.16, Normal: 0.09, Hard: 0.05 }[g.difficulty.label] ?? 0.09;
-    const ids = Object.keys(CAR_TYPES);
+    const ids = CAR_TYPE_LIST.map((t) => t.id);
     if (poi.k > Math.max(...order) && hash01(g.seed, poi.k, 911) < chance) return ids[Math.floor(hash01(g.seed, poi.k, 912) * ids.length)];
     return null;
   }

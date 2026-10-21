@@ -51,6 +51,7 @@ def run(cfg, out_dir, meta_path):
             inf = info_of(pos, tris)
             inf['comp'] = ci
             inf['mat'] = src_mat
+            inf['path'] = m['path']
             part = cfg.classify(name, inf)
             report.setdefault(part, []).append((name, ci, len(tris)))
             if part is None:
@@ -65,6 +66,9 @@ def run(cfg, out_dir, meta_path):
             g['uv'].append(uv[used])
             g['idx'].append(remap[tris])
             g['n'] += len(used)
+    # geometry the config makes itself (a tyre the source leaves to its own engine, say)
+    if hasattr(cfg, 'extra'):
+        cfg.extra(groups)
     # one wheel model: the chosen wheel's geometry moved to the origin with its axle along X; the
     # four wheel parts keep only their boxes (hub centres)
     wheel_boxes = {}

@@ -159,7 +159,7 @@ export class ItemSystem {
   }
 
   spawnPart(partId, pos, quat = new THREE.Quaternion(), state = {}) {
-    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'beetle';
+    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'w203';
     const mesh = this.buildPartMesh(partId, state.carType, state.tune);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
     this.group.add(mesh);

@@ -43,7 +43,7 @@ async function boot() {
       startZ: +(params.get('z') || 0),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
-      car: params.get('car') || 'beetle',
+      car: params.get('car') || 'w203',
       trailer: params.has('trailer'),
       onProgress: (t, p) => console.log('load', t, p),
     });
@@ -62,7 +62,7 @@ async function boot() {
       seed: +(params.get('seed') || 1234),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'parts',
-      car: params.get('car') || 'beetle',
+      car: params.get('car') || 'w203',
       time: 8.2,
       weather: 'clear',
       load,
