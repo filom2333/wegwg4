@@ -479,7 +479,8 @@ export function archMaterials() {
     corrugated: std('corrugated', { roughness: 0.55, metalness: 0.6, ns: 1.2, rust: true }, true),
     corrugatedRust: (() => {
       const m = std('corrugated', { roughness: 0.75, metalness: 0.4, ns: 1.2 });
-      applyWeathering(m, weatheringUniforms({ dirt: 0.5, dust: 0.3, rust: 0.8 }), { rustColor: true, strength: 1 });
+      // rust streaks, not a camouflage of white blotches
+      applyWeathering(m, weatheringUniforms({ dirt: 0.45, dust: 0.08, rust: 0.55 }), { rustColor: true, strength: 0.7 });
       return m;
     })(),
     shingles: std('shingles', { roughness: 0.95, ns: 1.1 }, true),

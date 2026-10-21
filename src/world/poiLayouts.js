@@ -7,6 +7,7 @@ import { archMaterials, signMaterial } from './buildings/materials.js';
 import { buildHouse } from './buildings/house.js';
 import * as ST from './buildings/structures.js';
 import * as FUR from './buildings/furniture.js';
+import * as TALL from './buildings/tall.js';
 
 // ------------------------------------------------------------------ layouts
 function props(fn) {
@@ -33,7 +34,7 @@ export const LAYOUTS = {
             [-14, 9],
             [-14, -9],
           ]);
-          FUR.place(b, FUR.barrel(rnd), 12.8, 0, 3.5, 0);
+          b.prop('oilDrum', 12.8, 0, 3.5, rnd() * 6);
           FUR.place(b, FUR.crate(rnd), 12.8, 0, 4.6, 0.2);
         }),
         x: 0,
@@ -53,13 +54,98 @@ export const LAYOUTS = {
   houses(rnd) {
     const n = 2 + (rnd() < 0.5 ? 1 : 0);
     const list = [];
-    let x = -((n - 1) * 15) / 2;
+    let x = -((n - 1) * 19) / 2;
+    // now and then one of them is a two- or three-storey place with stairs inside
+    const tall = rnd() < 0.55 ? Math.floor(rnd() * n) : -1;
     for (let i = 0; i < n; i++) {
-      const h = buildHouse(rnd, {});
+      const h = i === tall ? TALL.buildStoreyed(rnd, { W: 8.6, D: 7.6, floors: rnd() < 0.35 ? 3 : 2, style: TALL.storeyStyle(archMaterials(), rnd() < 0.5 ? 'town' : 'house', rnd), chimney: rnd() < 0.6 }) : buildHouse(rnd, {});
       list.push({ ...h, x: x + (rnd() - 0.5) * 2, z: (rnd() - 0.5) * 4, rot: (rnd() - 0.5) * 0.1 });
-      x += 15;
+      x += 19;
     }
     return list;
+  },
+  lookout(rnd) {
+    const t = TALL.buildLookout(rnd);
+    const list = [{ ...t, x: 0, z: 0, rot: rnd() * 6 }];
+    list.push({ ...props((b) => b.prop('oilDrum', 4.2, 0, 2.5, rnd() * 6)), x: 0, z: 0, rot: 0 });
+    return list;
+  },
+  church(rnd) {
+    const list = [{ ...TALL.buildChurch(rnd), x: 0, z: -1, rot: 0 }];
+    list.push({
+      ...props((b) => {
+        ST.fence(b, [
+          [-9, 9],
+          [-9, -9],
+          [-16, -9],
+        ]);
+        b.prop('lampPost', 3.0, 0, 9.5, Math.PI);
+        b.prop('pottedPlant', -1.6, 0.35, 8.7, 0);
+      }),
+      x: 0,
+      z: 0,
+      rot: 0,
+    });
+    return list;
+  },
+  cabin(rnd) {
+    const c = TALL.buildCabin(rnd);
+    const list = [{ ...c, x: 0, z: 0, rot: 0 }];
+    list.push({ ...props((b) => b.prop('lampPost', 3.6, 0.45, 5.4, Math.PI)), x: 0, z: 0, rot: 0 });
+    return list;
+  },
+  sawmill(rnd) {
+    const list = [{ ...TALL.buildSawmill(rnd), x: 2, z: -2, rot: 0 }];
+    list.push({
+      ...props((b) => {
+        for (let i = 0; i < 3; i++) b.prop('oilDrum', -6 + i * 0.75, 0.2, 5.6, rnd() * 6);
+        b.prop('barnLamp', -3.5, 4.0, -1.85, 0, { collide: false });
+      }),
+      x: 2,
+      z: -2,
+      rot: 0,
+    });
+    return list;
+  },
+  lodge(rnd) {
+    const M = archMaterials();
+    const l = TALL.buildStoreyed(rnd, { W: 11, D: 8.5, floors: 2, style: TALL.storeyStyle(M, 'lodge', rnd), porch: true, name: 'lodge' });
+    const list = [{ ...l, x: 0, z: -1, rot: 0 }];
+    list.push({
+      ...props((b) => {
+        ST.signBoard(b, -3, 2.0, 6.3, 2.6, 0.6, signMaterial(['PINE LODGE'], { w: 512, h: 120, bg: '#3a2a1c', fg: '#e9dcc0' }), 0, { posts: 2 });
+        b.prop('lampPost', 5.5, 0, 7.5, Math.PI);
+      }),
+      x: 0,
+      z: 0,
+      rot: 0,
+    });
+    return list;
+  },
+  farm(rnd) {
+    const M = archMaterials();
+    const h = TALL.buildStoreyed(rnd, { W: 9, D: 7.5, floors: 2, style: TALL.storeyStyle(M, 'farm', rnd), porch: true, name: 'farmhouse' });
+    return [
+      { ...h, x: -10, z: 2, rot: 0 },
+      { ...ST.buildBarn(rnd), x: 10, z: -3, rot: Math.PI / 2 },
+      { ...TALL.buildSilo(rnd), x: 17.5, z: 6, rot: 0 },
+      { ...ST.buildWindmill(rnd), x: 0, z: -15, rot: rnd() * 6 },
+      {
+        ...props((b) => {
+          ST.fence(b, [
+            [16, 12],
+            [28, 12],
+            [28, -14],
+            [16, -14],
+          ]);
+          b.prop('oilDrum', 5.5, 0, 4.5, rnd() * 6);
+          b.prop('barnLamp', 10, 3.2, 3.2, Math.PI, { collide: false });
+        }),
+        x: 0,
+        z: 0,
+        rot: 0,
+      },
+    ];
   },
   gasStation(rnd) {
     return [{ ...ST.buildGasStation(rnd), x: 0, z: 0, rot: 0 }];
@@ -134,7 +220,8 @@ export const LAYOUTS = {
           wall(14, 13, 14, -13);
           wall(-14, -13, 14, -13);
           for (let i = 0; i < 6; i++) FUR.place(b, FUR.tirePile(rnd), -6 + i * 2.5, 0, -10.5 + (i % 2), 0);
-          for (let i = 0; i < 4; i++) FUR.place(b, FUR.barrel(rnd), 10 + (i % 2) * 0.7, 0, -9 + Math.floor(i / 2) * 0.7, 0);
+          for (let i = 0; i < 4; i++) b.prop('oilDrum', 10 + (i % 2) * 0.72, 0, -9 + Math.floor(i / 2) * 0.72, rnd() * 6);
+          for (let i = 0; i < 3; i++) b.prop('trafficCone', -6 + i * 1.4, 0, 11.5, rnd() * 6);
           ST.signBoard(b, 0, 3.0, 13.2, 4, 0.8, signMaterial(['SALVAGE · PARTS'], { w: 512, h: 96, bg: '#d8c9a2', fg: '#3a2a1a' }), 0, { posts: 2 });
         }),
         x: 0,

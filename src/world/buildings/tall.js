@@ -207,7 +207,9 @@ function furnishStorey(b, rnd, f, floors, r, y) {
   if (f === 0) {
     P(FUR.kitchenRun(rnd, Math.min(2.4, (r.z1 - r.z0) - 0.8)), r.x1 - 0.32, (r.z0 + r.z1) / 2, -Math.PI / 2);
     P(FUR.diningTable(rnd, { chairs: 4 }), r.x1 - 2.0, (r.z0 + r.z1) / 2, 0);
-    P(FUR.sofa(rnd, { seats: 3 }), r.x0 + 0.5, (r.z0 + r.z1) / 2, Math.PI / 2);
+    if (rnd() < 0.6) b.prop('leatherSofa', r.x0 + 0.6, y, (r.z0 + r.z1) / 2, Math.PI / 2);
+    else P(FUR.sofa(rnd, { seats: 3 }), r.x0 + 0.5, (r.z0 + r.z1) / 2, Math.PI / 2);
+    if (rnd() < 0.6) b.prop('pottedPlant', r.x0 + 0.45, y, r.z1 - 0.45, 0);
     P(FUR.coffeeTable(rnd), r.x0 + 1.5, (r.z0 + r.z1) / 2, Math.PI / 2);
     if (W > 6) P(FUR.bookshelf(rnd), r.x0 + 2.4, r.z1 - 0.25, Math.PI);
   } else {
@@ -310,6 +312,8 @@ export function buildLookout(rnd) {
   FUR.place(b, FUR.stool(rnd), 1.3, H, 1.3, 0.3);
   FUR.place(b, FUR.stoveUnit(rnd), 1.55, H, -1.6, 0);
   b.loot.push({ pos: [1.4, H + 0.95, -1.6], kind: 'table' });
+  // the last watchman's things
+  b.prop('flightHelmet', -1.6, H + 0.55, -1.45, 0.4);
   b.loot.push({ pos: [0.6, H + 1.08, 0.7], kind: 'small' });
   b.lights.push({ pos: [0, H + 2.1, 0], color: 0xffe2b0, intensity: 0, distance: 8, fixture: true });
   return { builder: b, footprint: { w: 7, d: 7 } };
@@ -553,7 +557,7 @@ export function buildSawmill(rnd) {
   const uv = cone.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 16, uv.getY(i) * 11);
   cone.translate(bx, 5.6, bz);
-  b.add(cone, M.corrugatedRust);
+  b.add(cone, M.corrugated);
   const cap = new THREE.CylinderGeometry(1.05, 1.05, 1.0, 20, 1, true).translate(bx, 11.6, bz);
   b.add(cap, M.metal);
   for (const a of [0, Math.PI / 4]) b.collider(bx, 3, bz, 5.6, 6, 5.6, a, 'metal');

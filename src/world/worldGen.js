@@ -97,13 +97,13 @@ function erodedFbm(x, y, seed, octaves = 9) {
 export const POI_SPACING = 620;
 
 export const POI_INFO = {
-  homestead: { offset: [24, 28], pad: 26 },
+  homestead: { offset: [24, 28], pad: 30 },
   gasStation: { offset: [22, 26], pad: 30 },
   motel: { offset: [26, 34], pad: 32 },
   diner: { offset: [20, 26], pad: 22 },
-  houses: { offset: [30, 46], pad: 38 },
-  house: { offset: [22, 40], pad: 18 },
-  ranch: { offset: [40, 60], pad: 34 },
+  houses: { offset: [34, 50], pad: 46 },
+  house: { offset: [24, 42], pad: 23 },
+  ranch: { offset: [42, 62], pad: 40 },
   waterTower: { offset: [18, 30], pad: 12 },
   radioTower: { offset: [30, 60], pad: 14 },
   junkyard: { offset: [24, 36], pad: 26 },
@@ -112,10 +112,10 @@ export const POI_INFO = {
   ruins: { offset: [18, 40], pad: 16 },
   camp: { offset: [16, 30], pad: 12 },
   wreck: { offset: [6, 9], pad: 6 },
-  farm: { offset: [34, 52], pad: 36 },
+  farm: { offset: [36, 54], pad: 42 },
   cabin: { offset: [22, 36], pad: 16 },
-  church: { offset: [22, 34], pad: 22 },
-  sawmill: { offset: [28, 44], pad: 30 },
+  church: { offset: [24, 36], pad: 26 },
+  sawmill: { offset: [30, 46], pad: 36 },
   lodge: { offset: [28, 44], pad: 30 },
   lookout: { offset: [24, 40], pad: 12 },
 };

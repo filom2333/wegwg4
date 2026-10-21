@@ -98,6 +98,12 @@ export class Builder {
     this.extra = []; // ready-made Object3D (e.g. instanced furniture)
     this.subs = []; // { builder, pivot: [x,y,z], anim } separately transformed parts (rotors)
     this.sensors = [];
+    this.props = []; // { id, pos: [x, y, z], rot } real models placed when the place is built
+  }
+
+  // A real model (see world/props.js) standing at (x, y, z), turned rot about y.
+  prop(id, x, y, z, rot = 0, opts = {}) {
+    this.props.push({ id, pos: [x, y, z], rot, ...opts });
   }
 
   // Appends a geometry's triangles (indexed or not) straight into growable per-material
@@ -525,6 +531,7 @@ export class Builder {
       pumps: this.pumps || [],
       fuelReserve: this.fuelReserve,
       carSpot: this.carSpot ? { x: this.carSpot.x, z: this.carSpot.z } : null,
+      props: this.props,
       subs: this.subs.map((s) => ({ pivot: s.pivot, anim: s.anim, data: s.builder.serialize(transfer) })),
     };
   }
@@ -549,6 +556,7 @@ export class Builder {
     b.pumps = d.pumps;
     b.fuelReserve = d.fuelReserve;
     b.carSpot = d.carSpot;
+    b.props = d.props || [];
     b.subs = d.subs.map((s) => ({ pivot: s.pivot, anim: s.anim, builder: Builder.fromData(s.data) }));
     return b;
   }

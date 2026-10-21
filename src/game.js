@@ -21,6 +21,7 @@ import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
 import { Tents } from './world/tents.js';
+import { PropLibrary } from './world/props.js';
 import { Atlas } from './story/atlas.js';
 import { PhotoMode, loadPhotos } from './ui/photoMode.js';
 import { Winches } from './vehicle/winch.js';
@@ -140,6 +141,9 @@ export class Game {
     const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
     this.scatter = new Scatter(this, this.groundTex, await treeTex);
+    // real models: the common ones start loading now, the rest when a place first needs them
+    this.props = new PropLibrary();
+    for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant']) this.props.load(id);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);

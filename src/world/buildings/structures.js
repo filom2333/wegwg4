@@ -111,7 +111,9 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true } = {}) {
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), x1 - 0.4, y, z0 + 1.1, -Math.PI / 2);
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), x1 - 0.4, y, z0 + 2.5, -Math.PI / 2);
   placeIt(b, FUR.tirePile(rnd), x0 + 0.6, y, z1 - 1.2, 0);
-  placeIt(b, FUR.barrel(rnd), x1 - 0.5, y, z1 - 0.8, 0);
+  b.prop('oilDrum', x1 - 0.55, y, z1 - 0.8, rnd() * 6);
+  // a copper lamp over the bench
+  b.prop('barnLamp', x0 + 1.4, y + 2.15, z0 + 0.12, 0, { collide: false });
   // light bulb
   b.lights.push({ pos: [0, y + 2.9, 0], color: 0xffe2b0, intensity: 0, distance: 9, fixture: true });
   const stain = new THREE.CircleGeometry(0.9, 24);
@@ -237,8 +239,13 @@ export function buildGasStation(rnd) {
   b.box(-10, 0.7, 4, 0.5, 1.4, 0.4, M.metalRed, { surface: 'metal' });
   b.box(9.5, 0.75, -6, 2.0, 1.5, 1.2, M.metalGreen, { surface: 'metal' });
   b.box(9.5, 1.55, -6, 2.05, 0.08, 1.25, M.metalGreen, { collide: false });
-  placeIt(b, FUR.barrel(rnd), -9.5, 0.1, -7, 0);
+  b.prop('oilDrum', -9.5, 0.1, -7, rnd() * 6);
+  if (rnd() < 0.7) b.prop('oilDrum', -8.7, 0.1, -7.5, rnd() * 6);
+  if (rnd() < 0.4) b.prop('oilDrum', -9.1, 0.1, -6.3, rnd() * 6);
   placeIt(b, FUR.tirePile(rnd), -10.5, 0.1, -5.5, 0);
+  // the drinks fridge by the counter, cones left out on the forecourt
+  b.prop('drinksFridge', -0.6, sy, sz0 + 0.55, 0);
+  for (let i = 0; i < 1 + Math.floor(rnd() * 3); i++) b.prop('trafficCone', -7 + rnd() * 2, 0.1, 9 + rnd() * 2.5, rnd() * 6);
   // underground tank fill caps
   for (const x of [-1, 1]) {
     const g = new THREE.CylinderGeometry(0.25, 0.25, 0.04, 16);
@@ -312,6 +319,9 @@ export function buildMotel(rnd) {
   placeIt(b, FUR.shopCounter(rnd), ox0 + 2.5, y, -0.6, Math.PI);
   placeIt(b, FUR.filingCabinet(rnd), ox0 + 0.5, y, -rd / 2 + 0.5, 0);
   placeIt(b, FUR.desk(rnd), ox1 - 1.0, y, -rd / 2 + 0.6, 0);
+  b.prop('leatherSofa', ox0 + 2.5, y, rd / 2 - 2.0, Math.PI);
+  b.prop('pottedPlant', ox1 - 0.5, y, rd / 2 - 1.5, 0);
+  for (let i = 0; i < 2; i++) b.prop('lampPost', x0 + total * (0.25 + i * 0.5), 0.05, rd / 2 + 4.6, Math.PI);
   // tall sign
   b.box(ox0 - 2, 3.8, rd / 2 + 4, 0.25, 7.6, 0.25, M.metal, { surface: 'metal' });
   signBoard(b, ox0 - 2, 6.6, rd / 2 + 4.2, 3.4, 1.4, signMaterial([{ text: 'MOTEL', size: 120 }, { text: 'VACANCY', size: 50 }], { bg: '#203a4a', fg: '#e8c25a', border: '#e8c25a' }), 0);
@@ -357,6 +367,8 @@ export function buildDiner(rnd) {
   placeIt(b, FUR.kitchenRun(rnd, 4.2, { sink: true, stove: true, uppers: false }), -1.5, y, z0 + 0.45, 0);
   placeIt(b, FUR.fridge(rnd), 3.2, y, z0 + 0.5, 0);
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), 5.2, y, z0 + 0.4, 0);
+  b.prop('drinksFridge', x1 - 0.65, y, -0.2, -Math.PI / 2);
+  if (rnd() < 0.6) b.prop('pottedPlant', -1.6, y, z1 - 0.5, 0);
   b.lights.push({ pos: [0, y + 2.8, 1], color: 0xfff0d0, intensity: 0, distance: 12, fixture: true });
   // roof sign
   // stands on two posts above the parapet (top of the parapet is ~3.6 m above the floor)
@@ -643,8 +655,9 @@ export function buildOutpost(rnd) {
   tent(b, rnd, 3.5, 3.5, 0.0, M.canvasGreen, 3.6, 3.0, 2.2);
   // crates & ammo boxes
   for (let i = 0; i < 4; i++) placeIt(b, FUR.crate(rnd, 0.55 + rnd() * 0.2), -2 + i * 0.75, 0, -4 + (i % 2) * 0.5, rnd() * 0.5);
-  placeIt(b, FUR.barrel(rnd), 6.5, 0, -4, 0);
-  placeIt(b, FUR.barrel(rnd), 6.5, 0, -3.2, 0);
+  b.prop('oilDrum', 6.5, 0, -4, rnd() * 6);
+  b.prop('oilDrum', 6.5, 0, -3.1, rnd() * 6);
+  for (let i = 0; i < 4; i++) b.prop('trafficCone', -3 + i * 2, 0, 8.5, rnd() * 6);
   // flag pole
   b.box(0, 3.5, -4.5, 0.08, 7, 0.08, M.metal, { surface: 'metal' });
   const flag = new THREE.PlaneGeometry(1.4, 0.8, 8, 4);
@@ -750,6 +763,7 @@ export function buildRuins(rnd) {
   b.add(beam, M.woodDark);
   placeIt(b, FUR.crate(rnd, 0.5), -W / 4, 0, -D / 4, 0.4);
   b.loot.push({ pos: [W / 4, 0.05, D / 4], kind: 'ruin' });
+  if (rnd() < 0.6) b.prop('skull', -W / 5, 0.02, D / 5, rnd() * 6);
   return { builder: b, footprint: { w: W + 2, d: D + 2 } };
 }
 
@@ -790,6 +804,8 @@ export function buildCamp(rnd) {
   b.box(2.4, 0.22, 1.0, 0.6, 0.44, 0.38, M.metalRed, {});
   b.box(2.4, 0.46, 1.0, 0.62, 0.06, 0.4, M.metalWhite, { collide: false });
   b.loot.push({ pos: [2.4, 0.5, 1.0], kind: 'camp' });
+  b.prop('lampPost', -3.2, 0, -1.5, 0.6);
+  if (rnd() < 0.6) b.prop('oilDrum', 3.4, 0, -2.6, rnd() * 6);
   b.loot.push({ pos: [-0.3, 0.05, 2.6], kind: 'camp' });
   return { builder: b, footprint: { w: 9, d: 8 } };
 }

@@ -15,6 +15,7 @@ class Item {
     this.cols = [];
     this.loot = [];
     this.lights = [];
+    this.props = []; // real models (world/props.js) placed with the item
   }
   add(geo, mat) {
     this.parts.push([geo, mat]);
@@ -848,6 +849,19 @@ export function place(builder, item, x, y, z, rotY = 0) {
     q.set(...l.pos).applyMatrix4(m);
     builder.lights.push({ ...l, pos: [q.x, q.y, q.z] });
   }
+  for (const p of item.props) {
+    q.set(...p.pos).applyMatrix4(m);
+    builder.prop(p.id, q.x, q.y, q.z, (p.rot || 0) + rotY);
+  }
+}
+
+// A real model as a piece of furniture: `size` [w, h, d] is its footprint for room planning (the
+// model itself is scaled to its real size when it loads); `loot` a spot on or in it.
+export function propItem(id, size, { loot = null } = {}) {
+  const it = new Item(size);
+  it.props.push({ id, pos: [0, 0, 0], rot: 0 });
+  if (loot) it.lootAt(...loot);
+  return it;
 }
 
 export { Item, mulberry32 };

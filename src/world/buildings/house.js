@@ -7,14 +7,15 @@ import { archMaterials } from './materials.js';
 import * as FUR from './furniture.js';
 import { place } from './furniture.js';
 
-const WALL_H = 2.7;
+const WALL_H = 3.0;
 const EXT_T = 0.24;
 const INT_T = 0.12;
 
 // ---------------------------------------------------------------- floor plan
 function planHouse(rnd) {
-  const W = Math.round((8.5 + rnd() * 4.5) * 2) / 2;
-  const D = Math.round((7 + rnd() * 3) * 2) / 2;
+  // roomy: real family houses, not doll's houses
+  const W = Math.round((10.5 + rnd() * 5) * 2) / 2;
+  const D = Math.round((8.5 + rnd() * 3.5) * 2) / 2;
   const x0 = -W / 2,
     x1 = W / 2,
     z0 = -D / 2,
@@ -450,7 +451,9 @@ function furnishRoom(b, r, rnd, y, openings) {
   const shuffle = (a) => a.map((v) => [rnd(), v]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
   switch (r.type) {
     case 'living': {
-      const so = FUR.sofa(rnd, { seats: W > 4 ? 3 : 2 });
+      // half the houses have a real leather or velvet sofa, some a proper armchair, a plant
+      const real = W > 3.4 && rnd() < 0.5;
+      const so = real ? FUR.propItem('leatherSofa', [2.35, 0.9, 1.05]) : FUR.sofa(rnd, { seats: W > 4 ? 3 : 2 });
       if (P.wall(so, shuffle(all), { centre: true })) {
         // coffee table and rug in front of the sofa
         const l = P.last;
@@ -461,6 +464,7 @@ function furnishRoom(b, r, rnd, y, openings) {
       }
       P.wall(FUR.tvStand(rnd), shuffle(all), { centre: true });
       P.wall(FUR.armchair(rnd), shuffle(all));
+      if (rnd() < 0.45) P.wall(FUR.propItem('pottedPlant', [0.7, 0.8, 0.7]), shuffle(all), { tall: false });
       P.wall(FUR.bookshelf(rnd), shuffle(all));
       if (rnd() < 0.5) P.wall(FUR.dresser(rnd), shuffle(all));
       break;
@@ -472,7 +476,12 @@ function furnishRoom(b, r, rnd, y, openings) {
       for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L), sides);
       for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L, { uppers: false }), sides);
       P.wall(FUR.fridge(rnd), shuffle(all));
-      if (D > 3 && W > 2.8) P.free(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 }), cx, cz, 0) || P.free(FUR.diningTable(rnd, { chairs: 2 }), cx, cz + 0.4, 0);
+      let tz = null;
+      if (D > 3 && W > 2.8) {
+        if (P.free(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 }), cx, cz, 0)) tz = cz;
+        else if (P.free(FUR.diningTable(rnd, { chairs: 2 }), cx, cz + 0.4, 0)) tz = cz + 0.4;
+      }
+      void tz;
       break;
     }
     case 'bedroom': {

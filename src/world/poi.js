@@ -2,6 +2,8 @@
 // builds them near the player with static colliders, doors, lights, pumps and loot spots.
 
 import * as THREE from 'three';
+import { placeProp } from './props.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
 import { mulberry32 } from '../core/noise.js';
 import { Builder } from './buildings/builder.js';
@@ -156,7 +158,7 @@ export class POIManager {
     const body = ph.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(root.position.x, root.position.y, root.position.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
     const st = this.state.get(k) || { taken: new Set(), doors: {}, fuel: null, visited: false };
     this.state.set(k, st);
-    const inst = { k, poi, root, body, doors: [], pumps: [], lights: [], lamps: [], animated: [], loot: [], beacons: [], state: st, powered: rnd() < 0.5 };
+    const inst = { k, poi, root, body, doors: [], pumps: [], lights: [], lamps: [], animated: [], loot: [], beacons: [], propList: [], state: st, powered: rnd() < 0.5 };
     const tmpQ = new THREE.Quaternion();
     for (const e of layout) {
       const b = e.builder;
@@ -184,6 +186,11 @@ export class POIManager {
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
       for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });
+      // real models, placed once the place is registered (and their files have loaded)
+      for (const p of b.props || []) {
+        const v = V(...p.pos).applyMatrix4(em);
+        inst.propList.push({ ...p, pos: [v.x, v.y, v.z], rot: (p.rot || 0) + (e.rot || 0) });
+      }
       // light fixtures: positions only; a shared pool of lights visits the nearest ones
       for (const l of b.lights) {
         if (!(l.powered || l.beacon)) continue;
@@ -192,12 +199,14 @@ export class POIManager {
       }
       for (const a of b.animated || []) inst.animated.push(a);
       if (e.tag === 'garage' && b.carSpot) inst.carSpot = V(b.carSpot.x, 0, b.carSpot.z).applyMatrix4(em);
+      this.addFootings(inst, b, em);
     }
     // wrecks
     const nW = WRECKS[poi.type] ?? 0;
     for (let i = 0; i < nW && this.wreckProtos.length; i++) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
     this.loaded.set(k, inst);
+    for (const p of inst.propList) placeProp(this.game, inst, p);
     // what lives in the place (loot, animals, a parked car, a trailer) follows in the next frames,
     // one kind a frame, so a place streaming in never costs one long frame; the start is built
     // at once
@@ -210,6 +219,54 @@ export class POIManager {
     ];
     if (tokens) inst.pending = hooks;
     else for (const h of hooks) h();
+  }
+
+  // Where the land falls away under a building (the edge of its level pad, a slope, a bank), its
+  // floors, slabs and posts would hang in the air: run a concrete footing down from each of them
+  // to the real ground. One merged mesh per building.
+  addFootings(inst, b, em) {
+    const gen = this.game.gen;
+    const o = this.game.origin;
+    const rootM = inst.root.matrixWorld;
+    const baseY = inst.root.position.y;
+    const geos = [];
+    const p = V(0, 0, 0);
+    for (const c of b.colliders) {
+      const bottom = c.c[1] - c.h[1];
+      if (bottom > 0.5 || c.rotX || c.surface === 'roof') continue;
+      const hx = c.h[0],
+        hz = c.h[2];
+      if (hx * hz * 4 < 0.03) continue;
+      const cs = Math.cos(c.rotY || 0),
+        sn = Math.sin(c.rotY || 0);
+      let low = Infinity;
+      for (const [ax, az] of [
+        [0, 0],
+        [-hx, -hz],
+        [hx, -hz],
+        [-hx, hz],
+        [hx, hz],
+      ]) {
+        p.set(c.c[0] + ax * cs + az * sn, 0, c.c[2] - ax * sn + az * cs).applyMatrix4(em).applyMatrix4(rootM);
+        low = Math.min(low, gen.height(p.x + o.x, p.z + o.z) - baseY);
+      }
+      const gap = bottom - low;
+      if (gap < 0.08) continue;
+      const depth = gap + 0.35;
+      const g = new THREE.BoxGeometry(Math.max(0.1, hx * 2 - 0.04), depth, Math.max(0.1, hz * 2 - 0.04));
+      g.rotateY(c.rotY || 0);
+      g.translate(c.c[0], bottom - depth / 2 + 0.01, c.c[2]);
+      g.applyMatrix4(em);
+      geos.push(g.index ? g.toNonIndexed() : g);
+    }
+    if (!geos.length) return;
+    const merged = mergeGeometries(geos, false);
+    for (const g of geos) g.dispose();
+    if (!merged) return;
+    const m = new THREE.Mesh(merged, archMaterials().concrete);
+    m.castShadow = m.receiveShadow = true;
+    m.name = 'footings';
+    inst.root.add(m);
   }
 
   addWreck(inst, rnd, i, type) {
