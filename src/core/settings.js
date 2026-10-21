@@ -28,6 +28,7 @@ export const DEFAULT_BINDINGS = {
   stow: 'KeyQ',
   sleep: 'KeyB',
   view: 'KeyV',
+  winch: 'KeyY',
 };
 
 export const DEFAULTS = {

@@ -19,6 +19,8 @@ import { Fleet } from './vehicle/fleet.js';
 import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
+import { Jacks } from './vehicle/jack.js';
+import { Winches } from './vehicle/winch.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
 import { ItemSystem } from './items/items.js';
@@ -149,6 +151,8 @@ export class Game {
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
     this.campfires = new Campfires(this);
+    this.jacks = new Jacks(this);
+    this.winches = new Winches(this);
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
@@ -329,6 +333,8 @@ export class Game {
     this.items.rebase(dx, dz);
     this.effects && this.effects.rebase(dx, dz);
     this.campfires && this.campfires.rebase(dx, dz);
+    this.jacks.rebase(dx, dz);
+    this.winches.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
@@ -401,6 +407,14 @@ export class Game {
     this.fleet.update(dt, controls);
     for (const s of this.systems) s.update && s.update(dt);
     this.campfires && this.campfires.update(dt);
+    this.jacks.update();
+    // winding in: from the driver's seat with the winch key, or at the drum with LMB
+    const cable = this.winches.cable;
+    if (cable) {
+      const p = this.player;
+      cable.reel = !!cable.anchor && (this.interaction.reelFromDrum || (p.seat === 'driver' && p.car === cable.car && input.isDown('winch') && !(this.ui && this.ui.blocksMove)));
+      this.interaction.reelFromDrum = false;
+    }
     this.physics.update(dt);
     this.fleet.syncVisual();
     this.trailers && this.trailers.update();
@@ -412,6 +426,7 @@ export class Game {
       this.player.updateCamera(dt);
       this.interaction.update(dt);
       this.interaction.updateView(dt);
+      this.winches.update(dt, this.interaction.hookHand());
     }
     this.updateRefuel(dt);
     this.effects.update(dt);
@@ -583,6 +598,7 @@ export class Game {
     const gx = 8.5,
       gz = -1.5; // garage centre in POI space
     const list = [
+      ['jack', gx + 1.6, 0.1, gz - 2.6, null],
       ['jerryCan', gx - 2.4, 0.4, gz + 2.0, { liquid: 12, liquidType: 'fuel' }],
       ['oilBottle', gx - 1.6, 1.1, gz - 3.2, null],
       ['waterBottle', gx - 2.0, 1.1, gz - 3.2, null],

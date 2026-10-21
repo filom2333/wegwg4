@@ -16,6 +16,7 @@ export const ACCESSORIES = {
   roofRack: { label: 'Roof rack', mount: 'roof', mass: 14, cargo: true, desc: 'Bolts to the roof gutters. Strap things on top, but mind the centre of gravity.' },
   roofBox: { label: 'Roof box', mount: 'roof', mass: 17, storage: { slots: 12, capacity: 50 }, desc: 'A boot on the roof: 50 kg of room, high up.' },
   bullBar: { label: 'Bull bar', mount: 'front', mass: 26, guard: 0.45, desc: 'Steel tube across the nose. Takes the worst of a head-on hit.' },
+  winchBar: { label: 'Winch bar', mount: 'front', mass: 44, guard: 0.45, winch: true, desc: 'A bull bar with an electric winch: hook the cable round a tree and pull yourself out.' },
   rearRack: { label: 'Rear carrier', mount: 'rear', mass: 11, cargo: true, desc: 'A tray behind the rear bumper for cans and crates.' },
 };
 export const MOUNT_LABEL = { roof: 'roof', front: 'nose', rear: 'tail' };
@@ -164,13 +165,26 @@ function rearRack(M, f) {
   return g;
 }
 
-const BUILD = { roofRack, roofBox, bullBar, rearRack };
+// The bull bar with a winch drum and its motor on a cradle between the uprights.
+function winchBar(M, f) {
+  const g = bullBar(M, f);
+  const z = f.z + 0.1,
+    y = f.y0 + 0.13;
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.05, 0.16).translate(0, y - 0.07, z - 0.02), M.black));
+  g.add(mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.26, 18).rotateZ(Math.PI / 2).translate(0.04, y, z), M.black));
+  for (let i = 0; i < 9; i++) g.add(mesh(new THREE.TorusGeometry(0.06, 0.006, 5, 16).rotateY(Math.PI / 2).translate(-0.07 + i * 0.027, y, z), M.zinc));
+  g.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 14).rotateZ(Math.PI / 2).translate(-0.19, y, z), M.black));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.05, 0.03).translate(0, y, z + 0.08), M.chrome));
+  return g;
+}
+
+const BUILD = { roofRack, roofBox, bullBar, rearRack, winchBar };
 
 // Collision box [centre, half extents] in car space, and where the cargo sits.
 function boxOf(id, f) {
   if (id === 'roofRack') return [V(0, f.top, f.z), V(f.w / 2, 0.012, f.l / 2)];
   if (id === 'roofBox') return [V(0, f.top + 0.19, f.z), V(f.w * 0.41, 0.17, f.l * 0.56)];
-  if (id === 'bullBar') return [V(0, (f.y0 + f.y1) / 2, f.z + 0.06), V(f.w / 2, (f.y1 - f.y0) / 2, 0.06)];
+  if (id === 'bullBar' || id === 'winchBar') return [V(0, (f.y0 + f.y1) / 2, f.z + 0.06), V(f.w / 2, (f.y1 - f.y0) / 2, 0.06)];
   return [V(0, f.y, f.z - f.d / 2), V(f.w / 2, 0.015, f.d / 2)];
 }
 
@@ -217,6 +231,8 @@ export function buildAccessory(id, car = null) {
   const g = merged(BUILD[id](mats(), f, roofFeet(car, f)));
   g.name = 'accessory:' + id;
   g.userData.box = boxOf(id, f);
+  // where the winch cable leaves the fairlead (car space)
+  if (def.winch) g.userData.drum = V(0, f.y0 + 0.13, f.z + 0.2);
   return g;
 }
 

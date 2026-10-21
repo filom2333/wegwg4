@@ -126,6 +126,9 @@ export class Car {
     const lid = this.lidBlocking(id);
     if (lid) return { ok: false, reason: lid };
     if (this.game.player && this.game.player.seat) return { ok: false, reason: 'Get out of the car first' };
+    // a wheel standing on the ground carries the car: jack that corner up first
+    const w = this.dyn.wheels.find((x) => x.id === id);
+    if (w && w.contact && w.load > 900 && this.dyn.body.isEnabled()) return { ok: false, reason: 'It carries the car: jack this corner up first' };
     return { ok: true };
   }
 

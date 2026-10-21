@@ -87,7 +87,11 @@ export function serializeGame(g) {
     fleet: g.fleet.serialize(),
     trailers: g.trailers ? g.trailers.serialize() : [],
     // loot that never left its spot is regenerated deterministically when the POI loads
-    items: g.items.serialize().filter((it) => it.poi === null || it.poi === undefined),
+    // jacks standing under cars are kept as jacks lying where they stood
+    items: g.items
+      .serialize()
+      .filter((it) => it.poi === null || it.poi === undefined)
+      .concat((g.jacks ? g.jacks.list : []).map((j) => ({ id: 'jack', part: null, state: {}, pos: [j.base.x + g.origin.x, j.base.y + 0.06, j.base.z + g.origin.z], quat: [0, 0, 0, 1], stowed: false, poi: null, spot: null }))),
     itemsSaved: [...g.items.saved.entries()],
     itemsPending: [...(g.items.pending || new Map()).entries()],
     pois: [...g.pois.state.entries()].map(([k, st]) => [k, { ...st, taken: [...st.taken] }]),

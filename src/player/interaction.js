@@ -17,6 +17,8 @@ import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, def
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { clamp, lerp } from '../core/noise.js';
+import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
+import { JACK_LOW, JACK_MAX } from '../vehicle/jack.js';
 
 
 // Part table entry of a part item (it remembers which kind of car it came off).
@@ -78,6 +80,22 @@ export class Interaction {
     return this.held;
   }
 
+  // Where the winch hook is held: low and to the right in front of the eye.
+  hookHand(out = V(0, 0, 0)) {
+    const q = this.cam.quaternion;
+    return out.copy(this.cam.position).add(V(0.17, -0.27, -0.55).applyQuaternion(q));
+  }
+
+  // Where the held jack would go: the corner of the current car you are looking at.
+  jackSpot() {
+    const g = this.game;
+    const car = g.car;
+    const hit = this.lookHit;
+    if (!car || !hit || hit.distance > REACH + 0.4 || g.player.seat) return null;
+    if (car.root.position.distanceTo(this.cam.position) > 5) return null;
+    return g.jacks.spotFor(car, V(hit.point.x, hit.point.y, hit.point.z));
+  }
+
   // ------------------------------------------------------------------ targeting
   findTarget() {
     const g = this.game;
@@ -116,6 +134,8 @@ export class Interaction {
       const pump = g.pois.nearestPump(tip, 0.9);
       if (pump && pump.world.distanceTo(origin) < reach + 0.6) best = { kind: 'pump', pump, dist: pump.world.distanceTo(origin) };
     }
+    // a jack standing under a car
+    if (hit && hit.owner && hit.owner.kind === 'jack' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist + 0.1)) best = { kind: 'jack', jack: hit.owner.jack, dist: hit.distance };
     // trailers
     if (hit && hit.owner && hit.owner.kind === 'trailer' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist)) best = { kind: 'trailer', trailer: hit.owner.trailer, dist: hit.distance };
     // npcs (for melee / corpses)
@@ -243,8 +263,23 @@ export class Interaction {
     const prompts = [];
     let info = null;
     const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
-    // ---- held item logic
-    if (this.held) {
+    // ---- carrying the winch hook out to an anchor
+    const W = g.winches;
+    if (W && W.cable && !W.cable.anchor && !this.held) {
+      const hit = this.lookHit;
+      const owner = hit && hit.owner;
+      const own = owner && owner.kind === 'car' && owner.car === W.cable.car;
+      const label = hit && hit.distance <= REACH + 0.6 && !own ? anchorLabel(owner) : null;
+      const drum = W.drumOf(W.cable.car);
+      info = { title: 'Winch hook', sub: `${drum ? Math.round(drum.distanceTo(this.hookHand())) : 0} of ${CABLE_MAX} m of cable out` };
+      if (label) prompts.push(['E', `Hook it round ${label}`]);
+      else prompts.push(['', 'Walk it to a tree, a rock, a building or another car']);
+      prompts.push(['R', 'Let it wind back']);
+      if (!blocked) {
+        if (label && input.wasPressed('interact')) W.attach(hit);
+        else if (input.wasPressed('reload')) W.release();
+      }
+    } else if (this.held) {
       const it = this.held;
       this.updateHeld(dt);
       const def = it.def;
@@ -268,6 +303,16 @@ export class Interaction {
           this.hideGhost();
           prompts.push(['', 'Aim at any part of a car to bolt it on']);
         }
+      } else if (def && def.jack) {
+        info = this.heldInfo(it);
+        const spot = this.jackSpot();
+        if (spot && !spot.blocked) {
+          prompts.push(['E', 'Set it under the car']);
+          if (!blocked && input.wasPressed('interact')) {
+            g.jacks.place(spot);
+            this.consumeHeld();
+          }
+        } else prompts.push(['', spot ? spot.blocked : 'Aim under the sill beside a wheel']);
       } else if (def && def.accessory) {
         const fit = this.accessoryFit(it);
         info = this.heldInfo(it);
@@ -316,6 +361,8 @@ export class Interaction {
         g.car.radioOn = true;
         g.audio && g.audio.play('click');
       }
+      const W2 = g.winches;
+      if (p.seat === 'driver' && W2 && W2.cable && W2.cable.anchor && W2.cable.car === g.car) prompts.push([kn('winch'), 'Wind in the winch (hold)']);
       if (!t && p.seat && g.car && Math.abs(g.car.speedKmh) < 3) {
         prompts.push([kn('interact'), 'Get out']);
         if (g.car && !g.car.dyn.engine.running) prompts.push([kn('sleep'), 'Sleep']);
@@ -433,6 +480,15 @@ export class Interaction {
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
         break;
       }
+      case 'jack': {
+        const j = t.jack;
+        const up = j.h - JACK_LOW;
+        info = { title: 'Scissor jack', sub: up > 0.01 ? `Raised ${Math.round(up * 100)} cm` : 'Down', bar: up / (JACK_MAX - JACK_LOW) };
+        if (j.h < JACK_MAX - 0.005) prompts.push(['LMB', 'Crank up (hold)']);
+        if (up > 0.005) prompts.push(['RMB', 'Lower (hold)']);
+        if (up < 0.01) prompts.push(['E', 'Pick it up']);
+        break;
+      }
       case 'trailer': {
         const tr = t.trailer;
         const near = !tr.hitch && tr.hitchableCar();
@@ -524,6 +580,15 @@ export class Interaction {
           if (n) info.sub += ` · ${n} strapped on`;
           else prompts.push(['', 'Drop things on it to strap them down']);
         }
+        if (def.winch) {
+          const W = this.game.winches;
+          const c = W.cable && W.cable.car === car ? W.cable : null;
+          if (!c) prompts.push(['E', 'Pull out the winch cable']);
+          else {
+            info.sub = c.anchor ? `Cable hooked · ${Math.round(c.length)} m out${c.tension > 1000 ? ` · ${Math.round(c.tension / 1000)} kN` : ''}` : 'Cable out';
+            if (c.anchor) prompts.push(['LMB', 'Wind in (hold)'], ['E', 'Unhook and wind the cable back']);
+          }
+        }
         const rem = canRemoveAccessory(car, t.mount);
         if (rem.ok) prompts.push(['R', 'Take off (hold)']);
         else prompts.push(['', rem.reason]);
@@ -598,6 +663,29 @@ export class Interaction {
       return;
     }
     if (!input.isDown('reload')) this.removing = null;
+    if (t.kind === 'jack') {
+      const j = t.jack;
+      if (input.mouseDown(0)) g.jacks.crank(j, 1, dt);
+      else if (input.mouseDown(2)) g.jacks.crank(j, -1, dt);
+      else if (input.wasPressed('interact') && j.h - JACK_LOW < 0.01) {
+        const pos = j.base.clone().add(V(0, 0.1, 0));
+        g.jacks.remove(j);
+        const it = g.items.spawn('jack', pos);
+        it.poiKey = null;
+        this.pick(it);
+      }
+      return;
+    }
+    if (t.kind === 'accessory' && car.accessories[t.mount] && ACCESSORIES[car.accessories[t.mount].id].winch && !input.isDown('reload')) {
+      const W = g.winches;
+      const c = W.cable && W.cable.car === car ? W.cable : null;
+      if (input.wasPressed('interact')) {
+        if (!c && !this.held) W.takeHook(car);
+        else if (c) W.release();
+        return;
+      }
+      if (c && c.anchor && input.mouseDown(0)) this.reelFromDrum = true;
+    }
     if (t.kind === 'trailer') {
       const tr = t.trailer;
       if (input.wasPressed('interact')) {

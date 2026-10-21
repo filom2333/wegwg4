@@ -65,6 +65,7 @@ const LABELS = {
   handbrake: 'Handbrake',
   wipers: 'Wipers',
   lookBack: 'Look back',
+  winch: 'Wind in the winch',
   journal: 'Journal',
   inventory: 'Inventory',
   nextTrack: 'Next CD track',

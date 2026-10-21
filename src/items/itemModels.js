@@ -9,6 +9,7 @@ import { addSurfaceDetail } from '../gfx/triplanar.js';
 import { paintOf } from '../vehicle/paints.js';
 import { accessoryItemModel } from '../vehicle/accessories.js';
 import { plateModel } from '../vehicle/plates.js';
+import { jackModel } from '../vehicle/jack.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -968,6 +969,7 @@ export function sandbag() {
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
   sandbag,
+  jack: () => jackModel(),
   accessory: accessoryItemModel,
   plate: (id, variant) => plateModel(id, variant),
   note,
