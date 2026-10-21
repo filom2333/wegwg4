@@ -439,7 +439,8 @@ export class AudioSystem {
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
     set(this.loops.wind.f.frequency, 300 + wind * 500 + drive * 600, now);
     set(this.loops.windHigh.g.gain, (wind * 0.05 + env.w.dust * 0.12) * (1 - this.inCabin * 0.8) + drive * 0.03, now);
-    const rain = env.w.rain;
+    // snow falls without a sound
+    const rain = env.snowing ? 0 : env.w.rain;
     set(this.loops.rain.g.gain, rain * 0.22 * (1 - this.inCabin * 0.4), now);
     set(this.loops.rain.f.frequency, seated ? 600 : 1500, now);
     set(this.loops.rainLow.g.gain, rain * (seated ? 0.35 : 0.12), now);

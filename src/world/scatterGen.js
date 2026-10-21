@@ -42,9 +42,11 @@ export const SPECIES = [
     return mm > 0.17 && mm < 0.29;
   } },
   { id: 'pine', mid: 3, variants: 4, lod1: 'impostor', dens: { forest: 20, prairie: 0.45, highland: 0.25 }, scale: [0.8, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.15, slope: 0.78, far: 0.85 },
-  { id: 'snowpine', mid: 3, variants: 4, lod1: 'impostor', snow: true, dens: { taiga: 15, tundra: 0.35 }, scale: [0.7, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.2, slope: 0.78, far: 0.85 },
+  { id: 'snowpine', mid: 3, variants: 4, lod1: 'impostor', snow: true, dens: { taiga: 12, tundra: 0.35 }, scale: [0.7, 1.25], sway: 'tree', solid: 'trunk', cluster: -0.2, slope: 0.78, far: 0.85 },
   { id: 'birch', mid: 3, variants: 3, lod1: 'impostor', dens: { forest: 3.4, prairie: 0.6 }, scale: [0.85, 1.2], sway: 'tree', solid: 'trunk', cluster: 0.1 },
-  { id: 'birchbare', mid: 3, variants: 3, lod1: 'impostor', snow: true, dens: { taiga: 0.9, tundra: 0.06 }, scale: [0.85, 1.2], solid: 'trunk', cluster: 0.1 },
+  // birch groves in the snow (the larch-and-birch taiga of the far north): white trunks in
+  // stands among the spruce, and alone out on the tundra
+  { id: 'birchbare', mid: 3, variants: 3, lod1: 'impostor', snow: true, dens: { taiga: 3.6, tundra: 0.9 }, scale: [0.85, 1.25], solid: 'trunk', cluster: 0.2 },
   { id: 'stump', variants: 3, near: 3, dens: { forest: 0.8, taiga: 0.4 }, scale: [0.8, 1.3], solid: 'stump' },
   { id: 'log', variants: 3, near: 3, dens: { forest: 0.35, taiga: 0.25 }, scale: [0.9, 1.2], solid: 'log' },
 ];

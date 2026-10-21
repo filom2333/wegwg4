@@ -16,6 +16,8 @@ export const WEATHERS = {
   rain: { cloud: 0.9, overcast: 0.75, dust: 0, rain: 0.65, wind: 0.6, turbidity: 3, fogDensity: 0.0006, mist: 0.15 },
   storm: { cloud: 1.0, overcast: 0.95, dust: 0, rain: 1.0, wind: 0.95, turbidity: 3, fogDensity: 0.0011, mist: 0, lightning: true },
   sandstorm: { cloud: 0.4, overcast: 0.45, dust: 0.9, rain: 0, wind: 1.0, turbidity: 9, fogDensity: 0.016, mist: 0 },
+  // in the north the 'rain' falls as snow (see Environment.snowing)
+  snow: { cloud: 0.92, overcast: 0.72, dust: 0, rain: 0.8, wind: 0.35, turbidity: 3, fogDensity: 0.0019, mist: 0.12 },
 };
 
 const DUST_THICK = new THREE.Color(0.58, 0.41, 0.25);
@@ -149,6 +151,11 @@ export class Environment {
     return smoothstep(-0.12, 0.12, this.sunDir.y);
   }
 
+  // Precipitation falls as snow in the snowy north (and whenever it is a snow day).
+  get snowing() {
+    return this.weatherName === 'snow' || this.biome === 'taiga' || this.biome === 'tundra';
+  }
+
   chooseNextWeather() {
     const r = this.rand();
     const b = this.biome;
@@ -169,7 +176,14 @@ export class Environment {
         ['rain', 0.5],
         ['storm', 0.6],
       ];
-    else if (b === 'forest' || b === 'taiga' || b === 'tundra' || b === 'prairie')
+    else if (b === 'taiga' || b === 'tundra')
+      table = [
+        ['clear', 3],
+        ['cloudy', 2],
+        ['snow', 2.8],
+        ['fog', 0.6],
+      ];
+    else if (b === 'forest' || b === 'prairie')
       table = [
         ['clear', 4],
         ['cloudy', 2],

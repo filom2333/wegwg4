@@ -3,6 +3,7 @@
 // meteors and moths. Everything is pooled; nothing allocates per frame in steady state.
 
 import * as THREE from 'three';
+import { makeCanvas } from './textures.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLASS_RAIN } from './glassRain.js';
 import { mulberry32 } from '../core/noise.js';
@@ -364,6 +365,64 @@ export class Effects {
       pos[i * 6 + 5] = az;
     }
     this.rainLines.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------------------ snow
+  // Soft flakes drifting down round the camera: slow, swaying, carried by the wind.
+  buildSnow() {
+    const N = 7000;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const c = makeCanvas(32, 32);
+    const x = c.getContext('2d');
+    const grd = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.45, 'rgba(255,255,255,0.75)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = grd;
+    x.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    this.snowPts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.13, map: tex, color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, sizeAttenuation: true }));
+    this.snowPts.frustumCulled = false;
+    this.snowPts.visible = false;
+    this.root.add(this.snowPts);
+    const r = mulberry32(9);
+    this.flakes = [];
+    for (let i = 0; i < N; i++) this.flakes.push({ x: (r() - 0.5) * 44, y: r() * 22, z: (r() - 0.5) * 44, v: 0.7 + r() * 0.8, ph: r() * 6.28, sw: 0.3 + r() * 0.6 });
+  }
+
+  updateSnow(dt, cam, intensity, wind) {
+    if (!this.snowPts) {
+      if (intensity <= 0.02) return;
+      this.buildSnow();
+    }
+    const vis = intensity > 0.02;
+    this.snowPts.visible = vis;
+    if (!vis) return;
+    const n = Math.floor(this.flakes.length * Math.min(1, intensity));
+    const pos = this.snowPts.geometry.attributes.position.array;
+    const wx = wind * 2.2,
+      wz = wind * 0.6;
+    const t = this.t;
+    for (let i = 0; i < this.flakes.length; i++) {
+      const f = this.flakes[i];
+      if (i >= n) {
+        pos[i * 3 + 1] = -1e5;
+        continue;
+      }
+      f.y -= f.v * dt;
+      f.x += (wx + Math.sin(t * f.sw * 2 + f.ph) * f.sw) * dt;
+      f.z += (wz + Math.cos(t * f.sw * 1.6 + f.ph) * f.sw * 0.7) * dt;
+      if (f.y < 0 || Math.abs(f.x) > 22 || Math.abs(f.z) > 22) {
+        f.y = 20 + Math.random() * 2;
+        f.x = (Math.random() - 0.5) * 44;
+        f.z = (Math.random() - 0.5) * 44;
+      }
+      pos[i * 3] = cam.position.x + f.x;
+      pos[i * 3 + 1] = cam.position.y - 6 + f.y;
+      pos[i * 3 + 2] = cam.position.z + f.z;
+    }
+    this.snowPts.geometry.attributes.position.needsUpdate = true;
   }
 
   // ------------------------------------------------------------------ emitters
@@ -915,7 +974,21 @@ export class Effects {
         this.strikeAt = null;
       }
     }
-    this.updateRain(dt, cam, g.env.w.rain, g.env.w.wind);
+    // breath fogs in the cold air
+    const pl = g.player;
+    if (pl && !pl.dead && !pl.seat && g.env.airTemp() < 3) {
+      this.breathT = (this.breathT || 0) - dt;
+      if (this.breathT <= 0) {
+        this.breathT = 3 + Math.random() * 1.5;
+        const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion);
+        for (let i = 0; i < 4; i++)
+          this.smoke.emit({ pos: cam.position.clone().addScaledVector(fwd, 0.22).add(V(0, -0.09, 0)), vel: fwd.clone().multiplyScalar(0.35 + Math.random() * 0.2).add(V((Math.random() - 0.5) * 0.08, 0.06, (Math.random() - 0.5) * 0.08)), size: 0.04, grow: 0.35, life: 1.1 + Math.random() * 0.4, color: [0.95, 0.96, 0.98], alpha: 0.16, drag: 1.4, grav: -0.05, fadeIn: 0.15 });
+      }
+    }
+    // in the snowy north it comes down as flakes
+    const snowing = g.env.snowing;
+    this.updateRain(dt, cam, snowing ? 0 : g.env.w.rain, g.env.w.wind);
+    this.updateSnow(dt, cam, snowing ? g.env.w.rain : 0, g.env.w.wind);
     this.updateDevils(dt, cam);
     this.updateWeeds(dt, cam);
     this.updateBirds(dt, cam);
@@ -924,7 +997,8 @@ export class Effects {
     this.updateMotes(dt, cam);
     // rain on the glass of the car you are near
     GLASS_RAIN.time.value += dt;
-    GLASS_RAIN.rain.value += ((g.env.w.rain > 0.05 ? Math.min(1, 0.35 + g.env.w.rain) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
+    const wetGlass = g.env.snowing ? 0 : g.env.w.rain;
+    GLASS_RAIN.rain.value += ((wetGlass > 0.05 ? Math.min(1, 0.35 + wetGlass) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
     GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
     GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
     // sandstorm: billows of dust and fast streaks of sand driven along the wind, born upwind of
