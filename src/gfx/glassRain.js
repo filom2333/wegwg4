@@ -7,6 +7,8 @@ export const GLASS_RAIN = {
   time: { value: 0 },
   speed: { value: 0 }, // m/s of the current car, for streaking
   wipe: { value: 0 }, // 0..1 wipers running
+  dust: { value: 0 }, // 0..1 sand settled on the glass (a sandstorm)
+  dustFront: { value: 0 }, // the same on the part of the windscreen the wipers reach
 };
 
 export function addGlassRain(mat) {
@@ -20,6 +22,8 @@ export function addGlassRain(mat) {
     shader.uniforms.uGTime = GLASS_RAIN.time;
     shader.uniforms.uGSpeed = GLASS_RAIN.speed;
     shader.uniforms.uGWipe = GLASS_RAIN.wipe;
+    shader.uniforms.uGDust = GLASS_RAIN.dust;
+    shader.uniforms.uGDustF = GLASS_RAIN.dustFront;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGP;\nvarying vec3 vGN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGP = position;\nvGN = normal;');
@@ -31,6 +35,8 @@ uniform float uGRain;
 uniform float uGTime;
 uniform float uGSpeed;
 uniform float uGWipe;
+uniform float uGDust;
+uniform float uGDustF;
 varying vec3 vGP;
 varying vec3 vGN;
 float gDrop;
@@ -44,6 +50,19 @@ float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453)
 gDrop = 0.0;
 gDropL = 1.0;
 gDropN = vec2(0.0);
+// sand settled on the glass after a sandstorm: a speckled matte film, cleared where the wipers run
+{
+  vec3 an0 = abs(normalize(vGN));
+  bool front0 = an0.z > an0.x;
+  float dAmt = (front0 && vGP.y > 0.0) ? uGDustF : uGDust;
+  if (dAmt > 0.01) {
+    vec2 dq = (front0 ? vGP.xy : vGP.zy) * 90.0;
+    float sp = gHash(floor(dq)) * 0.6 + gHash(floor(dq * 0.23) + 7.0) * 0.4;
+    float film = dAmt * (0.55 + 0.45 * sp);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.5, 0.36), film * 0.7);
+    diffuseColor.a = max(diffuseColor.a, film * 0.62);
+  }
+}
 if (uGRain > 0.01) {
   // pane coordinates: the windscreen and back light face along z, side windows along x
   vec3 an = abs(normalize(vGN));

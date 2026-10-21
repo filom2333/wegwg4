@@ -639,7 +639,7 @@ export class Effects {
   updateWeeds(dt, cam) {
     const g = this.game;
     const env = g.env;
-    const want = env.w.wind > 0.3 && env.w.rain < 0.3 ? 4 : 1;
+    const want = env.w.dust > 0.4 ? 8 : env.w.wind > 0.3 && env.w.rain < 0.3 ? 4 : 1;
     if (this.weeds.length < want && Math.random() < dt * 0.2) {
       const a = Math.random() * Math.PI * 2;
       const d = 30 + Math.random() * 60;
@@ -650,10 +650,10 @@ export class Effects {
       this.root.add(m);
       this.weeds.push({ m, x: cam.position.x + Math.cos(a) * d, z: cam.position.z + Math.sin(a) * d, y: 0, vy: 0, s, life: 60 });
     }
-    const wdir = V(1, 0, 0.3).normalize();
+    const wdir = env.windDir;
     for (const w of this.weeds) {
       w.life -= dt;
-      const sp = 1.5 + env.w.wind * 5;
+      const sp = 1.5 + env.w.wind * 5 + env.w.dust * 6;
       w.x += wdir.x * sp * dt;
       w.z += wdir.z * sp * dt;
       const gy = g.gen.height(w.x + g.origin.x, w.z + g.origin.z) + 0.33 * w.s;
@@ -865,16 +865,32 @@ export class Effects {
     GLASS_RAIN.rain.value += ((g.env.w.rain > 0.05 ? Math.min(1, 0.35 + g.env.w.rain) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
     GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
     GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
-    // sandstorm: dense moving dust around the camera
+    // sandstorm: billows of dust and fast streaks of sand driven along the wind, born upwind of
+    // the camera so they stream through the view; dust settles on the car's glass
     const dust = g.env.w.dust;
+    const wd = g.env.windDir;
     if (dust > 0.2) {
-      const n = dust * 60 * dt;
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2,
-          r = 4 + Math.random() * 30;
-        this.dust.emit({ pos: cam.position.clone().add(V(Math.cos(a) * r - 15, (Math.random() - 0.3) * 6, Math.sin(a) * r)), vel: V(12 + Math.random() * 6, (Math.random() - 0.5), 3), size: 3, grow: 6, life: 2.5, color: [0.74, 0.6, 0.44], alpha: 0.12 * dust, drag: 0.2, fadeIn: 0.3 });
+      const day = 0.25 + 0.75 * g.env.daylight;
+      const col = [0.66 * day, 0.5 * day, 0.34 * day];
+      for (let i = 0, n = dust * 80 * dt; i < n; i++) {
+        const side = (Math.random() - 0.5) * 50,
+          back = 8 + Math.random() * 30;
+        const p = cam.position.clone().add(V(-wd.x * back - wd.z * side, (Math.random() - 0.25) * 7, -wd.z * back + wd.x * side));
+        const sp = 11 + Math.random() * 8;
+        this.dust.emit({ pos: p, vel: V(wd.x * sp, (Math.random() - 0.4) * 1.2, wd.z * sp), size: 2.5 + Math.random() * 2, grow: 7, life: 3, color: col, alpha: 0.13 * dust, drag: 0.15, fadeIn: 0.35 });
+      }
+      for (let i = 0, n = dust * 140 * dt; i < n; i++) {
+        const side = (Math.random() - 0.5) * 16,
+          back = 4 + Math.random() * 10;
+        const p = cam.position.clone().add(V(-wd.x * back - wd.z * side, (Math.random() - 0.5) * 3, -wd.z * back + wd.x * side));
+        const sp = 20 + Math.random() * 10;
+        this.dust.emit({ pos: p, vel: V(wd.x * sp, (Math.random() - 0.5) * 2, wd.z * sp), size: 0.12, grow: 0.25, life: 0.9, color: [col[0] * 1.2, col[1] * 1.2, col[2] * 1.2], alpha: 0.35 * dust, drag: 0.1, fadeIn: 0.1 });
       }
     }
+    const coat = dust > 0.35 ? 1 : 0;
+    GLASS_RAIN.dust.value += (coat - GLASS_RAIN.dust.value) * Math.min(1, dt * (coat ? 0.03 : 0.004 + g.env.w.rain * 0.2));
+    const wiping = g.car && g.car.wipers;
+    GLASS_RAIN.dustFront.value = wiping ? Math.max(0, GLASS_RAIN.dustFront.value - dt * 0.8) : GLASS_RAIN.dustFront.value + (GLASS_RAIN.dust.value - GLASS_RAIN.dustFront.value) * Math.min(1, dt * 0.03);
   }
 
   rebase(dx, dz) {

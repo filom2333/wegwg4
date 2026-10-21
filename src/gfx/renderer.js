@@ -38,6 +38,7 @@ const GradeShader = {
     uVignette: { value: 0.3 },
     uGrain: { value: 0.02 },
     uDamage: { value: 0 },
+    uGrit: { value: 0 },
     uFade: { value: 0 },
     uWarm: { value: 0 },
     uNight: { value: 0 },
@@ -50,7 +51,7 @@ const GradeShader = {
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 uTexel; uniform float uAspect; uniform float uSharpen;
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
-    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade;
+    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
     uniform float uHeat; uniform float uNear; uniform float uFar;
     varying vec2 vUv;
@@ -134,6 +135,12 @@ const GradeShader = {
       float edge = smoothstep(0.25, 0.75, length(d) * 1.6);
       col = mix(col, vec3(l2) * vec3(1.0, 0.75, 0.72), uDamage * 0.5);
       col = mix(col, vec3(0.35, 0.02, 0.01), uDamage * edge * 0.6);
+      // sand in the eyes: a dusty tint, edges closing in, gritty speckle
+      if (uGrit > 0.0) {
+        col = mix(col, col * vec3(1.04, 0.86, 0.66), uGrit * 0.6);
+        col *= 1.0 - uGrit * 0.5 * smoothstep(0.2, 0.75, length(d) * 1.5);
+        col += (h(vUv * 730.0 + uTime) - 0.5) * 0.08 * uGrit;
+      }
       col = mix(col, vec3(0.0), uFade);
       gl_FragColor = vec4(col, c.a);
     }`,

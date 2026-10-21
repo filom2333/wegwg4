@@ -375,6 +375,14 @@ export class Game {
     const prevDay = this.env.day;
     this.env.update(dt, hours);
     if (this.env.day !== prevDay) this.stats.daysSurvived = this.env.day;
+    // a sandstorm showing on the horizon: say where from, once
+    const storm = this.env.storm;
+    if (storm.active && !storm.announced && storm.approach > 0.08 && storm.approach < 0.9) {
+      storm.announced = true;
+      const deg = (((Math.round(((Math.atan2(-storm.dir.x, storm.dir.z) * 180) / Math.PI) / 45) * 45) % 360) + 360) % 360;
+      const from = { 0: 'north', 45: 'northeast', 90: 'east', 135: 'southeast', 180: 'south', 225: 'southwest', 270: 'west', 315: 'northwest' }[deg];
+      this.hud && this.hud.toast(`A wall of dust is rolling in from the ${from}. Get in the car or under a roof.`, 'warn');
+    }
     if (!this.attract) this.player.update(dt);
     // leave the car
     if (this.player.seat && input.wasPressed('interact') && !(this.ui && this.ui.blocksMove)) {
@@ -792,9 +800,32 @@ export class Game {
       this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
       const hot = E.biome === 'dunes' || E.biome === 'badlands' || E.biome === 'saltflat' ? 1 : E.biome === 'scrub' || E.biome === 'highland' ? 0.7 : 0;
       this.renderer.setHeat(hot * THREE.MathUtils.smoothstep(up, 0.45, 0.85) * clear * (1 - E.w.rain) * (settings.data.quality === 'low' ? 0 : 1));
-      updateFogSun(cam, E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))));
+      // mist lies in the low ground: its base follows the land under you slowly, so it stays put
+      // in a valley as you drive down into it
+      const gy = this.gen.height(cam.position.x + this.origin.x, cam.position.z + this.origin.z);
+      if (E.mistBase === null || Math.abs(E.mistBase - gy) > 60) E.mistBase = gy - 3;
+      E.mistBase += (gy - 3 - E.mistBase) * Math.min(1, dt * 0.04);
+      const mistD = E.mist * 0.045;
+      const S = E.storm;
+      const wallAmt = S.active ? THREE.MathUtils.smoothstep(S.approach, 0.0, 0.12) * (1 - THREE.MathUtils.smoothstep(S.approach, 0.9, 1)) : 0;
+      updateFogSun(
+        cam,
+        E.sunDir,
+        E.sun.color,
+        THREE.MathUtils.smoothstep(up, -0.12, 0.05) * (1 - E.w.overcast * 0.75) * (0.55 + 0.45 * (1 - THREE.MathUtils.smoothstep(up, 0.1, 0.6))),
+        { density: mistD, base: E.mistBase, color: E.mistColor },
+        { amount: wallAmt, dir: S.dir, dist: THREE.MathUtils.lerp(4500, 60, S.approach), color: E.wallColor }
+      );
+      // the sky is milky only from inside the mist
+      E.sky.uniforms.uMist.value = E.mist * (1 - THREE.MathUtils.smoothstep(cam.position.y - E.mistBase, 6, 40));
     }
-    if (this.player) this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+    if (this.player) {
+      this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+      // out in a sandstorm with nothing between you and the wind
+      const exposed = !this.player.seat && !this.player.indoors ? 1 : 0;
+      const gr = this.renderer.grade.uniforms.uGrit;
+      gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
+    }
     this.lights.update(cam);
     this.renderer.render(dt);
   }
