@@ -3,6 +3,7 @@
 // meteors and moths. Everything is pooled; nothing allocates per frame in steady state.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLASS_RAIN } from './glassRain.js';
 import { mulberry32 } from '../core/noise.js';
 import { tubeAlong } from './geom.js';
@@ -576,34 +577,79 @@ export class Effects {
   }
 
   // ------------------------------------------------------------------ weather / ambience
+  // A strike: usually far over the land, now and then close enough to light the car up and shake
+  // the ground (the steel cab is safe; standing out in the open near it is not). Forked channel
+  // with a glow, two or three return strokes, a flash of light where it lands.
   lightning(seed) {
     const g = this.game;
     const cam = g.renderer.camera;
     const r = mulberry32(Math.floor(seed * 1e6));
+    const near = r() < 0.22;
     const ang = r() * Math.PI * 2;
-    const dist = 300 + r() * 1500;
+    const dist = near ? (r() < 0.3 ? 20 + r() * 30 : 50 + r() * 130) : 300 + r() * 1500;
     const base = V(cam.position.x + Math.cos(ang) * dist, 0, cam.position.z + Math.sin(ang) * dist);
     base.y = g.gen.height(base.x + g.origin.x, base.z + g.origin.z);
-    const top = base.clone().add(V((r() - 0.5) * 200, 900, (r() - 0.5) * 200));
-    const pts = [top.clone()];
-    let p = top.clone();
-    const steps = 18;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const target = top.clone().lerp(base, t);
-      p = target.add(V((r() - 0.5) * 90 * (1 - t * 0.5), 0, (r() - 0.5) * 90 * (1 - t * 0.5)));
-      pts.push(p.clone());
+    const H = near ? 520 : 900;
+    const top = base.clone().add(V((r() - 0.5) * 200, H, (r() - 0.5) * 200));
+    // a random walk toward the ground: sharp kinks, not a smooth curve
+    const channel = (from, to, steps, jag) => {
+      const pts = [from.clone()];
+      const p = from.clone();
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const aim = from.clone().lerp(to, t);
+        p.lerp(aim, 0.55).add(V((r() - 0.5) * jag, (r() - 0.3) * jag * 0.25, (r() - 0.5) * jag));
+        pts.push(p.clone());
+      }
+      pts[pts.length - 1].copy(to);
+      return pts;
+    };
+    const main = channel(top, base, 44, near ? 22 : 34);
+    const geos = [tubeAlong(main, near ? 0.35 : 0.7, 4, { closedEnds: false })];
+    const glow = [tubeAlong(main, near ? 1.6 : 2.6, 5, { closedEnds: false })];
+    // forks that die out in the air
+    for (let b = 0; b < 2 + Math.floor(r() * 3); b++) {
+      const k = 3 + Math.floor(r() * (main.length - 8));
+      const from = main[k];
+      const len = (H / main.length) * (4 + r() * 6);
+      const to = from.clone().add(V((r() - 0.5) * len, -len * (0.5 + r() * 0.4), (r() - 0.5) * len));
+      geos.push(tubeAlong(channel(from, to, 12, 14), near ? 0.2 : 0.4, 3, { closedEnds: false }));
     }
-    pts[pts.length - 1].copy(base);
     if (this.bolt) {
       this.root.remove(this.bolt);
-      this.bolt.geometry.dispose();
+      this.bolt.traverse((o) => o.geometry && o.geometry.dispose());
     }
-    const geo = tubeAlong(pts, 1.6, 4, { closedEnds: false });
-    this.bolt = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 1, fog: false }));
-    this.root.add(this.bolt);
-    this.boltT = 0.25;
+    const bolt = new THREE.Group();
+    // the core far brighter than white, so the bloom spreads it
+    bolt.add(new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 5.4, 6.5), transparent: true, opacity: 1, fog: false })));
+    bolt.add(new THREE.Mesh(mergeGeometries(glow), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 0.6, 1.2), transparent: true, opacity: 0.25, fog: false, blending: THREE.AdditiveBlending, depthWrite: false })));
+    this.bolt = bolt;
+    this.root.add(bolt);
+    this.boltT = 0.55;
+    this.boltLen = 0.55;
+    // where it lands: a white-blue flash over the ground, sparks and a puff of smoke
+    if (near) {
+      if (!this.strikeLight) {
+        this.strikeLight = new THREE.PointLight(0xdfe6ff, 0, 600, 1.1);
+        this.root.add(this.strikeLight);
+        g.lights.add(this.strikeLight);
+      }
+      this.strikeLight.position.copy(base).add(V(0, 25, 0));
+      this.strikeAt = base.clone();
+      for (let i = 0; i < 60; i++) this.sparks.emit({ pos: base.clone().add(V(0, 0.3, 0)), vel: V((Math.random() - 0.5) * 14, 3 + Math.random() * 9, (Math.random() - 0.5) * 14), size: 0.12, grow: 0.05, life: 0.6 + Math.random() * 0.8, color: [1, 0.85, 0.6], alpha: 1, drag: 0.6, grav: 9.8 });
+      for (let i = 0; i < 10; i++) this.smoke.emit({ pos: base.clone().add(V((Math.random() - 0.5) * 2, 0.5, (Math.random() - 0.5) * 2)), vel: V((Math.random() - 0.5) * 1.5, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 1.5), size: 1.2, grow: 5, life: 5 + Math.random() * 3, color: [0.32, 0.31, 0.3], alpha: 0.4, drag: 0.6, grav: -0.1 });
+      // out in the open close to it: the ground current knocks you down
+      const pl = g.player;
+      if (pl && !pl.seat && !pl.dead) {
+        const d = pl.position.distanceTo(base);
+        if (d < 14) {
+          pl.damage(Math.round((14 - d) * 6), 'lightning');
+          g.hud && g.hud.toast('Struck by the ground current', 'warn');
+        }
+      }
+    }
     g.audio && g.audio.thunder(dist);
+    return dist;
   }
 
   spawnDevil(cam) {
@@ -855,11 +901,18 @@ export class Effects {
     // lightning
     if (this.bolt) {
       this.boltT -= dt;
-      this.bolt.material.opacity = Math.max(0, this.boltT / 0.25) * (0.6 + 0.4 * Math.random());
+      // return strokes: bright, dim, bright again, fading
+      const t = 1 - this.boltT / this.boltLen;
+      const pulse = Math.max(0, 1 - t * 1.4) * (t < 0.12 || (t > 0.3 && t < 0.4) || (t > 0.58 && t < 0.64) ? 1 : 0.25) * (0.75 + 0.25 * Math.random());
+      this.bolt.children[0].material.opacity = pulse;
+      this.bolt.children[1].material.opacity = pulse * 0.25;
+      if (this.strikeLight && this.strikeAt) this.strikeLight.intensity = pulse * 1500;
       if (this.boltT <= 0) {
         this.root.remove(this.bolt);
-        this.bolt.geometry.dispose();
+        this.bolt.traverse((o) => o.geometry && o.geometry.dispose());
         this.bolt = null;
+        if (this.strikeLight) this.strikeLight.intensity = 0;
+        this.strikeAt = null;
       }
     }
     this.updateRain(dt, cam, g.env.w.rain, g.env.w.wind);
