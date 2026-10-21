@@ -425,36 +425,81 @@ trailer, entities, item handling, headlights, survival, music, FPS):
 
 ## 9. Session status (latest)
 
-### Done this session (all committed)
-- Music: all 6 albums reworked (src/audio/music/arrange.js, engine.js).
-- FPS and freeze fixes: light pool with fixed shader keys, shader warm-up, physics interpolation, deferred POI hooks, fewer allocations.
-- Sound atmosphere (src/audio/soundscape.js): layered biome ambience, creatures, small car and body sounds, room reverb.
-- Weather: sandstorm wall (haboob), fog and morning mist.
-- Car jack (src/vehicle/jack.js) and winch bar with cable (src/vehicle/winch.js); wheel-well liners on the Beetle.
-- Tuning (src/vehicle/tuning.js):
-  - twin carbs kit (wrench removes it);
-  - sport muffler (overrun pops and flames);
-  - mud tyres (grip per surface);
-  - tunes are stored on the part and its item state, and saved.
-- Tent (src/world/tents.js): pitch, crawl in, pack up with R; sleeping in beds (POI bed loot spots); sleep quality differs by place; new sleep screen.
-- Road atlas (M) at src/story/atlas.js and ui.showAtlas: hill-shaded strip map with notes and photos.
-- Photo mode (P) at src/ui/photoMode.js: film looks, bars, time of day; saves a PNG and a thumbnail to the atlas.
+### The user's big voice request (Russian, transcribed) — what it asked for
+Bugs (flicker, black wheel liners, car contact damage, black screen in some directions, character
+shader flicker, half-open doors); replace the Beetle with 2 normal cars with interiors and many
+engine-bay parts; side headlights; colours; start parts placed logically; hands follow held
+items; better player model; bigger, less "cardboard" rooms; 25-40 real textured models that fit
+the style (verified loading, fallback); roads with curves, forks, big hills, obstacles with
+detours; snow that feels like snow, lightning near the car, a night sky with twinkling stars and
+not-too-dark nights, birch forests ("Yakutia, birch"); better distant scenery and menu; car
+physics that is not cardboard, rollovers with consequences (car destruction: plan only); fewer
+useless toasts, better overlays, a reworked CD menu; harder on all difficulties, fewer intact
+cars; full car interior interaction (fuel caps, pouring, readable speedo, radio channels,
+working buttons, free look); events every ~5 km drawing you into houses. Priority stated:
+models, hands, physics, LOGIC.
+The user got angry at modern-looking decor models ("they don't fit the style") and at houses
+floating above the ground; wants some houses much bigger and some objects interactive.
 
-### In progress
-- src/world/buildings/tall.js is written but NOT wired in yet. It contains buildStoreyed (2–3 floors with stairs), buildLookout (fire tower), buildChurch (bell tower and spire), buildSilo, buildCabin, buildSawmill and storeyStyle.
-- POI types farm, cabin, church, sawmill, lodge and lookout currently have no layout, so they fall back to LAYOUTS.house.
-- Next steps:
-  1. Add layouts in src/world/poiLayouts.js:
-     - lookout: buildLookout;
-     - church: buildChurch;
-     - cabin: buildCabin;
-     - sawmill: buildSawmill;
-     - lodge: buildStoreyed with storeyStyle 'lodge', 2 floors, porch;
-     - farm: buildStoreyed 'farm' plus ST.buildBarn, buildSilo and ST.buildWindmill;
-     - houses: sometimes buildStoreyed 'town' with 2–3 floors.
-  2. Build and fix runtime errors (it runs in the POI worker too, so use only archMaterials materials).
-  3. Check visually with tools/play.mjs, especially that the stair ramp colliders can be climbed (rotX sign: ascending toward local +z uses -slope).
+### Network for models
+Only registry.npmjs.org and raw.githubusercontent.com are reachable (polyhaven, sketchfab,
+kenney, ambientcg, jsdelivr, unpkg, github web/API are blocked). npm was searched thoroughly
+(~380 queries): few realistic models exist there. Used: the W203 car (threed-garden, CC-BY),
+ez-tree mossy rocks (MIT), a grass carp (@so-chart/fish), a tyre (3d-model-testingpublic).
+NOT used on purpose: the Ant City Unity kit (no licence, looks like a repackaged paid Asset
+Store pack) and the W210 (not split into parts, CC-BY-NC-SA). If the user opens the network
+(environment → Network access) or uploads packs into `assets_incoming/`, process them with the
+scratchpad pipeline (gltf-transform: prune/dedup/weld/simplify/webp; see section 8 notes) and
+add them to `src/world/props.js` PROPS.
 
-### Still to do
-- Extra ideas and small tricks (task #28).
-- Update this HANDOFF in detail, then refresh build/ (`rm -rf build && cp -r dist build`).
+### Done this session (all committed and pushed, newest last)
+- Bug fixes: car contact damage only from a moving car, flicker (reversed-Z depth), NaN black
+  blocks (sanitised bloom/output), doors never half open, start parts in logical rows, start car
+  colour, quiet text toasts.
+- Real props (`src/world/props.js`, PropLibrary): verified loading, fallback colour, real-size
+  normalising, colliders; tall buildings wired in; concrete footings under buildings standing
+  over a slope (`POIManager.addFootings`); bigger houses with 3 m ceilings.
+- Hands follow held items (reach clamp to 0.7 m from the shoulder, open hand when far).
+- Car physics: crashes tear off the parts facing the obstacle (`Car.panelDamage` /
+  `processTears`, thresholds in `TEARABLE`), parts fly on as items; side/roof hits burst doors;
+  roof hits dent the body; upside down: oil starvation wear, oil and acid leak. `Car.detachPart`
+  is shared with the player's remove. Seated head motion: spring-damper on the car's
+  accelerations, surface buzz, pothole jolts, crash snap (`Player.seatHead`).
+- Lures every ~5 km (`src/story/lures.js`): a house/farm/station calls you in with smoke from a
+  fire in a drum (red flare at night, with light), a hand-painted sign at the turn-off, or a CB
+  call (subtitle + atlas pin). Cache inside (fuel, battery+belt, food, medicine); calls for help
+  are sometimes ambushes (hostile vagrants via `NPCManager.onPoiLoaded`).
+- Harder: found cars rarer (9% of later host places on Normal) and broken (3-5 missing parts,
+  flat tyres, dead battery, empty tank; half the missing parts lie inside the same place), loot
+  x0.7, all difficulties tougher (DIFFICULTY in game.js).
+- Roads (`worldGen.track*`, `src/world/obstacles.js`, `terrain.buildTrack`): dirt side tracks
+  every ~3.4 km swinging 130-320 m out over the land; ~60% are detours around a closed highway
+  (fallen spruces/birches, boulder wall, jack-knifed trailer with crashed cars; striped
+  barricades and cones that fly when hit; DETOUR/ROAD CLOSED boards; OLD ROAD fingerposts on open
+  ones). Tracks cut their own bed, open out of the shoulder, are clear of trees and POIs, drive as
+  dirt, and show on the atlas. Hill country on the highway (up to ~11% grades).
+- New start car: the '04 Kronberg C200 (`src/vehicle/w203/`, import config
+  `tools/cars/w203.py`, run with `W203_SRC=<dir with w203_mr.gltf> python3 -I tools/cars/run.py
+  tools/cars/w203.py public/models/w203 src/vehicle/w203/w203Meta.json`; the source is first
+  converted spec-gloss→metal-rough and simplified with the scratchpad script w203conv.mjs).
+  Rear drive, 5-speed manual, removable front wings, battery in the boot. New runs start with the
+  W203 or the Riverside; the Beetle is retired (kept for old saves; `CAR_TYPE_LIST` vs
+  `CAR_TYPES`).
+- Real models: mossy boulders in the green biomes (scatter species `mossrock`, instanced from
+  `PropLibrary.geometryOf/materialOf`), real tyre stacks, a real carp for fish items
+  (`registerRealModel` in itemModels.js).
+
+### Still to do (in the user's priority order)
+1. Night sky with twinkling stars, brighter nights, lightning near the car in storms, snow that
+   looks like snow (not a flat white plane), birch forests in taiga, better distant forests and
+   mountains (also on the menu pictures).
+2. Car interior interaction: fuel caps on the car and the jerry can with a pouring animation,
+   readable speedometer, radio channels, working dashboard buttons, free look inside.
+3. UI: rework the CD/stereo menu and the overlay cards; bigger interiors (gas station shelves).
+4. More engine-bay parts for repairs (alternator, starter, plugs, water pump, oil filter...).
+5. Player model looks poor in third person (merged pockets/hands, blurry): consider the
+   survivor.glb (Soldier, Mixamo) as the avatar.
+6. Car destruction (deformation) — the user asked to note it as a plan only.
+7. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
+   this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
+   or remove by absolute path).
