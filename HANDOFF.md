@@ -422,3 +422,39 @@ trailer, entities, item handling, headlights, survival, music, FPS):
 - `debugSimulate` steps physics without rendering. Call `game.terrain.ready` / `waitFor` before
   taking shots.
 - vite preview serves `dist/`. Rebuild before headless tests.
+
+## 9. Session status (latest)
+
+### Done this session (all committed)
+- Music: all 6 albums reworked (src/audio/music/arrange.js, engine.js).
+- FPS and freeze fixes: light pool with fixed shader keys, shader warm-up, physics interpolation, deferred POI hooks, fewer allocations.
+- Sound atmosphere (src/audio/soundscape.js): layered biome ambience, creatures, small car and body sounds, room reverb.
+- Weather: sandstorm wall (haboob), fog and morning mist.
+- Car jack (src/vehicle/jack.js) and winch bar with cable (src/vehicle/winch.js); wheel-well liners on the Beetle.
+- Tuning (src/vehicle/tuning.js):
+  - twin carbs kit (wrench removes it);
+  - sport muffler (overrun pops and flames);
+  - mud tyres (grip per surface);
+  - tunes are stored on the part and its item state, and saved.
+- Tent (src/world/tents.js): pitch, crawl in, pack up with R; sleeping in beds (POI bed loot spots); sleep quality differs by place; new sleep screen.
+- Road atlas (M) at src/story/atlas.js and ui.showAtlas: hill-shaded strip map with notes and photos.
+- Photo mode (P) at src/ui/photoMode.js: film looks, bars, time of day; saves a PNG and a thumbnail to the atlas.
+
+### In progress
+- src/world/buildings/tall.js is written but NOT wired in yet. It contains buildStoreyed (2–3 floors with stairs), buildLookout (fire tower), buildChurch (bell tower and spire), buildSilo, buildCabin, buildSawmill and storeyStyle.
+- POI types farm, cabin, church, sawmill, lodge and lookout currently have no layout, so they fall back to LAYOUTS.house.
+- Next steps:
+  1. Add layouts in src/world/poiLayouts.js:
+     - lookout: buildLookout;
+     - church: buildChurch;
+     - cabin: buildCabin;
+     - sawmill: buildSawmill;
+     - lodge: buildStoreyed with storeyStyle 'lodge', 2 floors, porch;
+     - farm: buildStoreyed 'farm' plus ST.buildBarn, buildSilo and ST.buildWindmill;
+     - houses: sometimes buildStoreyed 'town' with 2–3 floors.
+  2. Build and fix runtime errors (it runs in the POI worker too, so use only archMaterials materials).
+  3. Check visually with tools/play.mjs, especially that the stair ramp colliders can be climbed (rotX sign: ascending toward local +z uses -slope).
+
+### Still to do
+- Extra ideas and small tricks (task #28).
+- Update this HANDOFF in detail, then refresh build/ (`rm -rf build && cp -r dist build`).
