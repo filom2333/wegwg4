@@ -204,7 +204,7 @@ export class Story {
   }
 
   serialize() {
-    return { found: this.found, heard: [...this.heard], markers: [...this.markers], ended: this.ended };
+    return { found: this.found, heard: [...this.heard], markers: [...this.markers], ended: this.ended, lures: this.game.lures ? this.game.lures.serialize() : null };
   }
 
   restore(d) {

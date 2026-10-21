@@ -33,6 +33,7 @@ varying vec3 vColor;
 varying float vRot;
 uniform float uSoft;
 uniform float uLight;
+uniform float uLobes;
 uniform vec3 uAmbient;
 void main() {
   vec2 p = gl_PointCoord - 0.5;
@@ -40,7 +41,7 @@ void main() {
   p = mat2(c, -s, s, c) * p;
   float r = length(p) * 2.0;
   // billowy puff: radial falloff modulated by a few lobes
-  float lobes = 0.85 + 0.15 * sin(atan(p.y, p.x) * 5.0 + vRot * 3.0);
+  float lobes = 1.0 - uLobes + uLobes * sin(atan(p.y, p.x) * 5.0 + vRot * 3.0);
   float a = smoothstep(1.0, uSoft, r / lobes) * vAlpha;
   if (a < 0.003) discard;
   vec3 col = vColor * mix(vec3(1.0), uAmbient, uLight);
@@ -49,7 +50,7 @@ void main() {
 }`;
 
 class Particles {
-  constructor(max, { additive = false, soft = 0.0, lit = 1, depthWrite = false } = {}) {
+  constructor(max, { additive = false, soft = 0.0, lit = 1, depthWrite = false, lobes = 0.15 } = {}) {
     this.max = max;
     this.geo = new THREE.BufferGeometry();
     this.pos = new Float32Array(max * 3);
@@ -65,7 +66,7 @@ class Particles {
     this.mat = new THREE.ShaderMaterial({
       vertexShader: PVERT,
       fragmentShader: PFRAG,
-      uniforms: { uScale: { value: 300 }, uSoft: { value: soft }, uLight: { value: lit }, uAmbient: { value: new THREE.Color(1, 1, 1) } },
+      uniforms: { uScale: { value: 300 }, uSoft: { value: soft }, uLight: { value: lit }, uLobes: { value: lobes }, uAmbient: { value: new THREE.Color(1, 1, 1) } },
       transparent: true,
       depthWrite,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -240,11 +241,14 @@ export class Effects {
     game.worldGroup.add(root);
     this.dust = new Particles(1400, { soft: 0.0, lit: 1 });
     this.smoke = new Particles(500, { soft: 0.1, lit: 1 });
-    this.fire = new Particles(300, { additive: true, soft: 0.2, lit: 0 });
-    this.sparks = new Particles(400, { additive: true, soft: 0.5, lit: 0 });
+    // flames and sparks: round, soft glows (the puff lobes read as little stars when additive)
+    this.fire = new Particles(300, { additive: true, soft: -0.4, lit: 0, lobes: 0.04 });
+    this.sparks = new Particles(400, { additive: true, soft: 0.2, lit: 0, lobes: 0 });
     this.blood = new Particles(300, { soft: 0.6, lit: 1 });
     this.moths = new Particles(200, { soft: 0.6, lit: 0 });
-    for (const p of [this.dust, this.smoke, this.blood, this.fire, this.sparks, this.moths]) root.add(p.points);
+    // tall smoke columns seen from afar (signal fires)
+    this.column = new Particles(260, { soft: 0.0, lit: 1 });
+    for (const p of [this.dust, this.smoke, this.blood, this.fire, this.sparks, this.moths, this.column]) root.add(p.points);
     this.fire.points.renderOrder = 3;
     // flashes
     this.flashLight = new THREE.PointLight(0xffc070, 0, 14, 2);
@@ -792,9 +796,9 @@ export class Effects {
     const g = this.game;
     const cam = g.renderer.camera;
     const amb = g.env.hemi.color.clone().multiplyScalar(0.6 + g.env.daylight * 0.6).add(g.env.sun.color.clone().multiplyScalar(g.env.sun.intensity * 0.12));
-    for (const p of [this.dust, this.smoke, this.blood, this.splashes]) p.mat.uniforms.uAmbient.value.copy(amb);
+    for (const p of [this.dust, this.smoke, this.blood, this.splashes, this.column]) p.mat.uniforms.uAmbient.value.copy(amb);
     const scale = (window.innerHeight * g.renderer.renderer.getPixelRatio()) / (2 * Math.tan(((cam.fov / 2) * Math.PI) / 180));
-    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes]) {
+    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes, this.column]) {
       p.mat.uniforms.uScale.value = scale;
       p.update(dt);
     }
@@ -899,7 +903,7 @@ export class Effects {
   }
 
   rebase(dx, dz) {
-    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes]) p.rebase(dx, dz);
+    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes, this.column]) p.rebase(dx, dz);
     for (const d of this.devils) {
       d.x -= dx;
       d.z -= dz;

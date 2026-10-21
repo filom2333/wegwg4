@@ -1354,14 +1354,18 @@ export class NPCManager {
   onPoiLoaded(inst, rnd) {
     const type = inst.poi.type;
     const counts = { camp: [1, 2], ruins: [0, 1], trailers: [0, 2], outpost: [1, 1], junkyard: [0, 1], motel: [0, 1], houses: [0, 1] };
-    const c = counts[type];
-    if (!c) return;
+    const c = counts[type] || [0, 0];
     const r = mulberry32(inst.poi.seed + 4242);
     const n = c[0] + Math.floor(r() * (c[1] - c[0] + 1));
     const dead = new Set(inst.state.npcDead || []);
     const hostileP = 0.35 * (this.g.difficulty.enemies || 1);
     const list = [];
     inst.root.updateMatrixWorld(true);
+    // whoever called you in, waiting inside
+    const bait = this.g.lures ? this.g.lures.ambushers(inst) : [];
+    bait.forEach((lp, b) => {
+      if (!dead.has(100 + b)) list.push({ i: 100 + b, lp, hostile: true, seed: (inst.poi.seed + 900 + b * 31) | 0 });
+    });
     for (let i = 0; i < n; i++) {
       if (dead.has(i)) continue;
       const a = r() * Math.PI * 2,

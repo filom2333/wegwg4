@@ -212,7 +212,10 @@ export class POIManager {
     // at once
     const g = this.game;
     const hooks = [
-      () => g.items && g.items.onPoiLoaded && g.items.onPoiLoaded(inst, rnd),
+      () => {
+        g.items && g.items.onPoiLoaded && g.items.onPoiLoaded(inst, rnd);
+        g.lures && g.lures.onPoiLoaded(inst);
+      },
       () => g.npcs && g.npcs.onPoiLoaded && g.npcs.onPoiLoaded(inst, rnd),
       () => g.fleet && g.fleet.onPoiLoaded(inst),
       () => g.trailers && g.trailers.onPoiLoaded(inst),

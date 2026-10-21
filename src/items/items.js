@@ -325,7 +325,8 @@ export class ItemSystem {
     }
     inst.loot.forEach((spot, i) => {
       if (inst.state.taken.has(i)) return;
-      const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul;
+      // most places were picked over long ago
+      const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul * 0.7;
       if (lrnd() > chance) return;
       const table = LOOT[spot.kind] || LOOT.any;
       let tot = 0;

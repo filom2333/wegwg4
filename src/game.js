@@ -37,6 +37,7 @@ import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
 import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
+import { Lures } from './story/lures.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
@@ -44,9 +45,9 @@ import { clamp, mulberry32 } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
 
 export const DIFFICULTY = {
-  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, cold: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
-  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, cold: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
-  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, cold: 1.3, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
+  easy: { label: 'Easy', hunger: 0.85, thirst: 0.85, fatigue: 0.8, cold: 0.8, consumption: 0.9, wear: 0.8, damage: 0.85, playerDamage: 0.8, enemies: 0.8, loot: 1.1 },
+  normal: { label: 'Normal', hunger: 1.25, thirst: 1.3, fatigue: 1.15, cold: 1.2, consumption: 1.15, wear: 1.3, damage: 1.2, playerDamage: 1.2, enemies: 1.25, loot: 0.8 },
+  hard: { label: 'Hard', hunger: 1.6, thirst: 1.75, fatigue: 1.4, cold: 1.5, consumption: 1.4, wear: 1.9, damage: 1.6, playerDamage: 1.5, enemies: 1.8, loot: 0.55 },
 };
 
 export class Game {
@@ -147,6 +148,8 @@ export class Game {
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);
+    this.lures = new Lures(this);
+    if (load && load.story && load.story.lures) this.lures.restore(load.story.lures);
     this.npcs = new NPCManager(this);
     if (!attract) this.npcs.startBuilding();
     this.items = new ItemSystem(this);
@@ -355,6 +358,7 @@ export class Game {
     this.winches.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
+    this.lures && this.lures.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
@@ -502,6 +506,7 @@ export class Game {
       this.story.update(dt);
       this.roadSigns = this.roadSigns || new RoadSigns(this);
       this.roadSigns.update();
+      this.lures.update(dt);
     }
   }
 
