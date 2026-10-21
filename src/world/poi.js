@@ -397,6 +397,25 @@ export class POIManager {
     return best;
   }
 
+  // The nearest bed (its loot spot on the mattress) to a point, within maxDist.
+  nearestBed(pos, maxDist = 1.2) {
+    let best = null,
+      bd = maxDist;
+    for (const inst of this.loaded.values()) {
+      if (inst.root.position.distanceToSquared(pos) > 3600) continue;
+      for (const l of inst.loot) {
+        if (l.kind !== 'bed') continue;
+        const w = l.pos.clone().applyMatrix4(inst.root.matrixWorld);
+        const d = w.distanceTo(pos);
+        if (d < bd) {
+          bd = d;
+          best = { world: w, inst };
+        }
+      }
+    }
+    return best;
+  }
+
   rebase(dx, dz) {
     for (const inst of this.loaded.values()) {
       inst.root.position.x -= dx;

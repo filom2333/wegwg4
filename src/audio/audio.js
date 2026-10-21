@@ -428,7 +428,8 @@ export class AudioSystem {
     const env = g.env;
     const player = g.player;
     const car = g.car;
-    const seated = !!player.seat;
+    // a tent muffles the outside like a cabin does, and the rain drums on the canvas
+    const seated = !!player.seat || !!(player.lying && player.lying.kind === 'tent');
     this.inCabin = lerp(this.inCabin, seated ? 1 : 0, Math.min(1, dt * 5));
     // ---- wind / rain ambience
     const carSpeed = car ? Math.abs(car.dyn.forwardSpeed) : 0;

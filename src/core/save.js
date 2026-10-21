@@ -86,6 +86,7 @@ export function serializeGame(g) {
     inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
     fleet: g.fleet.serialize(),
     trailers: g.trailers ? g.trailers.serialize() : [],
+    tents: g.tents ? g.tents.serialize(o) : [],
     // loot that never left its spot is regenerated deterministically when the POI loads
     // jacks standing under cars are kept as jacks lying where they stood
     items: g.items
@@ -116,6 +117,7 @@ export function applySave(g, d) {
   g.env.time = d.env.time;
   g.env.day = d.env.day;
   if (d.env.weather) g.env.setWeather(d.env.weather, true);
+  if (g.tents) g.tents.restore(d.tents, o);
   // items
   for (const s of d.items || []) {
     if (s.part && !(s.state && s.state.carType) && !car.model.parts[s.part]) continue;

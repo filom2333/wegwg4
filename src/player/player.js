@@ -119,6 +119,29 @@ export class Player {
     return false;
   }
 
+  // ------------------------------------------------------------------ lying down
+  // In a tent or on a bed: spot = { kind: 'tent' | 'bed', eye, yaw, exit } (scene coordinates).
+  // The body stays where it stood; the view lies at `eye`, looking up toward the feet.
+  lieDown(spot) {
+    this.lying = spot;
+    this.lieYaw = 0;
+    this.liePitch = spot.pitch ?? 0.9;
+    this.thirdPerson = false;
+    this.velocity.set(0, 0, 0);
+    this.game.audio && this.game.audio.play('pocket', { at: spot.eye, volume: 0.8 });
+  }
+
+  getUp() {
+    const s = this.lying;
+    if (!s) return;
+    this.lying = null;
+    const p = s.exit.clone();
+    p.y = this.game.groundHeightAt(p.x, p.z, p.y + 1.5);
+    if (this.isFree(p)) this.setPosition(p);
+    this.yaw = s.yaw + this.lieYaw;
+    this.pitch = 0;
+  }
+
   isFree(p) {
     const shape = new RAPIER.Capsule(HALF, RADIUS);
     let hit = false;
@@ -145,7 +168,10 @@ export class Player {
     const look = !this.game.ui || !this.game.ui.blocksLook;
     const rotating = this.game.interaction && this.game.interaction.rotating;
     if (look && !rotating) {
-      if (this.seat) {
+      if (this.lying) {
+        this.lieYaw = clamp(this.lieYaw - input.mouse.dx * sens, -1.4, 1.4);
+        this.liePitch = clamp(this.liePitch - input.mouse.dy * sens * inv, -0.1, 1.5);
+      } else if (this.seat) {
         this.seatYaw = clamp(this.seatYaw - input.mouse.dx * sens, -2.3, 2.3);
         this.seatPitch = clamp(this.seatPitch - input.mouse.dy * sens * inv, -1.2, 1.0);
       } else {
@@ -154,7 +180,7 @@ export class Player {
       }
     }
     if (this.seat) this.updateSeated(dt);
-    else this.updateOnFoot(dt);
+    else if (!this.lying) this.updateOnFoot(dt);
     this.updateNeeds(dt);
   }
 
@@ -334,6 +360,12 @@ export class Player {
       cam.quaternion.copy(q).multiply(e);
       // look back key
       if (input.isDown('lookBack')) cam.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0, 0, 'YXZ')));
+    } else if (this.lying && !this.dead) {
+      // lying on the back: slow breathing
+      const s = this.lying;
+      cam.position.copy(s.eye);
+      cam.position.y += Math.sin(performance.now() * 0.0012) * 0.005;
+      cam.quaternion.setFromEuler(new THREE.Euler(this.liePitch, s.yaw + this.lieYaw + Math.PI, 0, 'YXZ'));
     } else if (this.dead) {
       // collapse: the view drops to the ground and rolls
       this.deathT = Math.min(1, (this.deathT || 0) + dt * 1.4);
@@ -371,13 +403,13 @@ export class Player {
     const eye = g.eyeCam;
     const cam = g.renderer.camera;
     const avatar = g.npcs && g.npcs.ensureAvatar();
-    const third = this.thirdPerson && avatar && !this.dead;
+    const third = this.thirdPerson && avatar && !this.dead && !this.lying;
     this.tpBlend = lerp(this.tpBlend || 0, third ? 1 : 0, Math.min(1, dt * 8));
     if (avatar) {
       avatar.root.visible = this.tpBlend > 0.05 || !!(g.remoteView);
       if (avatar.root.visible) avatar.sync(dt, this);
     }
-    if (g.interaction) g.interaction.viewRoot.visible = this.tpBlend < 0.5;
+    if (g.interaction) g.interaction.viewRoot.visible = this.tpBlend < 0.5 && !this.lying;
     if (this.tpBlend < 0.001) {
       cam.position.copy(eye.position);
       cam.quaternion.copy(eye.quaternion);
@@ -457,12 +489,16 @@ export class Player {
       air = air + 6;
       if (car.dyn.engine.running && car.engineTemp > 55) air = Math.max(air, 22);
     } else if (this.indoors) air = air + 7;
+    // a tent keeps the wind and rain off; a made bed has its own blankets
+    const lying = this.lying && this.lying.kind;
+    if (lying === 'tent') air += 5;
+    if (lying === 'bed') air = Math.max(air, 15);
     // asleep under a blanket (in the backpack or the car): snug whatever the night does
     if (g.sleepHours > 0 && this.hasBlanket()) air = Math.max(air, 18);
     // fires and lamps close by
     const fire = g.campfires ? g.campfires.heatAt(this.position) : 0;
     air += fire;
-    const sheltered = !!car || this.indoors;
+    const sheltered = !!car || this.indoors || lying === 'tent';
     if (!sheltered && env.w.rain > 0.05) this.wet = Math.min(1, this.wet + dt * 0.012 * env.w.rain);
     else this.wet = Math.max(0, this.wet - dt * (0.002 + Math.max(0, air - 10) * 0.0004 + fire * 0.001));
     air -= this.wet * 9;

@@ -11,6 +11,7 @@ import { accessoryItemModel } from '../vehicle/accessories.js';
 import { plateModel } from '../vehicle/plates.js';
 import { jackModel } from '../vehicle/jack.js';
 import { carbKitModel } from '../vehicle/tuning.js';
+import { tentBagModel } from '../world/tents.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -972,6 +973,7 @@ export const MODEL_BUILDERS = {
   sandbag,
   jack: () => jackModel(),
   carbKit: () => carbKitModel(),
+  tentBag: (variant = 0) => tentBagModel(variant),
   accessory: accessoryItemModel,
   plate: (id, variant) => plateModel(id, variant),
   note,

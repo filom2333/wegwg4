@@ -137,6 +137,13 @@ export class Interaction {
     }
     // a jack standing under a car
     if (hit && hit.owner && hit.owner.kind === 'jack' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist + 0.1)) best = { kind: 'jack', jack: hit.owner.jack, dist: hit.distance };
+    // a pitched tent; a bed in a house
+    if (hit && hit.owner && hit.owner.kind === 'tent' && hit.distance <= reach + 0.4 && (!best || hit.distance < best.dist)) best = { kind: 'tent', tent: hit.owner.tent, dist: hit.distance };
+    if (g.pois && !p.seat && (!best || best.kind === 'poiDoor')) {
+      const tip = origin.clone().addScaledVector(dir, Math.min(reach, hitDist));
+      const bed = g.pois.nearestBed(tip, 1.1);
+      if (bed && (!best || bed.world.distanceTo(origin) < best.dist)) best = { kind: 'bed', bed, dist: bed.world.distanceTo(origin) };
+    }
     // trailers
     if (hit && hit.owner && hit.owner.kind === 'trailer' && hit.distance <= reach + 0.3 && (!best || hit.distance < best.dist)) best = { kind: 'trailer', trailer: hit.owner.trailer, dist: hit.distance };
     // npcs (for melee / corpses)
@@ -259,6 +266,21 @@ export class Interaction {
       }
     } else this._hitchHint = false;
     if (this.fishing && !(this.held && this.held.def && this.held.def.fishing)) this.endFishing();
+    // lying in a tent or on a bed: get up, or sleep
+    if (p.lying) {
+      this.target = null;
+      const kn = (a) => (settings.data.bindings[a] || '').replace(/^Key|^Digit/, '');
+      const prompts = [[kn('interact'), p.lying.kind === 'tent' ? 'Crawl out' : 'Get up']];
+      if (!(g.sleepHours > 0)) prompts.push([kn('sleep'), 'Sleep']);
+      if (!blocked && input.wasPressed('interact')) p.getUp();
+      if (ui) {
+        ui.setPrompts(prompts);
+        ui.setTargetInfo({ title: p.lying.kind === 'tent' ? 'In the tent' : 'In bed', sub: `${Math.round(p.energy)}% rested` });
+        ui.setCrosshair('none');
+      }
+      this.updateOutline(null);
+      return;
+    }
     this.target = this.findTarget();
     const t = this.target;
     const prompts = [];
@@ -444,8 +466,20 @@ export class Interaction {
       const why = this.tuneBlock(it, t);
       out.push(why ? ['', why] : ['LMB', 'Bolt on the twin carbs']);
     }
+    if (def.tent) {
+      const site = this.tentSite();
+      out.push(site.blocked ? ['', site.blocked] : ['LMB', 'Pitch the tent here']);
+    }
     if (it.id === 'wrench' && this.carbsTarget(t)) out.push(['LMB', 'Unbolt the twin carbs']);
     return out;
+  }
+
+  // Where the held tent would go: a couple of metres ahead, door toward the player.
+  tentSite() {
+    const g = this.game;
+    const p = g.player;
+    if (p.seat || p.indoors) return { blocked: 'Pitch it outside' };
+    return g.tents.site(p.position, p.yaw);
   }
 
   // Engine bay targets: the engine and what sits on it, with the lid open.
@@ -507,6 +541,16 @@ export class Interaction {
         if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
         if (it.def && it.def.consume) prompts.push(['F', 'Use now']);
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
+        break;
+      }
+      case 'tent': {
+        info = { title: 'Tent', sub: 'Out of the wind and the rain. Sleep the night through', progress: this.removing && this.removing.tent === t.tent ? this.removing.t / 1.6 : undefined };
+        prompts.push(['E', 'Crawl in'], ['R', 'Pack it up (hold)']);
+        break;
+      }
+      case 'bed': {
+        info = { title: 'Bed', sub: 'Sleeps best of all, and warm' };
+        prompts.push(['E', 'Lie down']);
         break;
       }
       case 'jack': {
@@ -669,6 +713,25 @@ export class Interaction {
         }
       }
       return;
+    }
+    if (t.kind === 'tent' && input.isDown('reload')) {
+      if (!this.removing || this.removing.tent !== t.tent) this.removing = { tent: t.tent, t: 0 };
+      this.removing.t += dt;
+      if (Math.floor((this.removing.t - dt) / 0.4) !== Math.floor(this.removing.t / 0.4)) g.audio && g.audio.play('pocket', { at: t.tent.pos });
+      if (this.removing.t >= 1.6) {
+        const pos = t.tent.pos.clone().add(V(0, 0.3, 0));
+        g.tents.strike(t.tent);
+        this.removing = null;
+        const it = g.items.spawn('tent', pos, new THREE.Quaternion(), { variant: t.tent.variant });
+        it.poiKey = null;
+        if (!this.held) this.pick(it);
+      }
+      return;
+    }
+    if (t.kind === 'tent' && input.wasPressed('interact') && !this.held) return g.player.lieDown(g.tents.berth(t.tent));
+    if (t.kind === 'bed' && input.wasPressed('interact') && !this.held) {
+      const pl = g.player;
+      return pl.lieDown({ kind: 'bed', eye: t.bed.world.clone().add(V(0, 0.06, 0)), yaw: pl.yaw, exit: pl.position });
     }
     if (t.kind === 'plate' && input.isDown('reload')) {
       if (!this.removing || this.removing.plate !== t.plate) this.removing = { plate: t.plate, t: 0 };
@@ -1360,6 +1423,14 @@ export class Interaction {
       g.effects && g.effects.extinguish(car);
       it.state.charges = 0;
       g.audio && g.audio.play('extinguish');
+      return;
+    }
+    if (def.tent) {
+      const site = this.tentSite();
+      if (site.blocked) return g.hud && g.hud.toast(site.blocked);
+      g.tents.pitch(site.pos, site.yaw, it.state.variant || 0, site.tilt);
+      this.consumeHeld();
+      g.hud && g.hud.toast('Tent pitched. Crawl in (E) to get out of the weather and sleep');
       return;
     }
     if (def.tune) {

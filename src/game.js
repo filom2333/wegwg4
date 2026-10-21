@@ -20,6 +20,7 @@ import { CAR_TYPE_LIST, carType } from './vehicle/types.js';
 import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
+import { Tents } from './world/tents.js';
 import { Winches } from './vehicle/winch.js';
 import { Player } from './player/player.js';
 import { input } from './core/input.js';
@@ -152,6 +153,7 @@ export class Game {
     this.effects = new Effects(this);
     this.campfires = new Campfires(this);
     this.jacks = new Jacks(this);
+    this.tents = new Tents(this);
     this.winches = new Winches(this);
     onProgress('Building the cars', 0.35);
     await tick();
@@ -334,6 +336,9 @@ export class Game {
     this.effects && this.effects.rebase(dx, dz);
     this.campfires && this.campfires.rebase(dx, dz);
     this.jacks.rebase(dx, dz);
+    this.tents.rebase(dx, dz);
+    const ly = this.player && this.player.lying;
+    if (ly) for (const v of [ly.eye, ly.exit]) (v.x -= dx), (v.z -= dz);
     this.winches.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
@@ -375,7 +380,8 @@ export class Game {
       const h = Math.min(this.sleepHours, dt * 2.5);
       hours += h;
       this.sleepHours -= h;
-      this.player.energy = Math.min(100, this.player.energy + h * 12);
+      // a bed rests you best, a tent well, a car seat least
+      this.player.energy = Math.min(100, this.player.energy + h * 12 * ({ car: 0.85, tent: 1, bed: 1.2 }[this.sleepPlace] || 1));
     }
     this.gameHoursDelta = hours;
     const prevDay = this.env.day;
@@ -612,23 +618,32 @@ export class Game {
     }
   }
 
-  // Sleeping in the car: time runs fast until morning (or a few hours by day); damage wakes you.
+  // Sleeping in the car, a tent or a bed: time runs fast until morning (or a few hours by day);
+  // damage wakes you.
   updateSleep(dt) {
     const p = this.player;
     const blocked = this.ui && this.ui.blocksMove && !(this.ui.current === 'sleep');
-    if (!this.sleepHours && p.seat && !blocked && input.wasPressed('sleep')) {
-      if (this.car.dyn.engine.running) this.hud.toast('Turn the engine off first');
+    const place = p.seat ? 'car' : p.lying ? p.lying.kind : null;
+    if (!this.sleepHours && place && !blocked && input.wasPressed('sleep')) {
+      if (place === 'car' && this.car.dyn.engine.running) this.hud.toast('Turn the engine off first');
       else if (p.energy > 85) this.hud.toast('You are not tired');
       else {
         const t = this.env.time;
         this.sleepHours = t >= 19 || t < 5 ? (t >= 19 ? 24 - t + 6.5 : 6.5 - t) : 3;
         this.sleepHealth = p.health;
+        this.sleepPlace = place;
+        this.sleepEnergy = p.energy;
         this.ui && this.ui.showSleep(true);
       }
     }
-    if (this.sleepHours > 0 && (p.health < this.sleepHealth - 0.5 || !p.seat)) {
+    if (this.sleepHours > 0 && (p.health < this.sleepHealth - 0.5 || (this.sleepPlace === 'car' ? !p.seat : !p.lying))) {
       this.sleepHours = 0;
-      this.hud.toast(p.seat ? 'Something woke you' : 'You wake up');
+      this.hud.toast(p.seat || p.lying ? 'Something woke you' : 'You wake up');
+    } else if (this.sleepHours > 0 && this.sleepHours <= dt * 2.5 + 1e-6) {
+      // a night in a proper bed leaves you better off than one curled up on a car seat
+      const gain = p.energy - (this.sleepEnergy ?? p.energy);
+      const how = { car: 'Stiff neck from the seat, but rested', tent: 'You wake to canvas and birdsong', bed: 'You slept like a log' }[this.sleepPlace];
+      if (gain > 10 && how) this.hud.toast(how);
     }
     if (this.sleepHours <= 0 && this.ui && this.ui.current === 'sleep') this.ui.showSleep(false);
     if (this.sleepHours > 0) this.sleepHealth = Math.min(this.sleepHealth, p.health + 0.5);

@@ -40,7 +40,7 @@ const TIPS = [
   'Coolant and oil are cheap. Engines are not.',
   'Rain turns dirt roads to grease. Brake earlier.',
   'Aim for the head. It is a long way to the next box of cartridges.',
-  'Sleep in the car with the doors shut and the engine off.',
+  'Sleep in the car with the engine off, in a tent you pitch, or in a bed in an empty house: a bed rests you best.',
   'Abandoned cars still have parts worth taking.',
   'The road always goes north. Everything else is a detour.',
 ];
@@ -70,7 +70,7 @@ const LABELS = {
   inventory: 'Inventory',
   nextTrack: 'Next CD track',
   stow: 'Put in backpack',
-  sleep: 'Sleep (in the car)',
+  sleep: 'Sleep (car, tent or bed)',
   view: 'First / third person',
 };
 

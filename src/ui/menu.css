@@ -728,12 +728,31 @@
   color: var(--ink-3);
   pointer-events: none;
 }
+/* eyes shut: the night still goes by faintly behind the lids, breathing slow */
 .ui-sleep {
-  background: #000;
+  background: transparent;
   transition: opacity 1.2s ease;
+}
+.ui-sleep::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 55% at 50% 42%, rgba(6, 5, 10, 0.8) 0%, rgba(3, 3, 6, 0.93) 60%, #000 100%);
+  animation: ui-sleep-breathe 6s ease-in-out infinite;
+}
+@keyframes ui-sleep-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 .ui-sleep .ui-loadtext {
   color: var(--ink-2);
+  letter-spacing: 0.08em;
+  opacity: 0.75;
 }
 
 /* ------------------------------------------------------------------ notes */

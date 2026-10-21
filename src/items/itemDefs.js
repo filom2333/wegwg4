@@ -62,6 +62,7 @@ export const ITEMS = {
   fishingRod: { name: 'Fishing rod', model: ['fishingRod'], mass: 0.6, fishing: true, hold: 'hand', desc: 'Cast into a river or lake, wait for the float to dip, strike.' },
   thermos: { name: 'Thermos of coffee', model: ['thermos'], mass: 1.1, consume: { water: 14, energy: 14, warmth: 22 }, charges: 3, hold: 'hand', desc: 'Hot coffee. Warms you up on a cold night.' },
   blanket: { name: 'Wool blanket', model: ['blanket'], mass: 1.4, wrap: 34, hold: 'side', desc: 'Wrap up in it when the night gets cold. Sleeping with one keeps you warm.' },
+  tent: { name: 'Tent', model: ['tentBag'], mass: 4.6, tent: true, bulky: true, hold: 'side', variants: 4, desc: 'A canvas ridge tent in its bag. Pitch it on open, level ground (LMB), crawl in out of the wind and rain and sleep the night through. Hold R on it to pack it up again.' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
@@ -156,6 +157,7 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['tent', 0.4],
     ['fishingRod', 0.6],
     ['campfireKit', 0.8],
     ['blanket', 0.6],
@@ -185,6 +187,7 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['tent', 0.25],
     ['fishingRod', 0.5],
     ['thermos', 0.6],
     ['campfireKit', 0.8],
@@ -220,6 +223,7 @@ export const LOOT = {
     ['waterJug', 1],
   ],
   tent: [
+    ['tent', 0.9],
     ['fishingRod', 0.8],
     ['campfireKit', 1.5],
     ['blanket', 1],
@@ -229,6 +233,7 @@ export const LOOT = {
     ['jerky', 1],
   ],
   camp: [
+    ['tent', 0.7],
     ['fishingRod', 1.2],
     ['campfireKit', 2],
     ['blanket', 1],
