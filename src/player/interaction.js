@@ -10,7 +10,7 @@ import { ITEMS } from '../items/itemDefs.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
 import { fitMatrix } from '../vehicle/swap.js';
-import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate } from '../vehicle/plates.js';
+import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate, worldSpot, tiltSpot } from '../vehicle/plates.js';
 import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
@@ -141,6 +141,17 @@ export class Interaction {
       if (carDist < 8) {
         const cand = this.carTarget(origin, dir, Math.min(reach, hitDist + 0.35));
         if (cand && (!best || cand.dist < best.dist - 0.02)) best = cand;
+      }
+    }
+    // plates bolted to the world, or to some other car standing here
+    if (!p.seat) {
+      const lim = Math.min(reach, hitDist + 0.05);
+      const wp = g.worldPlates && g.worldPlates.underRay(origin, dir, lim);
+      if (wp && (!best || wp.dist < best.dist)) best = { kind: 'plate', plate: wp.plate, dist: wp.dist };
+      for (const c of (g.fleet && g.fleet.cars) || []) {
+        if (c === car || !c.plates || !c.plates.length || c.root.position.distanceTo(origin) > 7) continue;
+        const cp = plateUnderRay(c, origin, dir, Math.min(reach, hitDist + 0.35));
+        if (cp && (!best || cp.dist < best.dist)) best = { kind: 'plate', plate: cp.plate, dist: cp.dist };
       }
     }
     // poi doors, pumps
@@ -329,11 +340,13 @@ export class Interaction {
         const spot = this.plateFit(it);
         if (spot) {
           this.showPlateGhost(it, spot);
-          prompts.push(['E', `Bolt to the ${(this.game.car.PARTS[spot.part] || { label: spot.part }).label.toLowerCase()}`], ['Wheel', 'Turn it']);
+          const where = spot.host === 'car' ? `to the ${(spot.car.PARTS[spot.part] || { label: spot.part }).label.toLowerCase()}` : spot.normal.y > 0.8 ? 'down here' : 'to this';
+          const tilt = Math.round(((this.plateTilt || 0) * 180) / Math.PI);
+          prompts.push(['E', `${spot.normal.y > 0.8 && spot.host === 'world' && tilt >= 60 ? 'Stand it up' : 'Bolt it'} ${where}`], ['Wheel', 'Turn'], ['Shift+Wheel', tilt ? `Tilt · ${tilt}°` : 'Tilt']);
           if (!blocked && input.wasPressed('interact')) this.boltHeldPlate(it, spot);
         } else {
           this.hideGhost();
-          prompts.push(['', 'Aim at any part of a car to bolt it on']);
+          prompts.push(['', 'Aim at a car, a wall, a fence or the ground to bolt it']);
         }
       } else if (def && def.jack) {
         info = this.heldInfo(it);
@@ -657,7 +670,8 @@ export class Interaction {
       case 'plate': {
         const pl = t.plate;
         const d = PLATES[pl.id];
-        info = { title: d.name, sub: `${d.mass} kg · bolted to the ${(car.PARTS[pl.part] || { label: pl.part }).label.toLowerCase()}` };
+        const host = pl.car || car;
+        info = { title: d.name, sub: pl.world ? `${d.mass} kg · bolted in place` : `${d.mass} kg · bolted to the ${(host.PARTS[pl.part] || { label: pl.part }).label.toLowerCase()}${host !== car ? ' of another car' : ''}` };
         prompts.push(['R', 'Unbolt (hold)']);
         if (this.removing && this.removing.plate === pl) info.progress = this.removing.t / 1.2;
         if (this.spraying && this.spraying.key === pl && this.spraying.need) info.progress = this.spraying.t / this.spraying.need;
@@ -1096,7 +1110,11 @@ export class Interaction {
       const qy = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), input.mouse.dy * 0.008);
       this.holdRot.premultiply(qx).premultiply(qy);
     }
-    if (input.mouse.wheel && def && def.plate && this.plateAim) this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
+    if (input.mouse.wheel && def && def.plate && this.plateAim) {
+      // the wheel turns the sheet on the surface; with Shift it tilts it up off it (0..90 deg)
+      if (input.isDown('sprint')) this.plateTilt = clamp((this.plateTilt || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 24), 0, Math.PI / 2);
+      else this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
+    }
     else if (input.mouse.wheel && !weapon) {
       const isBig = carriedBig(it);
       if (!isBig && !this.floating) {
@@ -1249,7 +1267,7 @@ export class Interaction {
     const aim = plate ? plate.mesh.getWorldPosition(V(0, 0, 0)) : car.worldPointOf(b.getCenter(V(0, 0, 0)));
     g.effects && g.effects.sprayMist && g.effects.sprayMist(nozzle, aim, P.hex, dt);
     if (S.t >= need) {
-      if (plate) paintPlate(plate, P.hex);
+      if (plate) plate.world ? g.worldPlates.paint(plate, P.hex) : paintPlate(plate, P.hex);
       else car.paintPart(t.part, P.hex);
       car.owned = true;
       it.state.charges = (it.state.charges ?? it.def.charges ?? 1) - 1;
@@ -1879,14 +1897,31 @@ export class Interaction {
   }
 
   // ------------------------------------------------------------------ plates
+  // Where the held plate would go: on any car within reach, or on anything solid in the world
+  // (walls, fences, rocks, the ground), whichever the crosshair meets first; tilted if asked.
   plateFit(it) {
-    const car = this.game.car;
+    const g = this.game;
     this.plateAim = null;
-    if (!car || this.game.player.seat) return null;
+    if (g.player.seat) return null;
+    const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
     const d = PLATES[it.def.plate];
-    const spot = plateSpot(car, this.cam.position, dir, 2.6, this.plateSpin || 0, right, d);
+    const spin = this.plateSpin || 0;
+    let spot = null;
+    const cars = [g.car, ...((g.fleet && g.fleet.cars) || [])].filter((c, i, a) => c && a.indexOf(c) === i && c.root.position.distanceTo(origin) < 7);
+    for (const c of cars) {
+      const s = plateSpot(c, origin, dir, 2.6, spin, right, d);
+      if (s && (!spot || s.dist < spot.dist)) spot = s;
+    }
+    const heldBody = this.held && this.held.body;
+    const hit = g.physics.raycast(origin, dir, 2.6, GROUPS.ground, g.player.body, (c) => {
+      const o = g.physics.ownerOf(c);
+      if (heldBody && c.parent() === heldBody) return false;
+      return !(o && (o.item || o.kind === 'car' || o.kind === 'npc' || o.kind === 'trailer'));
+    });
+    if (hit && (!spot || hit.distance < spot.dist - 0.02)) spot = worldSpot(hit, dir, spin, right);
+    if (spot && this.plateTilt) spot = tiltSpot(it.def.plate, spot, this.plateTilt, dir);
     this.plateAim = spot;
     return spot;
   }
@@ -1911,27 +1946,32 @@ export class Interaction {
 
   boltHeldPlate(it, spot) {
     const g = this.game;
-    const car = g.car;
-    const mp = car.model.parts[spot.part];
-    const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(plateWorldMatrix(it.def.plate, spot));
+    const m = plateWorldMatrix(it.def.plate, spot);
     this.hideGhost();
     this.held = null;
     g.player.carryMass = 0;
     g.items.destroy(it);
-    attachPlate(car, { id: it.def.plate, state: { ...it.state }, part: spot.part, local });
-    car.owned = true;
+    if (spot.host === 'world') g.worldPlates.add(it.def.plate, { ...it.state }, m);
+    else {
+      const car = spot.car;
+      const mp = car.model.parts[spot.part];
+      const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(m);
+      attachPlate(car, { id: it.def.plate, state: { ...it.state }, part: spot.part, local });
+      car.owned = true;
+    }
+    this.plateTilt = 0;
     g.audio && g.audio.play('install', { at: spot.point });
-    
   }
 
   unboltPlate(plate) {
     const g = this.game;
-    const car = g.car;
     const pos = V(0, 0, 0),
       q = new THREE.Quaternion(),
       s = V(0, 0, 0);
+    plate.mesh.updateMatrixWorld();
     plate.mesh.matrixWorld.decompose(pos, q, s);
-    detachPlate(car, plate);
+    if (plate.world) g.worldPlates.remove(plate);
+    else detachPlate(plate.car || g.car, plate);
     const it = g.items.spawn(plate.id, pos, q, { ...plate.state });
     g.audio && g.audio.play('remove', { at: pos });
     this.pick(it);

@@ -543,6 +543,17 @@ add them to `src/world/props.js` PROPS.
   POIs avoid steep stretches and bends that swing into their yard (`poiOnRoad`); lakes avoid
   ramps and the road. Tools: scratchpad `tools/roadmap.mjs` (plan + profile + min radius/grade).
 
+- Plates bolt anywhere (`interaction.plateFit`): on any car within reach (not only the current
+  one; `plate.car` remembers the host) or on anything solid in the world via the physics ray
+  (`worldSpot`: walls, fences, rocks, the ground). Wheel turns the sheet, Shift+Wheel tilts it up
+  off the surface about its near edge (`tiltSpot`, 0-90°: a ramp, a windbreak, a wall). World
+  plates live in `src/world/worldPlates.js` (fixed colliders, absolute positions, saved as
+  `worldPlates`, rebased with the origin); R (hold) unbolts any of them, spray paint works.
+- Recorded sounds (`AudioSystem.loadSamples`): files in `public/sounds/` listed in
+  `sounds/index.json` replace synthesized ones (see the sound sheet artifact
+  https://claude.ai/artifact/R84zAEjoiv9kSJW3iQ8ZFK for names and prompts; songs map as
+  "album:track" keys, album order neon, rattlers, june, salt, eddie, kr9).
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.

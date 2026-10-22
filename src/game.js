@@ -40,6 +40,7 @@ import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
 import { Lures } from './story/lures.js';
 import { Obstacles } from './world/obstacles.js';
+import { WorldPlates } from './world/worldPlates.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
@@ -169,6 +170,7 @@ export class Game {
     this.campfires = new Campfires(this);
     this.jacks = new Jacks(this);
     this.tents = new Tents(this);
+    this.worldPlates = new WorldPlates(this);
     this.atlas = new Atlas(this);
     this.atlas.photos = loadPhotos();
     this.photo = new PhotoMode(this);
@@ -367,6 +369,7 @@ export class Game {
     this.roadSigns && this.roadSigns.rebase(dx, dz);
     this.lures && this.lures.rebase(dx, dz);
     this.obstacles && this.obstacles.rebase(dx, dz);
+    this.worldPlates && this.worldPlates.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
@@ -518,6 +521,7 @@ export class Game {
     }
     this.obstacles = this.obstacles || new Obstacles(this);
     this.obstacles.update();
+    this.worldPlates.update();
   }
 
   // "Build it first": a body on its wheels in the garage; everything else is somewhere about the
