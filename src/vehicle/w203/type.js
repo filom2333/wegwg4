@@ -17,12 +17,13 @@ const SPEC = wheelSpec(META);
 const sw = META.steeringWheel;
 const STEER_SCALE = 0.84; // the measured rim takes in the column stalks
 const DRIVER = driverOf(META, { eyeY: 1.13, eyeZ: -0.24, shoulderY: 0.86, shoulderZ: -0.3, shoulderHalf: 0.2, steerScale: STEER_SCALE });
+const COLUMN = V(...sw.axis).normalize();
 const CONTROLS = {
-  key: V(sw.center[0] - 0.17, 0.78, 0.47),
-  stalk: V(sw.center[0] + 0.13, 0.82, 0.4),
+  key: V(0.21, 0.757, 0.43),
+  stalk: V(0.53, 0.848, 0.415),
   shifter: V(0.02, 0.62, 0.33), // floor lever on the centre console
-  handbrake: V(0.62, 0.4, 0.56), // foot-operated parking brake, far left of the footwell
-  horn: V(...sw.center).addScaledVector(V(...sw.axis).normalize(), 0.04),
+  handbrake: V(0.695, 0.47, 0.56), // foot-operated parking brake, far left of the footwell
+  horn: V(...sw.center).addScaledVector(COLUMN, 0.04),
 };
 const SEATS = {
   driver: { pos: DRIVER.eye.clone(), door: 'door_FL', part: 'seat_FL', exit: V(1.45, 0.0, 0.15) },
@@ -30,20 +31,43 @@ const SEATS = {
   rearL: { pos: V(0.36, 1.1, -1.05), door: 'door_RL', part: 'seat_R', exit: V(1.45, 0.0, -0.85) },
   rearR: { pos: V(-0.36, 1.1, -1.05), door: 'door_RR', part: 'seat_R', exit: V(-1.45, 0.0, -0.85) },
 };
-const STEREO = { center: [0.0, 0.72, 0.52], normal: [0, 0.25, -1], w: 0.09, h: 0.02 };
+// the head unit's display window, in front of the source's own
+const STEREO = { center: [0.001, 0.721, 0.449], normal: [0, 0.25, -1], w: 0.074, h: 0.022 };
+const FRONT = ['driver', 'passenger'];
+// Inside ones are worked from a seat (seats) with one hand (hand; none for the parking brake
+// pedal); door handles ride on their doors. Each sits on the control itself.
 const HOTSPOTS = [
   { id: 'fuel', label: 'Fuel filler', pos: V(-0.88, 0.84, -1.62), r: 0.12, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.0, 0.84, 1.3), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.3, 0.74, 1.72), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(-0.48, 0.66, -1.95), r: 0.13, part: 'battery', lid: 'trunk' },
-  { id: 'ignition', label: 'Ignition', pos: CONTROLS.key.clone(), r: 0.06, part: 'steeringWheel', inside: true },
-  { id: 'lights', label: 'Light switch', pos: V(0.66, 0.78, 0.5), r: 0.05, part: 'body', inside: true },
-  { id: 'wipers', label: 'Wiper switch', pos: V(sw.center[0] - 0.13, 0.82, 0.4), r: 0.05, part: 'body', inside: true },
-  { id: 'radio', label: 'Radio', pos: V(...STEREO.center), r: 0.08, part: 'body', inside: true },
-  { id: 'hazard', label: 'Hazard lights', pos: V(0.0, 0.79, 0.57), r: 0.035, part: 'body', inside: true },
-  { id: 'heater', label: 'Heater', pos: V(-0.07, 0.64, 0.5), r: 0.05, part: 'body', inside: true },
-  { id: 'dome', label: 'Cabin light', pos: V(0, 1.33, 0.12), r: 0.06, part: 'body', inside: true },
+  { id: 'ignition', label: 'Ignition key', pos: CONTROLS.key.clone(), r: 0.035, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
+  { id: 'indicator', label: 'Turn signal', pos: CONTROLS.stalk.clone(), r: 0.035, part: 'body', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'wipers', label: 'Wipers', pos: V(0.505, 0.727, 0.385), r: 0.03, part: 'body', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'lights', label: 'Headlights', pos: V(0.636, 0.728, 0.455), r: 0.03, part: 'body', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'handbrake', label: 'Parking brake', pos: CONTROLS.handbrake.clone(), r: 0.035, part: 'body', inside: true, seats: ['driver'] },
+  { id: 'radio', label: 'Stereo', pos: V(0.001, 0.715, 0.448), r: 0.05, part: 'body', inside: true, seats: FRONT, hand: 'right' },
+  { id: 'hazard', label: 'Hazard lights', pos: V(0.001, 0.782, 0.486), r: 0.022, part: 'body', inside: true, seats: FRONT, hand: 'right' },
+  { id: 'heater', label: 'Heater', pos: V(0.081, 0.581, 0.35), r: 0.025, part: 'body', inside: true, seats: FRONT, hand: 'right' },
+  { id: 'dome', label: 'Cabin light', pos: V(0, 1.283, 0.06), r: 0.04, part: 'body', inside: true, hand: 'right' },
+  { id: 'doorFL', label: 'Door', pos: V(0.728, 0.797, 0.235), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'doorFR', label: 'Door', pos: V(-0.728, 0.797, 0.235), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
 ];
+// The controls that move (pieces split out of the source as x_<id>, the parking brake pedal
+// made here): pivot and axis in car space. The key turns about its lock, the stalk and the
+// lever under it flick about the column, knobs turn, the hazard button goes in, door handles
+// are pulled, the pedal goes down.
+const MOVING = {
+  key: { pivot: V(0.211, 0.753, 0.47), axis: V(0, 0.15, 1), angles: [0, 0.9, 1.35] },
+  stalk: { pivot: V(0.425, 0.812, 0.42), axis: COLUMN, angle: 0.14 },
+  lever: { pivot: V(0.435, 0.737, 0.395), axis: COLUMN, angle: 0.13 },
+  lightKnob: { pivot: V(0.636, 0.728, 0.47), axis: V(0, 0.2, 1), angles: [0, 0.65, 1.2] },
+  heater: { pivot: V(0.081, 0.581, 0.361), axis: V(0, 0.4, 1), angle: 1.6 },
+  hazard: { pivot: V(0.001, 0.782, 0.495), axis: V(0, 0.1, 1), push: 0.004 },
+  handleFL: { pivot: V(0.735, 0.797, 0.307), axis: V(0, 1, 0), angle: 0.35, door: 'door_FL' },
+  handleFR: { pivot: V(-0.735, 0.797, 0.307), axis: V(0, -1, 0), angle: 0.35, door: 'door_FR' },
+  park: { make: 'pedal', pivot: V(0.695, 0.58, 0.68), at: CONTROLS.handbrake.clone(), axis: V(-1, 0, 0), angle: 0.3 },
+};
 const POINTS = {
   exhaust: V(...META.exhaust),
   exhaust2: null,
@@ -138,6 +162,9 @@ export const W203 = {
   CONTROLS,
   SEATS,
   HOTSPOTS,
+  MOVING,
+  SIGNAL_KEY: 'amber',
+  tailTint: 0xff2412,
   POINTS,
   BOXES,
   DYNAMICS,

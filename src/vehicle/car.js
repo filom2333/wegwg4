@@ -72,6 +72,9 @@ export class Car {
     this.cabinLight = false;
     this.hazards = false;
     this.heater = false;
+    this.indicator = 0; // turn signal: -1 left, 1 right
+    this.parkBrake = false;
+    this.handlePull = {}; // door -> seconds left of an inside handle being pulled
     // physics
     const pos = opts.position || V(0, 0.5, 0);
     const q = opts.quaternion || new THREE.Quaternion();
@@ -558,6 +561,7 @@ export class Car {
       needle: M.needle,
       display: M.display,
       dome: M.domeLens,
+      signal: M.signal || null,
       lamps: this.model.cluster ? this.model.cluster.userData.lamps : {},
     };
   }
@@ -582,15 +586,29 @@ export class Car {
     this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
     e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
-    // tail lamps and brake lights share the bulb housings
-    // hazards: both tail lamps blinking
-    const blink = this.hazards && powered && performance.now() % 800 < 400;
-    if (this.hazards && powered && blink !== this._blinkWas) {
+    // tail lamps and brake lights share the bulb housings; turn signals and hazards blink the
+    // amber lenses of a side (on a car without them, that side's tail lamp), with the relay
+    // ticking in the cabin
+    const signalling = powered && (this.hazards || this.indicator !== 0);
+    const blink = signalling && performance.now() % 760 < 380;
+    if (signalling && blink !== this._blinkWas) {
       this._blinkWas = blink;
-      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.25 : 0.18 });
+      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.2 : 0.14, rate: blink ? 1.25 : 1.05 });
+    } else if (!signalling) this._blinkWas = false;
+    const bl = blink && (this.hazards || this.indicator < 0),
+      br = blink && (this.hazards || this.indicator > 0);
+    const S = e.signal;
+    const tailOn = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
+    e.tail.emissiveIntensity = tailOn;
+    if (S) {
+      S.tailL.emissiveIntensity = bl ? 3.0 : tailOn;
+      S.tailR.emissiveIntensity = br ? 3.0 : tailOn;
+      if (S.amberL) {
+        S.amberL.emissiveIntensity = bl ? 1.7 : 0;
+        S.amberR.emissiveIntensity = br ? 1.7 : 0;
+      }
     }
-    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : blink ? 3.0 : on ? 1.1 : 0) : 0;
-    this.tailLight.intensity = powered ? (braking ? 2.2 : blink ? 2.0 : on ? 0.7 : 0) : 0;
+    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : bl || br ? 0.5 : 0) : 0;
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
@@ -600,6 +618,9 @@ export class Car {
     const charging = this.charging;
     if (e.lamps.gen) e.lamps.gen.emissiveIntensity = ign && !charging ? 2.4 : 0;
     if (e.lamps.oil) e.lamps.oil.emissiveIntensity = ign && (!running || this.oil < 0.6) ? 2.4 : 0;
+    if (e.lamps.turnL) e.lamps.turnL.emissiveIntensity = bl ? 2.6 : 0;
+    if (e.lamps.turnR) e.lamps.turnR.emissiveIntensity = br ? 2.6 : 0;
+    if (e.lamps.park) e.lamps.park.emissiveIntensity = ign && this.parkBrake ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
     if (powered && this.radioOn) this.drawStereo(e.display);
     else if (this._stereoKey && this._stereoKey !== 'off') {
@@ -760,7 +781,18 @@ export class Car {
     // nobody at the wheel: the car rolls on (engine braking only) and the parking brake only
     // holds it once it has nearly stopped, so leaving a moving car never stops it dead
     const slow = Math.abs(d.forwardSpeed) < 0.8;
-    d.controls.handbrake = c.handbrake || (!hasDriver && !running && slow ? 0.6 : 0);
+    d.controls.handbrake = Math.max(c.handbrake || 0, this.parkBrake ? 1 : 0, !hasDriver && !running && slow ? 0.6 : 0);
+    // the turn signal stalk drops back once the wheel has gone that way and come back
+    if (this.indicator && hasDriver) {
+      const s = d.steerSmoothed * this.indicator;
+      if (s > 0.3) this._signalTurned = true;
+      else if (this._signalTurned && s < 0.06) {
+        this.indicator = 0;
+        this._signalTurned = false;
+        this.game.audio && this.game.audio.play('click', { volume: 0.3, rate: 0.8 });
+      }
+    } else this._signalTurned = false;
+    for (const k in this.handlePull) this.handlePull[k] -= dt;
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
     const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
     const plugs = this.partCond('sparkplugs');
@@ -928,6 +960,7 @@ export class Car {
     this.updateLights(d.controls.brake > 0.1 && hasDriver, d.gear === 0 && running);
     if (this.model.setGearLever) this.model.setGearLever(d.gear, dt);
     if (this.model.setHandbrake) this.model.setHandbrake(d.controls.handbrake > 0.3 || (!hasDriver && !running), dt);
+    if (this.model.updateMoving) this.model.updateMoving(this, dt);
     this.syncVisual();
   }
 

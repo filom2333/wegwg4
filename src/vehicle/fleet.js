@@ -389,6 +389,7 @@ export function serializeCar(car, o) {
     trip: car.trip,
     dirt: car.dirt,
     lightsOn: car.lightsOn,
+    parkBrake: car.parkBrake,
     paintColor: car.paintColor ?? null,
     partColors: car.partColors || null,
     stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
@@ -401,7 +402,7 @@ export function serializeCar(car, o) {
 }
 
 export function applyCarState(car, c, g) {
-  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
+  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn', 'parkBrake']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
   const same = (c.model || 'beetle') === car.type.id;
   if (c.paintColor && car.type.repaintable) {
     car.paintColor = c.paintColor;

@@ -28,6 +28,9 @@ export class HUD {
     this.root.style.display = 'none';
     // crosshair
     this.cross = el('div', 'hud-cross', this.root);
+    // interaction dots on the controls around the aim (see setDots)
+    this.dotLayer = el('div', 'hud-dots', this.root);
+    this.dotEls = [];
     this.hit = el('div', 'hud-hit', this.root);
     // target card
     this.card = el('div', 'hud-card', this.root);
@@ -173,6 +176,38 @@ export class HUD {
     this.card.classList.toggle('seated', !!(held && seated));
   }
 
+  // Interaction dots: a small mark on each control near the middle of the view, fading in as the
+  // aim comes closer; the one aimed at grows into a ring with its name over it.
+  // list: [{ x, y (pixels), a (0..1), on, label, sub }]
+  setDots(list) {
+    const pool = this.dotEls;
+    while (pool.length < list.length) {
+      const d = el('div', 'hud-dot', this.dotLayer, '<i></i><span><b></b><em></em></span>');
+      d._b = d.querySelector('b');
+      d._em = d.querySelector('em');
+      d._v = true;
+      pool.push(d);
+    }
+    for (let i = 0; i < pool.length; i++) {
+      const d = pool[i],
+        o = list[i];
+      if (!o) {
+        if (d._v) d.style.display = 'none';
+        d._v = false;
+        continue;
+      }
+      if (!d._v) d.style.display = '';
+      d._v = true;
+      d.style.transform = `translate3d(${o.x.toFixed(1)}px, ${o.y.toFixed(1)}px, 0)`;
+      d.style.opacity = o.a.toFixed(2);
+      if (d._on !== !!o.on) d.classList.toggle('on', (d._on = !!o.on));
+      if (o.on) {
+        if (d._label !== o.label) d._b.textContent = d._label = o.label;
+        if (d._sub !== (o.sub || '')) d._em.textContent = d._sub = o.sub || '';
+      }
+    }
+  }
+
   setCrosshair(kind) {
     this.cross.className = 'hud-cross ' + kind;
   }
@@ -287,8 +322,7 @@ export class HUD {
       if (car.fire > 0) w.push('Engine fire');
       if (!car.isInstalled('steeringWheel')) w.push('No steering wheel');
       if (car.dyn.wheels.some((x) => x.flat)) w.push('Flat tyre');
-      if (!car.ignition) w.push('E on ignition or press I');
-      else if (!car.dyn.engine.running) w.push('Hold I to start');
+      if (car.parkBrake && car.dyn.engine.running) w.push('Parking brake');
       const wk = w.slice(0, 3).join('|');
       if (wk !== this._wk) {
         this._wk = wk;

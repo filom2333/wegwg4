@@ -107,6 +107,29 @@ def owner_of(path):
     return None
 
 
+# The driver's controls, taken out of the dash so they can move: the ignition key (not its lock
+# ring), the indicator stalk and the cruise lever under it (the wipers here), the light knob, the
+# hazard button, the driver's climate knob, and the inside handles of the front doors.
+def control_of(o, c, s):
+    x, y, z = c
+    if o == 'W203_body':
+        if 0.19 < x < 0.235 and 0.74 < y < 0.78 and 0.40 < z < 0.46 and s[0] < 0.04:
+            return 'x_key'
+        if 0.43 < x < 0.57 and 0.80 < y < 0.87 and 0.40 < z < 0.43 and max(s) < 0.09:
+            return 'x_stalk'
+        if 0.44 < x < 0.53 and 0.715 < y < 0.745 and 0.37 < z < 0.40 and max(s) < 0.06:
+            return 'x_lever'
+        if 0.615 < x < 0.658 and 0.715 < y < 0.76 and 0.445 < z < 0.48 and max(s) < 0.05:
+            return 'x_lightKnob'
+        if abs(x) < 0.01 and 0.77 < y < 0.795 and 0.485 < z < 0.505 and max(s) < 0.035:
+            return 'x_hazard'
+        if 0.07 < x < 0.09 and 0.57 < y < 0.59 and 0.355 < z < 0.366 and max(s) < 0.03:
+            return 'x_heater'
+    if o in ('W203_door_FL', 'W203_door_FR') and 0.72 < abs(x) < 0.75 and 0.77 < y < 0.82 and 0.2 < z < 0.31 and s[2] > 0.08:
+        return 'x_handle' + o[-2:]
+    return None
+
+
 def classify(name, inf):
     inf['mesh'] = name
     o = owner_of(inf['path'])
@@ -124,6 +147,9 @@ def classify(name, inf):
         inf['mirror_z'] = BADGE_Z - 0.035
         inf['offset'] = [0.003, 0, 0]
         return 'body'
+    ctl = control_of(o, c, s)
+    if ctl:
+        return ctl
     # the right wing node also carries pieces from elsewhere on the body
     if o == 'W203_fender_R':
         return 'fender_FR' if c[0] < -0.6 and c[2] > 0.7 else 'body'

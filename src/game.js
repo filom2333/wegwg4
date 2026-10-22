@@ -434,12 +434,8 @@ export class Game {
     if (!this.attract) this.player.update(dt);
     // leave the car
     if (this.player.seat && input.wasPressed('interact') && !(this.ui && this.ui.blocksMove)) {
-      const t = this.interaction.target;
-      if (!t || t.kind !== 'hotspot') {
-        const seat = this.player.seat;
-        if (this.player.exitSeat()) this.audio && this.audio.play('seat');
-        void seat;
-      }
+      // (E on something in reach works that instead)
+      if (!this.interaction.target && this.player.exitSeat()) this.audio && this.audio.play('seat');
     }
     // car controls (for the current car); every car near the player is simulated
     this.fleet.updateCurrent();
@@ -815,28 +811,13 @@ export class Game {
     this._steer += (steer - this._steer) * Math.min(1, dt * 6);
     const car = this.car;
     if (!blocked) {
-      // Ignition key: press turns it on (hold to crank), press while running stops the engine,
-      // a quick tap with the ignition on and the engine off switches it off.
+      // the key is turned by hand (E on it, see interaction.turnKey); lights, wipers and the
+      // gear lever also have keys, the hand still goes to them
       const ia = this.interaction;
-      if (input.wasPressed('ignition')) ia.driverReach('key');
-      if (input.wasPressed('lights') || input.wasPressed('wipers')) ia.driverReach('stalk');
+      const spot = (id) => car.type.HOTSPOTS.find((h) => h.id === id);
+      if (input.wasPressed('lights')) ia.driverReach(spot('lights') || 'stalk');
+      if (input.wasPressed('wipers')) ia.driverReach(spot('wipers') || 'stalk');
       if ((input.wasPressed('gearUp') || input.wasPressed('gearDown')) && !car.dyn.automatic) ia.driverReach('shifter');
-      if (input.wasPressed('ignition')) {
-        this._keyWasOn = car.ignition;
-        this._keyHeld = 0;
-        if (car.dyn.engine.running) {
-          car.setIgnition(false);
-          this._keyWasOn = null;
-        } else if (!car.ignition) car.setIgnition(true);
-      }
-      if (input.isDown('ignition')) {
-        this._keyHeld = (this._keyHeld || 0) + dt;
-        if (car.ignition && !car.dyn.engine.running && this._keyWasOn !== null) car.crank(dt);
-      }
-      if (input.wasReleased('ignition')) {
-        if (this._keyWasOn && this._keyHeld < 0.2 && !car.dyn.engine.running) car.setIgnition(false);
-        car.cranking = 0;
-      }
       if (input.wasPressed('lights')) car.lightsOn = (car.lightsOn + 1) % 3;
       if (input.wasPressed('wipers')) car.wipers = !car.wipers;
       if (!car.dyn.automatic) {

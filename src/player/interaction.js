@@ -144,7 +144,8 @@ export class Interaction {
     if (car) {
       const carDist = car.root.position.distanceTo(origin);
       if (carDist < 8) {
-        const cand = this.carTarget(origin, dir, Math.min(reach, hitDist + 0.35));
+        // (from a seat the car's own coarse colliders are all around: they do not hide its controls)
+        const cand = this.carTarget(origin, dir, p.seat ? reach : Math.min(reach, hitDist + 0.35));
         if (cand && (!best || cand.dist < best.dist - 0.02)) best = cand;
       }
     }
@@ -195,6 +196,28 @@ export class Interaction {
     return car.partWorldMatrix(id);
   }
 
+  // The car's hotspots that can be worked from where the player is, each with where it is in the
+  // world now: inside ones from a seat that reaches them, outside ones on foot. Door handles ride
+  // on their doors.
+  hotspotsOf(car) {
+    const p = this.game.player;
+    const seat = p.seat && p.car === car ? p.seat : null;
+    const out = [];
+    for (const h of car.type.HOTSPOTS) {
+      if (!car.isInstalled(h.part)) continue;
+      if (h.lid && !car.lidOpen(h.lid)) continue;
+      if (!!h.inside !== !!seat) continue;
+      if (seat && h.seats && !h.seats.includes(seat)) continue;
+      out.push({ h, world: this.hotspotWorld(car, h) });
+    }
+    return out;
+  }
+
+  hotspotWorld(car, h, out = V(0, 0, 0)) {
+    const door = h.door && car.model.parts[h.door];
+    return out.copy(h.pos).applyMatrix4(door ? door.inner.matrixWorld : car.root.matrixWorld);
+  }
+
   carTarget(origin, dir, maxDist) {
     const car = this.game.car;
     const list = [];
@@ -215,20 +238,19 @@ export class Interaction {
       const sz = box.getSize(V(0, 0, 0));
       list.push({ id, d, vol: sz.x * sz.y * sz.z });
     }
-    // hotspots
+    // hotspots: on foot the one under the aim; from a seat the control nearest the middle of
+    // the view within a generous cone (they sit close together on a dash)
     const cinv = new THREE.Matrix4().copy(car.root.matrixWorld).invert();
     const lo = origin.clone().applyMatrix4(cinv);
     const ld = dir.clone().transformDirection(cinv);
     let hs = null;
-    for (const h of car.type.HOTSPOTS) {
-      if (!car.isInstalled(h.part)) continue;
-      if (h.lid && !car.lidOpen(h.lid)) continue;
-      if (h.inside && !this.game.player.seat) continue;
-      const toC = h.pos.clone().sub(lo);
-      const t = toC.dot(ld);
-      if (t < 0 || t > maxDist + 0.2) continue;
-      const dd = toC.addScaledVector(ld, -t).length();
-      if (dd < h.r && (!hs || t < hs.dist)) hs = { kind: 'hotspot', hotspot: h, dist: t };
+    for (const { h, world } of this.hotspotsOf(car)) {
+      const to = world.sub(origin);
+      const t = to.length();
+      if (t > maxDist + 0.2 || to.dot(dir) <= 0) continue;
+      const allow = h.inside ? Math.max(Math.atan2(h.r * 1.5, t), 0.075) : Math.atan2(h.r, t);
+      const score = to.angleTo(dir) / allow;
+      if (score < 1 && (!hs || score < hs.score)) hs = { kind: 'hotspot', hotspot: h, dist: t, score };
     }
     // seats via door opening: choose the seat closest to the ray if a door is open/missing
     let seat = null;
@@ -271,14 +293,111 @@ export class Interaction {
     return best;
   }
 
+  // E on a car control (with the hand that is free).
+  useHotspot(hs) {
+    const g = this.game;
+    const car = g.car;
+    const h = hs.id;
+    this.driverReach(hs);
+    if (h === 'ignition') return this.turnKey(car);
+    if (h === 'handbrake') {
+      car.parkBrake = !car.parkBrake;
+      g.audio && g.audio.play(car.parkBrake ? 'ratchet' : 'clunk', { volume: 0.45, rate: car.parkBrake ? 1.3 : 1.1 });
+      return;
+    }
+    if (h === 'doorFL' || h === 'doorFR') {
+      car.handlePull[hs.door] = 0.4;
+      car.toggleOpen(hs.door);
+      return;
+    }
+    if (h === 'indicator') car.indicator = car.indicator < 0 ? 0 : -1;
+    if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
+    if (h === 'wipers') car.wipers = !car.wipers;
+    if (h === 'hazard') car.hazards = !car.hazards;
+    if (h === 'heater') car.heater = !car.heater;
+    if (h === 'dome') car.cabinLight = !car.cabinLight;
+    if (h === 'radio') {
+      car.radioOn = !car.radioOn;
+      g.audio && g.audio.setRadio(car.radioOn);
+    }
+    g.audio && g.audio.play('click', { volume: 0.4, rate: h === 'indicator' ? 0.85 : 1 });
+  }
+
+  // E on the ignition key turns it to ON; held, on to START and the starter cranks; let go, it
+  // springs back to ON. With the engine running it switches off; a quick tap with the key on
+  // (engine not running) switches it off too.
+  turnKey(car) {
+    const running = car.dyn.engine.running;
+    this.keyTurn = { car, held: 0, wasOn: car.ignition && !running, off: running };
+    if (running) car.setIgnition(false);
+    else if (!car.ignition) car.setIgnition(true);
+    this.game.audio && this.game.audio.play('click', { volume: 0.32, rate: 0.75 });
+  }
+
+  updateKey(dt) {
+    const k = this.keyTurn;
+    if (!k) return;
+    const car = k.car;
+    const p = this.game.player;
+    if (input.isDown('interact') && p.seat === 'driver' && p.car === car) {
+      k.held += dt;
+      if (car.dyn.engine.running) car.cranking = 0;
+      else if (!k.off && car.ignition && k.held > 0.18) car.crank(dt);
+      return;
+    }
+    if (k.wasOn && k.held < 0.18 && !car.dyn.engine.running) car.setIgnition(false);
+    car.cranking = 0;
+    this.keyTurn = null;
+  }
+
+  // The interaction dots on the HUD: the car's controls within reach, shown while the aim is
+  // inside a wide circle round them, the targeted one as a ring with its name (`label`).
+  updateDots(t, label) {
+    const g = this.game;
+    const ui = g.hud;
+    if (!ui || !ui.setDots) return;
+    const car = g.car;
+    const p = g.player;
+    const out = [];
+    const cam = this.cam;
+    if (car && !p.dead && !p.lying && (p.seat ? p.car === car : car.root.position.distanceTo(cam.position) < 6)) {
+      const W = window.innerWidth,
+        H = window.innerHeight;
+      const R = Math.min(W, H) * 0.3;
+      const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion);
+      for (const { h, world } of this.hotspotsOf(car)) {
+        const to = world.clone().sub(cam.position);
+        const d = to.length();
+        if (d > (p.seat ? REACH : 3.2) || to.dot(fwd) <= 0.1 * d) continue;
+        // on foot: not through the car or a wall
+        if (!p.seat) {
+          const hit = g.physics.raycast(cam.position, to.clone().divideScalar(d), d, GROUPS.look, p.body);
+          if (hit && hit.distance < d - 0.3) continue;
+        }
+        const v = world.clone().project(cam);
+        const x = (v.x * 0.5 + 0.5) * W,
+          y = (0.5 - v.y * 0.5) * H;
+        const r = Math.hypot(x - W / 2, y - H / 2);
+        const on = !!(t && t.kind === 'hotspot' && t.hotspot === h);
+        if (r > R && !on) continue;
+        out.push({ x, y, a: on ? 1 : 1 - smoothstep(R * 0.5, R, r), on, label: on && label ? label.title : '', sub: on && label ? label.sub : '' });
+      }
+    }
+    ui.setDots(out);
+  }
+
   // ------------------------------------------------------------------ main update
   update(dt) {
     const g = this.game;
     const ui = g.hud;
     const blocked = g.ui && g.ui.blocksMove;
     const p = g.player;
-    if (p.dead) return;
+    if (p.dead) {
+      g.hud && g.hud.setDots && g.hud.setDots([]);
+      return;
+    }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.updateKey(dt);
     // pulling a trailer by its drawbar for as long as E is held
     if (this.pullingTrailer) {
       const tr = this.pullingTrailer;
@@ -304,6 +423,7 @@ export class Interaction {
         ui.setCrosshair('none');
       }
       this.updateOutline(null);
+      this.updateDots(null);
       return;
     }
     this.target = this.findTarget();
@@ -378,6 +498,13 @@ export class Interaction {
       } else {
         this.hideGhost();
         info = this.heldInfo(it);
+        // from a seat the other hand works the car's controls
+        if (p.seat && t && t.kind === 'hotspot' && t.hotspot.inside) {
+          const r = this.describeTarget(t);
+          this.dotLabel = r.info;
+          for (const pr of r.prompts) if (pr[0] === 'E') prompts.push(pr);
+          if (!blocked && input.wasPressed('interact')) this.useHotspot(t.hotspot);
+        }
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
       prompts.push(['G', 'Drop', 'hold to throw']);
@@ -402,6 +529,12 @@ export class Interaction {
         this.righting = 0;
         const r = this.describeTarget(t);
         info = r.info;
+        // a car control: its name goes on the ring round it, the card keeps just the keys
+        if (t.kind === 'hotspot') {
+          this.dotLabel = info.title ? info : null;
+          if (t.hotspot.inside) info = null;
+          else this.dotLabel = null;
+        }
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
@@ -437,8 +570,10 @@ export class Interaction {
       ui.setCardPlace && ui.setCardPlace(!!this.held, !!p.seat);
       ui.setCrosshair(this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : p.seat === 'driver' ? 'none' : 'dot');
     }
-    // outline highlight
+    // outline highlight; dots on the car's controls
     this.updateOutline(t);
+    this.updateDots(t, t && t.kind === 'hotspot' ? this.dotLabel : null);
+    this.dotLabel = null;
     // stow watch: items resting inside the car become attached to it
     this.updateStowing(dt);
   }
@@ -651,32 +786,43 @@ export class Interaction {
           info.sub = `Charge ${Math.round(car.battery * 100)}%`;
           info.bar = car.battery;
         } else if (h.id === 'ignition') {
-          info.sub = car.dyn.engine.running ? 'Engine running' : car.ignition ? 'Ignition on' : 'Off';
-          prompts.push(['E', car.ignition ? 'Ignition off' : 'Ignition on'], ['I', 'Hold to start']);
+          const running = car.dyn.engine.running;
+          info.sub = running ? 'Engine running' : car.cranking > 0 ? 'Cranking' : car.ignition ? 'On' : 'Off';
+          if (running) prompts.push(['E', 'Switch off']);
+          else if (car.ignition) prompts.push(['E', 'Hold to start'], ['', 'tap to switch off']);
+          else prompts.push(['E', 'Turn the key', 'hold to start']);
+        } else if (h.id === 'indicator') {
+          info.sub = car.indicator < 0 ? 'Left' : car.indicator > 0 ? 'Right' : '';
+          prompts.push(['E', car.indicator < 0 ? 'Cancel' : 'Signal left'], ['LMB', car.indicator > 0 ? 'Cancel' : 'Signal right']);
+        } else if (h.id === 'handbrake') {
+          info.sub = car.parkBrake ? 'Set' : 'Off';
+          prompts.push(['E', car.parkBrake ? 'Release' : 'Set it']);
+        } else if (h.id === 'doorFL' || h.id === 'doorFR') {
+          const open = car.model.parts[h.door].openT > 0.5;
+          prompts.push(['E', open ? 'Close the door' : 'Open the door']);
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
-          prompts.push(['E', 'Switch']);
+          prompts.push(['E', ['Low beam', 'High beam', 'Off'][car.lightsOn]]);
         } else if (h.id === 'wipers') {
-          info.sub = car.wipers ? 'On' : 'Off';
-          prompts.push(['E', 'Switch']);
+          info.sub = car.wipers ? 'On' : '';
+          prompts.push(['E', car.wipers ? 'Off' : 'On']);
         } else if (h.id === 'hazard') {
-          info.sub = car.hazards ? 'Blinking' : 'Off';
-          prompts.push(['E', 'Switch']);
+          info.sub = car.hazards ? 'Blinking' : '';
+          prompts.push(['E', car.hazards ? 'Off' : 'On']);
         } else if (h.id === 'heater') {
-          info.sub = !car.heater ? 'Off' : car.dyn.engine.running && car.engineTemp > 55 ? 'Blowing warm' : 'On · cold until the engine warms up';
-          prompts.push(['E', 'Switch']);
+          info.sub = !car.heater ? '' : car.dyn.engine.running && car.engineTemp > 55 ? 'Blowing warm' : 'Cold until the engine warms up';
+          prompts.push(['E', car.heater ? 'Off' : 'On']);
         } else if (h.id === 'dome') {
-          info.sub = car.cabinLight ? 'On' : 'Off · comes on with a door open';
-          prompts.push(['E', 'Switch']);
+          info.sub = car.cabinLight ? 'On' : '';
+          prompts.push(['E', car.cabinLight ? 'Off' : 'On']);
         } else if (h.id === 'radio') {
           const st = car.stereo;
           info.title = 'Stereo';
           const stn = STATIONS[st.station ?? 1];
-          info.sub = !car.radioOn ? 'Off' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : `${stn.freq} ${stn.name}` + (st.disc >= 0 ? ' · disc in' : '');
+          info.sub = !car.radioOn ? '' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : `${stn.freq} ${stn.name}` + (st.disc >= 0 ? ' · disc in' : '');
           prompts.push(['E', car.radioOn ? 'Turn off' : 'Turn on']);
           if (car.radioOn) prompts.push(['LMB', st.mode === 'cd' && st.disc >= 0 ? 'Next track' : 'Next station']);
           if (st.disc >= 0) prompts.push(['F', st.mode === 'cd' ? 'Radio' : 'Play the CD'], ['R', 'Eject disc']);
-          else if (car.radioOn) prompts.push(['', 'Hold a CD and click to put it in']);
         }
         break;
       }
@@ -848,6 +994,13 @@ export class Interaction {
       }
       return;
     }
+    // LMB on the stalk: the other way (up, right)
+    if (t.kind === 'hotspot' && t.hotspot.id === 'indicator' && input.mousePressed(0)) {
+      car.indicator = car.indicator > 0 ? 0 : 1;
+      this.driverReach(t.hotspot);
+      g.audio && g.audio.play('click', { volume: 0.35, rate: 0.85 });
+      return;
+    }
     if (t.kind === 'hotspot' && t.hotspot.id === 'radio') {
       const st = car.stereo;
       if (input.mousePressed(0) && car.radioOn) {
@@ -895,18 +1048,7 @@ export class Interaction {
       }
       case 'hotspot': {
         if (viaMouse) return;
-        const h = t.hotspot.id;
-        if (h === 'ignition') car.setIgnition(!car.ignition);
-        if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
-        if (h === 'wipers') car.wipers = !car.wipers;
-        if (h === 'hazard') car.hazards = !car.hazards;
-        if (h === 'heater') car.heater = !car.heater;
-        if (h === 'dome') car.cabinLight = !car.cabinLight;
-        if (h === 'radio') {
-          car.radioOn = !car.radioOn;
-          g.audio && g.audio.setRadio(car.radioOn);
-        }
-        g.audio && g.audio.play('click');
+        this.useHotspot(t.hotspot);
         break;
       }
       case 'accessory': {
@@ -2189,8 +2331,13 @@ export class Interaction {
 
   // ------------------------------------------------------------------ driver's hands
   // A short reach from the wheel to a control (ignition key, light stalk, gear lever).
-  driverReach(target) {
-    this.reach = { target, t: 0 };
+  // `what`: a hotspot (the hand it names, or the free one when the other holds something), or a
+  // CONTROLS point by name ('shifter', 'stalk', 'key').
+  driverReach(what) {
+    const p = this.game.player;
+    if (!what || p.seat !== 'driver') return;
+    if (typeof what === 'string') this.reach = { side: what === 'stalk' ? 'left' : 'right', name: what, t: 0 };
+    else if (what.hand) this.reach = { side: this.held ? 'left' : what.hand, hotspot: what, t: 0 };
   }
 
   // Car-space point of a driver control.
@@ -2263,9 +2410,9 @@ export class Interaction {
         qC = placed.q;
       // reaching for a control (right hand for key/shifter, left for the stalk)
       const r = this.reach;
-      if (r && ((side === 'right' && r.target !== 'stalk') || (side === 'left' && r.target === 'stalk'))) {
+      if (r && r.side === side) {
         const k = Math.sin(Math.min(1, r.t) * Math.PI);
-        const tp = this.controlPoint(car, r.target).applyMatrix4(car.root.matrixWorld);
+        const tp = r.hotspot ? this.hotspotWorld(car, r.hotspot) : this.controlPoint(car, r.name).applyMatrix4(car.root.matrixWorld);
         // fingertips land on the control: fingers pointing on from the shoulder, thumb up
         const shoulderW = arms[side].shoulder.clone().applyQuaternion(camQ).add(cam.position);
         const dir = tp.clone().sub(shoulderW).normalize();
@@ -2282,8 +2429,10 @@ export class Interaction {
       h.place(side, posC, qC);
       h.solveArm(side, arms[side].shoulder, arms[side].pole);
     }
-    if (this.reach && !only) {
+    if (this.reach && (!only || only === this.reach.side)) {
       this.reach.t += dt * 2.2;
+      // the hand stays on the key while it is held turned
+      if (this.reach.hotspot && this.reach.hotspot.id === 'ignition' && this.keyTurn && this.reach.t > 0.5) this.reach.t = 0.5;
       if (this.reach.t >= 1) this.reach = null;
     }
     return true;

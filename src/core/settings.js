@@ -15,7 +15,6 @@ export const DEFAULT_BINDINGS = {
   reload: 'KeyR',
   flashlight: 'KeyF',
   lights: 'KeyL',
-  ignition: 'KeyI',
   horn: 'KeyH',
   gearUp: 'KeyX',
   gearDown: 'KeyZ',
