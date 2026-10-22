@@ -1162,7 +1162,7 @@ export class Car {
       y += SHADE_P.copy(w.contactPoint).applyMatrix4(SHADE_M).y;
     }
     if (n) sh.position.y = y / n + 0.035;
-    const want = 0.7 * (n / 4);
+    const want = 0.8 * (n / 4);
     sh.material.opacity += (want - sh.material.opacity) * 0.2;
     sh.visible = sh.material.opacity > 0.02;
   }

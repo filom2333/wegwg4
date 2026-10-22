@@ -349,16 +349,20 @@ export class UI {
       el('div', 'clip', board);
       const p = el('div', 'paper sheet', board);
       el('div', 'sheet-head', p, `<h2>Trip sheet</h2><span>Route 9, northbound · ${HAVEN_KM} km to Haven</span>`);
+      // two columns: the car on the left, the rest on the right
+      const cols = el('div', 'sheet-cols', p);
+      const L = el('div', 'sheet-col', cols);
+      const R = el('div', 'sheet-col', cols);
       // the car: two photographs, the one you take ringed in pen
-      el('div', 'sheet-label', p, '1. Car');
-      const cars = el('div', 'polaroids', p);
+      el('div', 'sheet-label', L, '1. Car');
+      const cars = el('div', 'polaroids', L);
       const pics = CAR_TYPE_LIST.map((t, i) => {
         const S = t.stats;
         const b = el(
           'button',
           'polaroid' + (t.id === cfg.car ? ' sel' : ''),
           cars,
-          `<span class="pic" style="background-image:url(menu/car_${t.id}.webp)"></span><span class="cap">${esc(t.name)}</span><span class="spec">${esc(S.engine)} · ${S.power} hp · ${esc(S.gearbox)}</span>`
+          `<span class="pic" style="background-image:url(menu/car_${t.id}.webp)"></span><span class="cap">${esc(t.name)}</span><span class="spec"><span>${esc(S.engine)}</span> · <span>${S.power} hp</span> · <span>${esc(S.gearbox)}</span></span>`
         );
         b.style.setProperty('--tilt', (i % 2 ? 2.2 : -1.8) + 'deg');
         b.onclick = () => {
@@ -371,13 +375,13 @@ export class UI {
         this.sounds(b);
         return b;
       });
-      const blurb = el('p', 'sheet-note', p, esc((CAR_TYPE_LIST.find((t) => t.id === cfg.car) || CAR_TYPE_LIST[0]).blurb));
-      el('p', 'sheet-note dim', p, 'The other one waits somewhere up the road. Find it, fix it, drive whichever you like.');
+      const blurb = el('p', 'sheet-note', L, esc((CAR_TYPE_LIST.find((t) => t.id === cfg.car) || CAR_TYPE_LIST[0]).blurb));
+      el('p', 'sheet-note dim', L, 'The other one waits somewhere up the road. Find it, fix it, drive whichever you like.');
       // ticked boxes
       const boxes = (label, list, cur, onPick) => {
-        el('div', 'sheet-label', p, label);
-        const row = el('div', 'boxes', p);
-        const note = el('p', 'sheet-note', p);
+        el('div', 'sheet-label', R, label);
+        const row = el('div', 'boxes', R);
+        const note = el('p', 'sheet-note', R);
         const bs = list.map(([v, title, desc]) => {
           const b = el('button', 'box' + (v === cur ? ' sel' : ''), row, `<i></i>${esc(title)}`);
           b.onclick = () => {
@@ -410,8 +414,8 @@ export class UI {
         cfg.start,
         (v) => (cfg.start = v)
       );
-      el('div', 'sheet-label', p, '4. Map no.');
-      const sr = el('div', 'seed', p);
+      el('div', 'sheet-label', R, '4. Map no.');
+      const sr = el('div', 'seed', R);
       const inp = el('input', 'seed-in', sr);
       inp.value = cfg.seed;
       inp.maxLength = 9;
