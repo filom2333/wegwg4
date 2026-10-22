@@ -283,7 +283,7 @@ export class Effects {
     this.bloodMat = this.bloodMats[0];
     // what a leaking car leaves on the ground: black oil, green coolant
     const stain = (color, opacity, seed, rough) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.1, transparent: true, opacity, alphaMap: splatterTexture(seed), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
-    this.fluidMats = { oil: stain(0x0c0a07, 0.92, 211, 0.12), coolant: stain(0x2a7a46, 0.7, 233, 0.2) };
+    this.fluidMats = { oil: stain(0x0a0807, 0.9, 211, 0.42), coolant: stain(0x24563a, 0.55, 233, 0.32) };
     // casings
     this.casings = [];
     this.casingGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.03, 8).rotateZ(Math.PI / 2);
