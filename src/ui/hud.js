@@ -111,6 +111,22 @@ export class HUD {
     }
     this.ammoEl = el('div', 'hud-ammo', this.root);
     this.hotIdle = 0;
+    // the objective (top left) and a marker on the thing it is about (see goals.js)
+    this.goalEl = el('div', 'hud-goal', this.root);
+    this.goalEl.innerHTML = '<div class="g-k">Objective</div><div class="g-t"></div><div class="g-p"><i></i></div><div class="g-s"></div><div class="g-n"><span></span><b class="g-dir"><svg viewBox="0 0 16 16"><path d="M8 1.5 13 12 8 9.6 3 12z" fill="currentColor"/></svg></b><em></em></div><div class="g-l"></div>';
+    this.goalParts = {
+      t: this.goalEl.querySelector('.g-t'),
+      p: this.goalEl.querySelector('.g-p'),
+      pf: this.goalEl.querySelector('.g-p i'),
+      s: this.goalEl.querySelector('.g-s'),
+      n: this.goalEl.querySelector('.g-n'),
+      nt: this.goalEl.querySelector('.g-n span'),
+      dir: this.goalEl.querySelector('.g-dir'),
+      dd: this.goalEl.querySelector('.g-n em'),
+      l: this.goalEl.querySelector('.g-l'),
+    };
+    this.goalMark = el('div', 'hud-goalmark', this.root, '<i></i><span></span>');
+    this.goalKey = null;
     // toasts
     this.toasts = el('div', 'hud-toasts', this.root);
     // radio / speech subtitles
@@ -206,6 +222,65 @@ export class HUD {
         if (d._sub !== (o.sub || '')) d._em.textContent = d._sub = o.sub || '';
       }
     }
+  }
+
+  // The objective panel. goal: { key, title, sub, progress, next, lines, kind } or null. A new
+  // objective slides in bright; one that has stood a while settles back.
+  setGoal(goal) {
+    const G = this.goalParts;
+    const e = this.goalEl;
+    if (!goal) {
+      e.classList.remove('on');
+      this.goalKey = null;
+      return;
+    }
+    e.classList.add('on');
+    e.classList.toggle('warn', goal.kind === 'warn');
+    if (goal.key !== this.goalKey) {
+      this.goalKey = goal.key;
+      this.goalSince = performance.now();
+      e.classList.remove('fresh');
+      void e.offsetWidth;
+      e.classList.add('fresh');
+      this.game.audio && this.game.audio.uiSound && this.game.audio.uiSound('hover');
+    }
+    e.classList.toggle('settled', performance.now() - this.goalSince > 9000 && !goal.at);
+    if (G.t.textContent !== goal.title) G.t.textContent = goal.title;
+    G.p.style.display = goal.progress !== undefined ? '' : 'none';
+    if (goal.progress !== undefined) G.pf.style.width = (Math.max(0.02, Math.min(1, goal.progress)) * 100).toFixed(1) + '%';
+    const sub = goal.sub || '';
+    if (G.s.textContent !== sub) G.s.textContent = sub;
+    G.s.style.display = sub ? '' : 'none';
+    G.n.style.display = goal.next ? '' : 'none';
+    if (goal.next && G.nt.textContent !== goal.next) G.nt.textContent = goal.next;
+    G.dir.style.display = goal.at ? '' : 'none';
+    G.dd.style.display = goal.at ? '' : 'none';
+    const lines = (goal.lines || []).map((t) => `<div>${esc(t)}</div>`).join('');
+    if (lines !== this._goalLines) G.l.innerHTML = this._goalLines = lines;
+  }
+
+  // Which way the objective's thing lies from where you look, and how far.
+  setGoalDir(d) {
+    const G = this.goalParts;
+    G.dir.style.transform = `rotate(${d.a.toFixed(3)}rad)`;
+    const t = d.d < 1.5 ? 'here' : Math.round(d.d) + ' m';
+    if (G.dd.textContent !== t) G.dd.textContent = t;
+  }
+
+  // A marker over the objective's thing when it is in view: { x, y, d } in pixels, or null.
+  setGoalMark(m) {
+    const e = this.goalMark;
+    if (!m) {
+      if (e._on) e.classList.remove('on');
+      e._on = false;
+      return;
+    }
+    if (!e._on) e.classList.add('on');
+    e._on = true;
+    e.style.transform = `translate3d(${m.x.toFixed(1)}px, ${m.y.toFixed(1)}px, 0)`;
+    const t = Math.round(m.d) + ' m';
+    const sp = e.lastChild;
+    if (sp.textContent !== t) sp.textContent = t;
   }
 
   setCrosshair(kind) {

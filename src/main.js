@@ -1,3 +1,4 @@
+import './ui/theme.css';
 import './ui/style.css';
 import './ui/menu.css';
 import { Game } from './game.js';

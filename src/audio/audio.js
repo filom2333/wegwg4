@@ -122,6 +122,18 @@ export class AudioSystem {
     return s ? (Array.isArray(s) ? s[0] : s) : null;
   }
 
+  // Dying: the world goes quiet and far away, and a heart slows under it.
+  dying() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (const b of [this.amb, this.ambPos, this.sfxPos, this.music]) {
+      b.gain.cancelScheduledValues(t);
+      b.gain.setValueAtTime(b.gain.value, t);
+      b.gain.linearRampToValueAtTime(b.gain.value * 0.12, t + 2.8);
+    }
+    [0.15, 1.3, 2.7].forEach((at, i) => setTimeout(() => this.play('heartbeat', { volume: 0.7 - i * 0.18, rate: 0.95 - i * 0.07 }), at * 1000));
+  }
+
   applyVolumes() {
     if (!this.ctx) return;
     const s = settings.data;

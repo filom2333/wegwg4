@@ -38,6 +38,7 @@ const GradeShader = {
     uVignette: { value: 0.3 },
     uGrain: { value: 0.02 },
     uDamage: { value: 0 },
+    uDeath: { value: 0 },
     uGrit: { value: 0 },
     uFilm: { value: 0 },
     uBars: { value: 0 },
@@ -54,7 +55,7 @@ const GradeShader = {
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 uTexel; uniform float uAspect; uniform float uSharpen;
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
-    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit; uniform float uFilm; uniform float uBars;
+    uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uDeath; uniform float uFade; uniform float uGrit; uniform float uFilm; uniform float uBars;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
     uniform float uHeat; uniform float uNear; uniform float uFar; uniform float uRevZ;
     varying vec2 vUv;
@@ -154,6 +155,16 @@ const GradeShader = {
         else if (uFilm < 3.5) col = (mix(vec3(L), col, 0.72) * vec3(1.04, 0.98, 0.86)) * 0.86 + vec3(0.075, 0.065, 0.05);
         else if (uFilm < 4.5) col = mix(vec3(L), col, 0.8) * vec3(0.9, 1.0, 1.1) + vec3(0.0, 0.01, 0.025);
         else col = clamp(mix(vec3(L), col, 1.38) * 1.03, 0.0, 1.0);
+      }
+      // dying: the colour drains out, the frame swims, the edges close in and it all goes dim
+      if (uDeath > 0.0) {
+        float k = uDeath;
+        vec3 ghost = texture2D(tDiffuse, vUv + (vUv - 0.5) * 0.02 * k).rgb;
+        col = mix(col, 0.5 * (col + ghost), 0.7 * k);
+        float Ld = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col = mix(col, vec3(Ld) * vec3(1.06, 0.92, 0.88), smoothstep(0.0, 0.65, k));
+        col *= mix(1.0, 1.0 - smoothstep(0.15, 1.05 - 0.4 * k, length(d) * 1.45), k);
+        col *= 1.0 - 0.3 * k;
       }
       if (uBars > 0.0) col *= step(uBars, vUv.y) * step(vUv.y, 1.0 - uBars);
       col = mix(col, vec3(0.0), uFade);

@@ -33,6 +33,7 @@ import { Inventory } from './items/inventory.js';
 import { ITEMS, initialState } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
+import { Goals } from './ui/goals.js';
 import { AudioSystem } from './audio/audio.js';
 import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
@@ -165,6 +166,7 @@ export class Game {
     this.interaction = new Interaction(this);
     this.ui = this.ui || null;
     this.hud = new HUD(this);
+    this.goals = new Goals(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
     this.campfires = new Campfires(this);
@@ -307,9 +309,9 @@ export class Game {
     const spot = inst.carSpot || new THREE.Vector3(8.5, 0, -1);
     const m = new THREE.Matrix4().compose(new THREE.Vector3(poi.x, poi.y, poi.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), poi.rot), new THREE.Vector3(1, 1, 1));
     const car = spot.clone().applyMatrix4(m);
-    const front = new THREE.Vector3(spot.x - 1.6, 0, spot.z + 5.2).applyMatrix4(m);
-    // face the car in the garage
-    const yaw = Math.atan2(car.x - front.x, car.z - front.z) + 0.12;
+    // just inside the open door, looking in at the car
+    const front = new THREE.Vector3(spot.x - 0.9, 0, spot.z + 4.6).applyMatrix4(m);
+    const yaw = Math.atan2(car.x - front.x, car.z - front.z) + 0.06;
     return { x: front.x, z: front.z, yaw, carX: car.x, carZ: car.z, carYaw: poi.rot + Math.PI, carY: poi.y + 0.12 };
   }
 
@@ -469,7 +471,10 @@ export class Game {
     this.updateRefuel(dt);
     this.effects.update(dt);
     this.audio.update(dt);
-    if (!this.attract) this.hud.update(dt);
+    if (!this.attract) {
+      this.hud.update(dt);
+      this.goals.update(dt);
+    }
     // streaming
     const f = this.focusPoint();
     const gx = f.x + this.origin.x,
@@ -704,10 +709,13 @@ export class Game {
     this.deathHandled = true;
     this.sleepHours = 0;
     this.player.deathCause = cause;
+    // the world drains away (grade uDeath), goes quiet, a slow heart; then the reckoning
+    this.hud && this.hud.root.classList.add('gone');
+    this.audio && this.audio.dying && this.audio.dying();
     setTimeout(() => {
       this.paused = true;
       this.ui && this.ui.showDeath(cause);
-    }, 1600);
+    }, 2600);
   }
 
   onCarImpact(severity) {
@@ -887,6 +895,8 @@ export class Game {
     }
     if (this.player) {
       this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+      const ud = this.renderer.grade.uniforms.uDeath;
+      ud.value = this.player.dead ? Math.min(1, ud.value + dt / 3.2) : 0;
       // out in a sandstorm with nothing between you and the wind
       const exposed = !this.player.seat && !this.player.indoors ? 1 : 0;
       const gr = this.renderer.grade.uniforms.uGrit;

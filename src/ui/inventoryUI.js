@@ -180,7 +180,7 @@ export class InventoryUI {
       'div',
       'inv-help',
       s,
-      '<span><kbd>Drag</kbd> move</span><span><kbd>Shift</kbd>+click send across</span><span><kbd>Double-click</kbd> take in hand</span><span><kbd>RMB</kbd> actions</span><span><kbd>1</kbd>–<kbd>6</kbd> over a slot: hotbar</span><span><kbd>Tab</kbd> close</span>'
+      '<span><kbd>Drag</kbd> move</span><span><kbd>Shift</kbd>+click send across</span><span><kbd>Double-click</kbd> take in hand</span><span><kbd>RMB</kbd> actions</span><span><kbd>2</kbd>–<kbd>7</kbd> over a slot: hotbar</span><span><kbd>Tab</kbd> close</span>'
     );
     this.refresh();
   }
