@@ -1420,7 +1420,7 @@ export class NPCManager {
           z = f.z + Math.cos(a) * r;
         const wx = x + g.origin.x,
           wz = z + g.origin.z;
-        if (Math.abs(wx - g.gen.roadX(wz)) < 7) continue;
+        if (g.gen.roadDist(wx, wz) < 7) continue;
         if (g.gen.poisNear(wz, 1).some((q) => Math.hypot(q.x - wx, q.z - wz) < (q.padR || 20) + 25)) continue;
         return V(x, g.gen.height(wx, wz) + 0.3, z);
       }

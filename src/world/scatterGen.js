@@ -92,8 +92,7 @@ export function cellInstances(gen, ci, cj) {
         r4 = rnd();
       // clustering: groves, clearings and patches instead of an even sprinkle
       if (def.cluster !== undefined && gen.nC.noise2(x * (def.sway === 'tree' ? 0.011 : 0.03), z * (def.sway === 'tree' ? 0.011 : 0.03)) < def.cluster + r3 * 0.2) continue;
-      const rx = gen.roadX(z);
-      const dRoad = Math.abs(x - rx);
+      const dRoad = gen.roadDist(x, z);
       if (dRoad < ROAD.halfWidth + ROAD.shoulder + (def.solid ? 6 : 1.5)) continue;
       const tn = gen.trackNear(x, z);
       if (tn && tn.d < TRACK.halfWidth + TRACK.shoulder + (def.solid ? 4 : 0.8)) continue;

@@ -327,6 +327,7 @@ export class Terrain {
     for (let j = 0; j <= nz; j++) {
       const z = z0 + j * step;
       const rx = gen.roadX(z);
+      const s = gen.roadS(z);
       const [dx, dz] = gen.roadDir(z);
       const px = dz,
         pz = -dx; // perpendicular
@@ -345,7 +346,7 @@ export class Terrain {
         pos[k2 * 3 + 1] = y;
         pos[k2 * 3 + 2] = zz - oz;
         uv[k2 * 2] = (Math.max(-W / 2, Math.min(W / 2, a)) + W / 2) / W;
-        uv[k2 * 2 + 1] = z;
+        uv[k2 * 2 + 1] = s;
         road[k2 * 4] = info.wear;
         road[k2 * 4 + 1] = info.dirt ? 1 : 0;
         road[k2 * 4 + 2] = W;

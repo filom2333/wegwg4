@@ -532,6 +532,17 @@ add them to `src/world/props.js` PROPS.
   material (the W203 went from 204 to 135 meshes). Keep new builders doing the same, and use the
   shared module materials (RED_CABLE, PORCELAIN, CASE_BLACK) instead of making new ones inline.
 
+- Roads with character (`worldGen.windSeg/windAt`): the road is cut into 2.6 km stretches,
+  each calm (only the old long sweeps), winding (S-bends every 340-600 m), tight (220-340 m) or a
+  pass (tight bends on a climb). Bend radius never under ~45 m (amplitude capped by L²); bends
+  fade out near river crossings and lakes (`calmWater`, from their nominal z, no recursion).
+  High ground (`liftEvent/liftAt`, every ~16 km): plateaus (+120..320 m), ridges crossed at a
+  saddle (+170..380 m) and basins (-70..-160 m) with ~8% road grades and a wandering, steeper
+  edge away from the road; other relief is damped on the ramps (`rampWeight`). Terrain and
+  scatter use `roadDist` (across the road, not along x); road UVs use arc length `roadS`;
+  POIs avoid steep stretches and bends that swing into their yard (`poiOnRoad`); lakes avoid
+  ramps and the road. Tools: scratchpad `tools/roadmap.mjs` (plan + profile + min radius/grade).
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.
