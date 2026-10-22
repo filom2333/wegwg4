@@ -81,15 +81,36 @@ void main() {
   // Night sky: stars + moon
   float night = uNight;
   if (night > 0.001 && dir.y > -0.05) {
-    vec3 sd = dir * 380.0;
-    vec3 cell = floor(sd);
-    float h = hash(cell);
-    float star = step(0.9965, h) * smoothstep(0.55, 0.0, length(fract(sd) - 0.5));
-    float tw = 0.6 + 0.4 * sin(uTime * 3.0 + h * 100.0);
+    // stars in two layers (many faint, a few bright), each its own colour and twinkle; low in the
+    // sky they shimmer harder and dim in the thicker air
+    float lowAir = 1.0 - smoothstep(0.0, 0.45, dir.y);
+    float ext = smoothstep(-0.02, 0.18, dir.y);
+    vec3 starCol = vec3(0.0);
+    for (int L = 0; L < 2; L++) {
+      float dens = L == 0 ? 520.0 : 210.0;
+      vec3 sd = dir * dens;
+      vec3 cell = floor(sd);
+      float h = hash(cell);
+      float h2 = hash(cell + 17.31);
+      float h3 = hash(cell + 41.7);
+      vec3 jit = vec3(hash(cell + 3.1), hash(cell + 5.7), hash(cell + 9.3)) - 0.5;
+      float rr = length(fract(sd) - 0.5 - jit * 0.5);
+      float th = L == 0 ? 0.982 : 0.9965;
+      float star = step(th, h) * smoothstep(L == 0 ? 0.38 : 0.5, 0.0, rr);
+      float mag = L == 0 ? 0.25 + 0.55 * h2 * h2 : 1.4 + 2.6 * h2;
+      float sp = 1.5 + 7.0 * h3;
+      float amp = mix(0.12, 0.7, lowAir);
+      float tw = 1.0 - amp * (0.5 + 0.5 * sin(uTime * sp + h * 80.0)) * (0.5 + 0.5 * sin(uTime * sp * 1.73 + h * 31.0));
+      vec3 c = mix(vec3(0.72, 0.82, 1.0), vec3(1.0, 0.86, 0.66), h3);
+      starCol += c * star * mag * tw;
+    }
+    col += starCol * ext * night * uStars * 1.8 * (1.0 - uCloud);
+    // the Milky Way: a soft band with darker dust lanes through it
+    vec3 mwAxis = normalize(vec3(0.3, 0.4, 0.86));
+    float band = exp(-pow(dot(dir, mwAxis) * 3.2, 2.0));
     float milky = fbm(dir * 3.0 + vec3(3.1, 0.0, 1.7));
-    float band = exp(-pow(dot(dir, normalize(vec3(0.3, 0.4, 0.86))) * 3.0, 2.0));
-    col += vec3(0.9, 0.95, 1.0) * star * tw * night * uStars * 2.2 * (1.0 - uCloud);
-    col += vec3(0.05, 0.06, 0.09) * milky * band * night * uStars * (1.0 - uCloud) * 0.6;
+    float lanes = smoothstep(0.35, 0.7, fbm(dir * 9.0 + vec3(7.0, 1.0, 2.0)));
+    col += vec3(0.075, 0.085, 0.12) * (0.4 + milky) * band * (1.0 - lanes * 0.6) * ext * night * uStars * (1.0 - uCloud);
     vec3 moon = normalize(uMoonDir);
     float md = dot(dir, moon);
     float mdisc = smoothstep(0.99955, 0.99965, md);

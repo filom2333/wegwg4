@@ -3,6 +3,8 @@
 // meteors and moths. Everything is pooled; nothing allocates per frame in steady state.
 
 import * as THREE from 'three';
+import { makeCanvas } from './textures.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLASS_RAIN } from './glassRain.js';
 import { mulberry32 } from '../core/noise.js';
 import { tubeAlong } from './geom.js';
@@ -33,6 +35,7 @@ varying vec3 vColor;
 varying float vRot;
 uniform float uSoft;
 uniform float uLight;
+uniform float uLobes;
 uniform vec3 uAmbient;
 void main() {
   vec2 p = gl_PointCoord - 0.5;
@@ -40,7 +43,7 @@ void main() {
   p = mat2(c, -s, s, c) * p;
   float r = length(p) * 2.0;
   // billowy puff: radial falloff modulated by a few lobes
-  float lobes = 0.85 + 0.15 * sin(atan(p.y, p.x) * 5.0 + vRot * 3.0);
+  float lobes = 1.0 - uLobes + uLobes * sin(atan(p.y, p.x) * 5.0 + vRot * 3.0);
   float a = smoothstep(1.0, uSoft, r / lobes) * vAlpha;
   if (a < 0.003) discard;
   vec3 col = vColor * mix(vec3(1.0), uAmbient, uLight);
@@ -49,7 +52,7 @@ void main() {
 }`;
 
 class Particles {
-  constructor(max, { additive = false, soft = 0.0, lit = 1, depthWrite = false } = {}) {
+  constructor(max, { additive = false, soft = 0.0, lit = 1, depthWrite = false, lobes = 0.15 } = {}) {
     this.max = max;
     this.geo = new THREE.BufferGeometry();
     this.pos = new Float32Array(max * 3);
@@ -65,7 +68,7 @@ class Particles {
     this.mat = new THREE.ShaderMaterial({
       vertexShader: PVERT,
       fragmentShader: PFRAG,
-      uniforms: { uScale: { value: 300 }, uSoft: { value: soft }, uLight: { value: lit }, uAmbient: { value: new THREE.Color(1, 1, 1) } },
+      uniforms: { uScale: { value: 300 }, uSoft: { value: soft }, uLight: { value: lit }, uLobes: { value: lobes }, uAmbient: { value: new THREE.Color(1, 1, 1) } },
       transparent: true,
       depthWrite,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -240,11 +243,14 @@ export class Effects {
     game.worldGroup.add(root);
     this.dust = new Particles(1400, { soft: 0.0, lit: 1 });
     this.smoke = new Particles(500, { soft: 0.1, lit: 1 });
-    this.fire = new Particles(300, { additive: true, soft: 0.2, lit: 0 });
-    this.sparks = new Particles(400, { additive: true, soft: 0.5, lit: 0 });
+    // flames and sparks: round, soft glows (the puff lobes read as little stars when additive)
+    this.fire = new Particles(300, { additive: true, soft: -0.4, lit: 0, lobes: 0.04 });
+    this.sparks = new Particles(400, { additive: true, soft: 0.2, lit: 0, lobes: 0 });
     this.blood = new Particles(300, { soft: 0.6, lit: 1 });
     this.moths = new Particles(200, { soft: 0.6, lit: 0 });
-    for (const p of [this.dust, this.smoke, this.blood, this.fire, this.sparks, this.moths]) root.add(p.points);
+    // tall smoke columns seen from afar (signal fires)
+    this.column = new Particles(260, { soft: 0.0, lit: 1 });
+    for (const p of [this.dust, this.smoke, this.blood, this.fire, this.sparks, this.moths, this.column]) root.add(p.points);
     this.fire.points.renderOrder = 3;
     // flashes
     this.flashLight = new THREE.PointLight(0xffc070, 0, 14, 2);
@@ -275,6 +281,9 @@ export class Effects {
     this.bloodGeo = new THREE.PlaneGeometry(1, 1);
     this.bloodMats = [0, 1, 2, 3].map((i) => new THREE.MeshStandardMaterial({ color: 0x4a0707, roughness: 0.35, transparent: true, alphaMap: splatterTexture(17 + i * 31), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
     this.bloodMat = this.bloodMats[0];
+    // what a leaking car leaves on the ground: black oil, green coolant
+    const stain = (color, opacity, seed, rough) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.1, transparent: true, opacity, alphaMap: splatterTexture(seed), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    this.fluidMats = { oil: stain(0x0a0807, 0.9, 211, 0.42), coolant: stain(0x24563a, 0.55, 233, 0.32) };
     // casings
     this.casings = [];
     this.casingGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.03, 8).rotateZ(Math.PI / 2);
@@ -359,6 +368,64 @@ export class Effects {
       pos[i * 6 + 5] = az;
     }
     this.rainLines.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------------------ snow
+  // Soft flakes drifting down round the camera: slow, swaying, carried by the wind.
+  buildSnow() {
+    const N = 7000;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const c = makeCanvas(32, 32);
+    const x = c.getContext('2d');
+    const grd = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.45, 'rgba(255,255,255,0.75)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = grd;
+    x.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    this.snowPts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.13, map: tex, color: 0xffffff, transparent: true, opacity: 1, depthWrite: false, sizeAttenuation: true }));
+    this.snowPts.frustumCulled = false;
+    this.snowPts.visible = false;
+    this.root.add(this.snowPts);
+    const r = mulberry32(9);
+    this.flakes = [];
+    for (let i = 0; i < N; i++) this.flakes.push({ x: (r() - 0.5) * 44, y: r() * 22, z: (r() - 0.5) * 44, v: 0.7 + r() * 0.8, ph: r() * 6.28, sw: 0.3 + r() * 0.6 });
+  }
+
+  updateSnow(dt, cam, intensity, wind) {
+    if (!this.snowPts) {
+      if (intensity <= 0.02) return;
+      this.buildSnow();
+    }
+    const vis = intensity > 0.02;
+    this.snowPts.visible = vis;
+    if (!vis) return;
+    const n = Math.floor(this.flakes.length * Math.min(1, intensity));
+    const pos = this.snowPts.geometry.attributes.position.array;
+    const wx = wind * 2.2,
+      wz = wind * 0.6;
+    const t = this.t;
+    for (let i = 0; i < this.flakes.length; i++) {
+      const f = this.flakes[i];
+      if (i >= n) {
+        pos[i * 3 + 1] = -1e5;
+        continue;
+      }
+      f.y -= f.v * dt;
+      f.x += (wx + Math.sin(t * f.sw * 2 + f.ph) * f.sw) * dt;
+      f.z += (wz + Math.cos(t * f.sw * 1.6 + f.ph) * f.sw * 0.7) * dt;
+      if (f.y < 0 || Math.abs(f.x) > 22 || Math.abs(f.z) > 22) {
+        f.y = 20 + Math.random() * 2;
+        f.x = (Math.random() - 0.5) * 44;
+        f.z = (Math.random() - 0.5) * 44;
+      }
+      pos[i * 3] = cam.position.x + f.x;
+      pos[i * 3 + 1] = cam.position.y - 6 + f.y;
+      pos[i * 3 + 2] = cam.position.z + f.z;
+    }
+    this.snowPts.geometry.attributes.position.needsUpdate = true;
   }
 
   // ------------------------------------------------------------------ emitters
@@ -547,14 +614,43 @@ export class Effects {
       mat = this.bloodMats[Math.floor(Math.random() * this.bloodMats.length)];
       scale *= 0.07;
     }
-    const d = new THREE.Mesh(blood ? this.bloodGeo : this.decalGeo, mat);
+    const splat = blood || mat === this.fluidMats.oil || mat === this.fluidMats.coolant;
+    const d = new THREE.Mesh(splat ? this.bloodGeo : this.decalGeo, mat);
     d.position.copy(p).addScaledVector(n, 0.004);
     d.lookAt(p.clone().add(n));
-    if (blood) d.rotateZ(Math.random() * Math.PI * 2);
+    if (splat) d.rotateZ(Math.random() * Math.PI * 2);
     d.scale.setScalar(scale);
     this.root.add(d);
     this.decals.push(d);
     if (this.decals.length > 80) this.root.remove(this.decals.shift());
+    return d;
+  }
+
+  // Drips under a car losing a fluid (oil with no filter on a running engine or upside down,
+  // coolant with the water pump gone) and the puddle they make: it spreads while the car stands,
+  // a trail of stains when it moves.
+  leaks(car, dt) {
+    const oil = car.oil > 0.05 && car.isInstalled('engine') && ((car.parts.oilfilter && !car.isInstalled('oilfilter') && car.dyn.engine.running) || car.inverted > 0.5);
+    const coolant = car.coolant > 0.05 && car.parts.waterpump && !car.isInstalled('waterpump');
+    if (!oil && !coolant) return;
+    car._drip = (car._drip || 0) - dt;
+    if (car._drip > 0) return;
+    car._drip = 0.12 + Math.random() * 0.12;
+    car._puddles = car._puddles || {};
+    const g = this.game;
+    for (const [on, key, col, dz] of [
+      [oil, 'oil', [0.05, 0.04, 0.03], -0.15],
+      [coolant, 'coolant', [0.2, 0.55, 0.3], 0.3],
+    ]) {
+      if (!on) continue;
+      const p = car.type.POINTS.engine.clone().add(V((Math.random() - 0.5) * 0.15, -0.3, dz)).applyMatrix4(car.root.matrixWorld);
+      this.blood.emit({ pos: p, vel: V(0, -0.4, 0), size: 0.018, grow: 0, life: 0.45, color: col, alpha: 0.9, grav: 9.8 });
+      const gy = g.groundHeightAt(p.x, p.z, p.y + 0.5);
+      if (p.y - gy > 1.5) continue;
+      const pd = car._puddles[key];
+      if (pd && pd.mesh.parent && Math.hypot(pd.x - p.x, pd.z - p.z) < 0.35) pd.mesh.scale.setScalar(Math.min(1.3, pd.mesh.scale.x + 0.004));
+      else car._puddles[key] = { mesh: this.decal(V(p.x, gy, p.z), V(0, 1, 0), this.fluidMats[key], 0.18), x: p.x, z: p.z };
+    }
   }
 
   bloodHit(p, dir, amount = 1) {
@@ -572,34 +668,79 @@ export class Effects {
   }
 
   // ------------------------------------------------------------------ weather / ambience
+  // A strike: usually far over the land, now and then close enough to light the car up and shake
+  // the ground (the steel cab is safe; standing out in the open near it is not). Forked channel
+  // with a glow, two or three return strokes, a flash of light where it lands.
   lightning(seed) {
     const g = this.game;
     const cam = g.renderer.camera;
     const r = mulberry32(Math.floor(seed * 1e6));
+    const near = r() < 0.22;
     const ang = r() * Math.PI * 2;
-    const dist = 300 + r() * 1500;
+    const dist = near ? (r() < 0.3 ? 20 + r() * 30 : 50 + r() * 130) : 300 + r() * 1500;
     const base = V(cam.position.x + Math.cos(ang) * dist, 0, cam.position.z + Math.sin(ang) * dist);
     base.y = g.gen.height(base.x + g.origin.x, base.z + g.origin.z);
-    const top = base.clone().add(V((r() - 0.5) * 200, 900, (r() - 0.5) * 200));
-    const pts = [top.clone()];
-    let p = top.clone();
-    const steps = 18;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const target = top.clone().lerp(base, t);
-      p = target.add(V((r() - 0.5) * 90 * (1 - t * 0.5), 0, (r() - 0.5) * 90 * (1 - t * 0.5)));
-      pts.push(p.clone());
+    const H = near ? 520 : 900;
+    const top = base.clone().add(V((r() - 0.5) * 200, H, (r() - 0.5) * 200));
+    // a random walk toward the ground: sharp kinks, not a smooth curve
+    const channel = (from, to, steps, jag) => {
+      const pts = [from.clone()];
+      const p = from.clone();
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const aim = from.clone().lerp(to, t);
+        p.lerp(aim, 0.55).add(V((r() - 0.5) * jag, (r() - 0.3) * jag * 0.25, (r() - 0.5) * jag));
+        pts.push(p.clone());
+      }
+      pts[pts.length - 1].copy(to);
+      return pts;
+    };
+    const main = channel(top, base, 44, near ? 22 : 34);
+    const geos = [tubeAlong(main, near ? 0.35 : 0.7, 4, { closedEnds: false })];
+    const glow = [tubeAlong(main, near ? 1.6 : 2.6, 5, { closedEnds: false })];
+    // forks that die out in the air
+    for (let b = 0; b < 2 + Math.floor(r() * 3); b++) {
+      const k = 3 + Math.floor(r() * (main.length - 8));
+      const from = main[k];
+      const len = (H / main.length) * (4 + r() * 6);
+      const to = from.clone().add(V((r() - 0.5) * len, -len * (0.5 + r() * 0.4), (r() - 0.5) * len));
+      geos.push(tubeAlong(channel(from, to, 12, 14), near ? 0.2 : 0.4, 3, { closedEnds: false }));
     }
-    pts[pts.length - 1].copy(base);
     if (this.bolt) {
       this.root.remove(this.bolt);
-      this.bolt.geometry.dispose();
+      this.bolt.traverse((o) => o.geometry && o.geometry.dispose());
     }
-    const geo = tubeAlong(pts, 1.6, 4, { closedEnds: false });
-    this.bolt = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 1, fog: false }));
-    this.root.add(this.bolt);
-    this.boltT = 0.25;
+    const bolt = new THREE.Group();
+    // the core far brighter than white, so the bloom spreads it
+    bolt.add(new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 5.4, 6.5), transparent: true, opacity: 1, fog: false })));
+    bolt.add(new THREE.Mesh(mergeGeometries(glow), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 0.6, 1.2), transparent: true, opacity: 0.25, fog: false, blending: THREE.AdditiveBlending, depthWrite: false })));
+    this.bolt = bolt;
+    this.root.add(bolt);
+    this.boltT = 0.55;
+    this.boltLen = 0.55;
+    // where it lands: a white-blue flash over the ground, sparks and a puff of smoke
+    if (near) {
+      if (!this.strikeLight) {
+        this.strikeLight = new THREE.PointLight(0xdfe6ff, 0, 600, 1.1);
+        this.root.add(this.strikeLight);
+        g.lights.add(this.strikeLight);
+      }
+      this.strikeLight.position.copy(base).add(V(0, 25, 0));
+      this.strikeAt = base.clone();
+      for (let i = 0; i < 60; i++) this.sparks.emit({ pos: base.clone().add(V(0, 0.3, 0)), vel: V((Math.random() - 0.5) * 14, 3 + Math.random() * 9, (Math.random() - 0.5) * 14), size: 0.12, grow: 0.05, life: 0.6 + Math.random() * 0.8, color: [1, 0.85, 0.6], alpha: 1, drag: 0.6, grav: 9.8 });
+      for (let i = 0; i < 10; i++) this.smoke.emit({ pos: base.clone().add(V((Math.random() - 0.5) * 2, 0.5, (Math.random() - 0.5) * 2)), vel: V((Math.random() - 0.5) * 1.5, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 1.5), size: 1.2, grow: 5, life: 5 + Math.random() * 3, color: [0.32, 0.31, 0.3], alpha: 0.4, drag: 0.6, grav: -0.1 });
+      // out in the open close to it: the ground current knocks you down
+      const pl = g.player;
+      if (pl && !pl.seat && !pl.dead) {
+        const d = pl.position.distanceTo(base);
+        if (d < 14) {
+          pl.damage(Math.round((14 - d) * 6), 'lightning');
+          g.hud && g.hud.toast('Struck by the ground current', 'warn');
+        }
+      }
+    }
     g.audio && g.audio.thunder(dist);
+    return dist;
   }
 
   spawnDevil(cam) {
@@ -792,9 +933,9 @@ export class Effects {
     const g = this.game;
     const cam = g.renderer.camera;
     const amb = g.env.hemi.color.clone().multiplyScalar(0.6 + g.env.daylight * 0.6).add(g.env.sun.color.clone().multiplyScalar(g.env.sun.intensity * 0.12));
-    for (const p of [this.dust, this.smoke, this.blood, this.splashes]) p.mat.uniforms.uAmbient.value.copy(amb);
+    for (const p of [this.dust, this.smoke, this.blood, this.splashes, this.column]) p.mat.uniforms.uAmbient.value.copy(amb);
     const scale = (window.innerHeight * g.renderer.renderer.getPixelRatio()) / (2 * Math.tan(((cam.fov / 2) * Math.PI) / 180));
-    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes]) {
+    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes, this.column]) {
       p.mat.uniforms.uScale.value = scale;
       p.update(dt);
     }
@@ -802,6 +943,7 @@ export class Effects {
       this.wheelDust(g.car, dt);
       this.exhaust(g.car, dt);
       this.engineSmoke(g.car, dt);
+      this.leaks(g.car, dt);
     }
     // flash decay
     this.flashT -= dt;
@@ -851,14 +993,35 @@ export class Effects {
     // lightning
     if (this.bolt) {
       this.boltT -= dt;
-      this.bolt.material.opacity = Math.max(0, this.boltT / 0.25) * (0.6 + 0.4 * Math.random());
+      // return strokes: bright, dim, bright again, fading
+      const t = 1 - this.boltT / this.boltLen;
+      const pulse = Math.max(0, 1 - t * 1.4) * (t < 0.12 || (t > 0.3 && t < 0.4) || (t > 0.58 && t < 0.64) ? 1 : 0.25) * (0.75 + 0.25 * Math.random());
+      this.bolt.children[0].material.opacity = pulse;
+      this.bolt.children[1].material.opacity = pulse * 0.25;
+      if (this.strikeLight && this.strikeAt) this.strikeLight.intensity = pulse * 1500;
       if (this.boltT <= 0) {
         this.root.remove(this.bolt);
-        this.bolt.geometry.dispose();
+        this.bolt.traverse((o) => o.geometry && o.geometry.dispose());
         this.bolt = null;
+        if (this.strikeLight) this.strikeLight.intensity = 0;
+        this.strikeAt = null;
       }
     }
-    this.updateRain(dt, cam, g.env.w.rain, g.env.w.wind);
+    // breath fogs in the cold air
+    const pl = g.player;
+    if (pl && !pl.dead && !pl.seat && g.env.airTemp() < 3) {
+      this.breathT = (this.breathT || 0) - dt;
+      if (this.breathT <= 0) {
+        this.breathT = 3 + Math.random() * 1.5;
+        const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion);
+        for (let i = 0; i < 4; i++)
+          this.smoke.emit({ pos: cam.position.clone().addScaledVector(fwd, 0.22).add(V(0, -0.09, 0)), vel: fwd.clone().multiplyScalar(0.35 + Math.random() * 0.2).add(V((Math.random() - 0.5) * 0.08, 0.06, (Math.random() - 0.5) * 0.08)), size: 0.04, grow: 0.35, life: 1.1 + Math.random() * 0.4, color: [0.95, 0.96, 0.98], alpha: 0.16, drag: 1.4, grav: -0.05, fadeIn: 0.15 });
+      }
+    }
+    // in the snowy north it comes down as flakes
+    const snowing = g.env.snowing;
+    this.updateRain(dt, cam, snowing ? 0 : g.env.w.rain, g.env.w.wind);
+    this.updateSnow(dt, cam, snowing ? g.env.w.rain : 0, g.env.w.wind);
     this.updateDevils(dt, cam);
     this.updateWeeds(dt, cam);
     this.updateBirds(dt, cam);
@@ -867,7 +1030,8 @@ export class Effects {
     this.updateMotes(dt, cam);
     // rain on the glass of the car you are near
     GLASS_RAIN.time.value += dt;
-    GLASS_RAIN.rain.value += ((g.env.w.rain > 0.05 ? Math.min(1, 0.35 + g.env.w.rain) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
+    const wetGlass = g.env.snowing ? 0 : g.env.w.rain;
+    GLASS_RAIN.rain.value += ((wetGlass > 0.05 ? Math.min(1, 0.35 + wetGlass) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
     GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
     GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
     // sandstorm: billows of dust and fast streaks of sand driven along the wind, born upwind of
@@ -899,7 +1063,7 @@ export class Effects {
   }
 
   rebase(dx, dz) {
-    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes]) p.rebase(dx, dz);
+    for (const p of [this.dust, this.smoke, this.fire, this.sparks, this.blood, this.moths, this.splashes, this.column]) p.rebase(dx, dz);
     for (const d of this.devils) {
       d.x -= dx;
       d.z -= dz;

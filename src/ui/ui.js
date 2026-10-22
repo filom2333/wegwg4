@@ -262,12 +262,13 @@ export class UI {
       const body = el('div', 'ui-body', p);
       const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
       const ccby = link('http://creativecommons.org/licenses/by/4.0/', 'CC-BY-4.0');
-      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time.</p>
+      body.innerHTML = `<p class="ui-sub">The land, the buildings, the people and the music are generated in code at load time. Most sound effects were generated with ${link('https://elevenlabs.io/sound-effects', 'ElevenLabs')} text-to-sound and then cut, levelled and looped for the game; the engine, the radio and the music are synthesized.</p>
         <p class="ui-sub">The 1960s Beetle is based on ${link('https://sketchfab.com/3d-models/beetlefusca-version-1-cb6e82e73386448fb3b4e2dd25255a5e', '"Beetle/Fusca (Version 1)"')} by ${link('https://sketchfab.com/soujagah', 'soujagah')}, and the '88 Riverside sedan on "88 American Sedan - Low poly model" by ${link('https://sketchfab.com/DanielZhabotinsky', 'Daniel Zhabotinsky')}, both licensed under ${ccby}; scaled, split into parts and re-textured for repainting.</p>
+        <p class="ui-sub">The '04 Kronberg saloon is based on "Mercedes-Benz C-class W203 2007" by ${link('https://sketchfab.com/szymonpasterczyk734', 'szymonpasterczyk734')} (${ccby}); re-coloured, given tyres, an engine bay and a boot battery. Props: the oil drum from the Babylon.js assets (${ccby}), lamp post, barn lamp, fridge, sofa, plant, skull and flight helmet from the Khronos glTF sample models (CC0 / ${ccby}), the player's body is the Ready Player Me avatar from the three.js examples, re-dressed for the road and moved by the Soldier's Mixamo clips; mossy boulders from ez-tree by Daniel Greenheck (MIT); the grass carp from @so-chart/fish (ISC, USFWS public-domain photo); the barramundi, the antique camera and the teacup from the Khronos glTF sample assets (${ccby}); a worn tyre from the 3d-model-testingpublic package (ISC).</p>
         <p class="ui-sub">Tree bark from ${link('https://www.texturecan.com/', 'TextureCan')} and ${link('https://polyhaven.com/a/bark_brown_02', 'Poly Haven')} (CC0); twig cards from ${link('https://github.com/dgreenheck/ez-tree', 'ez-tree')} by Daniel Greenheck (MIT).</p>
         <div class="ui-cols">
-          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div></div>
-          <div><div class="ui-label">Models and textures</div><div class="ui-stat"><span>Beetle</span><span>soujagah · CC-BY-4.0</span></div><div class="ui-stat"><span>Sedan</span><span>D. Zhabotinsky · CC-BY-4.0</span></div><div class="ui-stat"><span>Bark</span><span>TextureCan, Poly Haven · CC0</span></div><div class="ui-stat"><span>Twigs</span><span>ez-tree · MIT</span></div></div>
+          <div><div class="ui-label">Built with</div><div class="ui-stat"><span>Rendering</span><span>three.js</span></div><div class="ui-stat"><span>Physics</span><span>Rapier</span></div><div class="ui-stat"><span>Sound</span><span>Web Audio</span></div><div class="ui-stat"><span>Sound effects</span><span>ElevenLabs</span></div></div>
+          <div><div class="ui-label">Models and textures</div><div class="ui-stat"><span>Beetle</span><span>soujagah · CC-BY-4.0</span></div><div class="ui-stat"><span>Sedan</span><span>D. Zhabotinsky · CC-BY-4.0</span></div><div class="ui-stat"><span>Saloon</span><span>szymonpasterczyk734 · CC-BY-4.0</span></div><div class="ui-stat"><span>Props</span><span>Khronos, Babylon.js · CC0 / CC-BY</span></div><div class="ui-stat"><span>Bark</span><span>TextureCan, Poly Haven · CC0</span></div><div class="ui-stat"><span>Twigs</span><span>ez-tree · MIT</span></div></div>
           <div><div class="ui-label">Inspired by</div><div class="ui-stat"><span>Road trips</span><span>The Long Drive</span></div><div class="ui-stat"><span>Dust</span><span>Route 66, 89, 95</span></div></div>
         </div>`;
       const a = el('div', 'ui-actions', p);
@@ -289,7 +290,7 @@ export class UI {
 
   // ---------------------------------------------------------------- new game
   showNewGame() {
-    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'beetle', seed: String(Math.floor(Math.random() * 900000) + 100000) });
+    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'w203', seed: String(Math.floor(Math.random() * 900000) + 100000) });
     this.screen('newgame', (s) => {
       s.classList.add('ui-shade-panel');
       const p = el('div', 'ui-panel', s);
@@ -717,6 +718,8 @@ export class UI {
       meter(b, 'Battery', car.battery, 0.2);
       meter(b, 'Engine', car.isInstalled('engine') ? car.engineCondition : 0, 0.35);
       meter(b, car.PARTS.fanbelt.label, car.isInstalled('fanbelt') ? car.fanbeltCondition : 0, 0.3);
+      if (car.parts.sparkplugs) meter(b, 'Spark plugs', car.partCond('sparkplugs'), 0.3);
+      if (car.parts.oilfilter) meter(b, 'Oil filter', car.partCond('oilfilter'), 0.25);
       if (car.coolantCap) meter(b, `Coolant · ${car.coolant.toFixed(1)} of ${car.coolantCap} l`, car.isInstalled('radiator') ? car.coolant / car.coolantCap : 0, 0.3);
       meter(b, `Engine temp · ${Math.round(car.engineTemp)}°C`, 1 - Math.max(0, Math.min(1, (car.engineTemp - 90) / 40)), 0.4);
       const tyres = car.dyn.wheels.filter((w) => w.installed);

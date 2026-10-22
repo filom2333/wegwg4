@@ -112,6 +112,10 @@ export function jerryCan(color = 'red') {
   spout.rotateX(0.5);
   spout.translate(0, 0.205, 0.13);
   g.add(mesh(spout, M.darkSteel));
+  // the screw cap (off while pouring)
+  const cap = mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.024, 16).rotateX(0.5).translate(0, 0.27, 0.165), mat);
+  cap.name = 'cap';
+  g.add(cap);
   g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 6).rotateZ(Math.PI / 2).translate(0, 0.25, 0.1), M.darkSteel));
   grip(g, 'side', 'wrap12', V(0, 0.28, -0.05), V(0, 0, 1), V(-1, 0, 0));
   return centered(g);
@@ -413,7 +417,30 @@ export function fishingRod() {
 }
 
 // A trout: raw (silvery, speckled) or grilled (golden brown, charred stripes).
-export function fish(cooked = false) {
+// Real models handed over by the prop library once loaded (an item built before that, or when
+// one failed to load, keeps its drawn model).
+const REAL = {};
+export function registerRealModel(id, obj) {
+  if (obj) REAL[id] = obj;
+}
+
+// variant 0 a carp, 1 a bass (the barramundi scan)
+export function fish(cooked = false, variant = 0) {
+  const real = (variant === 1 && REAL.bass) || REAL.carp;
+  if (real) {
+    const g = new THREE.Group();
+    const m = real.clone();
+    m.position.set(0, 0, 0);
+    if (cooked)
+      m.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = o.material.clone();
+        o.material.color.multiply(new THREE.Color(0.62, 0.4, 0.22));
+        o.material.roughness = 0.75;
+      });
+    g.add(m);
+    return g;
+  }
   const g = new THREE.Group();
   const mat = cached('fishMat' + (cooked ? 'C' : 'R'), () => {
     const tex = labelTex('fishSkin' + (cooked ? 'C' : 'R'), 128, 64, (c, w, h) => {

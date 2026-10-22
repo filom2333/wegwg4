@@ -3,8 +3,9 @@
 
 import * as THREE from 'three';
 import { ALBUMS } from '../audio/music/albums.js';
+import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
-import { RAPIER, GROUPS } from '../physics/physics.js';
+import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
@@ -16,6 +17,17 @@ import { clamp } from '../core/noise.js';
 import { addGlassRain } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// Exterior parts a crash can rip off, with the sudden change of speed (m/s) it takes. Lights and
+// bumpers go first, fenders and lids next, doors and wheels only in a heavy smash.
+const TEARABLE = {
+  headlight_L: 7, headlight_R: 7, taillight_L: 7, taillight_R: 7,
+  bumper_F: 8.5, bumper_R: 8.5,
+  fender_FL: 10.5, fender_FR: 10.5, fender_RL: 10.5, fender_RR: 10.5,
+  hood: 11.5, trunk: 11.5, exhaust: 10,
+  door_FL: 13.5, door_FR: 13.5, door_RL: 13.5, door_RR: 13.5,
+  wheel_FL: 17, wheel_FR: 17, wheel_RL: 17, wheel_RR: 17,
+};
 
 // type: a car type (see types.js) with its spec, part table and model; model: its scene graph.
 export class Car {
@@ -49,7 +61,7 @@ export class Car {
     this.cranking = 0;
     this.radioOn = false;
     // head unit: FM radio or the CD in the slot (album index), track and position in it
-    this.stereo = { disc: -1, track: 0, pos: 0, mode: 'radio', restart: false };
+    this.stereo = { disc: -1, track: 0, pos: 0, mode: 'radio', restart: false, station: 1 };
     this.stereoState = { loading: false, playing: false, pos: 0 };
     this.fire = 0;
     this.smoke = 0;
@@ -58,6 +70,8 @@ export class Car {
     this.wipers = false;
     this.wiperPhase = 0;
     this.cabinLight = false;
+    this.hazards = false;
+    this.heater = false;
     // physics
     const pos = opts.position || V(0, 0.5, 0);
     const q = opts.quaternion || new THREE.Quaternion();
@@ -97,6 +111,19 @@ export class Car {
     return !!(this.parts[id] && this.parts[id].installed);
   }
 
+  // Condition of a part as the engine sees it: 0 when it is off the car, 1 when this type never
+  // had one (the old Beetle has no alternator or water pump of its own).
+  partCond(id) {
+    const st = this.parts[id];
+    return !st ? 1 : st.installed ? (st.condition ?? 1) : 0;
+  }
+
+  // Is the alternator turning and charging?
+  get charging() {
+    const belt = this.isInstalled('fanbelt') ? this.fanbeltCondition : 0;
+    return this.dyn.engine.running && belt > 0.02 && this.partCond('alternator') > 0.05;
+  }
+
   canInstall(id) {
     const def = this.PARTS[id];
     if (!def || this.isInstalled(id)) return { ok: false, reason: 'Already installed' };
@@ -110,7 +137,8 @@ export class Car {
   lidBlocking(id) {
     const lid = lidOf(this.PARTS, id);
     if (!lid || !this.isInstalled(lid) || this.model.parts[lid].openT >= 0.5) return null;
-    return `Open the ${this.type.lids[lid] || lid} first`;
+    // a cover with no hinge has to come off
+    return `${this.model.parts[lid].hinge ? 'Open' : 'Take off'} the ${this.type.lids[lid] || lid} first`;
   }
 
   // Is a lid open (or gone)?
@@ -157,6 +185,82 @@ export class Car {
     }
     this.rebuildColliders();
     this.updateMass();
+  }
+
+  // Current world matrix of a part's rest content (a hinged part where it is swung to).
+  partWorldMatrix(id) {
+    const part = this.model.parts[id];
+    const m = new THREE.Matrix4().copy(this.root.matrixWorld);
+    if (part.hinge) {
+      const o = part.hinge.origin;
+      m.multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z))
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(part.pivot.quaternion))
+        .multiply(new THREE.Matrix4().makeTranslation(-o.x, -o.y, -o.z));
+    }
+    return m;
+  }
+
+  // Takes a part off and leaves it as an item where it was, carrying everything it holds (charge,
+  // fuel, oil, tune, paint). `fling`: the part is torn off in a crash and flies with the car's
+  // velocity plus that kick (world m/s).
+  detachPart(id, fling = null) {
+    const mp = this.model.parts[id];
+    const c = mp.bbox.getCenter(V(0, 0, 0));
+    const m = this.partWorldMatrix(id).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+    const pos = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      s = V(0, 0, 0);
+    m.decompose(pos, q, s);
+    if (mp.hinge) this.model.setOpen(id, 0);
+    const st = this.parts[id];
+    const state = { condition: st.condition, carType: st.from || this.type.id };
+    if (this.partColors && this.partColors[id] !== undefined) state.color = this.partColors[id];
+    else if (this.paintable(id)) state.color = this.mats.color.getHex();
+    if (id === 'battery') state.charge = this.battery;
+    if (id === 'fueltank') {
+      state.fuel = this.fuel;
+      this.fuel = 0;
+    }
+    if (id === 'fanbelt') state.condition = this.fanbeltCondition;
+    if (id === 'engine') state.oil = this.oil;
+    if (st.tune) state.tune = st.tune;
+    if (fling) state.condition = Math.max(0, state.condition - 0.15 - Math.random() * 0.25);
+    this.setInstalled(id, false);
+    this.owned = true;
+    const it = this.game.items.spawnPart(id, pos, q, state);
+    if (fling && it.body) {
+      const v = this.dyn.body.linvel();
+      it.body.setLinvel({ x: v.x + fling.x, y: v.y + fling.y, z: v.z + fling.z }, true);
+      it.body.setAngvel({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 }, true);
+    }
+    return it;
+  }
+
+  // The fuel filler flap on the body: swings out while someone fills up.
+  updateFuelFlap(dt, open) {
+    const h = this.type.HOTSPOTS && this.type.HOTSPOTS.find((x) => x.id === 'fuel');
+    if (!h || !this.mats || !this.mats.color) return;
+    if (!this.fuelFlap) {
+      const side = Math.sign(h.pos.x) || 1;
+      const pivot = new THREE.Group();
+      pivot.position.copy(h.pos).add(V(0, 0, 0.055));
+      const mat = new THREE.MeshStandardMaterial({ color: this.mats.color, roughness: 0.35, metalness: 0.4, side: THREE.DoubleSide });
+      const flap = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), mat);
+      flap.rotation.y = side * Math.PI * 0.5;
+      flap.position.set(0, 0, -0.055);
+      flap.castShadow = true;
+      pivot.add(flap);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 12).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 }));
+      cap.position.copy(h.pos).add(V(side * 0.01, 0, 0));
+      cap.visible = false;
+      this.root.add(pivot, cap);
+      this.fuelFlap = { pivot, cap, side, t: 0 };
+    }
+    const f = this.fuelFlap;
+    f.t += Math.sign((open ? 1 : 0) - f.t) * Math.min(Math.abs((open ? 1 : 0) - f.t), dt * 4);
+    f.pivot.rotation.y = -f.side * f.t * 1.7;
+    f.pivot.visible = f.t > 0.01;
+    f.cap.visible = f.t > 0.3;
   }
 
   // Label of a part on this car, with its tune.
@@ -318,6 +422,16 @@ export class Car {
     return a;
   }
 
+  // Tune to the next station (leaves CD mode).
+  nextStation() {
+    const s = this.stereo;
+    s.station = ((s.station ?? 1) + 1) % STATIONS.length;
+    s.mode = 'radio';
+    this.radioOn = true;
+    const st = STATIONS[s.station];
+    if (st.kind !== 'music') this.game.hud && this.game.hud.tunedTo && this.game.hud.tunedTo(st);
+  }
+
   nextTrack() {
     const s = this.stereo;
     if (s.disc < 0) return;
@@ -378,7 +492,13 @@ export class Car {
       const p = Math.floor(this.stereoState.pos || 0);
       return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[s.track].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
     }
-    return { a: 'FM', b: '98.1  HAVEN', t: s.disc >= 0 ? 'CD IN' : '' };
+    const st = STATIONS[s.station ?? 1];
+    const prog = this.stereoState.prog;
+    if (st.kind === 'music' && prog) {
+      if (this.stereoState.loading) return { a: st.freq, b: 'TUNING\u2026', t: s.disc >= 0 ? 'CD IN' : '' };
+      return { a: st.freq + '  ' + st.name, b: ALBUMS[prog.album].tracks[prog.track].toUpperCase(), t: s.disc >= 0 ? 'CD IN' : '' };
+    }
+    return { a: st.freq, b: st.name, t: s.disc >= 0 ? 'CD IN' : '' };
   }
 
   // The luggage space under the front lid is reachable standing at the nose with the lid up.
@@ -463,15 +583,21 @@ export class Car {
     const e = this.emissive;
     e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
     // tail lamps and brake lights share the bulb housings
-    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
-    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : 0) : 0;
+    // hazards: both tail lamps blinking
+    const blink = this.hazards && powered && performance.now() % 800 < 400;
+    if (this.hazards && powered && blink !== this._blinkWas) {
+      this._blinkWas = blink;
+      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.25 : 0.18 });
+    }
+    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : blink ? 3.0 : on ? 1.1 : 0) : 0;
+    this.tailLight.intensity = powered ? (braking ? 2.2 : blink ? 2.0 : on ? 0.7 : 0) : 0;
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
     e.gauge.emissiveIntensity = ign ? (on ? 0.9 : 0.35) : 0.04;
     e.needle.emissiveIntensity = ign && on ? 0.9 : 0;
     const running = this.dyn.engine.running;
-    const charging = running && this.isInstalled('fanbelt') && this.fanbeltCondition > 0.02;
+    const charging = this.charging;
     if (e.lamps.gen) e.lamps.gen.emissiveIntensity = ign && !charging ? 2.4 : 0;
     if (e.lamps.oil) e.lamps.oil.emissiveIntensity = ign && (!running || this.oil < 0.6) ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
@@ -511,21 +637,59 @@ export class Car {
   crank(dt) {
     if (!this.ignition || this.dyn.engine.running) return;
     if (!this.isInstalled('battery') || this.battery < 0.05) return;
+    // no starter (or a burnt-out one): the solenoid clicks once and nothing turns
+    const st = this.partCond('starter');
+    if (st < 0.02) {
+      if (this.cranking === 0) {
+        this.cranking = 1e-3;
+        this.game.audio && this.game.audio.play('click');
+        const what = this.isInstalled('starter') ? 'The starter is dead' : 'No starter motor';
+        this.game.hud && this.game.hud.toast(this.type.automaticOnly ? what : what + ' · roll it: key on, a gear in, get it moving');
+      }
+      return;
+    }
     this.cranking += dt;
     this.battery = Math.max(0, this.battery - dt * 0.012);
-    this.dyn.engine.omega = Math.max(this.dyn.engine.omega, (260 * 2 * Math.PI) / 60);
-    const canRun = this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03;
-    const chance = this.engineCondition * (this.battery > 0.25 ? 1 : 0.4);
-    if (canRun && this.cranking > 0.6 + (1 - chance) * 1.6) {
+    // a tired starter turns it over slowly, and wears a little with every go
+    this.dyn.engine.omega = Math.max(this.dyn.engine.omega, ((150 + 110 * Math.min(1, st * 1.5)) * 2 * Math.PI) / 60);
+    if (this.parts.starter) this.parts.starter.condition = Math.max(0, st - dt * 0.0003);
+    const chance = this.engineCondition * (this.battery > 0.25 ? 1 : 0.4) * (0.35 + 0.65 * this.partCond('sparkplugs')) * (0.5 + 0.5 * Math.min(1, st * 2));
+    // turning over and over without catching: say what it sounds like is missing
+    if (this.cranking <= dt * 1.5) this._crankHint = false;
+    if (!this._crankHint && this.cranking > 2.6 && !this.canRun()) {
+      this._crankHint = true;
+      const why =
+        this.engineCondition <= 0.03
+          ? 'The engine is seized'
+          : this.partCond('sparkplugs') <= 0.02
+            ? 'It turns over but there is no spark'
+            : !this.isInstalled('fueltank') || this.fuel <= 0.05
+              ? 'It turns over but never catches: no fuel'
+              : this.oil <= 0.1
+                ? 'The oil lamp stays lit: the engine is dry'
+                : null;
+      if (why) this.game.hud && this.game.hud.toast(why);
+    }
+    if (this.canRun() && this.cranking > 0.6 + (1 - chance) * 1.6) {
       this.dyn.startEngine();
       this.cranking = 0;
       this.game.audio && this.game.audio.play('engineStart');
     }
   }
 
+  // Fuel, oil, a sound enough engine and a spark: will it fire?
+  canRun() {
+    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
+  }
+
   // ---------------------------------------------------------------- simulation
   update(dt, controls) {
     const d = this.dyn;
+    if (this.pendingTears) this.processTears();
+    // the filler flap opens while a can is held to it
+    const ia = this.game.interaction;
+    const filling = ia && ia.target && ia.target.kind === 'hotspot' && ia.target.hotspot.id === 'fuel' && ia.held && ia.held.def && ia.held.def.liquid && this === this.game.car;
+    this.updateFuelFlap(dt, !!filling);
     // hinge animation
     let collidersDirty = false;
     if (!this.hingedIds) this.hingedIds = Object.keys(this.model.parts).filter((id) => this.model.parts[id].hinge);
@@ -552,11 +716,18 @@ export class Car {
     // on its side or roof the engine starves of oil and stalls, and the tank breather weeps fuel
     const upY = 1 - 2 * (this.root.quaternion.x ** 2 + this.root.quaternion.z ** 2);
     this.inverted = upY < 0.3 ? (this.inverted || 0) + dt : 0;
+    if (this.inverted > 0 && d.engine.running && this.isInstalled('engine')) {
+      // the pump sucks air: running dry scores the bearings until it stalls
+      this.engineCondition = Math.max(0, this.engineCondition - dt * 0.012 * (this.game.difficulty ? this.game.difficulty.wear : 1));
+    }
     if (this.inverted > 2.5 && d.engine.running) {
       d.engine.running = false;
       d.onStall && d.onStall();
     }
     if (this.inverted > 0 && this.isInstalled('fueltank')) this.fuel = Math.max(0, this.fuel - dt * 0.03);
+    // oil seeps past the breather and the seals, battery acid out of the vents
+    if (this.inverted > 0.5 && this.isInstalled('engine')) this.oil = Math.max(0, this.oil - dt * 0.012);
+    if (this.inverted > 0.5 && this.isInstalled('battery')) this.parts.battery.condition = Math.max(0, this.parts.battery.condition - dt * 0.002);
 
     // controls -> dynamics
     const running = d.engine.running;
@@ -592,11 +763,27 @@ export class Car {
     d.controls.handbrake = c.handbrake || (!hasDriver && !running && slow ? 0.6 : 0);
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
     const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
-    d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1);
-    if (running && (!fuelOk || this.oil <= 0.02 || this.engineCondition <= 0.01 || !this.ignition)) {
+    const plugs = this.partCond('sparkplugs');
+    d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1) * (0.7 + 0.3 * plugs);
+    // fouled plugs: the engine stumbles, cylinders dropping out for a beat
+    if (running && plugs < 0.3 && Math.random() < dt * 6 * (0.3 - plugs) / 0.3) d.powerScale *= 0.35;
+    // no spark: plugs gone, or the battery flat with nothing charging it
+    const spark = plugs > 0.02 && (this.charging || (this.isInstalled('battery') && this.battery > 0.004));
+    if (running && (!fuelOk || this.oil <= 0.02 || this.engineCondition <= 0.01 || !this.ignition || !spark)) {
       d.stopEngine();
       this.game.audio && this.game.audio.play('stall');
     }
+    // rolling start: key on, a gear in and the car moving turns the engine over through the
+    // wheels (no good for a real automatic; the self-shifting manual is fine)
+    if (!running && this.ignition && hasDriver && !this.type.automaticOnly && d.gear >= 2 && Math.abs(d.forwardSpeed) > 2.2 && this.canRun()) {
+      this.rollStart = (this.rollStart || 0) + dt;
+      const chance = this.engineCondition * (0.35 + 0.65 * plugs);
+      if (this.rollStart > 0.5 + (1 - chance) * 1.5) {
+        d.startEngine();
+        this.rollStart = 0;
+        this.game.audio && this.game.audio.play('engineStart');
+      }
+    } else this.rollStart = 0;
     // grip from weather
     const env = this.game.env;
     d.wet = env ? env.w.rain * 0.9 : 0;
@@ -620,7 +807,11 @@ export class Car {
         // cuts in when hot and the battery can run it)
         // a water-cooled engine swapped into a car without a radiator slot brought its own
         const coolFrac = !this.parts.radiator ? 1 : this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
-        const pump = belt > 0.02 ? 1 : 0.15;
+        // the pump turns with the belt; a worn one moves less and weeps
+        const wp = this.partCond('waterpump');
+        const pump = belt > 0.02 && wp > 0.02 ? 0.3 + 0.7 * Math.min(1, wp * 1.4) : 0.15;
+        if (wp < 0.3 && this.parts.waterpump) this.coolant = Math.max(0, this.coolant - dt * 0.0006 * (0.3 - wp) / 0.3);
+        if (this.parts.waterpump) this.parts.waterpump.condition = Math.max(0, (this.parts.waterpump.condition ?? 1) - dt * 0.0000012 * diff.wear);
         const fanOn = this.engineTemp > 96 && this.isInstalled('battery') && this.battery > 0.05;
         coolingCap = pump * Math.pow(coolFrac, 0.6) * (0.6 + Math.min(1, d.speed / 20) * 0.45 + (fanOn ? 0.4 : 0)) * (0.7 + 0.3 * oilFrac);
         // boiling over loses coolant
@@ -647,9 +838,19 @@ export class Car {
       if (this.oil < 0.8) wear += 0.0002 * (0.8 - this.oil) * diff.wear;
       if (!this.isInstalled('airfilter')) wear += 0.000004 * (1 + (env ? env.w.dust * 20 : 0));
       if (env && env.w.dust > 0.3 && this.isInstalled('airfilter')) wear += 0.0000015 * env.w.dust;
+      // a clogged oil filter lets grit through; without one the oil pumps out of the housing
+      const filt = this.partCond('oilfilter');
+      wear += 0.0000025 * (1 - filt) * diff.wear;
+      if (this.parts.oilfilter) {
+        if (filt <= 0) this.oil = Math.max(0, this.oil - dt * 0.004);
+        else this.parts.oilfilter.condition = Math.max(0, filt - dt * 0.000003 * diff.wear);
+      }
+      if (this.parts.sparkplugs && plugs > 0) this.parts.sparkplugs.condition = Math.max(0, plugs - dt * 0.000004 * diff.wear * (rpm / 3000));
       this.engineCondition = Math.max(0, this.engineCondition - wear * dt);
-      // the generator charges the battery while the belt turns it
-      if (this.isInstalled('battery') && belt > 0.02) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
+      // the alternator charges the battery while the belt turns it
+      const alt = this.partCond('alternator');
+      if (this.isInstalled('battery') && this.charging) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3) * (0.4 + 0.6 * alt));
+      if (this.parts.alternator && alt > 0) this.parts.alternator.condition = Math.max(0, alt - dt * 0.0000015 * diff.wear);
       // a sport box pops and crackles on the overrun: lift off high in the revs
       if (isSport(this)) {
         const thr = d.controls.throttle;
@@ -670,20 +871,25 @@ export class Car {
         }
       }
       // misfires / backfires at low condition
-      if (this.engineCondition < 0.35 && Math.random() < dt * (0.35 - this.engineCondition) * 3) {
+      const worst = Math.min(this.engineCondition, plugs);
+      if (worst < 0.35 && Math.random() < dt * (0.35 - worst) * 3) {
         this.game.effects && this.game.effects.backfire(this);
         this.game.audio && this.game.audio.play('backfire', { at: this.root.position });
       }
     } else {
       this.engineTemp += (22 + (env ? env.daylight * 14 : 0) - this.engineTemp) * Math.min(1, dt * 0.004);
     }
+    // the water pump's place left open: the coolant runs out on the ground
+    if (this.parts.waterpump && !this.isInstalled('waterpump') && this.coolant > 0) this.coolant = Math.max(0, this.coolant - dt * 0.02);
     // electrical drain
     if (this.isInstalled('battery')) {
       let drain = 0;
       if (this.lightsOn) drain += this.lightsOn === 2 ? 0.00006 : 0.00004;
       if (this.radioOn) drain += 0.000012;
       if (this.ignition) drain += 0.000008;
-      if (!running) this.battery = Math.max(0, this.battery - drain * dt);
+      // running with nothing charging: the ignition and pumps live off the battery
+      if (running && !this.charging) drain += 0.00012;
+      if (!running || !this.charging) this.battery = Math.max(0, this.battery - drain * dt);
     }
     // smoke / fire from a failing engine
     this.smoke = running ? clamp((0.3 - this.engineCondition) * 3, 0, 1) + clamp((this.engineTemp - 112) / 20, 0, 1) : clamp((this.engineTemp - 110) / 20, 0, 1) * 0.6;
@@ -755,10 +961,85 @@ export class Car {
       hit(this.type.crash.rear, (this.isInstalled('bumper_R') ? 0.5 : 1) * plateArmour(this, 'rear'));
       for (const h of ['taillight_L', 'taillight_R']) if (this.isInstalled(h)) this.parts[h].condition = Math.max(0, this.parts[h].condition - dmg * 2);
     }
-    this.lastImpact = { severity, time: performance.now() };
+    this.panelDamage(dirLocal, severity, dmg);
+    this.lastImpact = { severity, dirLocal, time: performance.now() };
     this.game.audio && this.game.audio.play(severity > 6 ? 'crashHeavy' : 'crash', { at: this.root.position, volume: clamp(severity / 10, 0.2, 1) });
     this.game.effects && this.game.effects.impactDebris(this, imp, severity);
     this.game.onCarImpact && this.game.onCarImpact(severity);
+  }
+
+  // The outside parts facing the obstacle take the blow. A hard one rips the loosest of them off
+  // (queued: bodies cannot change inside the physics step) and a side or roof hit can spring a door.
+  panelDamage(dirLocal, severity, dmg) {
+    const n = dirLocal.clone().negate(); // towards what was hit, car space
+    const bb = this.model.parts.body ? this.model.parts.body.bbox : this.model.parts.chassis.bbox;
+    const cen = bb.getCenter(V(0, 0, 0));
+    const half = bb.getSize(V(0, 0, 0)).multiplyScalar(0.5).max(V(0.3, 0.3, 0.3));
+    const facing = [];
+    for (const id of Object.keys(TEARABLE)) {
+      if (!this.isInstalled(id) || !this.model.parts[id] || !this.model.parts[id].bbox) continue;
+      // in body-normalised coordinates, so the corner of a long car still faces the front
+      const c = this.model.parts[id].bbox.getCenter(V(0, 0, 0)).sub(cen).divide(half);
+      const f = c.normalize().dot(n);
+      if (f > 0.35) facing.push({ id, f });
+    }
+    for (const c of facing) this.parts[c.id].condition = Math.max(0, this.parts[c.id].condition - dmg * c.f * 1.6);
+    // the roof caves: the body takes it, the glass and lights with it
+    if (n.y > 0.5 && this.isInstalled('body')) this.parts.body.condition = Math.max(0, this.parts.body.condition - dmg * 1.2);
+    // locks burst on a side or roof hit
+    if (severity > 6 && (Math.abs(n.x) > 0.5 || n.y > 0.5))
+      for (const id of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) {
+        const p = this.model.parts[id];
+        if (!p || !p.hinge || !this.isInstalled(id) || p.openT > 0.1) continue;
+        if (Math.random() < clamp((severity - 6) / 14, 0, 0.45)) p.targetOpen = 1;
+      }
+    if (severity < 7) return;
+    facing.sort((a, b) => b.f - a.f);
+    let budget = severity > 15 ? 3 : severity > 11 ? 2 : 1;
+    const tear = (this.pendingTears = this.pendingTears || []);
+    for (const c of facing) {
+      if (budget <= 0) break;
+      const need = TEARABLE[c.id];
+      if (severity < need || tear.some((t) => t.id === c.id)) continue;
+      // worn, already battered parts come away first
+      const loose = 1 - this.parts[c.id].condition;
+      const chance = clamp((severity - need) / 7 + loose * 0.35, 0, 0.85) * c.f;
+      if (Math.random() > chance) continue;
+      tear.push({ id: c.id, n: n.clone(), severity });
+      budget--;
+    }
+  }
+
+  // Rip off the parts the last crash broke loose: whatever hangs on them goes with them, and they
+  // fly on with the speed the car had before it was stopped.
+  processTears() {
+    const list = this.pendingTears;
+    this.pendingTears = null;
+    if (!list || !this.game.items) return;
+    const torn = [];
+    const q = this.root.quaternion;
+    const rip = (id, t) => {
+      if (!this.isInstalled(id) || this.PARTS[id].fixed) return;
+      // things bolted to it first (a fender's lamp)
+      for (const d of dependentsOf(this.PARTS, id)) if (this.isInstalled(d) && !this.PARTS[d].fixed) {
+        if (TEARABLE[d] === undefined) return; // held on by something that does not tear
+        rip(d, t);
+      }
+      const away = t.n.clone().negate().applyQuaternion(q); // the velocity change, world
+      const kick = away.multiplyScalar(-Math.min(t.severity, 18) * 0.55).add(V((Math.random() - 0.5) * 2, 1.2 + Math.random() * 1.8, (Math.random() - 0.5) * 2));
+      const it = this.detachPart(id, kick);
+      // keep clear of the hull it just left for a moment, or it would shove the car
+      if (it && it.collider) {
+        it.collider.setCollisionGroups(groups(G.ITEM, G.WORLD | G.ITEM | G.NPC | G.DEBRIS));
+        const col = it.collider;
+        setTimeout(() => {
+          if (it.collider === col) col.setCollisionGroups(GROUPS.item);
+        }, 700);
+      }
+      torn.push(this.PARTS[id].label.toLowerCase());
+    };
+    for (const t of list) rip(t.id, t);
+    if (torn.length) this.game.hud && this.game.hud.toast(`Torn off: ${torn.join(', ')}`, 'warn');
   }
 
   // Copy physics state to the visual model.

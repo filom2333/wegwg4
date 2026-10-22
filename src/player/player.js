@@ -78,6 +78,7 @@ export class Player {
     this.seat = seat;
     this.car = car;
     car.owned = true;
+    this.head = null;
     this.seatYaw = 0;
     this.seatPitch = -0.08;
     this.collider.setEnabled(false);
@@ -282,6 +283,11 @@ export class Player {
   carContactWith(car, dt) {
     const g = this.game;
     if (!car || !car.dyn) return;
+    // a parked or creeping car is solid to the character controller already: walking up to it,
+    // leaning on it or running into it never pushes or hurts
+    const v = car.dyn.body.linvel();
+    const carSpeed = Math.hypot(v.x, v.z);
+    if (carSpeed < 1.2) return;
     const pos = this.position;
     const cp = car.root.position;
     const dx = pos.x - cp.x,
@@ -296,13 +302,14 @@ export class Player {
     if (Math.abs(l.x) > hx || Math.abs(l.z) > hz || l.y < -0.4 || l.y > 1.9) return;
     // standing on the roof / hood: let the controller handle it
     if (pos.y > car.root.position.y + 1.25) return;
-    const v = car.dyn.body.linvel();
-    const vRel = Math.hypot(v.x - this.velocity.x, v.z - this.velocity.z);
+    // how fast the car is coming at the player (its own speed toward them, not the player's)
+    const toP = V(dx, 0, dz).normalize();
+    const vRel = Math.max(0, v.x * toP.x + v.z * toP.z);
     // push out along the shallowest side
     const px = hx - Math.abs(l.x),
       pz = hz - Math.abs(l.z);
     // a moving car shoves people aside (never carries them on the bumper)
-    const moving = Math.hypot(v.x, v.z) > 1;
+    const moving = carSpeed > 1;
     const out = px < pz || moving ? V((Math.sign(l.x) || 1) * (px + 0.02), 0, 0) : V(0, 0, Math.sign(l.z) * (pz + 0.02));
     out.applyQuaternion(car.root.quaternion);
     const np = { x: pos.x + out.x, y: pos.y, z: pos.z + out.z };
@@ -344,6 +351,68 @@ export class Player {
     }
   }
 
+  // Head of a seated occupant: it lags the car's accelerations on a soft, underdamped spring
+  // (pressed back pulling away, thrown forward under braking, leaning out of bends, dropping over
+  // a crest) and picks the road up through the seat: rough surfaces buzz, potholes and kerbs jolt,
+  // a crash snaps it. Offsets are in car space (+x left, +y up, +z forward).
+  seatHead(dt, car) {
+    const h = this.head || (this.head = { o: V(0, 0, 0), v: V(0, 0, 0), acc: V(0, 0, 0), lastV: null, t: 0, shake: V(0, 0, 0), imp: 0 });
+    const lv = car.dyn.body.linvel();
+    if (!h.lastV || dt <= 0 || h.car !== car) {
+      h.lastV = V(lv.x, lv.y, lv.z);
+      h.car = car;
+      h.o.set(0, 0, 0);
+      h.v.set(0, 0, 0);
+      h.acc.set(0, 0, 0);
+      return h;
+    }
+    const a = V(lv.x - h.lastV.x, lv.y - h.lastV.y, lv.z - h.lastV.z).divideScalar(Math.max(dt, 1 / 240));
+    h.lastV.set(lv.x, lv.y, lv.z);
+    h.acc.lerp(a, Math.min(1, dt * 14));
+    const al = h.acc.clone().applyQuaternion(car.root.quaternion.clone().invert());
+    const amt = settings.data.headBob ? 1 : 0.4;
+    const target = V(clamp(-al.x * 0.0085, -0.07, 0.07), clamp(-al.y * 0.0045, -0.045, 0.03), clamp(-al.z * 0.0075, -0.06, 0.065)).multiplyScalar(amt);
+    // a crash throws the head against the way the car was stopped
+    const li = car.lastImpact;
+    if (li && li.time !== h.imp) {
+      h.imp = li.time;
+      if (li.dirLocal && li.severity > 2.5) h.v.addScaledVector(li.dirLocal, -Math.min(li.severity, 16) * 0.07 * amt);
+    }
+    // road input through the suspension: how fast the wheels were pushed up this step
+    let rough = 0,
+      jolt = 0,
+      n = 0;
+    for (const w of car.dyn.wheels) {
+      if (!w.installed) continue;
+      n++;
+      if (!w.contact) continue;
+      rough += car.dyn.surfaces(w.surface).noise;
+      jolt += Math.max(0, w.compression - (w.prevCompression || 0));
+    }
+    rough = n ? rough / n : 0;
+    if (jolt > 0.004) h.v.y -= Math.min(0.5, jolt * 9) * amt;
+    // underdamped spring, sub-stepped for stability at low frame rates
+    const steps = Math.min(8, Math.ceil(dt * 240));
+    const sdt = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      const fx = (target.x - h.o.x) * 150 - h.v.x * 10;
+      const fy = (target.y - h.o.y) * 220 - h.v.y * 13;
+      const fz = (target.z - h.o.z) * 150 - h.v.z * 10;
+      h.v.x += fx * sdt;
+      h.v.y += fy * sdt;
+      h.v.z += fz * sdt;
+      h.o.addScaledVector(h.v, sdt);
+    }
+    if (h.o.length() > 0.13) h.o.setLength(0.13);
+    // fine buzz of the surface, stronger with speed (radians, applied as tilt)
+    h.t += dt;
+    const spd = Math.min(1, car.dyn.speed / 22);
+    const buzz = rough * spd * 0.004 * amt;
+    const t = h.t;
+    h.shake.set((Math.sin(t * 61.3) + Math.sin(t * 37.1 + 1.3)) * buzz, (Math.sin(t * 53.7 + 0.4) + Math.sin(t * 29.3 + 2.1)) * buzz, 0);
+    return h;
+  }
+
   updateCamera(dt) {
     // `eye` is the first-person view used for aiming, reach and the viewmodel; the rendered
     // camera either copies it or orbits behind the body (third person).
@@ -353,11 +422,16 @@ export class Player {
     if (this.seat && this.car) {
       const car = this.car;
       const seatPos = car.seatWorld(this.seat);
-      cam.position.copy(seatPos);
       const q = car.root.quaternion.clone();
+      // RMB: lean in and look closer (read the gauges, the road far ahead)
+      const zoomWant = input.mouseDown(2) && !(g.interaction && g.interaction.held) ? 1 : 0;
+      this.seatZoom = lerp(this.seatZoom || 0, zoomWant, Math.min(1, dt * 7));
+      const hd = this.seatHead(dt, car);
+      cam.position.copy(seatPos).add(hd.o.clone().applyQuaternion(q));
       const e = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.seatPitch, this.seatYaw + Math.PI, 0, 'YXZ'));
-      // car faces +z; camera looks down -z, so add PI
-      cam.quaternion.copy(q).multiply(e);
+      // car faces +z; camera looks down -z, so add PI. The head tilts with its sway.
+      const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(hd.o.z * 0.9 + hd.shake.y * 0.6, 0, -hd.o.x * 1.1 + hd.shake.x * 0.8, 'XYZ'));
+      cam.quaternion.copy(q).multiply(tilt).multiply(e);
       // look back key
       if (input.isDown('lookBack')) cam.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.05, 0, 0, 'YXZ')));
     } else if (this.lying && !this.dead) {
@@ -487,7 +561,9 @@ export class Player {
     if (car) {
       // a closed cabin keeps the wind off; a warm engine runs the heater
       air = air + 6;
-      if (car.dyn.engine.running && car.engineTemp > 55) air = Math.max(air, 22);
+      // the heater (a switch on cars that have one) blows warm once the engine is warm
+      const hasSwitch = car.type.HOTSPOTS && car.type.HOTSPOTS.some((h) => h.id === 'heater');
+      if (car.dyn.engine.running && car.engineTemp > 55 && (car.heater || !hasSwitch)) air = Math.max(air, 22);
     } else if (this.indoors) air = air + 7;
     // a tent keeps the wind and rain off; a made bed has its own blankets
     const lying = this.lying && this.lying.kind;

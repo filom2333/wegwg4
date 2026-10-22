@@ -47,6 +47,7 @@ const GradeShader = {
     uOvercast: { value: 0 },
     uHeat: { value: 0 },
     uNear: { value: 0.1 },
+    uRevZ: { value: 0 },
     uFar: { value: 10000 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -55,17 +56,19 @@ const GradeShader = {
     uniform vec2 uSunUv; uniform float uSunVis; uniform vec3 uSunCol; uniform float uShafts;
     uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uDamage; uniform float uFade; uniform float uGrit; uniform float uFilm; uniform float uBars;
     uniform float uWarm; uniform float uNight; uniform float uOvercast;
-    uniform float uHeat; uniform float uNear; uniform float uFar;
+    uniform float uHeat; uniform float uNear; uniform float uFar; uniform float uRevZ;
     varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime * 7.13) * 43758.5453); }
     // open sky (nothing drawn in front of the cleared far plane)
-    float sky(vec2 uv){ return step(0.999999, texture2D(tDepth, clamp(uv, 0.001, 0.999)).r); }
+    // scene depth as the usual 0 (near) .. 1 (far), whichever way the buffer runs
+    float depthAt(vec2 uv){ float d = texture2D(tDepth, uv).r; return uRevZ > 0.5 ? 1.0 - d : d; }
+    float sky(vec2 uv){ return step(0.999999, depthAt(clamp(uv, 0.001, 0.999))); }
     void main(){
       // heat shimmer: on a hot clear day the air over the ground wobbles from ~100 m out to the
       // horizon (where the far road turns to a mirage of the sky)
       vec2 uv = vUv;
       if (uHeat > 0.001) {
-        float dz = texture2D(tDepth, vUv).r;
+        float dz = depthAt(vUv);
         float z = uNear * uFar / (uFar - dz * (uFar - uNear));
         float band = smoothstep(90.0, 320.0, z) * (1.0 - smoothstep(2600.0, 5200.0, z)) * step(dz, 0.999999);
         float wob = sin(vUv.y * 950.0 - uTime * 7.0 + sin(vUv.x * 55.0 + uTime * 1.3) * 3.0) * 0.55 + sin(vUv.y * 1830.0 - uTime * 11.0 + vUv.x * 37.0) * 0.45;
@@ -177,7 +180,10 @@ class DepthCapturePass {
 export class Renderer {
   constructor(canvas, quality = 'high') {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    // reversed depth (float, far = 0): an even precision from the near plane to the horizon, so
+    // overlapping surfaces far off no longer flicker (24-bit standard depth gave ~10 cm steps at 300 m)
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, reversedDepthBuffer: true });
+    this.revZ = !!(this.renderer.state.buffers.depth.getReversed && this.renderer.state.buffers.depth.getReversed());
     // checking every program after linking waits for each compile; release builds let the driver
     // compile in parallel
     this.renderer.debug.checkShaderErrors = !!import.meta.env.DEV;
@@ -253,11 +259,12 @@ export class Renderer {
     RENDER_CAPS.aniso = Math.min(16, r.capabilities.getMaxAnisotropy());
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: msaa });
     rt.depthTexture = new THREE.DepthTexture(size.x, size.y);
-    rt.depthTexture.type = THREE.UnsignedIntType;
+    rt.depthTexture.type = this.revZ ? THREE.FloatType : THREE.UnsignedIntType;
     this.composer = new EffectComposer(r, rt);
     this.renderPass = new RenderPass(scene, this.camera);
     this.composer.addPass(this.renderPass);
     this.grade = new ShaderPass(GradeShader);
+    this.grade.uniforms.uRevZ.value = this.revZ ? 1 : 0;
     this.composer.addPass(new DepthCapturePass(this.grade.uniforms.tDepth));
     this.outline = new SelectionOutlinePass(this.camera);
     this.outline.edgeStrength = 2.2;
@@ -267,8 +274,19 @@ export class Renderer {
     // threshold well above sunlit diffuse surfaces (snow, salt and white sand are ~1.5 in the
     // linear HDR buffer): only lamps, the sun's glint and fire bloom
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.4, 0.5, 2.2);
+    // the half-float scene buffer tops out at 65504: a sun glint or a hot specular past that is
+    // Inf, and one Inf (or a NaN from any shader) blurred through the bloom chain turns into big
+    // black blocks across the screen. Clean the input of the bloom and of the tone mapping.
+    // (a NaN or an Inf fails the comparison; written to compile as GLSL 1 and 3 alike)
+    const SANE = (v) => `if (!(abs(${v}.r + ${v}.g + ${v}.b) < 1e30)) ${v} = vec4(0.0, 0.0, 0.0, 1.0); ${v}.rgb = clamp(${v}.rgb, 0.0, 64.0);`;
+    const hp = this.bloom.materialHighPassFilter;
+    hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = texture2D( tDiffuse, vUv ); ' + SANE('texel'));
+    hp.needsUpdate = true;
     this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
+    const out = new OutputPass();
+    out.material.fragmentShader = out.material.fragmentShader.replace('gl_FragColor = texture2D( tDiffuse, vUv );', 'gl_FragColor = texture2D( tDiffuse, vUv ); ' + SANE('gl_FragColor'));
+    out.material.needsUpdate = true;
+    this.composer.addPass(out);
     // antialiasing before the grade, so the sharpening works on the smoothed edges
     this.fxaa = new ShaderPass(FXAAShader);
     this.composer.addPass(this.fxaa);

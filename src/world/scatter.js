@@ -85,6 +85,8 @@ function splitByReach(data) {
 export class Scatter {
   constructor(game, tex, treeTex) {
     this.game = game;
+    this.tex = tex;
+    this.treeTex = treeTex;
     this.gen = game.gen;
     this.group = new THREE.Group();
     this.group.name = 'scatter';
@@ -122,6 +124,10 @@ export class Scatter {
   }
 
   geometryFor(def, v, lod) {
+    if (def.glb) {
+      const g = this.game.props && this.game.props.geometryOf(def.glb + (v + 1));
+      if (g) return g;
+    }
     const seed = 1000 + v * 37 + def.id.length * 101 + SPECIES.indexOf(def) * 7;
     switch (def.id) {
       case 'grass':
@@ -179,6 +185,10 @@ export class Scatter {
   }
 
   materialFor(def, v = 0) {
+    if (def.glb) {
+      const m = this.game.props && this.game.props.materialOf(def.glb + (v + 1));
+      if (m) return m;
+    }
     if (def.id === 'birch') return v === 2 ? this.treeMats.birchAutumn : this.treeMats.birch;
     if (this.treeMats[def.id]) return this.treeMats[def.id];
     if (def.rock) return def.id === 'snowrock' ? this.snowRockMat : this.rockMat;
@@ -391,8 +401,9 @@ export class Scatter {
             m4.compose(pv.set(tx, ty, tz), q, sv.setScalar(s));
             m4.toArray(arr, off);
             const bi = Math.floor(aux);
-            const t = ROCK_TINT[BIOME_LIST[bi]] || ROCK_TINT.scrub;
-            const vv = 0.9 + (aux - bi) * 0.4;
+            // real models carry their own colour: only a little variation
+            const t = def.glb ? [1, 1, 1] : ROCK_TINT[BIOME_LIST[bi]] || ROCK_TINT.scrub;
+            const vv = def.glb ? 0.85 + (aux - bi) * 0.3 : 0.9 + (aux - bi) * 0.4;
             col.setRGB(t[0] * vv, t[1] * vv, t[2] * vv);
             im.setColorAt(idx, col);
           } else {

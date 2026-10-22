@@ -425,36 +425,172 @@ trailer, entities, item handling, headlights, survival, music, FPS):
 
 ## 9. Session status (latest)
 
-### Done this session (all committed)
-- Music: all 6 albums reworked (src/audio/music/arrange.js, engine.js).
-- FPS and freeze fixes: light pool with fixed shader keys, shader warm-up, physics interpolation, deferred POI hooks, fewer allocations.
-- Sound atmosphere (src/audio/soundscape.js): layered biome ambience, creatures, small car and body sounds, room reverb.
-- Weather: sandstorm wall (haboob), fog and morning mist.
-- Car jack (src/vehicle/jack.js) and winch bar with cable (src/vehicle/winch.js); wheel-well liners on the Beetle.
-- Tuning (src/vehicle/tuning.js):
-  - twin carbs kit (wrench removes it);
-  - sport muffler (overrun pops and flames);
-  - mud tyres (grip per surface);
-  - tunes are stored on the part and its item state, and saved.
-- Tent (src/world/tents.js): pitch, crawl in, pack up with R; sleeping in beds (POI bed loot spots); sleep quality differs by place; new sleep screen.
-- Road atlas (M) at src/story/atlas.js and ui.showAtlas: hill-shaded strip map with notes and photos.
-- Photo mode (P) at src/ui/photoMode.js: film looks, bars, time of day; saves a PNG and a thumbnail to the atlas.
+### The user's big voice request (Russian, transcribed) — what it asked for
+Bugs (flicker, black wheel liners, car contact damage, black screen in some directions, character
+shader flicker, half-open doors); replace the Beetle with 2 normal cars with interiors and many
+engine-bay parts; side headlights; colours; start parts placed logically; hands follow held
+items; better player model; bigger, less "cardboard" rooms; 25-40 real textured models that fit
+the style (verified loading, fallback); roads with curves, forks, big hills, obstacles with
+detours; snow that feels like snow, lightning near the car, a night sky with twinkling stars and
+not-too-dark nights, birch forests ("Yakutia, birch"); better distant scenery and menu; car
+physics that is not cardboard, rollovers with consequences (car destruction: plan only); fewer
+useless toasts, better overlays, a reworked CD menu; harder on all difficulties, fewer intact
+cars; full car interior interaction (fuel caps, pouring, readable speedo, radio channels,
+working buttons, free look); events every ~5 km drawing you into houses. Priority stated:
+models, hands, physics, LOGIC.
+The user got angry at modern-looking decor models ("they don't fit the style") and at houses
+floating above the ground; wants some houses much bigger and some objects interactive.
 
-### In progress
-- src/world/buildings/tall.js is written but NOT wired in yet. It contains buildStoreyed (2–3 floors with stairs), buildLookout (fire tower), buildChurch (bell tower and spire), buildSilo, buildCabin, buildSawmill and storeyStyle.
-- POI types farm, cabin, church, sawmill, lodge and lookout currently have no layout, so they fall back to LAYOUTS.house.
-- Next steps:
-  1. Add layouts in src/world/poiLayouts.js:
-     - lookout: buildLookout;
-     - church: buildChurch;
-     - cabin: buildCabin;
-     - sawmill: buildSawmill;
-     - lodge: buildStoreyed with storeyStyle 'lodge', 2 floors, porch;
-     - farm: buildStoreyed 'farm' plus ST.buildBarn, buildSilo and ST.buildWindmill;
-     - houses: sometimes buildStoreyed 'town' with 2–3 floors.
-  2. Build and fix runtime errors (it runs in the POI worker too, so use only archMaterials materials).
-  3. Check visually with tools/play.mjs, especially that the stair ramp colliders can be climbed (rotX sign: ascending toward local +z uses -slope).
+### Network for models
+Only registry.npmjs.org and raw.githubusercontent.com are reachable (polyhaven, sketchfab,
+kenney, ambientcg, jsdelivr, unpkg, github web/API are blocked). npm was searched thoroughly
+(~380 queries): few realistic models exist there. Used: the W203 car (threed-garden, CC-BY),
+ez-tree mossy rocks (MIT), a grass carp (@so-chart/fish), a tyre (3d-model-testingpublic).
+NOT used on purpose: the Ant City Unity kit (no licence, looks like a repackaged paid Asset
+Store pack) and the W210 (not split into parts, CC-BY-NC-SA). If the user opens the network
+(environment → Network access) or uploads packs into `assets_incoming/`, process them with the
+scratchpad pipeline (gltf-transform: prune/dedup/weld/simplify/webp; see section 8 notes) and
+add them to `src/world/props.js` PROPS.
 
-### Still to do
-- Extra ideas and small tricks (task #28).
-- Update this HANDOFF in detail, then refresh build/ (`rm -rf build && cp -r dist build`).
+### Done this session (all committed and pushed, newest last)
+- Bug fixes: car contact damage only from a moving car, flicker (reversed-Z depth), NaN black
+  blocks (sanitised bloom/output), doors never half open, start parts in logical rows, start car
+  colour, quiet text toasts.
+- Real props (`src/world/props.js`, PropLibrary): verified loading, fallback colour, real-size
+  normalising, colliders; tall buildings wired in; concrete footings under buildings standing
+  over a slope (`POIManager.addFootings`); bigger houses with 3 m ceilings.
+- Hands follow held items (reach clamp to 0.7 m from the shoulder, open hand when far).
+- Car physics: crashes tear off the parts facing the obstacle (`Car.panelDamage` /
+  `processTears`, thresholds in `TEARABLE`), parts fly on as items; side/roof hits burst doors;
+  roof hits dent the body; upside down: oil starvation wear, oil and acid leak. `Car.detachPart`
+  is shared with the player's remove. Seated head motion: spring-damper on the car's
+  accelerations, surface buzz, pothole jolts, crash snap (`Player.seatHead`).
+- Lures every ~5 km (`src/story/lures.js`): a house/farm/station calls you in with smoke from a
+  fire in a drum (red flare at night, with light), a hand-painted sign at the turn-off, or a CB
+  call (subtitle + atlas pin). Cache inside (fuel, battery+belt, food, medicine); calls for help
+  are sometimes ambushes (hostile vagrants via `NPCManager.onPoiLoaded`).
+- Harder: found cars rarer (9% of later host places on Normal) and broken (3-5 missing parts,
+  flat tyres, dead battery, empty tank; half the missing parts lie inside the same place), loot
+  x0.7, all difficulties tougher (DIFFICULTY in game.js).
+- Roads (`worldGen.track*`, `src/world/obstacles.js`, `terrain.buildTrack`): dirt side tracks
+  every ~3.4 km swinging 130-320 m out over the land; ~60% are detours around a closed highway
+  (fallen spruces/birches, boulder wall, jack-knifed trailer with crashed cars; striped
+  barricades and cones that fly when hit; DETOUR/ROAD CLOSED boards; OLD ROAD fingerposts on open
+  ones). Tracks cut their own bed, open out of the shoulder, are clear of trees and POIs, drive as
+  dirt, and show on the atlas. Hill country on the highway (up to ~11% grades).
+- New start car: the '04 Kronberg C200 (`src/vehicle/w203/`, import config
+  `tools/cars/w203.py`, run with `W203_SRC=<dir with w203_mr.gltf> python3 -I tools/cars/run.py
+  tools/cars/w203.py public/models/w203 src/vehicle/w203/w203Meta.json`; the source is first
+  converted spec-gloss→metal-rough and simplified with the scratchpad script w203conv.mjs).
+  Rear drive, 5-speed manual, removable front wings, battery in the boot. New runs start with the
+  W203 or the Riverside; the Beetle is retired (kept for old saves; `CAR_TYPE_LIST` vs
+  `CAR_TYPES`).
+- Real models: mossy boulders in the green biomes (scatter species `mossrock`, instanced from
+  `PropLibrary.geometryOf/materialOf`), real tyre stacks, a real carp for fish items
+  (`registerRealModel` in itemModels.js).
+
+- Night sky (two-layer twinkling stars, Milky Way), brighter nights, forked lightning with
+  ground current near the car, real snow (flakes, breath, snow-covered ground with sastrugi),
+  birch groves in taiga/tundra, sharper distant ridges.
+- Cabin interaction: fuel flap and jerry-can pouring stream, readable speedometers, radio
+  stations (`src/audio/stations.js`: KDRT, KLOW, Haven 98.1, numbers 88.3, EBS 640 AM), hazard,
+  heater and dome switches, free look and RMB zoom in the seat; now-playing card; shop shelves
+  stocked with packaged goods (`goodsMaterial`).
+- Player body in third person (`src/player/glbAvatar.js`): the Ready Player Me avatar from the
+  three.js examples (`public/models/props/survivor_rpm.glb`), re-coloured for the road (canvas
+  coat, dark waistcoat, denim, boots, felt hat; recolour script in the scratchpad, see the
+  commit). The Soldier's Idle/Walk/Run live mesh-less in `survivor_anim.glb` and are retargeted
+  onto the avatar at load (`retargetClips`: world-space turn from each rig's T-pose). Two-bone IK
+  (`GlbAvatar.reach`) puts the seated feet on the footwell floor and the driver's hands on the rim
+  (they turn with it); big carried things sit against the chest in third person with the palms
+  on their flanks (`interaction.js`, `from`/`bodyQ`). NOTE: Ready Player Me avatars are usually
+  licensed CC BY-NC-SA 4.0 (non-commercial); check before any commercial release.
+- Engine bay parts on both front-engined cars (`frontEngineParts.js`, `procParts.js`):
+  alternator (charging; without it the battery runs flat and the engine dies), water pump
+  (cooling; missing = coolant runs out), starter (cranking; missing = key clicks, roll-start in
+  gear on a manual: `Car.update` "rolling start"), spark plugs (W203 coil packs, Riverside six
+  plugs with leads to a distributor; worn = misfire/power loss, none = no spark), oil filter
+  (clogged = wear, missing = oil pumps out). `Car.partCond(id)` treats parts a type lacks as
+  fine. The belt is `PP.beltLoop` round crank, pump and alternator and needs both. The W203's
+  plastic engine shroud is split out of the source body (`tools/cars/w203.py` classify rule,
+  re-run the importer as above) as part `enginecover`; the coils need it off (`needsOpen`).
+
+- Oil drums are fuel sources: `placeProp` registers each `oilDrum` (spec `fuel: true`) as a
+  pump with its own seeded amount in `inst.state.drums` (55% empty, else 4-40 l); a jerry can
+  fills from it ("Fill from the drum"), the car does not. Fire drums at lures pass `fuel: false`.
+- More real models (Khronos sample assets, CC-BY): a barramundi as the second fish species (fish
+  items have `variants: 2`, the cooked fish keeps its variant), an antique bellows camera on a
+  tripod in some living rooms, teacups on coffee and dining tables.
+
+- Leaks you can see (`Effects.leaks`): drips and a spreading puddle (oil black, coolant green)
+  under the car with no oil filter on a running engine / upside down, or with the water pump
+  gone. Cranking that never catches tells you why after ~2.6 s (no spark, no fuel, dry, seized).
+- Menu pictures re-rendered with the W203, the new sky and the mountains (`menu4.sh` and the
+  `st_menu_*.json` scenes in the scratchpad; PNG → webp q84 into `public/menu/`).
+
+- `procParts` builders end in `bake()`: the pieces of a part are merged into one mesh per
+  material (the W203 went from 204 to 135 meshes). Keep new builders doing the same, and use the
+  shared module materials (RED_CABLE, PORCELAIN, CASE_BLACK) instead of making new ones inline.
+
+- Roads with character (`worldGen.windSeg/windAt`): the road is cut into 2.6 km stretches,
+  each calm (only the old long sweeps), winding (S-bends every 340-600 m), tight (220-340 m) or a
+  pass (tight bends on a climb). Bend radius never under ~45 m (amplitude capped by L²); bends
+  fade out near river crossings and lakes (`calmWater`, from their nominal z, no recursion).
+  High ground (`liftEvent/liftAt`, every ~16 km): plateaus (+120..320 m), ridges crossed at a
+  saddle (+170..380 m) and basins (-70..-160 m) with ~8% road grades and a wandering, steeper
+  edge away from the road; other relief is damped on the ramps (`rampWeight`). Terrain and
+  scatter use `roadDist` (across the road, not along x); road UVs use arc length `roadS`;
+  POIs avoid steep stretches and bends that swing into their yard (`poiOnRoad`); lakes avoid
+  ramps and the road. Tools: scratchpad `tools/roadmap.mjs` (plan + profile + min radius/grade).
+
+- Plates bolt anywhere (`interaction.plateFit`): on any car within reach (not only the current
+  one; `plate.car` remembers the host) or on anything solid in the world via the physics ray
+  (`worldSpot`: walls, fences, rocks, the ground). Wheel turns the sheet, Shift+Wheel tilts it up
+  off the surface about its near edge (`tiltSpot`, 0-90°: a ramp, a windbreak, a wall). World
+  plates live in `src/world/worldPlates.js` (fixed colliders, absolute positions, saved as
+  `worldPlates`, rebased with the origin); R (hold) unbolts any of them, spray paint works.
+- Recorded sounds (`AudioSystem.loadSamples`): files in `public/sounds/` listed in
+  `sounds/index.json` replace synthesized ones (see the sound sheet artifact
+  https://claude.ai/artifact/R84zAEjoiv9kSJW3iQ8ZFK for names and prompts; songs map as
+  "album:track" keys, album order neon, rattlers, june, salt, eddie, kr9).
+  - 83 sounds / 145 files (2.5 MB) generated with ElevenLabs `eleven_text_to_sound_v2` (free
+    tier: non-commercial use, credit given in Credits). Tools in `tools/sounds/`: `sfxgen.py`
+    (API batch, key only from the `EL_KEY` env var), `sfxjobs2.py` (re-made prompts, 3 takes
+    each), `sfxproc2.py` (cuts, trims, damps, levels, encodes and writes index.json),
+    `specsheet.py` (spectrogram contact sheet to check takes by eye), `sfxscan.py` (features).
+    The raw takes were not committed; re-running needs new generations.
+  - Design rules learned: the model loves bursts (asked for "a ratchet click" it gives 8-12
+    clicks, "keys" jingle, "floor creak" stutters) and tonal rings on handling sounds (the first
+    `pickup` rang at 700 Hz like glass). Prompts now name the material and say "one", "single",
+    "no metal clinking, no glass, no jingling, no ringing, no music"; prompt_influence 0.75;
+    bursts are cut down to 2-3 events, impacts get a decay envelope so they stop instead of ring.
+  - Footsteps: each take of four steps is cut into single footfalls (loudest transient, cut
+    before any second hit), 3-4 variants per surface.
+  - Levels: `index.json` has a `gain` map. Loops (wind, rain, tyreRoll, skid) are matched to the
+    shaped noise they replace through the game's own filters; one-shots more than 3 dB off the
+    old synthesized sound (loudest 50 ms, measured in the browser) are pulled back within 3 dB.
+    `AudioSystem.trim(name)` applies it (play(), the starter, wind/rain/tyre/skid loops and the
+    soundscape loops). With a recorded wind/rain the filters open up (`windF`, rain highpass
+    150-300 Hz instead of 600-1500): the recordings have their body lower than white noise.
+  - Left synthesized on purpose: the engine (the recorded rpm layers did not match in pitch;
+    `ENGINE_LAYERS` stays for future layers), squeak, floorCreak, hum and keys.
+
+### Still to do (in the user's priority order)
+1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
+   models"); make more objects interactive.
+2. Distant mountains: isolated cone shapes still show at biome belt edges; regenerate the menu
+   pictures with the new sky/snow/birch look.
+3. Car destruction (deformation) — the user asked to note it as a plan only. Sketch:
+   - Per panel (body, doors, hood, trunk, bumpers, wings) keep a dent field: a handful of
+     (point, normal, radius, depth) dents in part space, from `Car.onImpact` (it already knows
+     the hit point, direction and severity; `panelDamage` decides tears).
+   - Apply them in the vertex shader of the paint/trim materials (onBeforeCompile: push vertices
+     along -normal by a smooth falloff of each dent, max ~8 dents per part as a uniform array),
+     so the shared imported geometry is never copied; crumpled normals from the same falloff.
+   - Hinges bind when a door/hood is dented near its edge (can't open fully), glass cracks
+     (swap to a cracked-glass texture) on hits near the pillars, headlights die on front hits.
+   - Wrecks (`buildImportedWreck`) start with a few random dents; repair kits pull dents out.
+   - Physics stays the same compound colliders; only a heavy roof dent lowers the roof box.
+4. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
+   this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
+   or remove by absolute path).

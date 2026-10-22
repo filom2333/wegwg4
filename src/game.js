@@ -21,6 +21,8 @@ import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
 import { Tents } from './world/tents.js';
+import { PropLibrary } from './world/props.js';
+import { registerRealModel } from './items/itemModels.js';
 import { Atlas } from './story/atlas.js';
 import { PhotoMode, loadPhotos } from './ui/photoMode.js';
 import { Winches } from './vehicle/winch.js';
@@ -36,6 +38,9 @@ import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
 import { Story } from './story/story.js';
 import { RoadSigns } from './story/roadSigns.js';
+import { Lures } from './story/lures.js';
+import { Obstacles } from './world/obstacles.js';
+import { WorldPlates } from './world/worldPlates.js';
 import { Water } from './world/water.js';
 import { Bridges } from './world/bridges.js';
 import { settings } from './core/settings.js';
@@ -43,9 +48,9 @@ import { clamp, mulberry32 } from './core/noise.js';
 import { applyWorldState, applySave } from './core/save.js';
 
 export const DIFFICULTY = {
-  easy: { label: 'Easy', hunger: 0.6, thirst: 0.6, fatigue: 0.6, cold: 0.6, consumption: 0.7, wear: 0.5, damage: 0.6, playerDamage: 0.6, enemies: 0.5, loot: 1.4 },
-  normal: { label: 'Normal', hunger: 1, thirst: 1, fatigue: 1, cold: 1, consumption: 1, wear: 1, damage: 1, playerDamage: 1, enemies: 1, loot: 1 },
-  hard: { label: 'Hard', hunger: 1.35, thirst: 1.4, fatigue: 1.2, cold: 1.3, consumption: 1.25, wear: 1.6, damage: 1.4, playerDamage: 1.35, enemies: 1.5, loot: 0.7 },
+  easy: { label: 'Easy', hunger: 0.85, thirst: 0.85, fatigue: 0.8, cold: 0.8, consumption: 0.9, wear: 0.8, damage: 0.85, playerDamage: 0.8, enemies: 0.8, loot: 1.1 },
+  normal: { label: 'Normal', hunger: 1.25, thirst: 1.3, fatigue: 1.15, cold: 1.2, consumption: 1.15, wear: 1.3, damage: 1.2, playerDamage: 1.2, enemies: 1.25, loot: 0.8 },
+  hard: { label: 'Hard', hunger: 1.6, thirst: 1.75, fatigue: 1.4, cold: 1.5, consumption: 1.4, wear: 1.9, damage: 1.6, playerDamage: 1.5, enemies: 1.8, loot: 0.55 },
 };
 
 export class Game {
@@ -92,7 +97,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'beetle', trailer = false, onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'w203', trailer = false, onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
@@ -139,10 +144,19 @@ export class Game {
     });
     const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
+    // real models: what the scatter and the items build from is loaded first, the common props
+    // start loading now, the rest when a place first needs them
+    this.props = new PropLibrary();
+    await Promise.all(['rockMoss1', 'rockMoss2', 'rockMoss3', 'carp', 'bass', 'survivor', 'survivorAnim'].map((id) => this.props.load(id)));
+    registerRealModel('carp', this.props.instance('carp'));
+    registerRealModel('bass', this.props.instance('bass'));
+    for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant', 'tyre']) this.props.load(id);
     this.scatter = new Scatter(this, this.groundTex, await treeTex);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);
+    this.lures = new Lures(this);
+    if (load && load.story && load.story.lures) this.lures.restore(load.story.lures);
     this.npcs = new NPCManager(this);
     if (!attract) this.npcs.startBuilding();
     this.items = new ItemSystem(this);
@@ -156,6 +170,7 @@ export class Game {
     this.campfires = new Campfires(this);
     this.jacks = new Jacks(this);
     this.tents = new Tents(this);
+    this.worldPlates = new WorldPlates(this);
     this.atlas = new Atlas(this);
     this.atlas.photos = loadPhotos();
     this.photo = new PhotoMode(this);
@@ -163,7 +178,8 @@ export class Game {
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
-    await this.fleet.preload(this.renderer.renderer);
+    const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [];
+    await this.fleet.preload(this.renderer.renderer, saved);
     this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
     // spawn
     const spawn = this.spawnPoint();
@@ -184,7 +200,11 @@ export class Game {
       const carPos = new THREE.Vector3(spawn.carX, (spawn.carY ?? this.gen.height(spawn.carX, spawn.carZ)) + 0.05, spawn.carZ);
       const car = this.fleet.create(load && load.car ? load.car.model || 'beetle' : this.startCarType, new THREE.Vector3(carPos.x - this.origin.x, carPos.y, carPos.z - this.origin.z), spawn.carQuat ? new THREE.Quaternion(...spawn.carQuat) : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.carYaw), {
         owned: true,
-        color: carType(this.startCarType).defaultColor,
+        // a different colour each world
+        color: (() => {
+          const cs = carType(this.startCarType).colors || [];
+          return cs.length ? cs[Math.floor(mulberry32((this.seed | 0) * 13 + 5)() * cs.length)] : carType(this.startCarType).defaultColor;
+        })(),
         state: load ? load.car : null,
       });
       this.fleet.setCurrent(car);
@@ -347,6 +367,9 @@ export class Game {
     this.winches.rebase(dx, dz);
     this.npcs && this.npcs.rebase(dx, dz);
     this.roadSigns && this.roadSigns.rebase(dx, dz);
+    this.lures && this.lures.rebase(dx, dz);
+    this.obstacles && this.obstacles.rebase(dx, dz);
+    this.worldPlates && this.worldPlates.rebase(dx, dz);
     this.fleet.rebase(dx, dz);
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
@@ -494,7 +517,11 @@ export class Game {
       this.story.update(dt);
       this.roadSigns = this.roadSigns || new RoadSigns(this);
       this.roadSigns.update();
+      this.lures.update(dt);
     }
+    this.obstacles = this.obstacles || new Obstacles(this);
+    this.obstacles.update();
+    this.worldPlates.update();
   }
 
   // "Build it first": a body on its wheels in the garage; everything else is somewhere about the
@@ -529,19 +556,25 @@ export class Game {
     const large = shuffle(missing.filter((id) => !heavy.includes(id) && !small.includes(id)));
     // indoor spots: the house's tables, shelves and counters, the garage's bench and kit corner
     const indoor = shuffle(inst.loot.filter((l) => l.kind !== 'wreck').map((l) => l.pos.clone()));
-    // yard spots: a ring around the buildings, kept off roofs, floors and fences
+    // yard spots: tidy rows where someone stripping a car would lay things out: behind the
+    // garage, down its far side, and behind the house; kept off roofs, floors and fences
+    const rows = [
+      { from: [5.4, -6.7], step: [1.55, 0], n: 5, a: 0 },
+      { from: [13.1, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
+      { from: [-12.5, -9.3], step: [1.6, 0], n: 7, a: 0 },
+      { from: [3.2, 6.5], step: [-1.6, 0], n: 5, a: 0 },
+    ];
     const yard = [];
-    for (let i = 0; i < 60 && yard.length < 24; i++) {
-      const a = rnd() * Math.PI * 2,
-        r = 9 + rnd() * 16;
-      const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r * 0.8);
-      const w = p.clone().applyMatrix4(m);
-      const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
-      const owner = hit && this.physics.ownerOf(hit.collider);
-      if (owner && owner.kind === 'structure') continue;
-      if (yard.some((q) => q.distanceTo(p) < 1.8)) continue;
-      yard.push(p);
-    }
+    for (const r of rows)
+      for (let i = 0; i < r.n; i++) {
+        const p = new THREE.Vector3(r.from[0] + r.step[0] * i, 0, r.from[1] + r.step[1] * i);
+        const w = p.clone().applyMatrix4(m);
+        const hit = this.physics.raycast({ x: w.x, y: w.y + 12, z: w.z }, { x: 0, y: -1, z: 0 }, 30, GROUPS.look);
+        const owner = hit && this.physics.ownerOf(hit.collider);
+        if (owner && owner.kind === 'structure') continue;
+        p.a = r.a;
+        yard.push(p);
+      }
     const lay = {
       door_FL: [0, 0, Math.PI / 2],
       door_FR: [0, 0, -Math.PI / 2],
@@ -574,11 +607,14 @@ export class Game {
       const p = indoor.length ? indoor.shift().applyMatrix4(m) : at(0, 0, 0);
       put(id, p.add(new THREE.Vector3(0, 0.12, 0)), rnd() * Math.PI * 2);
     }
+    // the big pieces in order: panels together, then seats, then the rest
+    const rank = (id) => (/door|fender|hood|trunk|bumper/.test(id) ? 0 : /seat/.test(id) ? 1 : 2);
+    large.sort((a, b) => rank(a) - rank(b));
     for (const id of large) {
       const p = yard.length ? yard.shift() : new THREE.Vector3((rnd() - 0.5) * 20, 0, 10 + rnd() * 6);
       const w = p.clone().applyMatrix4(m);
       w.y = this.groundHeightAt(w.x, w.z) + 0.35;
-      put(id, w, rnd() * Math.PI * 2);
+      put(id, w, (p.a ?? 0) + (rnd() - 0.5) * 0.12);
     }
     // the engine sits on the scrap pile behind the garage
     for (const [i, id] of heavy.entries()) {
@@ -818,7 +854,7 @@ export class Game {
 
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = this.debugFov || verticalFov(settings.data.hfov, cam.aspect);
+    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
     cam.far = 7000;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;

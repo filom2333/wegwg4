@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { RAPIER, GROUPS } from '../physics/physics.js';
-import { ROAD } from './worldGen.js';
+import { ROAD, TRACK } from './worldGen.js';
 
 const ROOT = 2048;
 const MIN_TILE = 64;
@@ -28,6 +28,7 @@ export class Terrain {
     this.wanted = new Set();
     this.wantedTiles = [];
     this.roadSegs = new Map();
+    this.trackMeshes = new Map(); // side track index -> mesh
     this.colliders = new Map();
     this.nextId = 1;
     this.viewRadius = quality === 'low' ? 3000 : VIEW_RADIUS;
@@ -204,6 +205,109 @@ export class Terrain {
         this.roadSegs.delete(k);
       }
     }
+    // dirt side tracks near the player (one built a frame)
+    const t0k = Math.floor(pz / TRACK.every);
+    const wantT = new Set();
+    for (let t = t0k - 2; t <= t0k + 2; t++) {
+      const tr = this.gen.track(t);
+      if (!tr || pz < tr.z0 - 1800 || pz > tr.z1 + 1800) continue;
+      wantT.add(t);
+    }
+    for (const t of wantT) {
+      if (this.trackMeshes.has(t)) continue;
+      this.trackMeshes.set(t, this.buildTrack(this.gen.track(t)));
+      break;
+    }
+    for (const [t, m] of this.trackMeshes) {
+      if (wantT.has(t)) continue;
+      this.group.remove(m);
+      m.geometry.dispose();
+      this.trackMeshes.delete(t);
+    }
+  }
+
+  // A dirt track as a strip following its centre line, from where it leaves the asphalt to where
+  // it meets it again.
+  buildTrack(tr) {
+    const gen = this.gen;
+    const hw = TRACK.halfWidth;
+    const W = (hw + 0.4) * 2;
+    const across = [-W / 2 - 0.5, -W / 2, -hw * 0.75, -hw * 0.35, 0, hw * 0.35, hw * 0.75, W / 2, W / 2 + 0.5];
+    const na = across.length;
+    const step = 2;
+    // from where its edge first leaves the asphalt: the strip is pinched against the asphalt edge
+    // there, so the track opens out of the shoulder like a real turn-off
+    const start = ROAD.halfWidth * 0.5;
+    const rows = [];
+    for (let z = tr.z0; z <= tr.z1; z += step) if (Math.abs(gen.trackOffset(tr, z)) >= start) rows.push(z);
+    const nz = rows.length;
+    const pos = new Float32Array(nz * na * 3);
+    const uv = new Float32Array(nz * na * 2);
+    const road = new Float32Array(nz * na * 4);
+    const env = new Float32Array(nz * na * 2);
+    const ox = gen.roadX(tr.z0),
+      oz = tr.z0;
+    let along = 0,
+      px0 = null;
+    rows.forEach((z, j) => {
+      const cx = gen.trackX(tr, z);
+      const sl = (gen.trackX(tr, z + 1) - gen.trackX(tr, z - 1)) / 2;
+      const l = Math.hypot(sl, 1);
+      const nx = 1 / l,
+        nzz = -sl / l; // perpendicular
+      if (px0) along += Math.hypot(cx - px0[0], z - px0[1]);
+      px0 = [cx, z];
+      const snow = gen.roadInfo(z).snow || 0;
+      for (let i = 0; i < na; i++) {
+        const a = across[i];
+        let x = cx + nx * a;
+        const zz = z + nzz * a;
+        const rx = gen.roadX(zz);
+        if ((x - rx) * tr.side < ROAD.halfWidth) x = rx + tr.side * ROAD.halfWidth;
+        let y = gen.height(x, zz) + 0.03;
+        if (Math.abs(a) > W / 2 + 0.01) y -= 0.3;
+        const k2 = j * na + i;
+        pos[k2 * 3] = x - ox;
+        pos[k2 * 3 + 1] = y;
+        pos[k2 * 3 + 2] = zz - oz;
+        uv[k2 * 2] = (Math.max(-W / 2, Math.min(W / 2, a)) + W / 2) / W;
+        uv[k2 * 2 + 1] = along;
+        road[k2 * 4] = 0.8;
+        road[k2 * 4 + 1] = 1;
+        road[k2 * 4 + 2] = W;
+        road[k2 * 4 + 3] = 0;
+        env[k2 * 2] = snow;
+        env[k2 * 2 + 1] = 0;
+      }
+    });
+    const idx = [];
+    for (let j = 0; j < nz - 1; j++) {
+      // a gap where the track crosses back over the highway corridor (never, but be safe)
+      if (rows[j + 1] - rows[j] > step * 1.5) continue;
+      for (let i = 0; i < na - 1; i++) {
+        const a = j * na + i,
+          b = a + 1,
+          c = a + na + 1,
+          d = a + na;
+        idx.push(a, d, b, b, d, c);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('road', new THREE.BufferAttribute(road, 4));
+    g.setAttribute('env', new THREE.BufferAttribute(env, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, this.roadMaterial);
+    m.position.set(ox - this.origin.x, 0, oz - this.origin.z);
+    m.receiveShadow = true;
+    m.matrixAutoUpdate = false;
+    m.updateMatrix();
+    m.userData.origin = { x: ox, z: oz };
+    this.group.add(m);
+    return m;
   }
 
   buildRoadSegment(k) {
@@ -223,6 +327,7 @@ export class Terrain {
     for (let j = 0; j <= nz; j++) {
       const z = z0 + j * step;
       const rx = gen.roadX(z);
+      const s = gen.roadS(z);
       const [dx, dz] = gen.roadDir(z);
       const px = dz,
         pz = -dx; // perpendicular
@@ -241,7 +346,7 @@ export class Terrain {
         pos[k2 * 3 + 1] = y;
         pos[k2 * 3 + 2] = zz - oz;
         uv[k2 * 2] = (Math.max(-W / 2, Math.min(W / 2, a)) + W / 2) / W;
-        uv[k2 * 2 + 1] = z;
+        uv[k2 * 2 + 1] = s;
         road[k2 * 4] = info.wear;
         road[k2 * 4 + 1] = info.dirt ? 1 : 0;
         road[k2 * 4 + 2] = W;

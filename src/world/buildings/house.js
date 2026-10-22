@@ -7,14 +7,15 @@ import { archMaterials } from './materials.js';
 import * as FUR from './furniture.js';
 import { place } from './furniture.js';
 
-const WALL_H = 2.7;
+const WALL_H = 3.0;
 const EXT_T = 0.24;
 const INT_T = 0.12;
 
 // ---------------------------------------------------------------- floor plan
 function planHouse(rnd) {
-  const W = Math.round((8.5 + rnd() * 4.5) * 2) / 2;
-  const D = Math.round((7 + rnd() * 3) * 2) / 2;
+  // roomy: real family houses, not doll's houses
+  const W = Math.round((10.5 + rnd() * 5) * 2) / 2;
+  const D = Math.round((8.5 + rnd() * 3.5) * 2) / 2;
   const x0 = -W / 2,
     x1 = W / 2,
     z0 = -D / 2,
@@ -450,17 +451,25 @@ function furnishRoom(b, r, rnd, y, openings) {
   const shuffle = (a) => a.map((v) => [rnd(), v]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
   switch (r.type) {
     case 'living': {
-      const so = FUR.sofa(rnd, { seats: W > 4 ? 3 : 2 });
+      // half the houses have a real leather or velvet sofa, some a proper armchair, a plant
+      const real = W > 3.4 && rnd() < 0.5;
+      const so = real ? FUR.propItem('leatherSofa', [2.35, 0.9, 1.05]) : FUR.sofa(rnd, { seats: W > 4 ? 3 : 2 });
       if (P.wall(so, shuffle(all), { centre: true })) {
         // coffee table and rug in front of the sofa
         const l = P.last;
         const fx = Math.sin(l.rot),
           fz = Math.cos(l.rot);
-        P.free(FUR.coffeeTable(rnd), l.x + fx * 1.0, l.z + fz * 1.0, l.rot);
+        // a cup left on it
+        const ct = FUR.coffeeTable(rnd);
+        if (rnd() < 0.55) ct.props.push({ id: 'teacup', pos: [0.18 - rnd() * 0.36, 0.45, 0.04], rot: rnd() * 6 });
+        P.free(ct, l.x + fx * 1.0, l.z + fz * 1.0, l.rot);
         place(b, FUR.rug(rnd, 2.0, 1.4), l.x + fx * 1.05, y, l.z + fz * 1.05, l.rot);
       }
       P.wall(FUR.tvStand(rnd), shuffle(all), { centre: true });
       P.wall(FUR.armchair(rnd), shuffle(all));
+      if (rnd() < 0.45) P.wall(FUR.propItem('pottedPlant', [0.7, 0.8, 0.7]), shuffle(all), { tall: false });
+      // grandad's bellows camera on its tripod in a corner
+      if (rnd() < 0.2) P.wall(FUR.propItem('antiqueCamera', [0.6, 1.5, 0.6]), shuffle(all));
       P.wall(FUR.bookshelf(rnd), shuffle(all));
       if (rnd() < 0.5) P.wall(FUR.dresser(rnd), shuffle(all));
       break;
@@ -472,7 +481,17 @@ function furnishRoom(b, r, rnd, y, openings) {
       for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L), sides);
       for (let L = len; L >= 1.2 && !ok; L -= 0.6) ok = P.wall(FUR.kitchenRun(rnd, L, { uppers: false }), sides);
       P.wall(FUR.fridge(rnd), shuffle(all));
-      if (D > 3 && W > 2.8) P.free(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 }), cx, cz, 0) || P.free(FUR.diningTable(rnd, { chairs: 2 }), cx, cz + 0.4, 0);
+      let tz = null;
+      if (D > 3 && W > 2.8) {
+        // cups where people sat down for the last time
+        const cups = (t) => {
+          for (const x of [-0.35, 0.3]) if (rnd() < 0.45) t.props.push({ id: 'teacup', pos: [x, 0.77, (rnd() - 0.5) * 0.4], rot: rnd() * 6 });
+          return t;
+        };
+        if (P.free(cups(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 })), cx, cz, 0)) tz = cz;
+        else if (P.free(cups(FUR.diningTable(rnd, { chairs: 2 })), cx, cz + 0.4, 0)) tz = cz + 0.4;
+      }
+      void tz;
       break;
     }
     case 'bedroom': {

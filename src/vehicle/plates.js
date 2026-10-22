@@ -128,6 +128,44 @@ function tagParts(car) {
   car.model._partsTagged = true;
 }
 
+// Tilts a spot: the plate swings up off the surface about its near edge (toward the viewer) by
+// `tilt` radians, so a sheet on the ground becomes a ramp or, at 90 degrees, a wall.
+export function tiltSpot(id, spot, tilt, viewDir) {
+  const d = PLATES[id];
+  const e = V(0, 0, 0);
+  const x = V(0, 0, 0),
+    n = V(0, 0, 0),
+    z = V(0, 0, 0);
+  spot.basis.extractBasis(x, n, z);
+  // the near edge is the one facing the viewer
+  if (z.dot(viewDir) < 0) {
+    z.negate();
+    x.negate();
+  }
+  const ct = Math.cos(tilt),
+    st = Math.sin(tilt);
+  const z2 = z.clone().multiplyScalar(ct).addScaledVector(n, st);
+  const n2 = n.clone().multiplyScalar(ct).addScaledVector(z, -st);
+  const base = spot.point.clone().addScaledVector(spot.normal, d.t / 2 + 0.002);
+  e.copy(base).addScaledVector(z, -d.l / 2);
+  const centre = e.clone().addScaledVector(z2, d.l / 2).addScaledVector(n2, 0);
+  const basis = new THREE.Matrix4().makeBasis(x, n2, z2);
+  const q = new THREE.Quaternion().setFromRotationMatrix(basis);
+  return { ...spot, matrix: new THREE.Matrix4().compose(centre, q, V(1, 1, 1)) };
+}
+
+// A spot on anything solid in the world (a wall, a fence, a rock, the ground) from a physics ray
+// hit: lying flat on it, the long side following the view's horizontal, turned by spin.
+export function worldSpot(hit, dir, spin, camRight) {
+  const n = V(hit.normal.x, hit.normal.y, hit.normal.z).normalize();
+  if (n.dot(dir) > 0) n.negate();
+  const x = camRight.clone().addScaledVector(n, -camRight.dot(n));
+  if (x.lengthSq() < 1e-4) x.set(1, 0, 0).addScaledVector(n, -n.x);
+  x.normalize().applyAxisAngle(n, spin);
+  const z = x.clone().cross(n).normalize();
+  return { host: 'world', point: V(hit.point.x, hit.point.y, hit.point.z), normal: n, basis: new THREE.Matrix4().makeBasis(x, n, z), dist: hit.distance };
+}
+
 // Where a plate would go: the surface point under the crosshair on any part of the car, with the
 // plate lying flat against it. spin turns it about the surface normal.
 const _ray = new THREE.Raycaster();
@@ -189,7 +227,7 @@ export function plateSpot(car, origin, dir, maxDist, spin, camRight, dims = null
     point = h.point.clone().addScaledVector(n, lift);
   }
   const basis = new THREE.Matrix4().makeBasis(x, n, z);
-  return { part, point, normal: n, basis, dist: h.distance };
+  return { host: 'car', car, part, point, normal: n, basis, dist: h.distance };
 }
 
 // Pivots of the parts whose boxes come within r of a world point.
@@ -209,8 +247,9 @@ function visibleChain(o) {
   return true;
 }
 
-// World matrix of a plate of type `id` at a spot.
+// World matrix of a plate of type `id` at a spot (a spot may carry its own, already tilted).
 export function plateWorldMatrix(id, spot) {
+  if (spot.matrix) return spot.matrix.clone();
   const d = PLATES[id];
   const p = spot.point.clone().addScaledVector(spot.normal, d.t / 2 + 0.002);
   const q = new THREE.Quaternion().setFromRotationMatrix(spot.basis);
@@ -228,7 +267,7 @@ export function attachPlate(car, { id, state = {}, part, local }) {
   local.decompose(mesh.position, mesh.quaternion, mesh.scale);
   mesh.userData.plate = true;
   mp.pivot.add(mesh);
-  const plate = { id, state, part, local: local.clone(), mesh, collider: null, mass: d.mass };
+  const plate = { id, state, part, local: local.clone(), mesh, collider: null, mass: d.mass, car };
   car.plates = car.plates || [];
   car.plates.push(plate);
   plateColliders(car);

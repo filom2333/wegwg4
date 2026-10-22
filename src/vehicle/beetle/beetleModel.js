@@ -250,7 +250,7 @@ export class BeetleModel {
       this.parts[h.id] = { id: h.id, pivot, inner: knuckle, hinge: null, openT: 0, installed: true };
       this.wheels[h.id] = { pivot, knuckle, spin, side, group: spin };
     }
-    this.addWheelWells();
+    // (no wheel-well liners: they showed as black slabs outside the arches)
   }
 
   // Dark wheel-house liners in the arches: without them you could see into the front boot (and

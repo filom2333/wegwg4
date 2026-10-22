@@ -67,6 +67,7 @@ varying float vViewDist;
 vec3 gNrmT;
 float gRough;
 float gRockW;
+float gSnowW;
 // value noise with derivatives on a lattice that wraps every P cells (the world uv wraps at 2048 m,
 // so P = 2048 / cell size keeps it seamless)
 float tHash(vec2 i){ vec2 p = fract(i * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
@@ -165,6 +166,7 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   }
   float wSand = w[0] / tot, wDirt = w[1] / tot, wRock = w[2] / tot, wSalt = w[3] / tot, wSnow = w[5] / tot, wGrav = w[7] / tot;
   gRockW = wRock;
+  gSnowW = wSnow;
   // sedimentary layering in exposed rock: bands of slightly different tone, warped and tilted
   {
     // beds of uneven thickness: value noise along the height, warped, so no regular stripes
@@ -228,6 +230,18 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
       alb = mix(alb, crown * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
     }
   }
+  // snow: never paper white. Cold blue in the wind-scoured hollows, a faint warm crust on the
+  // ridges, and a sparkle of ice grains that catch the light one by one up close
+  if (wSnow > 0.01) {
+    vec3 drift = tNoised(vec2(vWuv.x / 9.0, vWuv.y / 2.6), 512.0);
+    float hol = smoothstep(0.35, 0.75, drift.x);
+    vec3 snowCol = alb * mix(vec3(1.0, 0.99, 0.97), vec3(0.8, 0.86, 0.97), hol * 0.75) * 0.82;
+    alb = mix(alb, snowCol, wSnow);
+    vec2 sc = floor(vWuv * 34.0);
+    float glint = step(0.986, tHash(mod(sc, 4096.0) + vec2(3.0, 91.0))) * wSnow * (1.0 - smoothstep(6.0, 28.0, vViewDist));
+    gRough = mix(gRough, 0.06, glint);
+    alb = mix(alb, vec3(1.0), glint * 0.25);
+  }
   // wetness darkens porous ground (not snow or salt)
   alb *= mix(1.0, 0.62, uWet * (1.0 - wSalt * 0.6) * (1.0 - wSnow));
   diffuseColor.rgb = alb;
@@ -267,13 +281,24 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogC, smoothstep(uFadeFar * 0.7, uFadeF
     float far = smoothstep(40.0, 700.0, vViewDist);
     float rough = 0.25 + 0.75 * gRockW;
     vec2 g = (m1.yz / 32.0 * 3.5 + m2.yz / 128.0 * 14.0) * rough * (0.35 + 0.65 * far) + m3.yz / 8.0 * 0.5 * rough * (1.0 - far);
+    // sastrugi: snow ridges combed out by the wind, long across x, short across z
+    if (gSnowW > 0.01) {
+      vec3 sd = tNoised(vec2(vWuv.x / 9.0, vWuv.y / 2.6), 512.0);
+      vec3 sd2 = tNoised(vec2(vWuv.x / 2.2, vWuv.y / 0.7), 2048.0);
+      vec2 gs = vec2(sd.y / 9.0, sd.z / 2.6) * 1.1 + vec2(sd2.y / 2.2, sd2.z / 0.7) * 0.06;
+      g += gs * gSnowW * (1.0 - smoothstep(30.0, 160.0, vViewDist));
+      // each ice grain faces its own way: glints come and go as you move
+      vec2 sc = floor(vWuv * 34.0);
+      float h = tHash(mod(sc, 4096.0) + vec2(3.0, 91.0));
+      if (h > 0.986) g += (vec2(tHash(sc + 7.0), tHash(sc + 19.0)) - 0.5) * 1.6 * gSnowW;
+    }
     nw = normalize(nw - vec3(g.x, 0.0, g.y) + N * dot(vec3(g.x, 0.0, g.y), N));
   }
   normal = normalize((viewMatrix * vec4(nw, 0.0)).xyz);
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v6';
+  mat.customProgramCacheKey = () => 'terrain-v7';
   return mat;
 }
 

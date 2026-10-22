@@ -37,6 +37,9 @@ const HOTSPOTS = [
   { id: 'lights', label: 'Light switch', pos: V(0.6, 0.82, 0.62), r: 0.05, part: 'body', inside: true },
   { id: 'wipers', label: 'Wiper switch', pos: V(0.12, 0.8, 0.64), r: 0.05, part: 'body', inside: true },
   { id: 'radio', label: 'Radio', pos: V(...STEREO.center), r: 0.08, part: 'body', inside: true },
+  { id: 'hazard', label: 'Hazard lights', pos: V(0.0, 0.82, 0.74), r: 0.035, part: 'body', inside: true },
+  { id: 'heater', label: 'Heater', pos: V(0.0, 0.68, 0.76), r: 0.05, part: 'body', inside: true },
+  { id: 'dome', label: 'Cabin light', pos: V(0, 1.27, -0.12), r: 0.06, part: 'body', inside: true },
 ];
 const POINTS = {
   exhaust: V(...META.exhaust),
@@ -103,6 +106,7 @@ const P = frontEngineParts({
   engineDesc: 'Mitsubishi-built 3.0 V6, 141 hp, mated to a four-speed automatic.',
   tank: 60,
   wheelMass: 19,
+  plugs: 6,
 });
 
 export const SEDAN88 = {
@@ -177,7 +181,17 @@ export const SEDAN88 = {
     // over the battery moulded into the left inner wing
     model.addPart('battery', PP.battery(M, V(0.5, 0.645, 1.74), { spec: '12V  60Ah', size: [0.2, 0.2, 0.27] }));
     model.addPart('radiator', PP.radiator(M, V(0, 0.56, 1.95), { w: 0.62, h: 0.28 }));
-    model.addPart('fanbelt', PP.belt({ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.78, 1.5), r: 0.045 }, { plane: 'x' }));
+    // the V6's left end: crank, water pump behind it, alternator ahead, one belt; the starter on
+    // the gearbox end, six plugs with leads to the distributor
+    model.addPart('waterpump', PP.waterPump(M, V(0.495, 0.73, 1.28), { face: 'x' }));
+    model.addPart('alternator', PP.alternator(M, V(0.473, 0.8, 1.53), { face: 'x', pulleyR: 0.04 }));
+    model.addPart('fanbelt', PP.beltLoop([{ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.73, 1.28), r: 0.05 }, { c: V(0.58, 0.8, 1.53), r: 0.04 }], { plane: 'x' }));
+    model.addPart('starter', PP.starter(M, V(-0.32, 0.6, 1.12), { face: '-x' }));
+    model.addPart('oilfilter', PP.oilFilter(M, V(-0.42, 0.63, 1.76)));
+    // rear bank behind the plenum, front bank between it and the manifold, the distributor at
+    // the back of the head
+    const plugs = [...[-0.2, 0, 0.2].map((x) => V(x, 0.8, 1.2)), ...[-0.04, 0.12, 0.28].map((x) => V(x, 0.77, 1.56))];
+    model.addPart('sparkplugs', PP.plugLeads(M, plugs, { to: V(-0.12, 0.83, 1.07) }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.78, 1.55), { h: 0.08 }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.27, -0.65), { w: 0.85, h: 0.2, d: 0.5 }));
     model.addPart('spare', PP.spareWheel(model, V(0, 0.55, -1.85)));

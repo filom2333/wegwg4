@@ -159,7 +159,7 @@ export class ItemSystem {
   }
 
   spawnPart(partId, pos, quat = new THREE.Quaternion(), state = {}) {
-    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'beetle';
+    if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'w203';
     const mesh = this.buildPartMesh(partId, state.carType, state.tune);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
     this.group.add(mesh);
@@ -325,7 +325,8 @@ export class ItemSystem {
     }
     inst.loot.forEach((spot, i) => {
       if (inst.state.taken.has(i)) return;
-      const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul;
+      // most places were picked over long ago
+      const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul * 0.7;
       if (lrnd() > chance) return;
       const table = LOOT[spot.kind] || LOOT.any;
       let tot = 0;

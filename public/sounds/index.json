@@ -1,0 +1,257 @@
+{
+ "sounds": {
+  "pickup": "pickup.mp3",
+  "pocket": "pocket.mp3",
+  "pickupHeavy": "pickupHeavy.mp3",
+  "click": "click.mp3",
+  "install": "install.mp3",
+  "remove": "remove.mp3",
+  "hitMetal": "hitMetal.mp3",
+  "hitFlesh": "hitFlesh.mp3",
+  "drink": "drink.mp3",
+  "eat": "eat.mp3",
+  "reloadRevolver": "reloadRevolver.mp3",
+  "chime": "chime.mp3",
+  "wind": "wind.mp3",
+  "tyreRoll": "tyreRoll.mp3",
+  "skid": "skid.mp3",
+  "ping": [
+   "ping_1.mp3",
+   "ping_2.mp3",
+   "ping_3.mp3"
+  ],
+  "ratchet": [
+   "ratchet_1.mp3",
+   "ratchet_2.mp3",
+   "ratchet_3.mp3"
+  ],
+  "tick": [
+   "tick_1.mp3",
+   "tick_2.mp3",
+   "tick_3.mp3",
+   "tick_4.mp3"
+  ],
+  "starter": "starter.mp3",
+  "engineStart": "engineStart.mp3",
+  "stall": "stall.mp3",
+  "rain": "rain.mp3",
+  "doorOpen": "doorOpen.mp3",
+  "doorClose": "doorClose.mp3",
+  "hood": "hood.mp3",
+  "trunk": "trunk.mp3",
+  "crash": "crash.mp3",
+  "crashHeavy": "crashHeavy.mp3",
+  "step_sand": [
+   "step_sand_1.mp3",
+   "step_sand_2.mp3",
+   "step_sand_3.mp3",
+   "step_sand_4.mp3"
+  ],
+  "step_dirt": [
+   "step_dirt_1.mp3",
+   "step_dirt_2.mp3",
+   "step_dirt_3.mp3",
+   "step_dirt_4.mp3"
+  ],
+  "step_gravel": [
+   "step_gravel_1.mp3",
+   "step_gravel_2.mp3",
+   "step_gravel_3.mp3",
+   "step_gravel_4.mp3"
+  ],
+  "step_rock": [
+   "step_rock_1.mp3",
+   "step_rock_2.mp3",
+   "step_rock_3.mp3",
+   "step_rock_4.mp3"
+  ],
+  "step_asphalt": [
+   "step_asphalt_1.mp3",
+   "step_asphalt_2.mp3",
+   "step_asphalt_3.mp3",
+   "step_asphalt_4.mp3"
+  ],
+  "step_concrete": [
+   "step_concrete_1.mp3",
+   "step_concrete_2.mp3",
+   "step_concrete_3.mp3",
+   "step_concrete_4.mp3"
+  ],
+  "step_wood": [
+   "step_wood_1.mp3",
+   "step_wood_2.mp3",
+   "step_wood_3.mp3",
+   "step_wood_4.mp3"
+  ],
+  "step_metal": [
+   "step_metal_1.mp3",
+   "step_metal_2.mp3",
+   "step_metal_3.mp3",
+   "step_metal_4.mp3"
+  ],
+  "step_salt": [
+   "step_salt_1.mp3",
+   "step_salt_2.mp3",
+   "step_salt_3.mp3",
+   "step_salt_4.mp3"
+  ],
+  "step_snow": [
+   "step_snow_1.mp3",
+   "step_snow_2.mp3",
+   "step_snow_3.mp3",
+   "step_snow_4.mp3"
+  ],
+  "step_snowRoad": [
+   "step_snowRoad_1.mp3",
+   "step_snowRoad_2.mp3",
+   "step_snowRoad_3.mp3",
+   "step_snowRoad_4.mp3"
+  ],
+  "step_grass": [
+   "step_grass_1.mp3",
+   "step_grass_2.mp3",
+   "step_grass_3.mp3"
+  ],
+  "step_ice": [
+   "step_ice_1.mp3",
+   "step_ice_2.mp3",
+   "step_ice_3.mp3"
+  ],
+  "cicadas": "cicadas.mp3",
+  "crickets": "crickets.mp3",
+  "crackle": "crackle.mp3",
+  "stream": "stream.mp3",
+  "pant": [
+   "pant_1.mp3",
+   "pant_2.mp3"
+  ],
+  "breath": "breath.mp3",
+  "heartbeat": "heartbeat.mp3",
+  "hurt": [
+   "hurt_1.mp3",
+   "hurt_2.mp3"
+  ],
+  "revolver": "revolver.mp3",
+  "shotgun": "shotgun.mp3",
+  "backfire": [
+   "backfire_1.mp3",
+   "backfire_2.mp3"
+  ],
+  "seat": "seat.mp3",
+  "clunk": [
+   "clunk_1.mp3",
+   "clunk_2.mp3"
+  ],
+  "pour": "pour.mp3",
+  "throw": "throw.mp3",
+  "swing": "swing.mp3",
+  "bandage": "bandage.mp3",
+  "extinguish": "extinguish.mp3",
+  "ignite": "ignite.mp3",
+  "dryfire": "dryfire.mp3",
+  "reloadShotgun": "reloadShotgun.mp3",
+  "land": "land.mp3",
+  "stomach": "stomach.mp3",
+  "chatter": "chatter.mp3",
+  "thunder": [
+   "thunder_1.mp3",
+   "thunder_2.mp3"
+  ],
+  "song": [
+   "song_1.mp3",
+   "song_2.mp3",
+   "song_3.mp3"
+  ],
+  "meadowlark": [
+   "meadowlark_1.mp3",
+   "meadowlark_2.mp3",
+   "meadowlark_3.mp3"
+  ],
+  "woodpecker": "woodpecker.mp3",
+  "owl": [
+   "owl_1.mp3",
+   "owl_2.mp3"
+  ],
+  "caw": [
+   "caw_1.mp3",
+   "caw_2.mp3"
+  ],
+  "hawk": "hawk.mp3",
+  "yips": [
+   "yips_1.mp3",
+   "yips_2.mp3"
+  ],
+  "howl": "howl.mp3",
+  "growl": [
+   "growl_1.mp3",
+   "growl_2.mp3"
+  ],
+  "chirp": [
+   "chirp_1.mp3",
+   "chirp_2.mp3",
+   "chirp_3.mp3"
+  ],
+  "bird": [
+   "bird_1.mp3",
+   "bird_2.mp3"
+  ],
+  "screech": "screech.mp3",
+  "vagrant": [
+   "vagrant_1.mp3",
+   "vagrant_2.mp3"
+  ],
+  "doorCreak": "doorCreak.mp3",
+  "doorShut": "doorShut.mp3",
+  "signCreak": [
+   "signCreak_1.mp3",
+   "signCreak_2.mp3"
+  ],
+  "swish": "swish.mp3"
+ },
+ "music": {},
+ "gain": {
+  "wind": 1.73,
+  "tyreRoll": 1.038,
+  "skid": 0.12,
+  "rain": 5.267,
+  "pocket": 0.851,
+  "pickupHeavy": 1.072,
+  "hitMetal": 1.216,
+  "hitFlesh": 1.23,
+  "eat": 0.851,
+  "starter": 1.38,
+  "stall": 1.758,
+  "hood": 1.175,
+  "trunk": 1.531,
+  "crashHeavy": 0.813,
+  "crackle": 3.055,
+  "heartbeat": 1.023,
+  "revolver": 1.096,
+  "shotgun": 0.582,
+  "stream": 1.365,
+  "throw": 0.708,
+  "bandage": 0.684,
+  "extinguish": 1.445,
+  "land": 1.288,
+  "stomach": 1.905,
+  "reloadShotgun": 1.622,
+  "swing": 0.767,
+  "chatter": 0.923,
+  "doorCreak": 1.778,
+  "doorShut": 1.23,
+  "hurt": 0.851,
+  "ping": 1.059,
+  "ratchet": 1.096,
+  "yips": 1.084,
+  "growl": 0.891,
+  "step_ice": 1.072,
+  "song": 1.288,
+  "step_dirt": 1.059,
+  "step_asphalt": 1.274,
+  "step_rock": 1.334,
+  "step_wood": 1.135,
+  "step_salt": 1.059,
+  "step_snowRoad": 1.135,
+  "step_concrete": 1.084
+ }
+}

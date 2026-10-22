@@ -396,6 +396,88 @@ export function stdMat(params, physical = false) {
 }
 
 // Small landscape paintings for picture frames (a handful, shared).
+// Shop goods: one 8x8 atlas of packaging (cans, cereal boxes, crisp bags, drinks, motor oil,
+// candy, household odds), each cell a made-up brand. Products map their uvs into one cell.
+export const GOODS_GRID = 8;
+function goodsMaterial() {
+  const S = 1024,
+    C = S / GOODS_GRID;
+  const c = makeCanvas(S, S);
+  const x = c.getContext('2d');
+  const r = mulberry32(4242);
+  const rows = [
+    // [label colours, words]
+    [['#b8352a', '#e8d9b0', '#2f5b2f', '#d6a03a', '#3a4f7a', '#f0e6cc', '#7a2a1a', '#4a7a3a'], ['BEANS', 'SOUP', 'CORN', 'PEACHES', 'CHILI', 'TUNA', 'STEW', 'PEAS']],
+    [['#d8b13a', '#a33a2a', '#2a6a8a', '#e07a2a', '#5a3a7a', '#3a8a5a', '#c8c0b0', '#8a5a2a'], ['HASH', 'RAVIOLI', 'SARDINES', 'CARROTS', 'BEETS', 'SPINACH', 'MILK', 'COFFEE']],
+    [['#e0c040', '#c84a2a', '#3a6ab0', '#e6e0d0', '#7a4a2a', '#d07a2a', '#4a8a4a', '#b03a5a'], ['FLAKES', 'CRUNCH', 'OATS', 'RICE', 'BRAN', 'HONEY O', 'CRACKERS', 'COOKIES']],
+    [['#e8b030', '#c8302a', '#3a5ab0', '#2a8a4a', '#e07020', '#8a2a8a', '#d8d0b8', '#4a4a4a'], ['CHIPS', 'NACHO', 'SALT', 'PRETZEL', 'CHEESE', 'BBQ', 'POPCORN', 'JERKY']],
+    [['#b0201a', '#4a2a1a', '#e8d84a', '#6a2a8a', '#2a7ab0', '#e07a2a', '#f0f0e8', '#1a4a2a'], ['COLA', 'ROOT BEER', 'LEMON', 'GRAPE', 'SPRING', 'ORANGE', 'SODA', 'GINGER']],
+    [['#1a1a1a', '#d0b030', '#2a6a3a', '#3a6ad0', '#b02a1a', '#e0e0d8', '#4a4a4a', '#c87020'], ['10W-40', 'MOTOR OIL', 'COOLANT', 'WASHER', 'BRAKE', 'STARTER', 'GREASE', 'FIX-A-FLAT']],
+    [['#5a2a1a', '#c8302a', '#e0b040', '#2a2a6a', '#e8e0d0', '#8a1a3a', '#3a7a3a', '#d06a2a'], ['CHOCO', 'NUTS', 'TOFFEE', 'MINT', 'GUM', 'CHERRY', 'MINT', 'CARAMEL']],
+    [['#e8e4da', '#c8a040', '#3a3a3a', '#b02a2a', '#2a5a8a', '#d8d0c0', '#6a8a3a', '#e0c070'], ['TISSUE', 'MATCHES', 'BATTERY', 'RANGER', 'SOAP', 'BANDAGE', 'BUG OFF', 'CANDLES']],
+  ];
+  rows.forEach(([cols, words], j) => {
+    for (let i = 0; i < GOODS_GRID; i++) {
+      const X = i * C,
+        Y = j * C;
+      const bg = cols[i];
+      x.fillStyle = bg;
+      x.fillRect(X, Y, C, C);
+      // a band, a stripe or a panel per row style
+      x.fillStyle = 'rgba(255,255,255,0.85)';
+      if (j < 2) x.fillRect(X, Y + C * 0.32, C, C * 0.36);
+      else if (j === 2) {
+        x.fillStyle = 'rgba(255,255,255,0.25)';
+        x.beginPath();
+        x.arc(X + C * 0.5, Y + C * 0.68, C * 0.26, 0, Math.PI * 2);
+        x.fill();
+      } else if (j === 3) {
+        const g = x.createLinearGradient(X, Y, X, Y + C);
+        g.addColorStop(0, 'rgba(255,255,255,0.35)');
+        g.addColorStop(0.5, 'rgba(255,255,255,0)');
+        g.addColorStop(1, 'rgba(0,0,0,0.25)');
+        x.fillStyle = g;
+        x.fillRect(X, Y, C, C);
+      } else if (j === 4) {
+        x.fillStyle = 'rgba(255,255,255,0.75)';
+        x.beginPath();
+        x.ellipse(X + C * 0.5, Y + C * 0.5, C * 0.36, C * 0.22, -0.2, 0, Math.PI * 2);
+        x.fill();
+      } else if (j === 5) {
+        x.fillStyle = 'rgba(0,0,0,0.35)';
+        x.fillRect(X, Y + C * 0.72, C, C * 0.1);
+      } else {
+        x.fillStyle = 'rgba(255,255,255,0.18)';
+        x.fillRect(X + C * 0.08, Y + C * 0.08, C * 0.84, C * 0.84);
+      }
+      // brand word
+      const w = words[i];
+      const dark = j < 2 || j === 4;
+      x.fillStyle = dark ? '#1c1a18' : '#f6f1e6';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      let size = C * 0.24;
+      x.font = `bold ${size}px Impact, 'Arial Black', sans-serif`;
+      const tw = x.measureText(w).width;
+      if (tw > C * 0.88) {
+        size *= (C * 0.88) / tw;
+        x.font = `bold ${size}px Impact, 'Arial Black', sans-serif`;
+      }
+      x.fillText(w, X + C / 2, Y + C * 0.5);
+      // fine print and a little wear
+      x.fillStyle = dark ? 'rgba(30,26,24,0.6)' : 'rgba(255,250,240,0.6)';
+      x.font = `${C * 0.07}px Arial, sans-serif`;
+      x.fillText(['NET WT 15 OZ', 'FAMILY SIZE', 'NEW!', '12 FL OZ', 'EST. 1952'][(i + j) % 5], X + C / 2, Y + C * 0.84);
+      for (let k = 0; k < 18; k++) {
+        x.fillStyle = `rgba(${120 + r() * 80},${100 + r() * 60},${80 + r() * 40},${0.1 + r() * 0.2})`;
+        x.fillRect(X + r() * C, Y + r() * C, 2 + r() * 6, 1 + r() * 3);
+      }
+    }
+  });
+  const t = canvasTexture(c, { wrap: false });
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, metalness: 0.05 });
+}
+
 function paintingMaterial(i) {
   const c = makeCanvas(64, 48);
   const ctx = c.getContext('2d');
@@ -479,7 +561,8 @@ export function archMaterials() {
     corrugated: std('corrugated', { roughness: 0.55, metalness: 0.6, ns: 1.2, rust: true }, true),
     corrugatedRust: (() => {
       const m = std('corrugated', { roughness: 0.75, metalness: 0.4, ns: 1.2 });
-      applyWeathering(m, weatheringUniforms({ dirt: 0.5, dust: 0.3, rust: 0.8 }), { rustColor: true, strength: 1 });
+      // rust streaks, not a camouflage of white blotches
+      applyWeathering(m, weatheringUniforms({ dirt: 0.45, dust: 0.08, rust: 0.55 }), { rustColor: true, strength: 0.7 });
       return m;
     })(),
     shingles: std('shingles', { roughness: 0.95, ns: 1.1 }, true),
@@ -516,6 +599,7 @@ export function archMaterials() {
     canvasOrange: std('fabric', { roughness: 1, color: 0xd88850, ns: 0.6 }),
     cardboard: new THREE.MeshStandardMaterial({ color: 0xa88458, roughness: 0.95 }),
     asphalt: std('concrete', { roughness: 0.95, color: 0x55524e }),
+    goods: goodsMaterial(),
   };
   for (let i = 0; i < 6; i++) MATS['painting' + i] = paintingMaterial(i);
   return MATS;

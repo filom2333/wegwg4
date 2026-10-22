@@ -6,10 +6,11 @@
 
 import * as THREE from 'three';
 import { Car } from './car.js';
-import { CAR_TYPES, carType } from './types.js';
+import { CAR_TYPES, CAR_TYPE_LIST, carType } from './types.js';
 import { Container } from '../items/inventory.js';
 import { hash01 } from '../core/noise.js';
 import { RAPIER } from '../physics/physics.js';
+import { dependentsOf } from './partUtils.js';
 import { ACCESSORIES, fitAccessory, serializeAccessories } from './accessories.js';
 import { serializePlates, restorePlates } from './plates.js';
 import { setTune } from './tuning.js';
@@ -30,8 +31,13 @@ export class Fleet {
 
   // Loads every type's asset once (and warms its materials), so cars found later appear without
   // a hitch.
-  async preload(renderer) {
-    for (const t of Object.values(CAR_TYPES)) this.assets[t.id] = await t.load(renderer);
+  async preload(renderer, extra = []) {
+    for (const t of new Set([...CAR_TYPE_LIST, ...extra.map((id) => CAR_TYPES[id]).filter(Boolean)])) this.assets[t.id] = await t.load(renderer);
+  }
+
+  // A type a save brought along that was not loaded up front.
+  async ensure(typeId, renderer) {
+    if (!this.assets[typeId] && CAR_TYPES[typeId]) this.assets[typeId] = await CAR_TYPES[typeId].load(renderer);
   }
 
   build(typeId, { color } = {}) {
@@ -177,12 +183,15 @@ export class Fleet {
     const g = this.game;
     const hosts = ['house', 'houses', 'gasStation', 'motel', 'diner', 'farm', 'ranch', 'cabin', 'sawmill', 'lodge', 'outpost'];
     if (!hosts.includes(poi.type) || poi.k < 1) return null;
-    const others = Object.keys(CAR_TYPES).filter((t) => t !== g.startCarType);
+    const others = CAR_TYPE_LIST.map((t) => t.id).filter((t) => t !== g.startCarType);
     // the first host slots after the start get one each of the other types
     const order = this.hostOrder || (this.hostOrder = this.firstHosts(hosts, others.length));
     const i = order.indexOf(poi.k);
     if (i >= 0) return others[i];
-    if (poi.k > Math.max(...order) && hash01(g.seed, poi.k, 911) < 0.22) return Object.keys(CAR_TYPES)[Math.floor(hash01(g.seed, poi.k, 912) * 3)];
+    // later on a car is a rare find, and rarer the harder the game
+    const chance = { Easy: 0.16, Normal: 0.09, Hard: 0.05 }[g.difficulty.label] ?? 0.09;
+    const ids = CAR_TYPE_LIST.map((t) => t.id);
+    if (poi.k > Math.max(...order) && hash01(g.seed, poi.k, 911) < chance) return ids[Math.floor(hash01(g.seed, poi.k, 912) * ids.length)];
     return null;
   }
 
@@ -211,7 +220,7 @@ export class Fleet {
       init: rec ? {} : abandonedState(g.seed, k),
     });
     if (!rec) {
-      neglect(car, g.seed, k);
+      neglect(car, g.seed, k, g.difficulty, inst, g);
       outfit(car, g.seed, k);
     }
     car.syncVisual();
@@ -291,23 +300,61 @@ export class Fleet {
   }
 }
 
-// A car left standing for years: some fuel, a tired battery, worn fluids.
+// A car left standing for years: a splash of fuel at best, a flat battery, old oil, a tired engine.
 function abandonedState(seed, k) {
   const r = (i) => hash01(seed, k, 920 + i);
-  return { fuel: 2 + r(0) * 14, oil: 1.6 + r(1) * 1.8, battery: r(2) < 0.5 ? 0.02 + r(3) * 0.1 : 0.3 + r(3) * 0.4, engineCondition: 0.45 + r(4) * 0.4, fanbeltCondition: 0.2 + r(5) * 0.6 };
+  return {
+    fuel: r(0) < 0.4 ? 0 : 0.5 + r(0) * 6,
+    oil: 0.8 + r(1) * 1.8,
+    battery: r(2) < 0.75 ? 0.01 + r(3) * 0.06 : 0.25 + r(3) * 0.35,
+    engineCondition: 0.25 + r(4) * 0.45,
+    fanbeltCondition: 0.08 + r(5) * 0.45,
+  };
 }
 
-// ... and a few parts gone missing (scavenged, or never there).
-function neglect(car, seed, k) {
+// ... and the parts it needs to run are gone: scavenged, sold, or taken inside. Some of them are
+// still about the place (the battery on the bench, a wheel against the wall), worn but there.
+function neglect(car, seed, k, diff, inst, g) {
   const r = (i) => hash01(seed, k, 940 + i);
-  const pool = ['battery', 'wheel_RR', 'spare', 'seat_FR', 'headlight_R', 'fanbelt', 'airfilter'];
-  const n = Math.floor(r(0) * 3);
-  for (let i = 0; i < n; i++) {
+  const pool = ['battery', 'fanbelt', 'wheel_RR', 'wheel_FL', 'airfilter', 'spare', 'steeringWheel', 'seat_FL', 'seat_FR', 'headlight_R', 'headlight_L', 'exhaust', 'radiator', 'fueltank', 'hood', 'door_FR', 'bumper_F', 'alternator', 'starter', 'sparkplugs', 'waterpump', 'oilfilter'];
+  const [lo, hi] = { Easy: [1, 3], Normal: [3, 5], Hard: [4, 7] }[diff && diff.label] || [3, 5];
+  const n = lo + Math.floor(r(0) * (hi - lo + 1));
+  const taken = [];
+  for (let i = 0; taken.length < n && i < 24; i++) {
     const id = pool[Math.floor(r(1 + i) * pool.length)];
-    if (car.parts[id] && car.isInstalled(id) && car.canRemove(id).ok) car.setInstalled(id, false);
+    if (!car.parts[id] || !car.isInstalled(id)) continue;
+    // nothing still bolted to it (a lid may be shut: whoever took it opened it)
+    if (dependentsOf(car.PARTS, id).some((d) => car.isInstalled(d) && !car.PARTS[d].fixed)) continue;
+    car.setInstalled(id, false);
+    taken.push(id);
   }
+  // what is left under the bonnet has sat for years: fouled plugs, a clogged filter, a tired
+  // starter and alternator, a pump seal gone hard
+  ['sparkplugs', 'oilfilter', 'starter', 'alternator', 'waterpump'].forEach((id, i) => {
+    if (car.parts[id] && car.isInstalled(id)) car.parts[id].condition = 0.08 + r(70 + i) * 0.55;
+  });
+  // flat tyres on what wheels are left
+  car.dyn.wheels.forEach((w, i) => {
+    if (!w.installed || r(40 + i) > 0.35) return;
+    car.parts[w.id].condition = 0.01;
+    w.flat = true;
+  });
   car.dirt = 0.7 + r(5) * 0.3;
-  car.coolant = car.type.coolantCap ? car.type.coolantCap * (0.2 + r(6) * 0.6) : 0;
+  car.coolant = car.type.coolantCap ? car.type.coolantCap * (0.1 + r(6) * 0.4) : 0;
+  // half of what was taken lies indoors
+  if (!inst || !g || !g.items) return;
+  const spots = inst.loot.filter((l) => ['tools', 'storage', 'shelf', 'crate', 'table', 'counter', 'gear', 'any'].includes(l.kind));
+  if (!spots.length) return;
+  inst.root.updateMatrixWorld(true);
+  taken.forEach((id, i) => {
+    if (r(60 + i) > 0.5) return;
+    const sp = spots[Math.floor(r(70 + i) * spots.length)];
+    const wp = sp.pos.clone().applyMatrix4(inst.root.matrixWorld).add(V(0, 0.15 + i * 0.02, 0));
+    const st = { condition: 0.35 + r(80 + i) * 0.45, carType: car.type.id };
+    if (id === 'battery') st.charge = 0.03;
+    const it = g.items.spawnPart(id, wp, new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), r(90 + i) * 6.28), st);
+    it.poiKey = inst.k;
+  });
 }
 
 // ... and some came with gear bolted on, there for the taking.

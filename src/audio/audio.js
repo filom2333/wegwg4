@@ -7,6 +7,17 @@ import { Soundscape } from './soundscape.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
 import { tunedVoice } from '../vehicle/tuning.js';
+import { STATIONS, stationProgram } from './stations.js';
+
+const SOUNDS = (import.meta.env.BASE_URL || '/') + 'sounds/';
+// Engine recordings, if any: looped at a steady speed, each played faster or slower around its
+// own rpm and crossfaded with its neighbours.
+const ENGINE_LAYERS = [
+  ['engine_idle', 800],
+  ['engine_low', 2000],
+  ['engine_mid', 3500],
+  ['engine_high', 5500],
+];
 
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
@@ -71,10 +82,62 @@ export class AudioSystem {
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
     await this.buildBuffers();
+    await this.loadSamples();
+    this.applySamples();
     this.buildLoops();
     this.scape = new Soundscape(this);
     await this.scape.build(() => new Promise((r) => setTimeout(r, 0)));
+    this.applySamples();
     this.ready = true;
+  }
+
+  // Recorded or generated sounds put in public/sounds/ and listed in sounds/index.json take the
+  // place of the synthesized ones: { "sounds": { name: file | [files] }, "music": { "album:track":
+  // file } }. Several files for a name are variants picked at random. Anything missing or broken
+  // keeps its synthesized voice.
+  async loadSamples() {
+    this.samples = {};
+    this.musicFiles = {};
+    let list = null;
+    try {
+      const r = await fetch(SOUNDS + 'index.json');
+      if (r.ok) list = await r.json();
+    } catch {
+      list = null;
+    }
+    if (!list) return;
+    this.musicFiles = list.music || {};
+    // level corrections for recorded loops, so they sit where the shaped noise they replace did
+    this.sampleGain = list.gain || {};
+    await Promise.all(
+      Object.entries(list.sounds || {}).map(async ([name, files]) => {
+        const bufs = [];
+        for (const f of [].concat(files)) {
+          try {
+            const r = await fetch(SOUNDS + f);
+            bufs.push(await this.ctx.decodeAudioData(await r.arrayBuffer()));
+          } catch (e) {
+            console.warn('sound', f, 'did not load:', e.message || e);
+          }
+        }
+        if (bufs.length) this.samples[name] = bufs.length === 1 ? bufs[0] : bufs;
+      })
+    );
+  }
+
+  applySamples() {
+    for (const [k, v] of Object.entries(this.samples || {})) this.buffers[k] = v;
+  }
+
+  // Level correction for a sound while a recording stands in for it.
+  trim(name) {
+    return this.samples && this.samples[name] ? (this.sampleGain || {})[name] ?? 1 : 1;
+  }
+
+  // A loaded recording for a loop (its first variant), or null.
+  sample(name) {
+    const s = this.samples && this.samples[name];
+    return s ? (Array.isArray(s) ? s[0] : s) : null;
   }
 
   applyVolumes() {
@@ -152,7 +215,7 @@ export class AudioSystem {
   // Continuous sources.
   buildLoops() {
     const c = this.ctx;
-    const mkNoise = (buf, bus, filterType, freq, q = 0.7) => {
+    const mkNoise = (buf, bus, filterType, freq, q = 0.7, trim = 1) => {
       const src = c.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -162,14 +225,21 @@ export class AudioSystem {
       f.Q.value = q;
       const g = c.createGain();
       g.gain.value = 0;
-      src.connect(f).connect(g).connect(bus);
+      let head = src;
+      if (trim !== 1) {
+        const t = c.createGain();
+        t.gain.value = trim;
+        head = src.connect(t);
+      }
+      head.connect(f).connect(g).connect(bus);
       src.start();
       return { src, f, g };
     };
     // ambience
-    this.loops.wind = mkNoise(this.buffers.pink, this.amb, 'lowpass', 500);
+    // (a recorded wind or rain replaces the shaped noise; the filters still follow the weather)
+    this.loops.wind = mkNoise(this.sample('wind') || this.buffers.pink, this.amb, 'lowpass', 500, 0.7, this.trim('wind'));
     this.loops.windHigh = mkNoise(this.buffers.white, this.amb, 'bandpass', 2400, 0.6);
-    this.loops.rain = mkNoise(this.buffers.white, this.amb, 'highpass', 1200);
+    this.loops.rain = mkNoise(this.sample('rain') || this.buffers.white, this.amb, 'highpass', 1200, 0.7, this.trim('rain'));
     this.loops.rainLow = mkNoise(this.buffers.brown, this.amb, 'lowpass', 400);
     // car: engine synthesis with panner at the car
     const pan = (this.carPanner = c.createPanner());
@@ -217,12 +287,26 @@ export class AudioSystem {
     st.loop = true;
     const stG = c.createGain();
     stG.gain.value = 0;
-    st.connect(stG).connect(carBus);
+    const stT = c.createGain();
+    stT.gain.value = this.trim('starter');
+    st.connect(stT).connect(stG).connect(carBus);
     st.start();
     this.loops.starter = { src: st, g: stG };
     // tyres & skid (not filtered by cabin as strongly but fine)
-    this.loops.tyre = mkNoise(this.buffers.brown, carBus, 'lowpass', 300);
-    this.loops.skid = mkNoise(this.buffers.pink, carBus, 'bandpass', 950, 4);
+    this.loops.tyre = mkNoise(this.sample('tyreRoll') || this.buffers.brown, carBus, 'lowpass', 300, 0.7, this.trim('tyreRoll'));
+    this.loops.skid = mkNoise(this.sample('skid') || this.buffers.pink, carBus, 'bandpass', 950, this.sample('skid') ? 0.5 : 4, this.trim('skid'));
+    // recorded engine layers, when there are at least two of them
+    const layers = ENGINE_LAYERS.filter(([k]) => this.sample(k)).map(([k, rpm]) => {
+      const src = c.createBufferSource();
+      src.buffer = this.sample(k);
+      src.loop = true;
+      const g = c.createGain();
+      g.gain.value = 0;
+      src.connect(g).connect(carBus);
+      src.start(0, Math.random() * src.buffer.duration);
+      return { src, g, rpm };
+    });
+    this.engineRec = layers.length >= 2 ? layers : null;
     // pour loop (non positional)
     const ps = c.createBufferSource();
     ps.buffer = this.buffers.pour;
@@ -268,6 +352,24 @@ export class AudioSystem {
     const cd = this.cd;
     const key = album + ':' + track;
     if (cd.buffers.has(key)) return cd.buffers.get(key);
+    // a real recording of this song, if one was put in public/sounds/
+    const file = this.musicFiles && this.musicFiles[key];
+    if (file && !cd.pending.has(key)) {
+      cd.pending.set(key, true);
+      fetch(SOUNDS + file)
+        .then((r) => r.arrayBuffer())
+        .then((a) => this.ctx.decodeAudioData(a))
+        .then((b) => {
+          cd.buffers.set(key, b);
+          while (cd.buffers.size > 2) cd.buffers.delete(cd.buffers.keys().next().value);
+        })
+        .catch((e) => {
+          console.warn('song', file, 'did not load:', e.message || e);
+          delete this.musicFiles[key];
+        })
+        .finally(() => cd.pending.delete(key));
+      return null;
+    }
     if (!cd.pending.has(key)) {
       if (!cd.worker) {
         cd.worker = new Worker(new URL('./music/musicWorker.js', import.meta.url), { type: 'module' });
@@ -298,7 +400,15 @@ export class AudioSystem {
     const now = this.ctx.currentTime;
     const st = car && car.stereo;
     const powered = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03;
-    const want = powered && st.mode === 'cd' && st.disc >= 0 ? st.disc + ':' + st.track : null;
+    let want = powered && st.mode === 'cd' && st.disc >= 0 ? st.disc + ':' + st.track : null;
+    // a music station: the albums on the air, picked by the clock
+    this.radioClock = (this.radioClock ?? 1e4 + Math.random() * 5e4) + dt;
+    const station = st && st.mode !== 'cd' ? STATIONS[st.station ?? 1] : null;
+    let prog = null;
+    if (powered && station && station.kind === 'music') {
+      prog = stationProgram(station, this.radioClock + (st.radioShift || 0));
+      want = 'fm:' + prog.album + ':' + prog.track;
+    }
     if (cd.key !== want || st?.restart) {
       if (cd.src) {
         try {
@@ -311,42 +421,55 @@ export class AudioSystem {
       cd.key = null;
       if (st) st.restart = false;
       if (want) {
-        const buf = this.cdTrack(st.disc, st.track);
+        const buf = prog ? this.cdTrack(prog.album, prog.track) : this.cdTrack(st.disc, st.track);
         if (buf) {
           const src = this.ctx.createBufferSource();
           src.buffer = buf;
           src.connect(cd.in);
-          const off = Math.min(st.pos || 0, buf.duration - 0.5);
+          const off = Math.min(prog ? prog.pos : st.pos || 0, buf.duration - 0.5);
           src.start(now + 0.05, Math.max(0, off));
           cd.src = src;
           cd.key = want;
           cd.startedAt = now + 0.05 - Math.max(0, off);
           cd.duration = buf.duration;
+          const radioSlot = prog ? prog.slot : null;
           src.onended = () => {
-            if (cd.src === src && car.stereo.disc >= 0) {
+            if (cd.src !== src) return;
+            if (radioSlot !== null) {
+              // the song is over before its slot: the station moves on to the next one
+              const now2 = stationProgram(STATIONS[car.stereo.station ?? 1], this.radioClock + (car.stereo.radioShift || 0));
+              if (now2.slot === radioSlot) car.stereo.radioShift = (car.stereo.radioShift || 0) + (210 - now2.pos);
+              return;
+            }
+            if (car.stereo.disc >= 0) {
               car.stereo.pos = 0;
               car.nextTrack();
             }
           };
-          this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
-          // render the next one in the background
-          this.cdTrack(st.disc, (st.track + 1) % 3);
+          if (prog) this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(prog.album, prog.track, station);
+          if (!prog) {
+            this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
+            // render the next one in the background
+            this.cdTrack(st.disc, (st.track + 1) % 3);
+          }
         }
       }
     }
-    if (cd.key && st) st.pos = Math.max(0, now - cd.startedAt);
-    set(cd.g.gain, cd.key ? 0.85 * (seated ? 1 : 0.4) : 0, now, 0.08);
-    set(cd.lp.frequency, seated ? 14000 : 1600, now, 0.2);
-    return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0 };
+    if (cd.key && st && !prog) st.pos = Math.max(0, now - cd.startedAt);
+    set(cd.g.gain, cd.key ? (prog ? 0.7 : 0.85) * (seated ? 1 : 0.4) : 0, now, 0.08);
+    // over the air: no deep bass, no sparkle
+    set(cd.lp.frequency, seated ? (prog ? 5200 : 14000) : 1600, now, 0.2);
+    return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0, prog };
   }
 
   // ------------------------------------------------------------------ one-shots
   play(name, opts = {}) {
     if (!this.ready) return;
     const c = this.ctx;
-    let buf = this.buffers[name];
-    if (name === 'step') buf = this.buffers['step_' + (opts.surface in STEP_SURF ? opts.surface : 'dirt')];
-    if (name === 'pickup' && opts.mass > 6) buf = this.buffers.pickupHeavy;
+    let key = name;
+    if (name === 'step') key = 'step_' + (opts.surface in STEP_SURF ? opts.surface : 'dirt');
+    if (name === 'pickup' && opts.mass > 6) key = 'pickupHeavy';
+    let buf = this.buffers[key];
     if (name === 'pour') {
       this.pourT = 0.15;
       return;
@@ -357,7 +480,7 @@ export class AudioSystem {
     src.buffer = buf;
     src.playbackRate.value = (opts.rate || 1) * (1 + (Math.random() - 0.5) * (opts.pitchVar ?? 0.12));
     const g = c.createGain();
-    g.gain.value = (opts.volume ?? 1) * (VOL[name] ?? 0.8);
+    g.gain.value = (opts.volume ?? 1) * (VOL[name] ?? 0.8) * this.trim(key);
     let node = src.connect(g);
     if (opts.lowpass) {
       const f = c.createBiquadFilter();
@@ -382,6 +505,40 @@ export class AudioSystem {
 
   setRadio(on) {
     this.radioOn = on;
+  }
+
+  // The emergency system's attention signal: two tones together, through the radio.
+  ebsTone(seconds = 2.5) {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const g = c.createGain();
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(0.12, c.currentTime, 0.02);
+    g.gain.setTargetAtTime(0, c.currentTime + seconds, 0.03);
+    g.connect(this.radio.in);
+    for (const f of [853, 960]) {
+      const o = c.createOscillator();
+      o.frequency.value = f;
+      o.connect(g);
+      o.start();
+      o.stop(c.currentTime + seconds + 0.3);
+    }
+  }
+
+  // A short pip for the numbers station.
+  pip(freq = 1200) {
+    if (!this.ready) return;
+    const c = this.ctx;
+    const g = c.createGain();
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(0.1, c.currentTime, 0.005);
+    g.gain.setTargetAtTime(0, c.currentTime + 0.12, 0.01);
+    g.connect(this.radio.in);
+    const o = c.createOscillator();
+    o.frequency.value = freq;
+    o.connect(g);
+    o.start();
+    o.stop(c.currentTime + 0.3);
   }
 
   // ------------------------------------------------------------------ update
@@ -437,11 +594,15 @@ export class AudioSystem {
     const windGain = (0.05 + wind * 0.25 + env.w.dust * 0.3) * this.windGust;
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
-    set(this.loops.wind.f.frequency, 300 + wind * 500 + drive * 600, now);
+    // a recorded wind keeps its airy hiss (the shaped noise is mostly rumble above 800 Hz)
+    const windF = this.sample('wind') ? (700 + wind * 1800) * (1 - this.inCabin * 0.5) + drive * 900 : 300 + wind * 500 + drive * 600;
+    set(this.loops.wind.f.frequency, windF, now);
     set(this.loops.windHigh.g.gain, (wind * 0.05 + env.w.dust * 0.12) * (1 - this.inCabin * 0.8) + drive * 0.03, now);
-    const rain = env.w.rain;
+    // snow falls without a sound
+    const rain = env.snowing ? 0 : env.w.rain;
     set(this.loops.rain.g.gain, rain * 0.22 * (1 - this.inCabin * 0.4), now);
-    set(this.loops.rain.f.frequency, seated ? 600 : 1500, now);
+    // (a recorded rain has its body lower down than the white noise it replaces)
+    set(this.loops.rain.f.frequency, this.sample('rain') ? (seated ? 150 : 300) : seated ? 600 : 1500, now);
     set(this.loops.rainLow.g.gain, rain * (seated ? 0.35 : 0.12), now);
     // ---- car
     if (car) {
@@ -468,7 +629,22 @@ export class AudioSystem {
       const exhaustMissing = !car.isInstalled('exhaust');
       set(e.f.frequency, S.tone + rpm * S.toneRpm + load * 900 + (exhaustMissing ? 1200 : 0), now, 0.04);
       const rough = car.engineCondition < 0.4 ? (Math.random() - 0.5) * 0.25 * (0.4 - car.engineCondition) * 2 : 0;
-      set(e.g.gain, running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0, now, 0.05);
+      const synthGain = running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0;
+      if (this.engineRec) {
+        // recordings: each layer pitched to the rpm, weighted by how near its own rpm it is
+        const L = this.engineRec;
+        set(e.g.gain, synthGain * 0.12, now, 0.05);
+        const r = Math.max(L[0].rpm, Math.min(L[L.length - 1].rpm, rpm));
+        L.forEach((l, i) => {
+          const lo = i > 0 ? L[i - 1].rpm : l.rpm,
+            hi = i < L.length - 1 ? L[i + 1].rpm : l.rpm;
+          let w = 0;
+          if (r <= l.rpm) w = l.rpm === lo ? 1 : clamp((r - lo) / (l.rpm - lo), 0, 1);
+          else w = l.rpm === hi ? 1 : clamp((hi - r) / (hi - l.rpm), 0, 1);
+          set(l.src.playbackRate, clamp(Math.max(rpm, 300) / l.rpm, 0.5, 2), now, 0.03);
+          set(l.g.gain, running ? Math.sqrt(w) * (0.45 + load * 0.55 + rough) * (exhaustMissing ? 1.6 : 1) * S.gain : 0, now, 0.05);
+        });
+      } else set(e.g.gain, synthGain, now, 0.05);
       set(this.loops.intake.g.gain, running ? (0.05 + load * 0.25) * S.intake : 0, now);
       set(this.loops.intake.f.frequency, 200 + rpm * 0.25, now);
       set(this.loops.starter.g.gain, car.cranking > 0 && !running ? 0.5 : 0, now, 0.02);
@@ -508,9 +684,10 @@ export class AudioSystem {
     if (car) car.stereoState = this.updateCd(car, dt, seated);
     // ---- radio
     const radioOn = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03 && !(car.stereo && car.stereo.mode === 'cd');
+    const kind = radioOn ? STATIONS[car.stereo.station ?? 1].kind : null;
     set(this.radio.g.gain, radioOn ? 0.5 * (seated ? 1 : 0.35) : 0, now, 0.1);
-    set(this.loops.static.g.gain, radioOn ? 0.03 : 0, now, 0.1);
-    if (radioOn) {
+    set(this.loops.static.g.gain, kind === 'numbers' ? 0.14 : kind === 'ebs' ? 0.06 : radioOn ? 0.03 : 0, now, 0.1);
+    if (kind === 'haven') {
       this.timers.radio -= dt;
       if (this.timers.radio <= 0) this.radioNote();
     }

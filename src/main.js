@@ -43,14 +43,14 @@ async function boot() {
       startZ: +(params.get('z') || 0),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'assembled',
-      car: params.get('car') || 'beetle',
+      car: params.get('car') || 'w203',
       trailer: params.has('trailer'),
       onProgress: (t, p) => console.log('load', t, p),
     });
     if (!params.get('manual')) game.start();
     else game.clock.start();
     // headless captures (menu pictures, tests) fit kit to the car from outside
-    if (params.get('manual')) window.dev = { fitAccessory: (await import('./vehicle/accessories.js')).fitAccessory, setTune: (await import('./vehicle/tuning.js')).setTune, input: (await import('./core/input.js')).input };
+    if (params.get('manual')) window.dev = { fitAccessory: (await import('./vehicle/accessories.js')).fitAccessory, setTune: (await import('./vehicle/tuning.js')).setTune, input: (await import('./core/input.js')).input, placeProp: (await import('./world/props.js')).placeProp };
     canvas.addEventListener('click', () => ui.resume());
     window.__ready = true;
     return;
@@ -62,7 +62,7 @@ async function boot() {
       seed: +(params.get('seed') || 1234),
       difficulty: params.get('difficulty') || 'normal',
       start: params.get('start') || 'parts',
-      car: params.get('car') || 'beetle',
+      car: params.get('car') || 'w203',
       time: 8.2,
       weather: 'clear',
       load,

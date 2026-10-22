@@ -74,8 +74,10 @@ export class Soundscape {
     B.chatter = GEN.chatter(c);
     B.pant = [GEN.breath(c, { len: 0.5, seed: 421 }), GEN.breath(c, { len: 0.45, seed: 422 })];
 
+    // recordings put in public/sounds/ replace these before the loops start
+    a.applySamples();
     // continuous layers
-    const loop = (buf, bus, { filter = null, freq = 1000, q = 0.7, positional = false } = {}) => {
+    const loop = (buf, bus, { filter = null, freq = 1000, q = 0.7, positional = false, name = null } = {}) => {
       const src = c.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -84,6 +86,11 @@ export class Soundscape {
       const g = c.createGain();
       g.gain.value = 0;
       let node = src;
+      if (name && a.trim(name) !== 1) {
+        const t = c.createGain();
+        t.gain.value = a.trim(name);
+        node = node.connect(t);
+      }
       let f = null;
       if (filter) {
         f = c.createBiquadFilter();
@@ -107,13 +114,13 @@ export class Soundscape {
       return { src, g, f, p };
     };
     this.L = {
-      cicadas: loop(B.cicadas, a.amb),
-      crickets: loop(B.crickets, a.amb),
+      cicadas: loop(B.cicadas, a.amb, { name: 'cicadas' }),
+      crickets: loop(B.crickets, a.amb, { name: 'crickets' }),
       leaves: loop(B.pink, a.amb, { filter: 'highpass', freq: 1700, q: 0.5 }),
       sand: loop(B.white, a.amb, { filter: 'bandpass', freq: 5200, q: 0.6 }),
       whistle: loop(B.pink, a.amb, { filter: 'bandpass', freq: 900, q: 9 }),
-      water: loop(B.stream, a.amb, { positional: true }),
-      fire: loop(B.crackle, a.sfx, { positional: true }),
+      water: loop(B.stream, a.amb, { positional: true, name: 'stream' }),
+      fire: loop(B.crackle, a.sfx, { positional: true, name: 'crackle' }),
       hum: loop(B.hum, a.amb, { filter: 'bandpass', freq: 600, q: 0.8, positional: true }),
     };
     this.L.water.p.refDistance = 10;

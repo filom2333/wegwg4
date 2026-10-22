@@ -38,6 +38,12 @@ export const RIVER_SPACING = 4300;
 export const LAKE_CELL = 1700;
 
 export const ROAD = { halfWidth: 3.6, shoulder: 1.6, laneMark: 0.12 };
+// dirt side tracks: one may leave the highway in every stretch of TRACK.every metres
+export const TRACK = { halfWidth: 2.4, shoulder: 1.1, every: 3400 };
+// The road's character changes every few kilometres (see WorldGen.windSeg), and now and then the
+// land itself rises onto a plateau, over a ridge or down into a basin (WorldGen.liftEvent).
+const WIND_SEG = 2600;
+const LIFT_CELL = 16000;
 const BIOME_CELL = 2600;
 
 // Value noise with its analytic derivatives: [value -1..1, d/dx, d/dy].
@@ -70,6 +76,17 @@ function noised(x, y, seed) {
   return _nd;
 }
 
+// 0 -> 1 over t in 0..1 at a steady grade, eased in and out over the first and last quarter.
+function rampEase(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const e = 0.25,
+    a = 1 / (1 - e);
+  if (t < e) return (0.5 * a * t * t) / e;
+  if (t > 1 - e) return 1 - (0.5 * a * (1 - t) * (1 - t)) / e;
+  return a * (t - e / 2);
+}
+
 // Mountain relief: fBm whose every octave is damped where the octaves below are steep. Ridges
 // stay sharp, valley floors smooth out and gullies run down the flanks, the way water and frost
 // shape real ranges. Returns about 0..1.
@@ -97,13 +114,13 @@ function erodedFbm(x, y, seed, octaves = 9) {
 export const POI_SPACING = 620;
 
 export const POI_INFO = {
-  homestead: { offset: [24, 28], pad: 26 },
+  homestead: { offset: [24, 28], pad: 30 },
   gasStation: { offset: [22, 26], pad: 30 },
   motel: { offset: [26, 34], pad: 32 },
   diner: { offset: [20, 26], pad: 22 },
-  houses: { offset: [30, 46], pad: 38 },
-  house: { offset: [22, 40], pad: 18 },
-  ranch: { offset: [40, 60], pad: 34 },
+  houses: { offset: [34, 50], pad: 46 },
+  house: { offset: [24, 42], pad: 23 },
+  ranch: { offset: [42, 62], pad: 40 },
   waterTower: { offset: [18, 30], pad: 12 },
   radioTower: { offset: [30, 60], pad: 14 },
   junkyard: { offset: [24, 36], pad: 26 },
@@ -112,10 +129,10 @@ export const POI_INFO = {
   ruins: { offset: [18, 40], pad: 16 },
   camp: { offset: [16, 30], pad: 12 },
   wreck: { offset: [6, 9], pad: 6 },
-  farm: { offset: [34, 52], pad: 36 },
+  farm: { offset: [36, 54], pad: 42 },
   cabin: { offset: [22, 36], pad: 16 },
-  church: { offset: [22, 34], pad: 22 },
-  sawmill: { offset: [28, 44], pad: 30 },
+  church: { offset: [24, 36], pad: 26 },
+  sawmill: { offset: [30, 46], pad: 36 },
   lodge: { offset: [28, 44], pad: 30 },
   lookout: { offset: [24, 40], pad: 12 },
 };
@@ -311,12 +328,25 @@ export class WorldGen {
   }
 
   // ---------------------------------------------------------------- road
+  // Long sweeps across the country, and on top of them, stretch by stretch, the road's own
+  // character: S-bends every few hundred metres on winding stretches, tighter ones up the passes.
   roadX(z) {
+    // the terrain asks for whole rows of the same z: a small cache on the exact value
+    const ci = (Math.floor(z * 4) & 4095) >>> 0;
+    if (this._rxK && this._rxK[ci] === z) return this._rxV[ci];
     const n = this.nA;
     let x = n.noise2(z * 0.00032, 7.1) * 240 + n.noise2(z * 0.001, 3.3) * 55 + n.noise2(z * 0.0028, 9.9) * 7;
+    x += this.windAt(z);
     // keep the start area straight-ish
     const s = smoothstep(150, 900, Math.abs(z));
-    return x * s;
+    const v = x * s;
+    if (!this._rxK) {
+      this._rxK = new Float64Array(4096).fill(NaN);
+      this._rxV = new Float64Array(4096);
+    }
+    this._rxK[ci] = z;
+    this._rxV[ci] = v;
+    return v;
   }
 
   roadDir(z) {
@@ -326,9 +356,278 @@ export class WorldGen {
     return [dx / l, (2 * e) / l];
   }
 
+  // dx/dz of the road line at z.
+  roadSlope(z) {
+    return (this.roadX(z + 0.5) - this.roadX(z - 0.5)) / 1;
+  }
+
+  // Distance from (x, z) to the road measured across it (not along x: on a bend the two differ).
+  roadDist(x, z) {
+    const sl = this.roadSlope(z);
+    return Math.abs(x - this.roadX(z)) / Math.sqrt(1 + sl * sl);
+  }
+
+  // The stretch of road around segment s: calm (only the long sweeps), winding (S-bends every
+  // 340-600 m), tight (every 220-340 m) or a pass (tight bends climbing onto high ground). The
+  // bend radius never drops below what a car takes at a sensible speed.
+  windSeg(s) {
+    if (!this._wind) this._wind = new Map();
+    let w = this._wind.get(s);
+    if (w) return w;
+    const r = (i) => hash01(this.seed, s, 1701 + i);
+    const zc = (s + 0.5) * WIND_SEG;
+    let type = 'calm';
+    if (s >= 1) {
+      const ramp = this.rampNear(zc, 0);
+      if (ramp && r(0) < 0.75) type = 'pass';
+      else type = r(1) < 0.26 ? 'calm' : r(1) < 0.68 ? 'winding' : 'tight';
+    }
+    const P = { calm: [0, 0, 0, 1e9], winding: [340, 260, 30 + r(3) * 45, 75], tight: [220, 120, 22 + r(3) * 30, 48], pass: [240, 100, 28 + r(3) * 28, 40] }[type];
+    const L = P[0] + r(2) * P[1];
+    // (with a margin for the slow swell of the amplitude and the fades at the ends)
+    const A = type === 'calm' ? 0 : Math.min(P[2], (0.8 * L * L) / (4 * Math.PI * Math.PI * P[3]));
+    w = { type, L, A, phase: r(4) * Math.PI * 2, z0: s * WIND_SEG, z1: (s + 1) * WIND_SEG };
+    this._wind.set(s, w);
+    return w;
+  }
+
+  windAt(z) {
+    const s = Math.floor(z / WIND_SEG);
+    const w = this.windSeg(s);
+    if (!w.A) return 0;
+    // a straight bit at either end, and calm water: no bends across a river or beside a lake
+    let env = smoothstep(w.z0, w.z0 + 420, z) * smoothstep(w.z1, w.z1 - 420, z);
+    if (env <= 0) return 0;
+    env *= this.calmWater(z);
+    if (env <= 0) return 0;
+    const a = w.A * (0.8 + 0.2 * this.nC.noise2(z * 0.0007, 41.7));
+    return a * env * Math.sin(((z - w.z0) / w.L) * Math.PI * 2 + w.phase);
+  }
+
+  // 0 near a river crossing or a lake (where the road keeps straight), 1 elsewhere. Uses the
+  // places' nominal positions only (they are worked out from the road, so not from this).
+  calmWater(z) {
+    let k = 1;
+    const kr = Math.round(z / RIVER_SPACING);
+    for (let i = kr - 1; i <= kr + 1; i++) {
+      if (i <= 0) continue;
+      const z0 = i * RIVER_SPACING + (hash01(this.seed, i, 301) - 0.5) * 1400;
+      k *= smoothstep(380, 760, Math.abs(z - z0));
+    }
+    const kl = Math.round(z / LAKE_CELL);
+    for (let i = kl - 1; i <= kl + 1; i++) {
+      if (i <= 1) continue;
+      const zl = i * LAKE_CELL + (hash01(this.seed, i, 401) - 0.5) * 600;
+      if (Math.abs(z - zl) > 600) continue;
+      const b = this._cellCached(Math.floor(zl / BIOME_CELL));
+      const p = { forest: 0.55, taiga: 0.5, tundra: 0.45, prairie: 0.35, highland: 0.15 }[b] || 0;
+      if (hash01(this.seed, i, 402) >= p) continue;
+      k *= smoothstep(260, 600, Math.abs(z - zl));
+    }
+    return k;
+  }
+
+  // ---------------------------------------------------------------- high ground
+  // Every 16 km or so the land rises: onto a plateau the road climbs to and runs along for a few
+  // kilometres, over a ridge it crosses at a saddle and drops down from, or down into a basin.
+  // Grades on the road stay near 8%; away from the road the slopes are steeper and the crest
+  // line wanders, so it reads as country, not as a ramp.
+  liftEvent(j) {
+    if (!this._lift) this._lift = new Map();
+    if (this._lift.has(j)) return this._lift.get(j);
+    const r = (i) => hash01(this.seed, j, 1801 + i);
+    let e = null;
+    if (j >= 1 && r(0) < 0.85) {
+      const k = r(1);
+      const kind = k < 0.45 ? 'plateau' : k < 0.78 ? 'ridge' : 'basin';
+      const H = kind === 'basin' ? -(70 + r(2) * 90) : kind === 'ridge' ? 170 + r(2) * 210 : 120 + r(2) * 200;
+      const R = Math.max(1600, (Math.abs(H) * 1.333) / 0.08);
+      let P = kind === 'ridge' ? 150 + r(3) * 500 : 1800 + r(3) * 4200;
+      const zs = j * LIFT_CELL + 600 + r(4) * 1200;
+      P = Math.max(100, Math.min(P, LIFT_CELL - 2 * R - 1600));
+      e = { kind, H, R, P, zs, up: zs + R / 2, down: zs + R + P + R / 2, seed: r(5) * 100 };
+    }
+    this._lift.set(j, e);
+    return e;
+  }
+
+  // 1 on a climb or descent of the high ground, fading to 0 within 800 m of it (smooth in z).
+  rampWeight(z) {
+    const j = Math.floor(z / LIFT_CELL);
+    let w = 0;
+    for (let i = j - 1; i <= j; i++) {
+      const e = this.liftEvent(i);
+      if (!e) continue;
+      for (const c of [e.up, e.down]) w = Math.max(w, smoothstep(e.R / 2 + 800, e.R / 2, Math.abs(z - c)));
+    }
+    return w;
+  }
+
+  // An event whose climb or descent is within `range` of z.
+  rampNear(z, range) {
+    const j = Math.floor(z / LIFT_CELL);
+    for (let i = j - 1; i <= j; i++) {
+      const e = this.liftEvent(i);
+      if (!e) continue;
+      if (Math.abs(z - e.up) < e.R / 2 + range || Math.abs(z - e.down) < e.R / 2 + range) return e;
+    }
+    return null;
+  }
+
+  liftAt(x, z) {
+    const j = Math.floor(z / LIFT_CELL);
+    let h = 0;
+    let dRoad = -1;
+    for (let i = j - 1; i <= j; i++) {
+      const e = this.liftEvent(i);
+      if (!e || z < e.zs - 6000 || z > e.down + e.R + 6000) continue;
+      if (dRoad < 0) dRoad = Math.abs(x - this.roadX(z));
+      const near = Math.exp(-((dRoad / 1100) ** 2));
+      // the edge wanders across the country; steeper away from the road the road's ramp
+      const zz = z + this.nB.noise2(x * 0.00035 + e.seed, 7.7) * 1400 * (1 - near * 0.8);
+      const R = e.R * (0.45 + 0.55 * near);
+      const t = rampEase((zz - e.up) / R + 0.5) - rampEase((zz - e.down) / R + 0.5);
+      if (t === 0) continue;
+      // the crest is higher off to the sides: the road takes the saddle
+      const n = this.nC.noise2(x * 0.0006 + e.seed, 3.1);
+      const H = e.H * (e.H > 0 ? 1 + (0.25 + 0.55 * Math.abs(n)) * (1 - near) : 1 + 0.3 * n * (1 - near));
+      h += H * t;
+    }
+    return h;
+  }
+
   macroHeight(x, z) {
     const n = this.nB;
-    return n.noise2(x * 0.00045, z * 0.00045) * 26 + n.noise2(x * 0.0012 + 31, z * 0.0012) * 7;
+    // hill country comes and goes along the way: long climbs and steep drops for the road
+    // (calmer where the land is already climbing onto high ground: the grades would add up)
+    const calm = 1 - 0.7 * this.rampWeight(z);
+    const hilly = smoothstep(-0.05, 0.45, this.nA.noise2(z * 0.000085 + 40, 1.7)) * calm;
+    const hills = hilly > 0 ? hilly * (n.noise2(x * 0.0007 + 11, z * 0.0007 - 4) * 26 + n.noise2(x * 0.0019 - 7, z * 0.0019 + 2) * 6) : 0;
+    return (n.noise2(x * 0.00045, z * 0.00045) * 26 + n.noise2(x * 0.0012 + 31, z * 0.0012) * 7) * calm + hills + this.liftAt(x, z);
+  }
+
+  // Distance along the road from z = 0 to z (for the road's texture: lane dashes keep their
+  // length on bends). Integrated in 20 m steps, kept in a table.
+  roadS(z) {
+    const STEP = 20;
+    if (!this._sTab) this._sTab = { pos: [0], neg: [0] };
+    const tab = z >= 0 ? this._sTab.pos : this._sTab.neg;
+    const dir = z >= 0 ? 1 : -1;
+    const i = Math.floor(Math.abs(z) / STEP);
+    while (tab.length <= i + 1) {
+      const k = tab.length - 1;
+      const a = dir * k * STEP,
+        b = dir * (k + 1) * STEP;
+      let len = 0;
+      for (let q = 0; q < 4; q++) {
+        const z0 = a + ((b - a) * q) / 4,
+          z1 = a + ((b - a) * (q + 1)) / 4;
+        len += Math.hypot(this.roadX(z1) - this.roadX(z0), z1 - z0);
+      }
+      tab.push(tab[k] + len);
+    }
+    const f = (Math.abs(z) - i * STEP) / STEP;
+    return dir * lerp(tab[i], tab[i + 1], f);
+  }
+
+  // ---------------------------------------------------------------- side tracks
+  // Every few kilometres a dirt track may leave the highway, swing a few hundred metres out over
+  // the open country (up and over whatever is there) and come back to it. On over half of them
+  // the highway between their ends is blocked — trees down across it, a rockslide, a trailer on
+  // its side — and the track is the way round.
+  track(t) {
+    if (!this._tracks) this._tracks = new Map();
+    if (this._tracks.has(t)) return this._tracks.get(t);
+    let res = null;
+    const r = (i) => hash01(this.seed, t, 1401 + i);
+    if (t >= 1 && r(0) < 0.85) {
+      const len = 900 + r(1) * 700;
+      const z0 = t * TRACK.every + (r(2) - 0.5) * 700;
+      res = { t, z0, z1: z0 + len, len, side: r(3) < 0.5 ? -1 : 1, D: 130 + r(4) * 190, wob: r(6) * 6.28 };
+      const blocked = z0 > 1800 && r(5) < 0.6;
+      if (blocked) {
+        const zb = z0 + len * 0.5 + (r(8) - 0.5) * len * 0.2;
+        // what comes down depends on the country right there
+        const bw = this.biomeWeights(this.roadX(zb), zb);
+        const wooded = bw.forest + bw.taiga + bw.tundra * 0.6;
+        const rocky = bw.highland + bw.badlands + bw.scrub * 0.3;
+        const kind = wooded > 0.45 ? 'trees' : rocky > 0.45 || r(7) < 0.3 ? 'rocks' : 'trailer';
+        res.block = { kind, z: zb };
+      }
+      // no fords, no lakes, nowhere near the start
+      if (z0 < 1500) res = null;
+      for (let z = z0; res && z <= z0 + len; z += 30) {
+        const x = this.trackX(res, z);
+        if (this.waterAt(x, z) || this.waterAt(this.roadX(z), z)) res = null;
+        else {
+          const rv = this.riverAt(x, z);
+          if (rv && rv.d < rv.r.w + 30) res = null;
+        }
+      }
+      if (res && this.bridgeNear(res.z0) && this.bridgeNear(res.z1)) res = null;
+    }
+    this._tracks.set(t, res);
+    return res;
+  }
+
+  // The track whose span contains z, if any.
+  trackAt(z) {
+    const t0 = Math.floor(z / TRACK.every);
+    for (let t = t0 + 1; t >= t0 - 1; t--) {
+      const tr = this.track(t);
+      if (tr && z > tr.z0 && z < tr.z1) return tr;
+    }
+    return null;
+  }
+
+  // Sideways offset of the track from the highway at z (0 at both junctions).
+  trackOffset(tr, z) {
+    const u = (z - tr.z0) / tr.len;
+    if (u <= 0 || u >= 1) return 0;
+    const b = Math.sin(Math.PI * u);
+    return tr.side * tr.D * b * (1 + 0.18 * Math.sin(u * 9.4 + tr.wob) * b);
+  }
+
+  trackX(tr, z) {
+    return this.roadX(z) + this.trackOffset(tr, z);
+  }
+
+  // Along-track profile: the lie of the land, smoothed a little; the highway's level at the ends.
+  trackY(tr, z) {
+    const key = tr.t * 1e6 + Math.round(z);
+    if (!this._trackYCache) this._trackYCache = new Map();
+    const c = this._trackYCache.get(key);
+    if (c !== undefined) return c;
+    let s = 0,
+      w = 0;
+    for (let k = -5; k <= 5; k++) {
+      const zz = Math.round(z) + k * 9;
+      const g = Math.exp(-(k * k) / 8);
+      s += this.naturalHeight(this.trackX(tr, zz), zz) * g;
+      w += g;
+    }
+    const u = (z - tr.z0) / tr.len;
+    const e = smoothstep(0.02, 0.2, u) * smoothstep(0.98, 0.8, u);
+    const y = lerp(this.roadY(z), s / w, e);
+    if (this._trackYCache.size > 300000) this._trackYCache.clear();
+    this._trackYCache.set(key, y);
+    return y;
+  }
+
+  // Distance across the nearest track at (x, z) and the track: { d, tr } or null.
+  trackNear(x, z) {
+    const tr = this.trackAt(z);
+    if (!tr) return null;
+    const e = 1;
+    const sl = (this.trackX(tr, z + e) - this.trackX(tr, z - e)) / (2 * e);
+    const d = Math.abs(x - this.trackX(tr, z)) / Math.sqrt(1 + sl * sl);
+    return { d, tr };
+  }
+
+  // Is the highway blocked at z? (where the obstacle of a detour stands)
+  blockAt(z, margin = 0) {
+    const tr = this.trackAt(z);
+    return tr && tr.block && Math.abs(z - tr.block.z) < 14 + margin ? tr : null;
   }
 
   // Road elevation: Gaussian-smoothed macro height sampled along the road.
@@ -500,7 +799,7 @@ export class WorldGen {
     // ranges run with the road (long belts across the land, like basin-and-range country); the
     // eroded fBm on them makes the crests, spurs and gullies, flat between the ranges
     const belt = n.noise2(x * 0.00034 + 3, z * 0.00011 - 1) + 0.3 * n.noise2(x * 0.0009 + 7, z * 0.0007);
-    const k = smoothstep(-0.2, 0.45, belt) * mask;
+    const k = smoothstep(-0.4, 0.3, belt) * mask;
     if (k <= 0.001) return 0;
     const e = erodedFbm(x * 0.00052, z * 0.00052, this.seed | 0);
     let relief = Math.pow(e / 0.45, 1.6);
@@ -522,11 +821,16 @@ export class WorldGen {
       pz = 1.2 * px + 1.6 * pz;
       px = qx;
     }
-    relief *= 0.72 + 0.5 * r * smoothstep(0.08, 0.6, relief);
+    relief *= 0.6 + 0.85 * r * smoothstep(0.06, 0.5, relief);
     bw = bw || this.biomeWeights(x, z);
     const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 260;
-    // foothills where the belt thins out, full height in its middle
-    return relief * amp * k * k * (3 - 2 * k);
+    // where the belt thins out the range sinks into the plain instead of shrinking: only its
+    // crests and spurs stand out (a ragged edge of outcrops, not a smooth dome or a lone cone),
+    // full height in its middle. v^2/(v+w) eases the foot into the flat; the last factor takes it
+    // to nothing at the belt's very edge
+    const kk = k * k * (3 - 2 * k);
+    const v = relief * (0.7 + 0.3 * kk) - (1 - kk) * 0.45;
+    return v > 0 ? ((v * v) / (v + 0.08)) * amp * Math.min(1, k * 8) : 0;
   }
 
   // ---------------------------------------------------------------- water
@@ -603,6 +907,11 @@ export class WorldGen {
         const cx = this.roadX(z) + side * off;
         res = { k, x: cx, z, rx, rz, rot: hash01(this.seed, k, 407) * Math.PI, frozen: SNOWY.includes(b), phase: hash01(this.seed, k, 408) * 50 };
         res.level = this.macroHeight(cx, z) + this.biomeDetail(b, cx, z) * 0.4 - 1.2;
+        // no lake on the flank of a climb (its basin would be a step in the slope), and none the
+        // road would swing into
+        const g = Math.abs(this.liftAt(cx, z + rz) - this.liftAt(cx, z - rz)) / (2 * rz);
+        if (g > 0.02) res = null;
+        for (let zz = z - Math.max(rx, rz) * 1.7; res && zz <= z + Math.max(rx, rz) * 1.7; zz += 10) if (this.lakeDist(res, this.roadX(zz), zz) < 1.3) res = null;
       }
     }
     this._lakes.set(k, res);
@@ -684,8 +993,7 @@ export class WorldGen {
   }
 
   baseHeight(x, z) {
-    const rx = this.roadX(z);
-    const dx = Math.abs(x - rx);
+    const dx = this.roadDist(x, z);
     const roadY = this.roadY(z);
     const flat = ROAD.halfWidth + ROAD.shoulder;
     // on a POI pad the shoulder stays level and the ditch is filled, so forecourts and wrecks
@@ -699,7 +1007,19 @@ export class WorldGen {
     const width = 10 + jag + Math.min(60, Math.abs(diff) * 1.6);
     const t = Math.max(smoothstep(flat + Math.max(0, jag * 0.3), flat + width, dx), pw * smoothstep(flat, flat + 2.5, dx));
     const edge = roadY - ROAD.shoulder * 0.07 * (1 - pw) - 0.25 * smoothstep(flat, flat + 3, dx) * (1 - t) * (1 - pw);
-    return lerp(edge, nat, t);
+    let h = lerp(edge, nat, t);
+    // a dirt track cuts its own narrow bed through the land; the highway's corridor wins
+    const tn = this.trackNear(x, z);
+    if (tn && tn.d < 45) {
+      const ty = this.trackY(tn.tr, z);
+      const tf = TRACK.halfWidth + TRACK.shoulder;
+      const tw = 5 + Math.min(30, Math.abs(h - ty) * 1.3);
+      const tt = smoothstep(tf, tf + tw, tn.d);
+      const keep = smoothstep(flat + 0.3, flat + 6, dx);
+      const tedge = ty - Math.max(0, tn.d - TRACK.halfWidth) * 0.08;
+      h = lerp(h, tedge, (1 - tt) * keep);
+    }
+    return h;
   }
 
   // ---------------------------------------------------------------- POI planning
@@ -771,7 +1091,7 @@ export class WorldGen {
       for (const shift of k === 0 ? [0] : [0, 40, -40, 80, -80, 130, -130, 190, -190]) {
         for (const side of [res.side, -res.side]) {
           this.placePoi(res, along + shift, side);
-          if (k === 0 || this.poiClear(res.x, res.z, res.padR + res.padBlend * 0.6)) {
+          if (k === 0 || (this.poiClear(res.x, res.z, res.padR + res.padBlend * 0.6) && this.poiOnRoad(res, along + shift))) {
             placed = true;
             break;
           }
@@ -782,6 +1102,19 @@ export class WorldGen {
     }
     this._poi.set(k, res);
     return res;
+  }
+
+  // The place sits beside a stretch of road it can stand on: not on a steep climb, and with the
+  // road not bending back into its yard.
+  poiOnRoad(res, along) {
+    if (Math.abs(this.roadY(along + 25) - this.roadY(along - 25)) / 50 > 0.055) return false;
+    const R = res.padR + res.padBlend * 0.6;
+    const need = Math.min(res.offset, R) * 0.85;
+    for (let dz = -R - 70; dz <= R + 70; dz += 6) {
+      const zz = along + dz;
+      if (Math.hypot(res.x - this.roadX(zz), res.z - zz) < need) return false;
+    }
+    return true;
   }
 
   placePoi(res, along, side) {
@@ -799,6 +1132,11 @@ export class WorldGen {
 
   // No river bank or lake basin within R metres of (x, z).
   poiClear(x, z, R) {
+    // keep pads off the side tracks
+    for (let dz = -R - 20; dz <= R + 20; dz += 10) {
+      const tr = this.trackAt(z + dz);
+      if (tr && Math.abs(x - this.trackX(tr, z + dz)) < R + 14) return false;
+    }
     const rv = this.riverAt(x, z);
     if (rv && rv.d < rv.r.w + 12 + rv.r.w * 0.6 + R) return false;
     for (const l of this.lakesNear(z, 1)) {
@@ -931,6 +1269,8 @@ export class WorldGen {
       return ri.dirt ? 'gravel' : 'asphalt';
     }
     if (dx < ROAD.halfWidth + ROAD.shoulder) return this.roadInfo(z).snow > 0.5 ? 'snow' : 'gravel';
+    const tn = this.trackNear(x, z);
+    if (tn && tn.d < TRACK.halfWidth + 0.4) return this.roadInfo(z).snow > 0.5 ? 'snowRoad' : 'dirt';
     const bw = this.biomeWeights(x, z);
     const n = this.normal(x, z, 1.0);
     const m = this.groundMaterial(x, z, n[1], bw);

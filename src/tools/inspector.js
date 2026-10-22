@@ -408,7 +408,7 @@ function setStage(stage) {
   const order = type.ASSEMBLY_ORDER;
   const on = new Set(stage === 'full' ? Object.keys(car.parts) : []);
   if (stage !== 'full') {
-    const groups = { frame: ['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'], shell: ['body'], mech: ['engine', 'exhaust', 'fanbelt', 'airfilter', 'radiator', 'battery', 'fueltank', 'spare'], interior: ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel'] };
+    const groups = { frame: ['chassis', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'], shell: ['body'], mech: ['engine', 'enginecover', 'starter', 'oilfilter', 'sparkplugs', 'waterpump', 'alternator', 'exhaust', 'fanbelt', 'airfilter', 'radiator', 'battery', 'fueltank', 'spare'], interior: ['seat_FL', 'seat_FR', 'seat_R', 'steeringWheel'] };
     const seq = ['frame', 'shell', 'mech', 'panels', 'interior'];
     for (const k of seq.slice(0, seq.indexOf(stage) + 1)) {
       if (groups[k]) groups[k].forEach((p) => on.add(p));
