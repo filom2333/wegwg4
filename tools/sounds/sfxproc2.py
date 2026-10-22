@@ -1,8 +1,7 @@
 # Builds public/sounds from the first batch (sfx/raw) and the re-made candidates (sfx2/raw):
 # picks the chosen take of each re-made sound, cuts bursts down to single events, damps ringing
 # tails, cuts footstep takes into clean single steps, matches loop levels to the synthesized noise
-# they replace, and encodes small mp3s. Sounds whose recordings were not good enough are left out
-# so the game keeps its synthesized versions.
+# they replaced (the game's synth.js, since removed), and encodes small mp3s.
 import json, os, subprocess, sys
 import numpy as np
 D1, D2, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -173,7 +172,7 @@ def loudness(a, kind, rec=True):
 
 REF = {}
 def ref_noise():
-    # the synthesized pink, brown and white noise from synth.js, through the game's filters
+    # the pink, brown and white noise the old synth.js made, through the game's filters
     r = np.random.default_rng(1)
     w = r.uniform(-1, 1, SR * 3)
     p = np.zeros(7)

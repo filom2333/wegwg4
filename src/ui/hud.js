@@ -6,7 +6,7 @@
 import { ICONS } from './icons.js';
 import { ITEMS } from '../items/itemDefs.js';
 import { itemIcon } from './itemIcons.js';
-import { ALBUMS } from '../audio/music/albums.js';
+import { ALBUMS, trackOn } from '../audio/music/albums.js';
 import { HAVEN_KM } from '../story/story.js';
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -305,7 +305,7 @@ export class HUD {
     const [a, b, c] = al.colors;
     const tag = station ? `${esc(station.freq)} \u00b7 ${esc(station.name)}` : `CD \u00b7 track ${track + 1} of ${al.tracks.length}`;
     this.showMusic(`<div class="cover" style="background:linear-gradient(135deg, ${a}, ${b} 62%, ${c})"><i></i></div>
-      <div class="txt"><small>${tag}</small><b>${esc(al.tracks[track])}</b><span>${esc(al.artist)} \u00b7 ${esc(al.title)}</span></div>`);
+      <div class="txt"><small>${tag}</small><b>${esc(al.tracks[trackOn(disc, track)])}</b><span>${esc(al.artist)} \u00b7 ${esc(al.title)}</span></div>`);
   }
 
   // A station tuned in that is not playing records (talk, the emergency loop, static).

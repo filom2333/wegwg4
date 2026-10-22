@@ -434,12 +434,12 @@ export class AudioSystem {
 
   // The emergency system's attention signal (the real EBS two-tone, public domain).
   ebsTone() {
-    this.onRadio('ebs', 0.5);
+    this.onRadio('ebs', 1.2);
   }
 
   // The numbers station's interval signal: a chime, the last one lower.
   pip(low = false) {
-    this.onRadio('chime', 1.4, low ? 0.75 : 1);
+    this.onRadio('chime', 0.9, low ? 0.75 : 1);
   }
 
   // ------------------------------------------------------------------ update
@@ -652,11 +652,6 @@ const V3b = new THREE.Vector3();
 
 function set(param, v, now, tc = 0.08) {
   param.setTargetAtTime(v, now, tc);
-}
-
-function smooth(x, a, b) {
-  const t = clamp((x - a) / (b - a), 0, 1);
-  return t * t * (3 - 2 * t);
 }
 
 // per-sound base volume

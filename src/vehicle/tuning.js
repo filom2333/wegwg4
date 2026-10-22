@@ -76,8 +76,8 @@ export function isSport(car) {
   return !!(car.parts.exhaust && car.parts.exhaust.installed && car.parts.exhaust.tune === 'sport');
 }
 
-// The engine voice with the tunes: a sport box rasps brighter and louder, twin carbs bring the
-// strained sound in sooner. Cached per voice.
+// The engine voice with the tunes: a sport box is brighter and louder, twin carbs rasp more
+// under load. Cached per voice.
 const VOICES = new WeakMap();
 export function tunedVoice(car, T) {
   const sport = isSport(car);

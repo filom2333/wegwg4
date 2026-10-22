@@ -493,7 +493,7 @@ export class Car {
       const al = ALBUMS[s.disc % ALBUMS.length];
       if (this.stereoState.loading) return { a: 'CD', b: 'READING\u2026' };
       const p = Math.floor(this.stereoState.pos || 0);
-      return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[s.track].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
+      return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[trackOn(s.disc, s.track)].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
     }
     const st = STATIONS[s.station ?? 1];
     const prog = this.stereoState.prog;

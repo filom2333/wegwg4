@@ -38,8 +38,8 @@ export const BEETLE = {
   massSize: [1.55, 1.1, 4.0],
   fuelCom: [0, 0.62, 0.85],
   lights: { head: [0, 0.7, 1.72], headX: 0.53, reverse: [0, 0.6, -2.0] },
-  // engine sound (the recorded loops in audio.js): firing pulses per crank turn, pitch, how
-  // bright and loud, and how soon the strained recording takes over under load
+  // engine sound (the recorded loop in audio.js): firing pulses per crank turn, pitch, how
+  // bright and loud, and how much it rasps under load
   sound: { fires: 2, pitch: 1.08, bright: 1.2, gain: 1, bite: 0.8 },
   defaultColor: 0xa8502c,
   colors: [0xa8502c, 0x6f8a7a, 0xd8cfb4, 0x2f4a5c, 0x8a2a20, 0x5a5a2e, 0xc9a23a],

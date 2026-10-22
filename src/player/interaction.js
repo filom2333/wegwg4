@@ -16,7 +16,7 @@ import { Hands, PALM_CONTACT } from './hands.js';
 import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { STATIONS } from '../audio/stations.js';
-import { ALBUMS } from '../audio/music/albums.js';
+import { ALBUMS, trackOn } from '../audio/music/albums.js';
 import { clamp, lerp, smoothstep } from '../core/noise.js';
 import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
 import { JACK_LOW, JACK_MAX } from '../vehicle/jack.js';
@@ -819,7 +819,7 @@ export class Interaction {
           const st = car.stereo;
           info.title = 'Stereo';
           const stn = STATIONS[st.station ?? 1];
-          info.sub = !car.radioOn ? '' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[st.track]}` : `${stn.freq} ${stn.name}` + (st.disc >= 0 ? ' · disc in' : '');
+          info.sub = !car.radioOn ? '' : st.mode === 'cd' && st.disc >= 0 ? `CD · ${ALBUMS[st.disc].artist} — ${ALBUMS[st.disc].tracks[trackOn(st.disc, st.track)]}` : `${stn.freq} ${stn.name}` + (st.disc >= 0 ? ' · disc in' : '');
           prompts.push(['E', car.radioOn ? 'Turn off' : 'Turn on']);
           if (car.radioOn) prompts.push(['LMB', st.mode === 'cd' && st.disc >= 0 ? 'Next track' : 'Next station']);
           if (st.disc >= 0) prompts.push(['F', st.mode === 'cd' ? 'Radio' : 'Play the CD'], ['R', 'Eject disc']);
