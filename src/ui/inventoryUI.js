@@ -153,7 +153,7 @@ export class InventoryUI {
       if (e.target === s) this.closeMenu();
     });
     // left: the backpack
-    const left = el('div', 'inv-panel inv-bag', wrap);
+    const left = el('div', 'paper inv-panel inv-bag', wrap);
     const head = el('div', 'inv-head', left);
     el('div', 'inv-title', head, 'Backpack');
     this.weightEl = el('div', 'inv-weight', head);
@@ -163,14 +163,14 @@ export class InventoryUI {
     this.bagGrid = el('div', 'inv-grid', left);
     this.pouchEl = el('div', 'inv-pouch', left);
     // middle: hands
-    const mid = el('div', 'inv-panel inv-hands', wrap);
+    const mid = el('div', 'paper inv-panel inv-hands', wrap);
     el('div', 'inv-title', mid, 'Hands');
     this.handSlot = el('div', 'inv-slot inv-handslot', mid);
     this.handSlot.dataset.c = 'hands';
     this.handSlot.dataset.i = '0';
     this.handName = el('div', 'inv-handname', mid);
     // right: nearby / trunk / glovebox
-    const right = el('div', 'inv-panel inv-side', wrap);
+    const right = el('div', 'paper inv-panel inv-side', wrap);
     this.tabs = el('div', 'inv-tabs', right);
     this.sideHead = el('div', 'inv-head', right);
     this.sideGrid = el('div', 'inv-grid', right);
