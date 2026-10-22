@@ -838,7 +838,7 @@
   position: absolute;
   left: calc(50% + 10px);
   bottom: 15vh;
-  width: min(420px, 44vw);
+  width: min(460px, 46vw);
   padding: 16px 22px 18px;
   transform: rotate(1.3deg);
   background-color: #f7f4ec;
@@ -857,13 +857,15 @@
 }
 .intro-key {
   display: grid;
-  grid-template-columns: 150px 1fr;
+  grid-template-columns: 136px 1fr;
   align-items: baseline;
   gap: 12px;
   border-bottom: 1px solid rgba(70, 110, 160, 0.2);
 }
 .intro-key kbd {
   justify-self: start;
+  color: var(--paper-ink);
+  background: rgba(255, 255, 255, 0.35);
   border-color: rgba(37, 33, 27, 0.6);
   font-family: var(--f-type);
   font-weight: 700;

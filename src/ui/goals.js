@@ -42,9 +42,9 @@ export class Goals {
     const car = g.car;
     if (p.dead) return null;
     // what the body needs first
-    if (p.bleeding > 0.4) return { key: 'bleed', kind: 'warn', title: 'You are bleeding', lines: ['A bandage or a first aid kit stops it'], at: this.nearestItem((d) => d.consume && d.consume.bleeding > 0) };
-    if (p.water < 18) return { key: 'water', kind: 'warn', title: 'Drink something', lines: [this.haveItem((d) => d.drinkable || (d.consume && d.consume.water > 10)) ? 'You have something to drink: take it out (Tab)' : 'Bottles turn up in houses, coolers and diners'], at: this.nearestItem((d) => d.drinkable || (d.consume && d.consume.water > 10)) };
-    if (p.food < 15) return { key: 'food', kind: 'warn', title: 'Eat something', lines: [this.haveItem((d) => d.consume && d.consume.food > 10) ? 'You have food: take it out (Tab)' : 'Cans and snacks turn up in kitchens and shops'], at: this.nearestItem((d) => d.consume && d.consume.food > 10) };
+    if (p.bleeding > 0.4) return this.toward({ key: 'bleed', kind: 'warn', title: 'You are bleeding', lines: ['A bandage or a first aid kit stops it'] }, this.nearestItem((d) => d.consume && d.consume.bleeding > 0));
+    if (p.water < 18) return this.toward({ key: 'water', kind: 'warn', title: 'Drink something', lines: [this.haveItem((d) => d.drinkable || (d.consume && d.consume.water > 10)) ? 'You have something to drink: take it out (Tab)' : 'Bottles turn up in houses, coolers and diners'] }, this.nearestItem((d) => d.drinkable || (d.consume && d.consume.water > 10)));
+    if (p.food < 15) return this.toward({ key: 'food', kind: 'warn', title: 'Eat something', lines: [this.haveItem((d) => d.consume && d.consume.food > 10) ? 'You have food: take it out (Tab)' : 'Cans and snacks turn up in kitchens and shops'] }, this.nearestItem((d) => d.consume && d.consume.food > 10));
     if (p.energy < 12) return { key: 'sleep', kind: 'warn', title: 'Get some sleep', lines: ['In the car with the engine off (B), in a tent or a bed'] };
     if (p.warmth < 22) return { key: 'cold', kind: 'warn', title: 'Get warm', lines: ['A fire, the car with its heater on, a blanket'] };
     return this.carGoal(car, p);
@@ -91,11 +91,11 @@ export class Goals {
     // the essentials are on: fuel, oil, water, then the key
     if (car.fuel < 2) {
       const can = this.nearestItem((d, it) => d.liquid && d.liquid.type === 'fuel' && (it.state.liquid || 0) > 0.5 && it.state.liquidType === 'fuel');
-      return { key: 'fuel', title: 'Put fuel in it', lines: [can ? 'Pour a can into the filler: hold it to the cap, LMB' : 'Find a jerry can, or a pump at a gas station'], at: can ? can.mesh.position : null };
+      return this.toward({ key: 'fuel', title: 'Put fuel in it', lines: [can ? 'Pour a can into the filler: hold it to the cap, LMB' : 'Find a jerry can, or a pump at a gas station'] }, can);
     }
     if (car.oil < 1) {
       const oil = this.nearestItem((d) => d.liquid && d.liquid.type === 'oil');
-      return { key: 'oil', title: 'Top up the oil', lines: ['Open the bonnet and pour it in the filler'], at: oil ? oil.mesh.position : null };
+      return this.toward({ key: 'oil', title: 'Top up the oil', lines: ['Open the bonnet and pour it in the filler'] }, oil);
     }
     if (car.coolantCap && car.coolant < car.coolantCap * 0.3) return { key: 'coolant', title: 'Top up the radiator', lines: ['Water will do: the cap is under the bonnet'] };
     const running = car.dyn.engine.running;
@@ -116,6 +116,12 @@ export class Goals {
   }
 
   // ---------------------------------------------------------------- finding things
+  // A goal pointing at an item lying about: the marker on it and its name by the arrow.
+  toward(goal, it) {
+    if (!it) return goal;
+    return { ...goal, at: it.mesh.position, next: (it.def && it.def.name) || null };
+  }
+
   label(car, id) {
     // (without the size some labels carry: "fuel tank 62 l")
     return ((car.PARTS[id] && car.PARTS[id].label.toLowerCase()) || id).replace(/\s+[\d.,]+\s*(l|hp|ah|kg)$/, '');

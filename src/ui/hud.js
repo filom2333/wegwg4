@@ -1,7 +1,8 @@
-// In-game HUD: crosshair, target card with key prompts, vitals rings, vehicle cluster, toasts,
-// hit markers, compass with the road to Haven, and the hotbar. Everything sits on soft frosted
-// panels and fades when not relevant; colours carry meaning (red health, amber food, blue water,
-// yellow rest) so a glance is enough.
+// In-game HUD, in the look of the rest of the game (theme.css): plain type with a shadow over the
+// world and as little of it as will do. The objective in the top left, a kilometre marker for the
+// road to Haven in the top right, a thin compass at the top, the body's needs as short bars in
+// the bottom left (they fade back while all is well), the car's speed, gear and gauges in the
+// bottom right when driving, with its warnings on yellow plaques, and the hotbar at the bottom.
 
 import { ICONS } from './icons.js';
 import { ITEMS } from '../items/itemDefs.js';
@@ -20,19 +21,23 @@ const el = (tag, cls, parent, html) => {
 
 // The fists slot's picture: a clenched fist, knuckles forward.
 const FIST_SVG = '<svg class="hb-fist" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22c0-3 2-5 4.5-5S21 19 21 21v-3c0-2.5 2-4.5 4.5-4.5S30 15.5 30 18v1c.5-2 2.4-3.4 4.5-3.2 2.4.2 4 2.3 4 4.7V29c0 7.5-5.5 13-13 13h-2C16.5 42 12 37.5 12 31.5z" fill="currentColor" opacity=".85"/><path d="M21 21v6M30 19v7M12 26h9c2 0 3.5 1.6 3.5 3.5S23 33 21 33h-4" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.6" stroke-linecap="round"/></svg>';
+// the arrow toward the objective's thing
+const ARROW_SVG = '<svg viewBox="0 0 16 16"><path d="M8 1.5 13 12 8 9.6 3 12z" fill="currentColor"/></svg>';
 
 export class HUD {
   constructor(game) {
     this.game = game;
     this.root = el('div', 'hud', document.body);
     this.root.style.display = 'none';
+    // soft shade in the corners the type sits in, so it reads over a white sky or salt
+    el('div', 'hud-shade', this.root);
     // crosshair
     this.cross = el('div', 'hud-cross', this.root);
     // interaction dots on the controls around the aim (see setDots)
     this.dotLayer = el('div', 'hud-dots', this.root);
     this.dotEls = [];
     this.hit = el('div', 'hud-hit', this.root);
-    // target card
+    // what you look at (or hold): its name, a line about it, a bar, and the keys for it
     this.card = el('div', 'hud-card', this.root);
     this.cardTitle = el('div', 'hud-card-title', this.card);
     this.cardSub = el('div', 'hud-card-sub', this.card);
@@ -41,44 +46,45 @@ export class HUD {
     this.cardProg = el('div', 'hud-card-prog', this.card);
     this.cardProgFill = el('div', '', this.cardProg);
     this.prompts = el('div', 'hud-prompts', this.card);
-    // vitals (bottom left): four rings with a number, stamina under them
+    // the body (bottom left): a short bar each, stamina under them while it is spent
     this.needs = el('div', 'hud-needs', this.root);
     this.needEls = {};
-    const C = 2 * Math.PI * 19;
-    this.ringC = C;
-    for (const [k, icon, label] of [
-      ['health', 'heart', 'Health'],
-      ['food', 'food', 'Food'],
-      ['water', 'water', 'Water'],
-      ['energy', 'energy', 'Rest'],
-      ['warmth', 'temp', 'Warmth'],
+    for (const [k, icon] of [
+      ['health', 'heart'],
+      ['food', 'food'],
+      ['water', 'water'],
+      ['energy', 'moon'],
+      ['warmth', 'temp'],
     ]) {
       const row = el('div', 'hud-need need-' + k, this.needs);
-      row.innerHTML = `<svg class="ring" viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="19"/><circle class="fg" cx="22" cy="22" r="19" stroke-dasharray="${C.toFixed(2)}"/></svg>`;
       el('span', 'hud-icon', row, ICONS[icon]);
+      const bar = el('div', 'hud-bar', row);
+      const fill = el('i', '', bar);
       const val = el('span', 'hud-need-val', row);
-      el('span', 'hud-need-lab', row, label);
-      this.needEls[k] = { row, fg: row.querySelector('.fg'), val };
+      this.needEls[k] = { row, fill, val };
     }
     this.stamina = el('div', 'hud-stamina', this.needs);
-    this.staminaFill = el('div', '', this.stamina);
-    // vehicle cluster (bottom right)
+    this.staminaFill = el('i', '', this.stamina);
+    // the car (bottom right, driving): gear plate, speed, the rev counter, gauges, warnings
     this.veh = el('div', 'hud-veh', this.root);
+    this.warn = el('div', 'hud-veh-warn', this.veh);
     const head = el('div', 'hud-veh-head', this.veh);
+    this.gear = el('div', 'hud-gear', head);
     const sp = el('div', 'hud-speed-wrap', head);
     this.speed = el('div', 'hud-speed', sp);
     this.speedUnit = el('div', 'hud-speed-unit', sp, 'km/h');
-    this.gear = el('div', 'hud-gear', head);
     this.rpm = el('div', 'hud-rpm', this.veh);
     this.rpmSegs = [];
-    for (let i = 0; i < 28; i++) this.rpmSegs.push(el('i', i >= 24 ? 'red' : i >= 20 ? 'hot' : '', this.rpm));
-    this.vrow = this.rpm;
+    for (let i = 0; i < 30; i++) {
+      const seg = el('i', i >= 25 ? 'red' : '', this.rpm);
+      seg.style.height = (4 + (i / 29) * 10).toFixed(1) + 'px';
+      this.rpmSegs.push(seg);
+    }
     this.vstats = el('div', 'hud-veh-stats', this.veh);
-    this.fuel = this.vstat('fuel', 'Fuel');
-    this.temp = this.vstat('temp', 'Temp');
-    this.batt = this.vstat('battery', 'Battery');
-    this.warn = el('div', 'hud-veh-warn', this.veh);
-    // compass + clock + the road to Haven (top centre)
+    this.fuel = this.vstat('fuel');
+    this.temp = this.vstat('temp');
+    this.batt = this.vstat('battery');
+    // compass (top centre)
     this.top = el('div', 'hud-top', this.root);
     this.compass = el('div', 'hud-compass', this.top);
     this.compassStrip = el('div', 'hud-compass-strip', this.compass);
@@ -86,16 +92,18 @@ export class HUD {
     for (let i = 0; i < 72; i++) {
       const deg = i * 5;
       const lab = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' }[deg];
-      marks.push(`<span class="${lab ? 'lab' : deg % 15 === 0 ? 'mid' : 'tick'}" style="left:${i * 12}px">${lab || ''}</span>`);
+      marks.push(`<span class="${lab ? 'lab' + (lab.length === 1 ? ' card' : '') : deg % 15 === 0 ? 'mid' : 'tick'}" style="left:${i * 12}px">${lab || ''}</span>`);
     }
     this.compassStrip.innerHTML = marks.join('') + marks.join('').replace(/left:(\d+)px/g, (m, n) => `left:${+n + 864}px`);
     this.heading = el('div', 'hud-heading', this.top);
-    const info = el('div', 'hud-info', this.top);
-    this.clock = el('div', 'hud-clock', info);
-    const route = el('div', 'hud-route', info);
-    this.dist = el('div', 'hud-dist', route);
-    this.routeBar = el('div', 'hud-route-bar', route);
-    this.routeFill = el('div', '', this.routeBar);
+    // the road to Haven (top right): a kilometre marker, as they stand along the road, and the
+    // day and the time under it
+    this.mile = el('div', 'hud-mile', this.root);
+    const plate = el('div', 'hud-mile-plate', this.mile);
+    el('div', 'hud-mile-k', plate, 'KM');
+    this.dist = el('div', 'hud-mile-n', plate);
+    this.haven = el('div', 'hud-mile-haven', this.mile);
+    this.clock = el('div', 'hud-clock', this.mile);
     // hotbar (bottom centre): fists on 1, then slots 1-6 of the backpack on keys 2-7
     this.hotbar = el('div', 'hud-hotbar', this.root);
     this.hotLabel = el('div', 'hud-hotlabel', this.root);
@@ -113,11 +121,11 @@ export class HUD {
     this.hotIdle = 0;
     // the objective (top left) and a marker on the thing it is about (see goals.js)
     this.goalEl = el('div', 'hud-goal', this.root);
-    this.goalEl.innerHTML = '<div class="g-k">Objective</div><div class="g-t"></div><div class="g-p"><i></i></div><div class="g-s"></div><div class="g-n"><span></span><b class="g-dir"><svg viewBox="0 0 16 16"><path d="M8 1.5 13 12 8 9.6 3 12z" fill="currentColor"/></svg></b><em></em></div><div class="g-l"></div>';
+    this.goalEl.innerHTML = `<div class="g-t"><span class="diamond"></span><b></b></div><div class="g-p"><div class="g-pb"><i></i></div><span class="g-s"></span></div><div class="g-n"><b class="g-dir">${ARROW_SVG}</b><span></span><em></em></div><div class="g-l"></div>`;
     this.goalParts = {
-      t: this.goalEl.querySelector('.g-t'),
+      t: this.goalEl.querySelector('.g-t b'),
       p: this.goalEl.querySelector('.g-p'),
-      pf: this.goalEl.querySelector('.g-p i'),
+      pf: this.goalEl.querySelector('.g-pb i'),
       s: this.goalEl.querySelector('.g-s'),
       n: this.goalEl.querySelector('.g-n'),
       nt: this.goalEl.querySelector('.g-n span'),
@@ -131,22 +139,31 @@ export class HUD {
     this.toasts = el('div', 'hud-toasts', this.root);
     // radio / speech subtitles
     this.sub = el('div', 'hud-sub', this.root);
-    // what the stereo is playing: a small card with the cover, slides in at the top left
+    // what the stereo is playing: the cover and two lines, under the kilometre marker
     this.music = el('div', 'hud-music', this.root);
-    // vignette for damage handled in post
     this.state = { prompts: '', info: null };
     this.hitTimer = 0;
+    this.calm = 0;
     this.visible = false;
   }
 
-  vstat(icon, label) {
+  vstat(icon) {
     const row = el('div', 'hud-vstat', this.vstats);
     el('span', 'hud-icon', row, ICONS[icon]);
-    el('span', 'hud-vstat-lab', row, label);
-    const bar = el('div', 'hud-vstat-bar', row);
-    const fill = el('div', '', bar);
+    const bar = el('div', 'hud-bar', row);
+    const fill = el('i', '', bar);
     const val = el('span', 'hud-vstat-val', row);
     return { row, fill, val };
+  }
+
+  gauge(G, f, text, low) {
+    const k = Math.round(Math.max(0, Math.min(1, f)) * 200);
+    if (k !== G.k) {
+      G.k = k;
+      G.fill.style.transform = `scaleX(${(k / 200).toFixed(3)})`;
+    }
+    if (text !== G.t) G.val.textContent = G.t = text;
+    if (low !== G.low) G.row.classList.toggle('low', (G.low = low));
   }
 
   show(on) {
@@ -159,7 +176,7 @@ export class HUD {
     if (key === this.state.prompts) return;
     this.state.prompts = key;
     this.prompts.innerHTML = list
-      .map(([k, label, hint]) => (k ? `<div class="p"><kbd>${k}</kbd><span>${label}</span>${hint ? `<em>${hint}</em>` : ''}</div>` : `<div class="p muted"><span>${label}</span></div>`))
+      .map(([k, label, hint]) => (k ? `<div class="p"><kbd>${k}</kbd><span>${label}</span>${hint ? `<em>${hint}</em>` : ''}</div>` : `<div class="p muted"><span class="diamond"></span><span>${label}</span></div>`))
       .join('');
   }
 
@@ -177,11 +194,11 @@ export class HUD {
     this.cardSub.textContent = info.sub || '';
     if (info.bar !== undefined && info.bar !== null) {
       this.cardBar.style.display = '';
-      this.cardBarFill.style.width = Math.round(Math.max(0, Math.min(1, info.bar)) * 100) + '%';
+      this.cardBarFill.style.transform = `scaleX(${Math.max(0, Math.min(1, info.bar)).toFixed(3)})`;
     } else this.cardBar.style.display = 'none';
     if (info.progress !== undefined) {
       this.cardProg.style.display = '';
-      this.cardProgFill.style.width = Math.round(Math.min(1, info.progress) * 100) + '%';
+      this.cardProgFill.style.transform = `scaleX(${Math.max(0, Math.min(1, info.progress)).toFixed(3)})`;
     } else this.cardProg.style.display = 'none';
   }
 
@@ -246,13 +263,15 @@ export class HUD {
     }
     e.classList.toggle('settled', performance.now() - this.goalSince > 9000 && !goal.at);
     if (G.t.textContent !== goal.title) G.t.textContent = goal.title;
-    G.p.style.display = goal.progress !== undefined ? '' : 'none';
-    if (goal.progress !== undefined) G.pf.style.width = (Math.max(0.02, Math.min(1, goal.progress)) * 100).toFixed(1) + '%';
+    if (goal.progress !== undefined) G.pf.style.transform = `scaleX(${Math.max(0.02, Math.min(1, goal.progress)).toFixed(3)})`;
     const sub = goal.sub || '';
     if (G.s.textContent !== sub) G.s.textContent = sub;
-    G.s.style.display = sub ? '' : 'none';
-    G.n.style.display = goal.next ? '' : 'none';
-    if (goal.next && G.nt.textContent !== goal.next) G.nt.textContent = goal.next;
+    G.p.classList.toggle('nobar', goal.progress === undefined);
+    G.p.style.display = sub || goal.progress !== undefined ? '' : 'none';
+    // (the next thing, or where the objective's thing is when there is no next)
+    const next = goal.next || '';
+    G.n.style.display = next ? '' : 'none';
+    if (next && G.nt.textContent !== next) G.nt.textContent = next;
     G.dir.style.display = goal.at ? '' : 'none';
     G.dd.style.display = goal.at ? '' : 'none';
     const lines = (goal.lines || []).map((t) => `<div>${esc(t)}</div>`).join('');
@@ -340,53 +359,61 @@ export class HUD {
     if (!p) return;
     this.hitTimer -= dt;
     if (this.hitTimer <= 0) this.hit.className = 'hud-hit';
-    // needs: rows highlight when low
+    // needs: a bar each, yellow when low, red and beating when it is about to hurt; the lot
+    // fades back while nothing is low and nothing has changed for a while
+    let worst = 100;
     for (const k of ['health', 'food', 'water', 'energy', 'warmth']) {
       const v = Math.max(0, Math.min(100, p[k]));
+      worst = Math.min(worst, v);
       const e = this.needEls[k];
       const r = Math.round(v);
       if (e.last !== r) {
+        if (e.last !== undefined && Math.abs(e.last - r) > 1) this.calm = 0;
         e.last = r;
-        e.fg.style.strokeDashoffset = (this.ringC * (1 - v / 100)).toFixed(2);
-        e.val.textContent = r;
+        e.fill.style.transform = `scaleX(${(v / 100).toFixed(3)})`;
       }
-      e.row.classList.toggle('low', v < 25);
-      e.row.classList.toggle('crit', v < 10);
+      const low = v < 25,
+        crit = v < 10;
+      if (e.low !== low) e.row.classList.toggle('low', (e.low = low));
+      if (e.crit !== crit) e.row.classList.toggle('crit', (e.crit = crit));
     }
-    // the warmth ring turns icy when cold and shows the air temperature on its label
-    const wv = p.warmth;
-    this.needEls.warmth.row.classList.toggle('cold', wv < 45);
+    // the warmth bar turns icy when cold and says the air temperature
+    const cold = p.warmth < 45;
+    if (cold !== this._cold) this.needEls.warmth.row.classList.toggle('cold', (this._cold = cold));
     const at = Math.round(p.airTemp ?? 20);
     if (at !== this._at) {
       this._at = at;
-      this.needEls.warmth.row.querySelector('.hud-need-lab').textContent = `${at}°C`;
+      this.needEls.warmth.val.textContent = `${at}°`;
     }
-    this.stamina.style.opacity = p.stamina < 99 && !p.seat ? 1 : 0;
-    this.staminaFill.style.width = p.stamina.toFixed(0) + '%';
+    const tired = p.stamina < 99 && !p.seat;
+    if (tired) this.calm = 0;
+    this.stamina.classList.toggle('on', tired);
+    this.staminaFill.style.transform = `scaleX(${(p.stamina / 100).toFixed(3)})`;
+    this.calm += dt;
+    this.needs.classList.toggle('calm', this.calm > 6 && worst > 40);
     // vehicle
     const car = g.car;
     const driving = p.seat === 'driver';
     this.veh.classList.toggle('on', !!driving);
+    this.root.classList.toggle('driving', !!driving);
     if (driving && car) {
       const kmh = Math.abs(car.speedKmh);
-      this.speed.textContent = Math.round(kmh);
-      this.gear.textContent = car.dyn.engine.running ? car.dyn.gearLabel() : car.ignition ? 'ON' : 'OFF';
-      this.gear.classList.toggle('off', !car.dyn.engine.running);
+      const sk = Math.round(kmh);
+      if (sk !== this._sk) this.speed.textContent = this._sk = sk;
+      const running = car.dyn.engine.running;
+      const gl = running ? car.dyn.gearLabel() : car.ignition ? 'ON' : 'OFF';
+      if (gl !== this._gl) {
+        this.gear.textContent = this._gl = gl;
+        this.gear.classList.toggle('off', !running);
+      }
       const lit = Math.round(Math.min(1, car.dyn.engine.rpm / 7000) * this.rpmSegs.length);
       if (lit !== this._lit) {
         this._lit = lit;
         this.rpmSegs.forEach((d, i) => d.classList.toggle('on', i < lit));
       }
-      this.fuel.fill.style.width = (car.fuel / car.fuelCap) * 100 + '%';
-      this.fuel.val.textContent = car.fuel.toFixed(car.fuel < 10 ? 1 : 0) + ' L';
-      this.fuel.row.classList.toggle('low', car.fuel / car.fuelCap < 0.12);
-      const tn = Math.max(0, Math.min(1, (car.engineTemp - 40) / 90));
-      this.temp.fill.style.width = tn * 100 + '%';
-      this.temp.val.textContent = Math.round(car.engineTemp) + '°';
-      this.temp.row.classList.toggle('low', car.engineTemp > 110);
-      this.batt.fill.style.width = car.battery * 100 + '%';
-      this.batt.val.textContent = Math.round(car.battery * 100) + '%';
-      this.batt.row.classList.toggle('low', car.battery < 0.15);
+      this.gauge(this.fuel, car.fuel / car.fuelCap, car.fuel.toFixed(car.fuel < 10 ? 1 : 0) + ' L', car.fuel / car.fuelCap < 0.12);
+      this.gauge(this.temp, (car.engineTemp - 40) / 90, Math.round(car.engineTemp) + '°', car.engineTemp > 110);
+      this.gauge(this.batt, car.battery, Math.round(car.battery * 100) + '%', car.battery < 0.15);
       const w = [];
       if (!car.isInstalled('battery')) w.push('No battery');
       else if (car.battery < 0.05) w.push('Battery dead');
@@ -401,7 +428,10 @@ export class HUD {
       const wk = w.slice(0, 3).join('|');
       if (wk !== this._wk) {
         this._wk = wk;
-        this.warn.innerHTML = w.slice(0, 3).map((t) => `<span>${t}</span>`).join('');
+        this.warn.innerHTML = w
+          .slice(0, 3)
+          .map((t) => `<span>${t}</span>`)
+          .join('');
       }
     }
     // compass
@@ -410,18 +440,22 @@ export class HUD {
     // world +z is "north" along the road
     let hdg = (Math.atan2(-fwd.x, fwd.z) * 180) / Math.PI;
     hdg = (hdg + 360) % 360;
-    this.compassStrip.style.transform = `translateX(${-(hdg / 5) * 12 + 180 - 864}px)`;
-    this.heading.textContent = String(Math.round(hdg) % 360).padStart(3, '0') + '°';
+    this.compassStrip.style.transform = `translateX(${(-(hdg / 5) * 12 + 150 - 864).toFixed(1)}px)`;
+    const hd = String(Math.round(hdg) % 360).padStart(3, '0');
+    if (hd !== this._hd) this.heading.textContent = this._hd = hd;
+    // the day and the hour
     const h = g.env.time;
     const hh = Math.floor(h),
       mm = Math.floor((h - hh) * 60);
-    this.clock.innerHTML = `<b>Day ${g.env.day}</b> ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    const ck = `Day ${g.env.day} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    if (ck !== this._ck) this.clock.textContent = this._ck = ck;
+    // the kilometre marker: the whole kilometres up Route 9, like the posts along it
     const km = Math.max(0, g.focusPoint().z + g.origin.z) / 1000;
-    const dk = km.toFixed(1);
-    if (dk !== this._dk) {
-      this._dk = dk;
-      this.dist.innerHTML = `${dk} km <span>· Haven ${Math.max(0, HAVEN_KM - km).toFixed(0)} km</span>`;
-      this.routeFill.style.width = Math.min(100, (km / HAVEN_KM) * 100).toFixed(1) + '%';
+    const kn = Math.floor(km);
+    if (kn !== this._kn) {
+      this._kn = kn;
+      this.dist.textContent = kn;
+      this.haven.innerHTML = kn >= HAVEN_KM ? 'Haven' : `Haven <b>${Math.max(0, HAVEN_KM - kn)}</b> km`;
     }
     // hotbar
     const ia = g.interaction;
