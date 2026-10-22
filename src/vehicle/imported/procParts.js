@@ -3,10 +3,41 @@
 // in car space; each returns a Group to hand to model.addPart().
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { roundedBox, tubeAlong } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// shared by every car's ancillaries
+const RED_CABLE = new THREE.MeshStandardMaterial({ color: 0xa52219, roughness: 0.5 });
+const PORCELAIN = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.35 });
+const CASE_BLACK = new THREE.MeshStandardMaterial({ color: 0x1b1c1d, metalness: 0.4, roughness: 0.5 });
+
+// One mesh per material: a part built from dozens of little pieces draws in a few calls.
+function bake(g) {
+  const byMat = new Map();
+  for (const c of g.children) {
+    if (!c.isMesh) continue;
+    c.updateMatrix();
+    let geo = c.geometry.clone().applyMatrix4(c.matrix);
+    for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(k)) geo.deleteAttribute(k);
+    if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+    if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
+    if (!byMat.has(c.material)) byMat.set(c.material, []);
+    byMat.get(c.material).push(geo);
+  }
+  const out = new THREE.Group();
+  out.position.copy(g.position);
+  out.rotation.copy(g.rotation);
+  for (const [mat, geos] of byMat) {
+    const merged = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+    if (!merged) return g;
+    const m = new THREE.Mesh(merged, mat);
+    m.castShadow = m.receiveShadow = true;
+    out.add(m);
+  }
+  return out;
+}
 
 function mesh(g, geo, mat, cast = true) {
   const m = new THREE.Mesh(geo, mat);
@@ -53,7 +84,7 @@ export function battery(M, at, { rotY = 0, size = [0.175, 0.19, 0.24], brand = '
   mesh(g, tubeAlong([V(-w * 0.25, h / 2 + 0.035, d * 0.32), V(-w * 0.3, h / 2 + 0.08, d * 0.2), V(-w * 0.6, h / 2 + 0.02, -d * 0.1)], 0.007, 8), red, false);
   g.rotation.y = rotY;
   g.position.copy(at);
-  return g;
+  return bake(g);
 }
 
 // Radiator core with tanks and a filler cap; `at` is the core centre, facing +Z.
@@ -71,7 +102,7 @@ export function radiator(M, at, { w = 0.6, h = 0.36 } = {}) {
   mesh(g, tubeAlong([V(w / 2 - 0.05, h / 2 - 0.05, -0.02), V(w / 2 - 0.1, h / 2, -0.15), V(w / 2 - 0.25, h / 2 - 0.02, -0.3)], 0.018, 8), hose, false);
   mesh(g, tubeAlong([V(-w / 2 + 0.05, -h / 2 + 0.05, -0.02), V(-w / 2 + 0.1, -h / 2, -0.18), V(-w / 2 + 0.3, -h / 2 + 0.05, -0.35)], 0.018, 8), hose, false);
   g.position.copy(at);
-  return g;
+  return bake(g);
 }
 
 // Accessory belt round two pulleys in the plane x = const (crank and alternator).
@@ -96,7 +127,7 @@ export function airFilter(M, at, { w = 0.3, h = 0.1, d = 0.22 } = {}) {
   mesh(g, roundedBox(w * 0.9, 0.012, d * 0.9, 0.006, 2).translate(0, h / 2, 0), M.black, false);
   mesh(g, tubeAlong([V(-w / 2, 0, 0), V(-w / 2 - 0.08, -0.02, -0.04), V(-w / 2 - 0.12, -0.06, -0.16)], 0.035, 12), M.rubber, false);
   g.position.copy(at);
-  return g;
+  return bake(g);
 }
 
 // Transverse inline four: block, head, cam cover, intake and exhaust manifolds, pulleys.
@@ -121,7 +152,7 @@ export function inlineFour(M, at, { len = 0.5, rot = 0 } = {}) {
   mesh(g, roundedBox(0.03, 0.34, 0.22, 0.02, 2).translate(len / 2 + 0.005, 0.02, 0), block);
   g.rotation.y = rot;
   g.position.copy(at);
-  return g;
+  return bake(g);
 }
 
 export function fuelTank(at, { w = 0.7, h = 0.2, d = 0.42 } = {}) {
@@ -179,18 +210,16 @@ export function alternator(M, at, { face = 'x', r = 0.062, len = 0.13, pulleyR =
   // mounting ears and the terminal
   mesh(g, roundedBox(0.03, 0.03, 0.05, 0.008, 2).translate(-len * 0.2, -r - 0.012, 0), M.alu, false);
   mesh(g, roundedBox(0.03, 0.03, 0.05, 0.008, 2).translate(len * 0.25, r + 0.01, 0), M.alu, false);
-  const red = new THREE.MeshStandardMaterial({ color: 0xa52219, roughness: 0.5 });
-  mesh(g, new THREE.CylinderGeometry(0.009, 0.012, 0.03, 10).rotateX(Math.PI / 2).translate(-len / 2 - 0.02, r * 0.4, 0.02), red, false);
+  mesh(g, new THREE.CylinderGeometry(0.009, 0.012, 0.03, 10).rotateX(Math.PI / 2).translate(-len / 2 - 0.02, r * 0.4, 0.02), RED_CABLE, false);
   mesh(g, tubeAlong([V(-len / 2 - 0.02, r * 0.4, 0.035), V(-len / 2 - 0.05, r * 0.6, 0.08), V(-len / 2 - 0.12, r * 0.2, 0.12)], 0.006, 6), M.black, false);
   g.position.copy(at);
-  return facing(g, face);
+  return bake(facing(g, face));
 }
 
 // Starter motor: black can, the solenoid riding on top, aluminium nose with the pinion.
 export function starter(M, at, { face = 'x', len = 0.17 } = {}) {
   const g = new THREE.Group();
-  const black = new THREE.MeshStandardMaterial({ color: 0x1b1c1d, metalness: 0.4, roughness: 0.5 });
-  mesh(g, alongX(new THREE.CylinderGeometry(0.043, 0.043, len, 22)), black);
+  mesh(g, alongX(new THREE.CylinderGeometry(0.043, 0.043, len, 22)), CASE_BLACK);
   mesh(g, alongX(new THREE.CylinderGeometry(0.036, 0.043, 0.02, 22)).translate(-len / 2 - 0.01, 0, 0), M.steel, false);
   mesh(g, alongX(new THREE.CylinderGeometry(0.03, 0.04, 0.07, 18)).translate(len / 2 + 0.035, -0.008, 0), M.alu);
   mesh(g, alongX(new THREE.CylinderGeometry(0.014, 0.014, 0.02, 10)).translate(len / 2 + 0.078, -0.008, 0), M.steel, false);
@@ -198,9 +227,9 @@ export function starter(M, at, { face = 'x', len = 0.17 } = {}) {
   mesh(g, new THREE.CylinderGeometry(0.008, 0.008, 0.02, 8).translate(len * 0.05, 0.095, 0), M.chrome, false);
   // flange bolting it to the bell housing
   mesh(g, roundedBox(0.012, 0.11, 0.09, 0.01, 2).translate(len / 2 + 0.002, 0, 0), M.alu, false);
-  mesh(g, tubeAlong([V(len * 0.05, 0.1, 0), V(len * 0.05, 0.14, 0.05), V(-len * 0.3, 0.12, 0.12)], 0.007, 6), new THREE.MeshStandardMaterial({ color: 0xa52219, roughness: 0.5 }), false);
+  mesh(g, tubeAlong([V(len * 0.05, 0.1, 0), V(len * 0.05, 0.14, 0.05), V(-len * 0.3, 0.12, 0.12)], 0.007, 6), RED_CABLE, false);
   g.position.copy(at);
-  return facing(g, face);
+  return bake(facing(g, face));
 }
 
 // Water pump on the block's front: cast housing, outlet stub to the radiator hose, the pulley.
@@ -219,7 +248,7 @@ export function waterPump(M, at, { face = 'x', pulleyR = 0.05 } = {}) {
     mesh(g, alongX(new THREE.CylinderGeometry(0.007, 0.007, 0.012, 6)).translate(0.028, y, z), M.steel, false);
   pulley(g, M, 0.085, pulleyR, 0.02);
   g.position.copy(at);
-  return facing(g, face);
+  return bake(facing(g, face));
 }
 
 // Spin-on oil filter: painted can with a label band, standing on its housing.
@@ -246,7 +275,7 @@ export function oilFilter(M, at, { r = 0.042, h = 0.11, tilt = 0 } = {}) {
   mesh(g, new THREE.CylinderGeometry(r * 1.1, r * 1.1, 0.025, 6).translate(0, h / 2 + 0.024, 0), M.alu, false);
   g.rotation.z = tilt;
   g.position.copy(at);
-  return g;
+  return bake(g);
 }
 
 // Spark plugs with their leads: a boot on each plug point, leads looping to `to` where a
@@ -258,7 +287,7 @@ export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}
   const lead = new THREE.MeshStandardMaterial({ color: coils ? 0x111111 : 0x262626, roughness: 0.7 });
   for (const p of plugs) {
     // the white insulator just shows under the boot
-    mesh(g, new THREE.CylinderGeometry(0.008, 0.009, 0.025, 10).translate(p.x, p.y + 0.008, p.z), new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.35 }), false);
+    mesh(g, new THREE.CylinderGeometry(0.008, 0.009, 0.025, 10).translate(p.x, p.y + 0.008, p.z), PORCELAIN, false);
     if (coils) {
       mesh(g, new THREE.CylinderGeometry(0.014, 0.012, 0.06, 12).translate(p.x, p.y + 0.045, p.z), boot, false);
       mesh(g, roundedBox(0.045, 0.028, 0.05, 0.008, 2).translate(p.x, p.y + 0.085, p.z), boot);
@@ -283,7 +312,7 @@ export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}
     mesh(g, new THREE.CylinderGeometry(0.036, 0.04, 0.045, 20).translate(to.x, to.y + 0.01, to.z), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.5 }));
     mesh(g, new THREE.CylinderGeometry(0.028, 0.028, 0.05, 16).translate(to.x, to.y - 0.035, to.z), M.alu, false);
   }
-  return g;
+  return bake(g);
 }
 
 // A belt round any number of pulleys ({c, r}) in one plane: the convex outline they make.

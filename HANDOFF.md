@@ -528,6 +528,10 @@ add them to `src/world/props.js` PROPS.
 - Menu pictures re-rendered with the W203, the new sky and the mountains (`menu4.sh` and the
   `st_menu_*.json` scenes in the scratchpad; PNG → webp q84 into `public/menu/`).
 
+- `procParts` builders end in `bake()`: the pieces of a part are merged into one mesh per
+  material (the W203 went from 204 to 135 meshes). Keep new builders doing the same, and use the
+  shared module materials (RED_CABLE, PORCELAIN, CASE_BLACK) instead of making new ones inline.
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.
