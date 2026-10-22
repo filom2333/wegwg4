@@ -312,7 +312,7 @@ export class Lures {
       }
       inst.root.updateMatrixWorld(true);
       const lp = V(fp.x - g.origin.x, 0, fp.z - g.origin.z).applyMatrix4(inst.root.matrixWorld.clone().invert());
-      placeProp(g, inst, { id: 'oilDrum', pos: [lp.x, 0, lp.z], rot: 0 });
+      placeProp(g, inst, { id: 'oilDrum', pos: [lp.x, 0, lp.z], rot: 0, fuel: false });
     }
     if (inst.state.cache) return;
     inst.state.cache = true;

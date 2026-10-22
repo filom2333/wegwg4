@@ -29,6 +29,12 @@ function partDefOf(it) {
 }
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// Fuel left at a pump (the station's tank) or in a drum (its own).
+const pumpFuel = (p) => (p.drum ? p.inst.state.drums[p.drum] || 0 : p.inst.state.fuel || 0);
+const takeFuel = (p, l) => {
+  if (p.drum) p.inst.state.drums[p.drum] = Math.max(0, pumpFuel(p) - l);
+  else p.inst.state.fuel -= l;
+};
 const REACH = 2.6;
 
 // Big things are carried out in front with both hands; long tools (guns, a fishing rod) are held
@@ -526,7 +532,7 @@ export class Interaction {
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
-    if (t.kind === 'pump' && type === 'fuel') return { kind: 'pump', label: 'Fill from pump' };
+    if (t.kind === 'pump' && type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : 'Fill from pump' } : null;
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
     return null;
   }
@@ -696,6 +702,13 @@ export class Interaction {
         break;
       case 'pump': {
         const st = t.pump.inst.state;
+        if (t.pump.pump.drum) {
+          const f = pumpFuel(t.pump.pump);
+          info = { title: 'Oil drum', sub: f > 0.5 ? `About ${Math.round(f)} l of old petrol sloshing inside` : 'Empty, rust flakes inside', bar: Math.min(1, f / 200) };
+          const held = this.held && this.held.def && this.held.def.liquid;
+          if (f > 0.5 && !held) prompts.push(['', 'Bring a jerry can to fill']);
+          break;
+        }
         info = { title: 'Fuel pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
         const carNear = car && car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
         if (st.fuel > 0.5 && carNear) prompts.push(['E', this.game.refuel && this.game.refuel.active ? 'Stop refuelling' : 'Refuel the car']);
@@ -887,7 +900,7 @@ export class Interaction {
         g.pois.toggleDoor(t.door);
         break;
       case 'pump': {
-        if (viaMouse) return;
+        if (viaMouse || t.pump.pump.drum) return;
         if (g.refuel && g.refuel.active) g.refuel.active = false;
         else if (car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5 && t.pump.inst.state.fuel > 0.5) g.refuel = { active: true, pump: t.pump };
         break;
@@ -1327,8 +1340,10 @@ export class Interaction {
     // raw meat held over a burning fire is cooked instead of eaten
     if (def.raw && g.campfires && g.campfires.near(p.position, 2.6)) {
       const pos = it.mesh.position.clone();
+      // the same fish (or cut), grilled
+      const variant = it.state.variant;
       this.consumeHeld();
-      const cooked = g.items.spawn(def.cooksTo || 'cookedMeat', pos);
+      const cooked = g.items.spawn(def.cooksTo || 'cookedMeat', pos, undefined, variant !== undefined && def.cooksTo === 'cookedFish' ? { variant } : null);
       this.pick(cooked);
       g.audio && g.audio.play('ignite', { volume: 0.4 });
       return;
@@ -1540,10 +1555,12 @@ export class Interaction {
       s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'pump') {
-      const st = this.target.pump.inst.state;
-      amount = Math.min(rate * 2 * dt, it.def.liquid.cap - s.liquid, st.fuel);
-      st.fuel -= amount;
+      const pump = this.target.pump.pump;
+      // a drum is tipped and drained slower than a pump delivers
+      amount = Math.min(rate * (pump.drum ? 1 : 2) * dt, it.def.liquid.cap - s.liquid, pumpFuel(pump));
+      takeFuel(pump, amount);
       s.liquid += amount;
+      s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'item') {
       const o = tgt.item;

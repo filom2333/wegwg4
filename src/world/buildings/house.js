@@ -459,12 +459,17 @@ function furnishRoom(b, r, rnd, y, openings) {
         const l = P.last;
         const fx = Math.sin(l.rot),
           fz = Math.cos(l.rot);
-        P.free(FUR.coffeeTable(rnd), l.x + fx * 1.0, l.z + fz * 1.0, l.rot);
+        // a cup left on it
+        const ct = FUR.coffeeTable(rnd);
+        if (rnd() < 0.55) ct.props.push({ id: 'teacup', pos: [0.18 - rnd() * 0.36, 0.45, 0.04], rot: rnd() * 6 });
+        P.free(ct, l.x + fx * 1.0, l.z + fz * 1.0, l.rot);
         place(b, FUR.rug(rnd, 2.0, 1.4), l.x + fx * 1.05, y, l.z + fz * 1.05, l.rot);
       }
       P.wall(FUR.tvStand(rnd), shuffle(all), { centre: true });
       P.wall(FUR.armchair(rnd), shuffle(all));
       if (rnd() < 0.45) P.wall(FUR.propItem('pottedPlant', [0.7, 0.8, 0.7]), shuffle(all), { tall: false });
+      // grandad's bellows camera on its tripod in a corner
+      if (rnd() < 0.2) P.wall(FUR.propItem('antiqueCamera', [0.6, 1.5, 0.6]), shuffle(all));
       P.wall(FUR.bookshelf(rnd), shuffle(all));
       if (rnd() < 0.5) P.wall(FUR.dresser(rnd), shuffle(all));
       break;
@@ -478,8 +483,13 @@ function furnishRoom(b, r, rnd, y, openings) {
       P.wall(FUR.fridge(rnd), shuffle(all));
       let tz = null;
       if (D > 3 && W > 2.8) {
-        if (P.free(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 }), cx, cz, 0)) tz = cz;
-        else if (P.free(FUR.diningTable(rnd, { chairs: 2 }), cx, cz + 0.4, 0)) tz = cz + 0.4;
+        // cups where people sat down for the last time
+        const cups = (t) => {
+          for (const x of [-0.35, 0.3]) if (rnd() < 0.45) t.props.push({ id: 'teacup', pos: [x, 0.77, (rnd() - 0.5) * 0.4], rot: rnd() * 6 });
+          return t;
+        };
+        if (P.free(cups(FUR.diningTable(rnd, { chairs: W > 3.6 ? 4 : 2 })), cx, cz, 0)) tz = cz;
+        else if (P.free(cups(FUR.diningTable(rnd, { chairs: 2 })), cx, cz + 0.4, 0)) tz = cz + 0.4;
       }
       void tz;
       break;

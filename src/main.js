@@ -50,7 +50,7 @@ async function boot() {
     if (!params.get('manual')) game.start();
     else game.clock.start();
     // headless captures (menu pictures, tests) fit kit to the car from outside
-    if (params.get('manual')) window.dev = { fitAccessory: (await import('./vehicle/accessories.js')).fitAccessory, setTune: (await import('./vehicle/tuning.js')).setTune, input: (await import('./core/input.js')).input };
+    if (params.get('manual')) window.dev = { fitAccessory: (await import('./vehicle/accessories.js')).fitAccessory, setTune: (await import('./vehicle/tuning.js')).setTune, input: (await import('./core/input.js')).input, placeProp: (await import('./world/props.js')).placeProp };
     canvas.addEventListener('click', () => ui.resume());
     window.__ready = true;
     return;

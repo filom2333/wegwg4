@@ -424,10 +424,12 @@ export function registerRealModel(id, obj) {
   if (obj) REAL[id] = obj;
 }
 
-export function fish(cooked = false) {
-  if (REAL.carp) {
+// variant 0 a carp, 1 a bass (the barramundi scan)
+export function fish(cooked = false, variant = 0) {
+  const real = (variant === 1 && REAL.bass) || REAL.carp;
+  if (real) {
     const g = new THREE.Group();
-    const m = REAL.carp.clone();
+    const m = real.clone();
     m.position.set(0, 0, 0);
     if (cooked)
       m.traverse((o) => {

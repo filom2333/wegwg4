@@ -8,14 +8,16 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RAPIER, GROUPS } from '../physics/physics.js';
+import { hash01 } from '../core/noise.js';
 
 const BASE = (import.meta.env.BASE_URL || '/') + 'models/props/';
 
 // size: the model is scaled so that this extent (metres) matches: h = height, w = the larger of
 // width and depth, l = length (z). collide: 'box' (from the model's bounds), 'cyl', or none.
 // node: show only this node of the file. fallback: colour if the textures do not load.
+// fuel: a drum that may still hold some petrol (a jerry can fills from it like from a pump).
 export const PROPS = {
-  oilDrum: { file: 'oil_drum.glb', size: { h: 0.88 }, collide: 'cyl', fallback: 0x9a2a20, surface: 'metal' },
+  oilDrum: { file: 'oil_drum.glb', size: { h: 0.88 }, collide: 'cyl', fallback: 0x9a2a20, surface: 'metal', fuel: true },
   trafficCone: { file: 'traffic_cone.glb', node: 'Cone_Normal', size: { h: 0.7 }, collide: 'cyl', fallback: 0xe0602a },
   lampPost: { file: 'lamp_post.glb', size: { h: 2.7 }, collide: 'post', fallback: 0x8a7a66, light: [0.45, 2.15, 0] },
   barnLamp: { file: 'barn_lamp.glb', size: { h: 0.32 }, fallback: 0xb87a50, surface: 'metal' },
@@ -34,6 +36,10 @@ export const PROPS = {
   rockMoss3: { file: 'rock_moss3.glb', size: { w: 1 }, collide: 'box', fallback: 0x6d6a5c, surface: 'rock', brighten: 1.65 },
   tyre: { file: 'tyre.glb', size: { w: 0.66 }, collide: 'cyl', fallback: 0x1b1b1b, surface: 'rubber' },
   carp: { file: 'carp.glb', size: { w: 0.42 }, fallback: 0x8a8460 },
+  bass: { file: 'barramundi.glb', size: { w: 0.46 }, fallback: 0x7a7a62 },
+  // house things: a bellows camera on its tripod, a cup and saucer
+  antiqueCamera: { file: 'antique_camera.glb', size: { h: 1.5 }, collide: 'box', fallback: 0x5a4430, surface: 'wood' },
+  teacup: { file: 'teacup.glb', size: { w: 0.15 }, fallback: 0xe8e4dc },
 };
 
 const MAP_KEYS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'sheenColorMap', 'clearcoatMap'];
@@ -231,6 +237,17 @@ export function placeProp(game, inst, prop) {
       desc.setTranslation(p.pos[0], p.pos[1] + size.y / 2, p.pos[2]).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }).setCollisionGroups(GROUPS.world).setFriction(0.8);
       const col = ph.world.createCollider(desc, inst.body);
       ph.setOwner(col, { kind: 'structure', surface: spec.surface || 'wood', poi: inst });
+    }
+    // a drum left standing may still have old petrol in it: it fills a can like a pump does
+    if (spec.fuel && p.fuel !== false) {
+      const key = `${p.pos[0].toFixed(1)},${p.pos[2].toFixed(1)}`;
+      const st = inst.state;
+      st.drums = st.drums || {};
+      if (st.drums[key] === undefined) {
+        const h = hash01(inst.k, Math.round(p.pos[0] * 10), Math.round(p.pos[2] * 10), 77);
+        st.drums[key] = h < 0.55 ? 0 : Math.round(4 + ((h - 0.55) / 0.45) * 36);
+      }
+      inst.pumps.push({ local: new THREE.Vector3(p.pos[0], p.pos[1] + size.y + 0.04, p.pos[2]), inst, drum: key });
     }
     // lamp posts light up with the place's other lights
     if (spec.light && inst.lights.length < 4) {

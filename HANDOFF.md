@@ -515,6 +515,13 @@ add them to `src/world/props.js` PROPS.
   plastic engine shroud is split out of the source body (`tools/cars/w203.py` classify rule,
   re-run the importer as above) as part `enginecover`; the coils need it off (`needsOpen`).
 
+- Oil drums are fuel sources: `placeProp` registers each `oilDrum` (spec `fuel: true`) as a
+  pump with its own seeded amount in `inst.state.drums` (55% empty, else 4-40 l); a jerry can
+  fills from it ("Fill from the drum"), the car does not. Fire drums at lures pass `fuel: false`.
+- More real models (Khronos sample assets, CC-BY): a barramundi as the second fish species (fish
+  items have `variants: 2`, the cooked fish keeps its variant), an antique bellows camera on a
+  tripod in some living rooms, teacups on coffee and dining tables.
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.
