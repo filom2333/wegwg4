@@ -72,7 +72,9 @@ ALPHA_KEYS = ()
 TYRE = 'wheel_RL'
 
 OWNER = {
-    'W203_body': 'body', 'W203_windshield': 'body', 'W203_backlight': 'body', 'W203_mirror_L': 'body', 'W203_mirror_R': 'body',
+    'W203_body': 'body', 'W203_windshield': 'body', 'W203_backlight': 'body', 
+    # the mirrors sit on the front doors' corners and swing with them
+    'W203_mirror_L': 'door_FL', 'W203_mirror_R': 'door_FR',
     'W203_door_FL': 'door_FL', 'W203_door_FR': 'door_FR', 'W203_door_RL': 'door_RL', 'W203_door_RR': 'door_RR',
     'W203_hood': 'hood', 'W203_trunk': 'trunk', 'W203_spoiler': 'trunk',
     'W203_bumper_F': 'bumper_F', 'W203_bumper_R': 'bumper_R',
@@ -90,6 +92,9 @@ OWNER = {
 # game's own dial needle, and another car's badges
 DROP = {'W203_headlightglass_L', 'W203_headlightglass_R', 'W203_needle_speedo', 'W203_lettering_ibishu', 'W203_lettering_pessima'}
 
+
+# outer face of the front door skins (the door mirrors stand out beyond it)
+FRONT_SKIN_X = 0.9051
 
 # middle of the side badge (its letters span z 0.793..1.083)
 BADGE_Z = 0.938
@@ -254,13 +259,26 @@ def finish(meta, parts, geo):
     H = {}
     for d in ('door_FL', 'door_FR', 'door_RL', 'door_RR'):
         mn, mx = box(d)
-        x = mx[0] - 0.05 if d[-1] == 'L' else mn[0] + 0.05
+        # (the front doors' outer skin, not the mirrors that stick out of it)
+        out = FRONT_SKIN_X if d[-2] == 'F' else (mx[0] if d[-1] == 'L' else -mn[0])
+        x = out - 0.05 if d[-1] == 'L' else -out + 0.05
         H[d] = [round(float(x), 4), round(float((mn[1] + mx[1]) / 2), 4), round(float(mx[2] - 0.04), 4)]
     mn, mx = box('hood')
     H['hood'] = [0.0, round(float(mx[1] - 0.02), 4), round(float(mn[2] + 0.03), 4)]
     mn, mx = box('trunk')
     H['trunk'] = [0.0, round(float(mx[1] - 0.02), 4), round(float(mx[2] - 0.03), 4)]
     meta['hinges'] = H
+    # the mirrors swing with the front doors, but the boxes the colliders and the car's width
+    # are made from stay as before: the door skins, and the body as wide as its mirrors
+    for d in ('door_FL', 'door_FR'):
+        b = meta['parts'][d]
+        out = max(b['max'][0], -b['min'][0])
+        if d[-1] == 'L':
+            b['max'][0] = FRONT_SKIN_X
+        else:
+            b['min'][0] = -FRONT_SKIN_X
+        meta['parts']['body']['max'][0] = max(meta['parts']['body']['max'][0], out)
+        meta['parts']['body']['min'][0] = min(meta['parts']['body']['min'][0], -out)
     mn, mx = box('exhaust')
     meta['exhaust'] = [-0.48, round(float(GROUND * 0 + 0.26 - GROUND), 4), round(float(mn[2]), 4)]
     meta['controls'] = {p: {'min': box(p)[0].round(4).tolist(), 'max': box(p)[1].round(4).tolist()} for p in parts if p.startswith('x_')}
