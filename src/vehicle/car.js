@@ -654,6 +654,22 @@ export class Car {
     this.dyn.engine.omega = Math.max(this.dyn.engine.omega, ((150 + 110 * Math.min(1, st * 1.5)) * 2 * Math.PI) / 60);
     if (this.parts.starter) this.parts.starter.condition = Math.max(0, st - dt * 0.0003);
     const chance = this.engineCondition * (this.battery > 0.25 ? 1 : 0.4) * (0.35 + 0.65 * this.partCond('sparkplugs')) * (0.5 + 0.5 * Math.min(1, st * 2));
+    // turning over and over without catching: say what it sounds like is missing
+    if (this.cranking <= dt * 1.5) this._crankHint = false;
+    if (!this._crankHint && this.cranking > 2.6 && !this.canRun()) {
+      this._crankHint = true;
+      const why =
+        this.engineCondition <= 0.03
+          ? 'The engine is seized'
+          : this.partCond('sparkplugs') <= 0.02
+            ? 'It turns over but there is no spark'
+            : !this.isInstalled('fueltank') || this.fuel <= 0.05
+              ? 'It turns over but never catches: no fuel'
+              : this.oil <= 0.1
+                ? 'The oil lamp stays lit: the engine is dry'
+                : null;
+      if (why) this.game.hud && this.game.hud.toast(why);
+    }
     if (this.canRun() && this.cranking > 0.6 + (1 - chance) * 1.6) {
       this.dyn.startEngine();
       this.cranking = 0;

@@ -281,6 +281,9 @@ export class Effects {
     this.bloodGeo = new THREE.PlaneGeometry(1, 1);
     this.bloodMats = [0, 1, 2, 3].map((i) => new THREE.MeshStandardMaterial({ color: 0x4a0707, roughness: 0.35, transparent: true, alphaMap: splatterTexture(17 + i * 31), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
     this.bloodMat = this.bloodMats[0];
+    // what a leaking car leaves on the ground: black oil, green coolant
+    const stain = (color, opacity, seed, rough) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.1, transparent: true, opacity, alphaMap: splatterTexture(seed), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    this.fluidMats = { oil: stain(0x0c0a07, 0.92, 211, 0.12), coolant: stain(0x2a7a46, 0.7, 233, 0.2) };
     // casings
     this.casings = [];
     this.casingGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.03, 8).rotateZ(Math.PI / 2);
@@ -611,14 +614,43 @@ export class Effects {
       mat = this.bloodMats[Math.floor(Math.random() * this.bloodMats.length)];
       scale *= 0.07;
     }
-    const d = new THREE.Mesh(blood ? this.bloodGeo : this.decalGeo, mat);
+    const splat = blood || mat === this.fluidMats.oil || mat === this.fluidMats.coolant;
+    const d = new THREE.Mesh(splat ? this.bloodGeo : this.decalGeo, mat);
     d.position.copy(p).addScaledVector(n, 0.004);
     d.lookAt(p.clone().add(n));
-    if (blood) d.rotateZ(Math.random() * Math.PI * 2);
+    if (splat) d.rotateZ(Math.random() * Math.PI * 2);
     d.scale.setScalar(scale);
     this.root.add(d);
     this.decals.push(d);
     if (this.decals.length > 80) this.root.remove(this.decals.shift());
+    return d;
+  }
+
+  // Drips under a car losing a fluid (oil with no filter on a running engine or upside down,
+  // coolant with the water pump gone) and the puddle they make: it spreads while the car stands,
+  // a trail of stains when it moves.
+  leaks(car, dt) {
+    const oil = car.oil > 0.05 && car.isInstalled('engine') && ((car.parts.oilfilter && !car.isInstalled('oilfilter') && car.dyn.engine.running) || car.inverted > 0.5);
+    const coolant = car.coolant > 0.05 && car.parts.waterpump && !car.isInstalled('waterpump');
+    if (!oil && !coolant) return;
+    car._drip = (car._drip || 0) - dt;
+    if (car._drip > 0) return;
+    car._drip = 0.12 + Math.random() * 0.12;
+    car._puddles = car._puddles || {};
+    const g = this.game;
+    for (const [on, key, col, dz] of [
+      [oil, 'oil', [0.05, 0.04, 0.03], -0.15],
+      [coolant, 'coolant', [0.2, 0.55, 0.3], 0.3],
+    ]) {
+      if (!on) continue;
+      const p = car.type.POINTS.engine.clone().add(V((Math.random() - 0.5) * 0.15, -0.3, dz)).applyMatrix4(car.root.matrixWorld);
+      this.blood.emit({ pos: p, vel: V(0, -0.4, 0), size: 0.018, grow: 0, life: 0.45, color: col, alpha: 0.9, grav: 9.8 });
+      const gy = g.groundHeightAt(p.x, p.z, p.y + 0.5);
+      if (p.y - gy > 1.5) continue;
+      const pd = car._puddles[key];
+      if (pd && pd.mesh.parent && Math.hypot(pd.x - p.x, pd.z - p.z) < 0.35) pd.mesh.scale.setScalar(Math.min(1.3, pd.mesh.scale.x + 0.004));
+      else car._puddles[key] = { mesh: this.decal(V(p.x, gy, p.z), V(0, 1, 0), this.fluidMats[key], 0.18), x: p.x, z: p.z };
+    }
   }
 
   bloodHit(p, dir, amount = 1) {
@@ -911,6 +943,7 @@ export class Effects {
       this.wheelDust(g.car, dt);
       this.exhaust(g.car, dt);
       this.engineSmoke(g.car, dt);
+      this.leaks(g.car, dt);
     }
     // flash decay
     this.flashT -= dt;

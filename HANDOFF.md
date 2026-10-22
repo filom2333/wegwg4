@@ -522,12 +522,28 @@ add them to `src/world/props.js` PROPS.
   items have `variants: 2`, the cooked fish keeps its variant), an antique bellows camera on a
   tripod in some living rooms, teacups on coffee and dining tables.
 
+- Leaks you can see (`Effects.leaks`): drips and a spreading puddle (oil black, coolant green)
+  under the car with no oil filter on a running engine / upside down, or with the water pump
+  gone. Cranking that never catches tells you why after ~2.6 s (no spark, no fuel, dry, seized).
+- Menu pictures re-rendered with the W203, the new sky and the mountains (`menu4.sh` and the
+  `st_menu_*.json` scenes in the scratchpad; PNG → webp q84 into `public/menu/`).
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.
 2. Distant mountains: isolated cone shapes still show at biome belt edges; regenerate the menu
    pictures with the new sky/snow/birch look.
-3. Car destruction (deformation) — the user asked to note it as a plan only.
+3. Car destruction (deformation) — the user asked to note it as a plan only. Sketch:
+   - Per panel (body, doors, hood, trunk, bumpers, wings) keep a dent field: a handful of
+     (point, normal, radius, depth) dents in part space, from `Car.onImpact` (it already knows
+     the hit point, direction and severity; `panelDamage` decides tears).
+   - Apply them in the vertex shader of the paint/trim materials (onBeforeCompile: push vertices
+     along -normal by a smooth falloff of each dent, max ~8 dents per part as a uniform array),
+     so the shared imported geometry is never copied; crumpled normals from the same falloff.
+   - Hinges bind when a door/hood is dented near its edge (can't open fully), glass cracks
+     (swap to a cracked-glass texture) on hits near the pillars, headlights die on front hits.
+   - Wrecks (`buildImportedWreck`) start with a few random dents; repair kits pull dents out.
+   - Physics stays the same compound colliders; only a heavy roof dent lowers the roof box.
 4. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
    this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
    or remove by absolute path).

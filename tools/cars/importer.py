@@ -8,7 +8,8 @@
 # A car config (see sedan88.py) provides: SRC, NAME, to_car(p), to_car_dir(n),
 # SPLIT (mesh names whose components are classified one by one), classify(mesh, info),
 # MATERIALS {source material: key}, TEXTURES {key: (source material, colour, normal, mr sizes)},
-# and finish(meta, parts) to add hinges and points.
+# and finish(meta, parts) to add hinges and points. classify may set info['mirror_z'] to have a
+# piece reflected front-to-back about that z, and info['offset'] to move it.
 import io, json, os, struct, sys
 import numpy as np
 from PIL import Image
@@ -61,10 +62,21 @@ def run(cfg, out_dir, meta_path):
             used = np.unique(tris)
             remap = -np.ones(len(pos), np.int64)
             remap[used] = np.arange(len(used)) + g['n']
-            g['pos'].append(pos[used])
-            g['nor'].append(nor[used])
+            P, Nn, T = pos[used], nor[used], remap[tris]
+            # a piece the config wants reflected front-to-back about z = mirror_z (lettering
+            # that came out back to front)
+            if inf.get('mirror_z') is not None:
+                P = P.copy()
+                P[:, 2] = 2 * inf['mirror_z'] - P[:, 2]
+                Nn = Nn.copy()
+                Nn[:, 2] = -Nn[:, 2]
+                T = T[:, ::-1]
+            if inf.get('offset') is not None:
+                P = P + np.asarray(inf['offset'], float)
+            g['pos'].append(P)
+            g['nor'].append(Nn)
             g['uv'].append(uv[used])
-            g['idx'].append(remap[tris])
+            g['idx'].append(T)
             g['n'] += len(used)
     # geometry the config makes itself (a tyre the source leaves to its own engine, say)
     if hasattr(cfg, 'extra'):

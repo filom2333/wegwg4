@@ -91,6 +91,10 @@ OWNER = {
 DROP = {'W203_headlightglass_L', 'W203_headlightglass_R', 'W203_needle_speedo', 'W203_lettering_ibishu', 'W203_lettering_pessima'}
 
 
+# middle of the side badge (its letters span z 0.793..1.083)
+BADGE_Z = 0.938
+
+
 def owner_of(path):
     for x in path:
         if x.startswith('W203_') or x == 'calm':
@@ -108,6 +112,13 @@ def classify(name, inf):
     # door glass: one node in the source holds a pane of each side
     if o and o.startswith('W203_doorglass_'):
         return 'door_' + o[-2] + side
+    # the right wing node also carries the "V6 KOMPRESSOR" letters of both sides; the left
+    # side's set is a mirror copy that reads back to front: turn it round about its middle
+    if o == 'W203_fender_R' and inf['mat'] == 'Chrome' and c[0] > 0.85 and 0.54 < c[1] < 0.6 and 0.78 < c[2] < 1.1:
+        # (a few centimetres back and a hair out, so the tall V6 clears the wheel arch's flare)
+        inf['mirror_z'] = BADGE_Z - 0.035
+        inf['offset'] = [0.003, 0, 0]
+        return 'body'
     # the right wing node also carries pieces from elsewhere on the body
     if o == 'W203_fender_R':
         return 'fender_FR' if c[0] < -0.6 and c[2] > 0.7 else 'body'
