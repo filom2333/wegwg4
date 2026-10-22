@@ -189,36 +189,30 @@ export class Winches {
     this.setMotor(reeling ? 0.4 + (c.tension / MAX_FORCE) * 0.6 : 0, drum);
   }
 
-  // Motor whine: a geared saw that drops in pitch as the load comes on.
+  // Motor whine: the starter motor's recording, dropping in pitch as the load comes on.
   setMotor(load, at = null) {
     const au = this.game.audio;
     if (!au || !au.ready) return;
     const ctx = au.ctx;
     if (!this.motor) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      const o2 = ctx.createOscillator();
-      o2.type = 'square';
+      const src = ctx.createBufferSource();
+      src.buffer = au.sample('starter');
+      src.loop = true;
       const f = ctx.createBiquadFilter();
-      f.type = 'bandpass';
-      f.Q.value = 1.4;
-      f.frequency.value = 900;
+      f.type = 'lowpass';
+      f.frequency.value = 2600;
       const g = ctx.createGain();
       g.gain.value = 0;
       const p = ctx.createPanner();
       p.refDistance = 2;
-      o.connect(f);
-      o2.connect(f);
-      f.connect(g).connect(p).connect(au.sfx);
-      o.start();
-      o2.start();
-      this.motor = { o, o2, g, p };
+      src.connect(f).connect(g).connect(p).connect(au.sfx);
+      src.start();
+      this.motor = { src, g, p };
     }
     const m = this.motor,
       now = ctx.currentTime;
-    m.g.gain.setTargetAtTime(load > 0 ? 0.05 + load * 0.05 : 0, now, 0.08);
-    m.o.frequency.setTargetAtTime(150 - load * 50, now, 0.1);
-    m.o2.frequency.setTargetAtTime((150 - load * 50) * 3.02, now, 0.1);
+    m.g.gain.setTargetAtTime(load > 0 ? (0.25 + load * 0.2) * au.trim('starter') : 0, now, 0.08);
+    m.src.playbackRate.setTargetAtTime(1.3 - load * 0.4, now, 0.1);
     if (at) {
       m.p.positionX.value = at.x;
       m.p.positionY.value = at.y;

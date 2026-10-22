@@ -76,8 +76,8 @@ export function isSport(car) {
   return !!(car.parts.exhaust && car.parts.exhaust.installed && car.parts.exhaust.tune === 'sport');
 }
 
-// The engine voice with the tunes: a sport box rasps harder and louder, twin carbs roar on the
-// intake. Cached per voice so the audio graph only rebuilds when it changes.
+// The engine voice with the tunes: a sport box rasps brighter and louder, twin carbs bring the
+// strained sound in sooner. Cached per voice.
 const VOICES = new WeakMap();
 export function tunedVoice(car, T) {
   const sport = isSport(car);
@@ -88,8 +88,8 @@ export function tunedVoice(car, T) {
   const key = (sport ? 's' : '') + (twin ? 't' : '');
   if (!m[key]) {
     const S = { ...T.sound };
-    if (sport) Object.assign(S, { drive: S.drive * 1.7, odd: S.odd * 1.2, gain: S.gain * 1.4, tone: S.tone + 140, toneRpm: S.toneRpm * 1.15, sub: S.sub * 1.25 });
-    if (twin) S.intake = (S.intake ?? 1) * 1.8;
+    if (sport) Object.assign(S, { gain: S.gain * 1.4, bright: S.bright * 1.6, bite: Math.min(1, S.bite + 0.3) });
+    if (twin) Object.assign(S, { gain: S.gain * 1.12, bite: Math.min(1, S.bite + 0.25) });
     m[key] = { ...T, sound: S };
   }
   return m[key];

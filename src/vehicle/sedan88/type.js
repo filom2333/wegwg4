@@ -181,7 +181,7 @@ export const SEDAN88 = {
   fuelCom: [0, 0.35, -0.65],
   lights: { head: [0, 0.65, 2.2], headX: 0.56, reverse: [0, 0.6, -2.35] },
   glassOpacity: 0.28,
-  sound: { fires: 3, harmonics: [0, 1, 0.7, 0.35, 0.22, 0.12, 0.08, 0.05, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01], odd: 0.7, even: 1, sub: 0.7, tone: 140, toneRpm: 0.12, gain: 0.75, drive: 1.6, intake: 0.7 },
+  sound: { fires: 3, pitch: 0.86, bright: 0.75, gain: 0.9, bite: 0.55 },
   defaultColor: 0xcbb994,
   colors: [0xcbb994, 0x6b1f22, 0x1b2f3a, 0xc8c2b0, 0x2b3b2a, 0x8f8a80, 0x5b4a3a, 0x9a3a1e],
   repaintable: true,

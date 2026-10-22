@@ -302,7 +302,7 @@ export class Interaction {
     if (h === 'ignition') return this.turnKey(car);
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
-      g.audio && g.audio.play(car.parkBrake ? 'ratchet' : 'clunk', { volume: 0.45, rate: car.parkBrake ? 1.3 : 1.1 });
+      g.audio && g.audio.play(car.parkBrake ? 'parkBrake' : 'clunk', { volume: car.parkBrake ? 0.8 : 0.45, rate: car.parkBrake ? 1 : 1.1, pitchVar: 0.05 });
       return;
     }
     if (h === 'doorFL' || h === 'doorFR') {

@@ -1,1 +1,49 @@
-{}
+{
+ "menu": "menu_theme.mp3",
+ "albums": {
+  "eddie": [
+   "music_eddie_1.mp3",
+   null,
+   null
+  ],
+  "june": [
+   "music_june_1.mp3",
+   null,
+   null
+  ],
+  "kr9": [
+   "music_kr9_1.mp3",
+   null,
+   null
+  ],
+  "neon": [
+   "music_neon_1.mp3",
+   null,
+   null
+  ],
+  "rattlers": [
+   "music_rattlers_1.mp3",
+   null,
+   null
+  ],
+  "salt": [
+   "music_salt_1.mp3",
+   null,
+   null
+  ]
+ },
+ "score": {
+  "day": [
+   "score_day_1.mp3"
+  ],
+  "dusk": [
+   "score_dusk.mp3"
+  ],
+  "night": [
+   "score_night_1.mp3"
+  ],
+  "rain": [
+   "score_rain.mp3"
+  ]
+ }
+}

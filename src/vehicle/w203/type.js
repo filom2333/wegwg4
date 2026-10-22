@@ -200,7 +200,7 @@ export const W203 = {
   fuelCom: [0, 0.32, -0.95],
   lights: { head: [0, 0.63, 2.04], headX: 0.62, reverse: [0, 0.75, -2.38] },
   glassOpacity: 0.26,
-  sound: { fires: 2, harmonics: [0, 0.6, 1, 0.3, 0.5, 0.15, 0.2, 0.08, 0.06, 0.04, 0.03, 0.02, 0.02, 0.01, 0.01, 0.01], odd: 0.5, even: 1, sub: 0.4, tone: 180, toneRpm: 0.16, gain: 0.7, drive: 1.9, intake: 1.1 },
+  sound: { fires: 2, pitch: 1, bright: 0.9, gain: 0.85, bite: 0.5 },
   defaultColor: 0xb4b8bc,
   colors: [0xb4b8bc, 0x1c1e22, 0x24324a, 0xe6e4de, 0x3a4636, 0x6a2a26, 0x8c8676, 0x4e5458],
   repaintable: true,

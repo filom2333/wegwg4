@@ -2,7 +2,7 @@
 // (fuel, oil, battery, engine temperature and condition, fan belt, tyres) + lights.
 
 import * as THREE from 'three';
-import { ALBUMS } from '../audio/music/albums.js';
+import { ALBUMS, trackOn } from '../audio/music/albums.js';
 import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
@@ -438,7 +438,7 @@ export class Car {
   nextTrack() {
     const s = this.stereo;
     if (s.disc < 0) return;
-    s.track = (s.track + 1) % 3;
+    s.track = trackOn(s.disc, s.track + 1);
     s.pos = 0;
     s.mode = 'cd';
     s.restart = true;

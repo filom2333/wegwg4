@@ -106,14 +106,18 @@ export class Music {
   }
 
   // ---------------------------------------------------------------- the car stereo's songs
+  // (a track with no recording falls back to one the album has)
   songFile(album, track) {
     const al = ALBUMS[album % ALBUMS.length];
-    const list = this.index.albums && this.index.albums[al.id];
-    return (list && list[track]) || null;
+    const list = ((this.index.albums && this.index.albums[al.id]) || []).filter(Boolean);
+    return list.length ? (this.index.albums[al.id][track] || list[track % list.length]) : null;
   }
 
+  // Haven's own recordings, or else the calm score tracks between its bulletins.
   havenFiles() {
-    return this.index.haven || [];
+    if (this.index.haven && this.index.haven.length) return this.index.haven;
+    const S = this.index.score || {};
+    return ['day', 'dusk', 'night', 'dawn'].flatMap((k) => S[k] || []);
   }
 
   jingleFile(stationId) {

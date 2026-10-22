@@ -195,13 +195,13 @@ export class Story {
         if (station.kind === 'ebs') {
           this.voiceT = 26;
           this.ebsLine = ((this.ebsLine ?? -1) + 1) % EBS_LINES.length;
-          g.audio && g.audio.ebsTone(2.2);
+          g.audio && g.audio.ebsTone();
           setTimeout(() => g.hud && g.hud.subtitle && g.hud.subtitle('AM 640 · Emergency Broadcast', EBS_LINES[this.ebsLine], 11), 2400);
         } else {
           this.voiceT = 16 + Math.random() * 8;
           const grp = Array.from({ length: 5 }, () => NUMBERS[Math.floor(Math.random() * NUMBERS.length)]);
           const text = grp.map((w) => w[0].toUpperCase() + w.slice(1)).join('. ') + '.';
-          g.audio && [0, 0.35, 0.7].forEach((t) => setTimeout(() => g.audio.pip(t === 0.7 ? 900 : 1200), t * 1000));
+          g.audio && [0, 0.55, 1.1].forEach((t) => setTimeout(() => g.audio.pip(t > 1), t * 1000));
           setTimeout(() => g.hud && g.hud.subtitle && g.hud.subtitle('FM 88.3', text, 6), 1200);
         }
       }

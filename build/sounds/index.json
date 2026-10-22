@@ -211,7 +211,14 @@
    "signCreak_1.mp3",
    "signCreak_2.mp3"
   ],
-  "swish": "swish.mp3"
+  "swish": "swish.mp3",
+  "engineIdle": "engineIdle.wav",
+  "engineMid": "engineMid.wav",
+  "engineHigh": "engineHigh.wav",
+  "hornLoop": "hornLoop.wav",
+  "sprayLoop": "sprayLoop.wav",
+  "parkBrake": "parkBrake.mp3",
+  "ebs": "ebs.mp3"
  },
  "music": {},
  "gain": {

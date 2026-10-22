@@ -1,6 +1,8 @@
+import { trackOn } from './music/albums.js';
+
 // What the car radio can pick up out here. Music stations play the albums "live": what is on
 // depends on the time of day, so tuning in lands you mid-song. 98.1 is Haven's own broadcast
-// (the story's bulletins between slow plucked music), 640 AM the emergency system on a loop, and
+// (the story's bulletins between slow music), 640 AM the emergency system on a loop, and
 // at 88.3 someone reads numbers into the static.
 
 export const STATIONS = [
@@ -26,7 +28,7 @@ export function stationProgram(st, seconds) {
   const SLOT = 210;
   const slot = Math.floor(seconds / SLOT);
   const album = st.albums[slot % st.albums.length];
-  // (the track moves on once per round of the albums, so all nine songs come round)
-  const track = (Math.floor(slot / st.albums.length) + st.id.length) % 3;
+  // (the track moves on once per round of the albums, so every song comes round)
+  const track = trackOn(album, Math.floor(slot / st.albums.length) + st.id.length);
   return { slot, album, track, pos: seconds - slot * SLOT };
 }
