@@ -107,6 +107,8 @@ export class AudioSystem {
     }
     if (!list) return;
     this.musicFiles = list.music || {};
+    // level corrections for recorded loops, so they sit where the shaped noise they replace did
+    this.sampleGain = list.gain || {};
     await Promise.all(
       Object.entries(list.sounds || {}).map(async ([name, files]) => {
         const bufs = [];
@@ -125,6 +127,11 @@ export class AudioSystem {
 
   applySamples() {
     for (const [k, v] of Object.entries(this.samples || {})) this.buffers[k] = v;
+  }
+
+  // Level correction for a sound while a recording stands in for it.
+  trim(name) {
+    return this.samples && this.samples[name] ? (this.sampleGain || {})[name] ?? 1 : 1;
   }
 
   // A loaded recording for a loop (its first variant), or null.
@@ -208,7 +215,7 @@ export class AudioSystem {
   // Continuous sources.
   buildLoops() {
     const c = this.ctx;
-    const mkNoise = (buf, bus, filterType, freq, q = 0.7) => {
+    const mkNoise = (buf, bus, filterType, freq, q = 0.7, trim = 1) => {
       const src = c.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -218,15 +225,21 @@ export class AudioSystem {
       f.Q.value = q;
       const g = c.createGain();
       g.gain.value = 0;
-      src.connect(f).connect(g).connect(bus);
+      let head = src;
+      if (trim !== 1) {
+        const t = c.createGain();
+        t.gain.value = trim;
+        head = src.connect(t);
+      }
+      head.connect(f).connect(g).connect(bus);
       src.start();
       return { src, f, g };
     };
     // ambience
     // (a recorded wind or rain replaces the shaped noise; the filters still follow the weather)
-    this.loops.wind = mkNoise(this.sample('wind') || this.buffers.pink, this.amb, 'lowpass', 500);
+    this.loops.wind = mkNoise(this.sample('wind') || this.buffers.pink, this.amb, 'lowpass', 500, 0.7, this.trim('wind'));
     this.loops.windHigh = mkNoise(this.buffers.white, this.amb, 'bandpass', 2400, 0.6);
-    this.loops.rain = mkNoise(this.sample('rain') || this.buffers.white, this.amb, 'highpass', 1200);
+    this.loops.rain = mkNoise(this.sample('rain') || this.buffers.white, this.amb, 'highpass', 1200, 0.7, this.trim('rain'));
     this.loops.rainLow = mkNoise(this.buffers.brown, this.amb, 'lowpass', 400);
     // car: engine synthesis with panner at the car
     const pan = (this.carPanner = c.createPanner());
@@ -274,12 +287,14 @@ export class AudioSystem {
     st.loop = true;
     const stG = c.createGain();
     stG.gain.value = 0;
-    st.connect(stG).connect(carBus);
+    const stT = c.createGain();
+    stT.gain.value = this.trim('starter');
+    st.connect(stT).connect(stG).connect(carBus);
     st.start();
     this.loops.starter = { src: st, g: stG };
     // tyres & skid (not filtered by cabin as strongly but fine)
-    this.loops.tyre = mkNoise(this.sample('tyreRoll') || this.buffers.brown, carBus, 'lowpass', 300);
-    this.loops.skid = mkNoise(this.sample('skid') || this.buffers.pink, carBus, 'bandpass', 950, this.sample('skid') ? 0.5 : 4);
+    this.loops.tyre = mkNoise(this.sample('tyreRoll') || this.buffers.brown, carBus, 'lowpass', 300, 0.7, this.trim('tyreRoll'));
+    this.loops.skid = mkNoise(this.sample('skid') || this.buffers.pink, carBus, 'bandpass', 950, this.sample('skid') ? 0.5 : 4, this.trim('skid'));
     // recorded engine layers, when there are at least two of them
     const layers = ENGINE_LAYERS.filter(([k]) => this.sample(k)).map(([k, rpm]) => {
       const src = c.createBufferSource();
@@ -451,9 +466,10 @@ export class AudioSystem {
   play(name, opts = {}) {
     if (!this.ready) return;
     const c = this.ctx;
-    let buf = this.buffers[name];
-    if (name === 'step') buf = this.buffers['step_' + (opts.surface in STEP_SURF ? opts.surface : 'dirt')];
-    if (name === 'pickup' && opts.mass > 6) buf = this.buffers.pickupHeavy;
+    let key = name;
+    if (name === 'step') key = 'step_' + (opts.surface in STEP_SURF ? opts.surface : 'dirt');
+    if (name === 'pickup' && opts.mass > 6) key = 'pickupHeavy';
+    let buf = this.buffers[key];
     if (name === 'pour') {
       this.pourT = 0.15;
       return;
@@ -464,7 +480,7 @@ export class AudioSystem {
     src.buffer = buf;
     src.playbackRate.value = (opts.rate || 1) * (1 + (Math.random() - 0.5) * (opts.pitchVar ?? 0.12));
     const g = c.createGain();
-    g.gain.value = (opts.volume ?? 1) * (VOL[name] ?? 0.8);
+    g.gain.value = (opts.volume ?? 1) * (VOL[name] ?? 0.8) * this.trim(key);
     let node = src.connect(g);
     if (opts.lowpass) {
       const f = c.createBiquadFilter();
@@ -578,12 +594,15 @@ export class AudioSystem {
     const windGain = (0.05 + wind * 0.25 + env.w.dust * 0.3) * this.windGust;
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
-    set(this.loops.wind.f.frequency, 300 + wind * 500 + drive * 600, now);
+    // a recorded wind keeps its airy hiss (the shaped noise is mostly rumble above 800 Hz)
+    const windF = this.sample('wind') ? (700 + wind * 1800) * (1 - this.inCabin * 0.5) + drive * 900 : 300 + wind * 500 + drive * 600;
+    set(this.loops.wind.f.frequency, windF, now);
     set(this.loops.windHigh.g.gain, (wind * 0.05 + env.w.dust * 0.12) * (1 - this.inCabin * 0.8) + drive * 0.03, now);
     // snow falls without a sound
     const rain = env.snowing ? 0 : env.w.rain;
     set(this.loops.rain.g.gain, rain * 0.22 * (1 - this.inCabin * 0.4), now);
-    set(this.loops.rain.f.frequency, seated ? 600 : 1500, now);
+    // (a recorded rain has its body lower down than the white noise it replaces)
+    set(this.loops.rain.f.frequency, this.sample('rain') ? (seated ? 150 : 300) : seated ? 600 : 1500, now);
     set(this.loops.rainLow.g.gain, rain * (seated ? 0.35 : 0.12), now);
     // ---- car
     if (car) {

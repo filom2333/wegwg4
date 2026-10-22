@@ -553,6 +553,27 @@ add them to `src/world/props.js` PROPS.
   `sounds/index.json` replace synthesized ones (see the sound sheet artifact
   https://claude.ai/artifact/R84zAEjoiv9kSJW3iQ8ZFK for names and prompts; songs map as
   "album:track" keys, album order neon, rattlers, june, salt, eddie, kr9).
+  - 83 sounds / 145 files (2.5 MB) generated with ElevenLabs `eleven_text_to_sound_v2` (free
+    tier: non-commercial use, credit given in Credits). Tools in `tools/sounds/`: `sfxgen.py`
+    (API batch, key only from the `EL_KEY` env var), `sfxjobs2.py` (re-made prompts, 3 takes
+    each), `sfxproc2.py` (cuts, trims, damps, levels, encodes and writes index.json),
+    `specsheet.py` (spectrogram contact sheet to check takes by eye), `sfxscan.py` (features).
+    The raw takes were not committed; re-running needs new generations.
+  - Design rules learned: the model loves bursts (asked for "a ratchet click" it gives 8-12
+    clicks, "keys" jingle, "floor creak" stutters) and tonal rings on handling sounds (the first
+    `pickup` rang at 700 Hz like glass). Prompts now name the material and say "one", "single",
+    "no metal clinking, no glass, no jingling, no ringing, no music"; prompt_influence 0.75;
+    bursts are cut down to 2-3 events, impacts get a decay envelope so they stop instead of ring.
+  - Footsteps: each take of four steps is cut into single footfalls (loudest transient, cut
+    before any second hit), 3-4 variants per surface.
+  - Levels: `index.json` has a `gain` map. Loops (wind, rain, tyreRoll, skid) are matched to the
+    shaped noise they replace through the game's own filters; one-shots more than 3 dB off the
+    old synthesized sound (loudest 50 ms, measured in the browser) are pulled back within 3 dB.
+    `AudioSystem.trim(name)` applies it (play(), the starter, wind/rain/tyre/skid loops and the
+    soundscape loops). With a recorded wind/rain the filters open up (`windF`, rain highpass
+    150-300 Hz instead of 600-1500): the recordings have their body lower than white noise.
+  - Left synthesized on purpose: the engine (the recorded rpm layers did not match in pitch;
+    `ENGINE_LAYERS` stays for future layers), squeak, floorCreak, hum and keys.
 
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
