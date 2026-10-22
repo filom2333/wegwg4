@@ -18,6 +18,9 @@ const el = (tag, cls, parent, html) => {
   return e;
 };
 
+// The fists slot's picture: a clenched fist, knuckles forward.
+const FIST_SVG = '<svg class="hb-fist" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 22c0-3 2-5 4.5-5S21 19 21 21v-3c0-2.5 2-4.5 4.5-4.5S30 15.5 30 18v1c.5-2 2.4-3.4 4.5-3.2 2.4.2 4 2.3 4 4.7V29c0 7.5-5.5 13-13 13h-2C16.5 42 12 37.5 12 31.5z" fill="currentColor" opacity=".85"/><path d="M21 21v6M30 19v7M12 26h9c2 0 3.5 1.6 3.5 3.5S23 33 21 33h-4" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
 export class HUD {
   constructor(game) {
     this.game = game;
@@ -90,13 +93,17 @@ export class HUD {
     this.dist = el('div', 'hud-dist', route);
     this.routeBar = el('div', 'hud-route-bar', route);
     this.routeFill = el('div', '', this.routeBar);
-    // hotbar (bottom centre): slots 1-6 of the backpack
+    // hotbar (bottom centre): fists on 1, then slots 1-6 of the backpack on keys 2-7
     this.hotbar = el('div', 'hud-hotbar', this.root);
     this.hotLabel = el('div', 'hud-hotlabel', this.root);
     this.hotSlots = [];
+    // 1: fists, always there
+    this.fistSlot = el('div', 'hb-slot hb-fists', this.hotbar);
+    el('span', 'hb-key', this.fistSlot, '1');
+    this.fistSlot.insertAdjacentHTML('beforeend', FIST_SVG);
     for (let i = 0; i < 6; i++) {
       const d = el('div', 'hb-slot', this.hotbar);
-      el('span', 'hb-key', d, String(i + 1));
+      el('span', 'hb-key', d, String(i + 2));
       this.hotSlots.push(d);
     }
     this.ammoEl = el('div', 'hud-ammo', this.root);
@@ -157,6 +164,13 @@ export class HUD {
       this.cardProg.style.display = '';
       this.cardProgFill.style.width = Math.round(Math.min(1, info.progress) * 100) + '%';
     } else this.cardProg.style.display = 'none';
+  }
+
+  // Next to the crosshair for what you look at; in the lower right corner, out of the way of the
+  // thing in your hands, for what you hold (above the car's dials when seated).
+  setCardPlace(held, seated) {
+    this.card.classList.toggle('held', !!held);
+    this.card.classList.toggle('seated', !!(held && seated));
   }
 
   setCrosshair(kind) {
@@ -304,10 +318,11 @@ export class HUD {
     const ia = g.interaction;
     const inv = g.inventory;
     if (ia && inv) {
-      const key = inv.slots.slice(0, 6).map((x) => (x ? x.id + ':' + (x.count || 1) : '')).join(',') + '|' + inv.heldFrom + '|' + (ia.held ? 1 : 0);
+      const key = inv.slots.slice(0, 6).map((x) => (x ? x.id + ':' + (x.count || 1) : '')).join(',') + '|' + inv.heldFrom + '|' + (ia.held ? 1 : 0) + '|' + (ia.fists ? 1 : 0);
       if (key !== this._hb) {
         this._hb = key;
         this.hotIdle = 0;
+        this.fistSlot.classList.toggle('on', !!ia.fists && !ia.held);
         this.hotSlots.forEach((d, i) => {
           const e = inv.slots[i];
           d.classList.toggle('on', i === inv.heldFrom && !!ia.held);

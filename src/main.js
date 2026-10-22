@@ -2,7 +2,7 @@ import './ui/style.css';
 import './ui/menu.css';
 import { Game } from './game.js';
 import { UI } from './ui/ui.js';
-import { readSave } from './core/save.js';
+import { readSave, deleteSave } from './core/save.js';
 import { AudioSystem } from './audio/audio.js';
 import * as THREE from 'three';
 window.__THREE = THREE;
@@ -57,6 +57,8 @@ async function boot() {
   }
   if (play) {
     ui.showLoading();
+    // a new game over an old one: the old save is gone (the menu warned about it)
+    if (params.get('fresh')) deleteSave();
     const load = params.get('load') ? readSave() : null;
     await game.init({
       seed: +(params.get('seed') || 1234),

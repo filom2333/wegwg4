@@ -17,7 +17,7 @@ import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, def
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { STATIONS } from '../audio/stations.js';
 import { ALBUMS } from '../audio/music/albums.js';
-import { clamp, lerp } from '../core/noise.js';
+import { clamp, lerp, smoothstep } from '../core/noise.js';
 import { anchorLabel, CABLE_MAX } from '../vehicle/winch.js';
 import { JACK_LOW, JACK_MAX } from '../vehicle/jack.js';
 import { setTune } from '../vehicle/tuning.js';
@@ -42,6 +42,8 @@ const REACH = 2.6;
 // Keeps a hand within the arm's reach of its shoulder (camera space), sliding it back along the
 // line to where it was wanted; true when it had to (the hand reaches rather than holds).
 const ARM_REACH = 0.7;
+// how far in front of the eye a small thing can be held out with the hand still on it
+const FLOAT_REACH = 0.72;
 function reachClamp(placed, shoulder) {
   const d = placed.p.distanceTo(shoulder);
   if (d <= ARM_REACH) return false;
@@ -68,6 +70,9 @@ export class Interaction {
     this.dragging = false;
     this.holdRot = new THREE.Quaternion();
     this.holdDist = 1.0;
+    // key 1: fists up (empty hands ready to fight); a punch runs t 0..1, alternating hands
+    this.fists = false;
+    this.punch = { t: 1, side: 'left', done: true };
     this.rotating = false;
     this.target = null;
     this.hands = new Hands(this.cam);
@@ -400,6 +405,13 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
+      if (this.fists && !p.seat) {
+        if (!t) prompts.push(['LMB', 'Punch'], ['1', 'Lower your fists']);
+        else if (!prompts.some((x) => x[0] === 'LMB')) prompts.push(['LMB', 'Punch']);
+        if (!blocked && input.mousePressed(0) && this.punch.t >= 0.75) this.startPunch();
+      }
+      if (p.seat) this.fists = false;
+      this.updatePunch(dt);
       if (p.seat && g.car && !blocked && input.wasPressed('nextTrack')) {
         // N: next track on a disc, else the next station
         if (g.car.stereo.mode === 'cd' && g.car.stereo.disc >= 0) g.car.nextTrack();
@@ -422,6 +434,7 @@ export class Interaction {
     if (ui) {
       ui.setPrompts(prompts);
       ui.setTargetInfo(info);
+      ui.setCardPlace && ui.setCardPlace(!!this.held, !!p.seat);
       ui.setCrosshair(this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : p.seat === 'driver' ? 'none' : 'dot');
     }
     // outline highlight
@@ -868,7 +881,7 @@ export class Interaction {
       this.useHeld();
       return;
     }
-    if (!input.wasPressed('interact') && !input.mousePressed(0)) return;
+    if (!input.wasPressed('interact') && !(input.mousePressed(0) && !this.fists)) return;
     const viaMouse = !input.wasPressed('interact');
     switch (t.kind) {
       case 'item':
@@ -928,6 +941,7 @@ export class Interaction {
   // ------------------------------------------------------------------ pick / drop
   pick(it) {
     const g = this.game;
+    this.fists = false;
     // heavy parts (engine, body shell) are dragged along the ground rather than carried
     this.dragging = !!(it.part && partDefOf(it).mass > 60);
     if (this.dragging) {
@@ -1011,6 +1025,7 @@ export class Interaction {
   // Takes slot i of a container into the hands (whatever was in them goes into that slot).
   equipFrom(container, i) {
     const g = this.game;
+    this.fists = false;
     const inv = g.inventory;
     const e = container.slots[i];
     if (!e) return false;
@@ -1027,11 +1042,19 @@ export class Interaction {
     return true;
   }
 
-  // 1-6: take that hotbar slot in hand; the same key again puts it back.
+  // 1: fists. 2-7: take that hotbar slot in hand; the same key again puts it back.
   hotbarKeys() {
     const inv = this.game.inventory;
+    // 1: fists, always there (whatever is in the hand goes back to its slot first)
+    if (input.pressed.has('Digit1')) {
+      if (this.held && !this.held.part) this.stowHeld(inv);
+      if (!this.held) this.fists = !this.fists || this.punch.t < 1;
+      this.game.hud && this.game.hud.pulseHotbar();
+    }
+    // 2..7: the hotbar slots
     for (let i = 0; i < HOTBAR; i++) {
-      if (!input.pressed.has('Digit' + (i + 1))) continue;
+      if (!input.pressed.has('Digit' + (i + 2))) continue;
+      this.fists = false;
       if (this.held && inv.heldFrom === i) this.stowHeld(inv, i);
       else if (inv.slots[i]) this.equipFrom(inv, i);
       else if (this.held && !this.held.part) this.stowHeld(inv, i);
@@ -1123,7 +1146,8 @@ export class Interaction {
         this.holdDist = 0.5;
         this.holdRot.copy(this.cam.quaternion.clone().invert().multiply(it.mesh.quaternion));
       }
-      this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, isBig ? 0.42 : 0.38, it.part ? 3 : 1.6);
+      // a small thing goes no further than the hand reaches, so the hand stays on it
+      this.holdDist = clamp(this.holdDist - input.mouse.wheel * 0.08, isBig ? 0.42 : 0.38, it.part ? 3 : isBig ? 1.6 : FLOAT_REACH);
       // pulled all the way back in: into the hand again
       if (!isBig && this.holdDist < 0.42) this.floating = false;
     }
@@ -1710,6 +1734,35 @@ export class Interaction {
     return null;
   }
 
+  // A punch: the hand goes out fast, lands at the far end (anything in reach takes it), comes back.
+  startPunch() {
+    const p = this.game.player;
+    const tired = p.stamina < 10;
+    this.punch = { t: 0, side: this.punch.side === 'right' ? 'left' : 'right', done: false, power: tired ? 0.5 : 1, speed: tired ? 2.0 : 2.8 };
+    p.stamina = Math.max(0, p.stamina - 6);
+  }
+
+  updatePunch(dt) {
+    const P = this.punch;
+    if (P.t >= 1) return;
+    P.t = Math.min(1, P.t + dt * (P.speed || 2.8));
+    if (P.done || P.t < 0.32) return;
+    P.done = true;
+    const g = this.game;
+    const hit = this.lookHit;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    if (hit && hit.distance < 1.5) {
+      if (hit.owner && hit.owner.kind === 'npc') {
+        hit.owner.npc.damage(12 * P.power, hit.owner.zone, hit.point, dir);
+        g.audio && g.audio.play('hitFlesh', { at: hit.point });
+      } else {
+        // knuckles on something hard
+        g.audio && g.audio.play('hitFlesh', { at: hit.point, volume: 0.45, rate: 1.3 });
+        if (hit.owner && (hit.owner.kind === 'structure' || hit.owner.kind === 'car')) g.player.damage(1, 'knuckles', true);
+      }
+    } else g.audio && g.audio.play('swing', { volume: 0.35, rate: 1.4 });
+  }
+
   melee(it) {
     const g = this.game;
     this.useAnim = 0.8;
@@ -2253,7 +2306,9 @@ export class Interaction {
       // the hand follows the floating thing: pinching it within arm's length, reaching out to it
       // with an open hand when it is held further off
       const c = it.mesh.position.clone().sub(cam.position).applyQuaternion(inv);
-      const anchor = { p: c.clone().add(V(0.05, -0.04, 0.03)), q: anchorQ(V(-0.2, 1, 0.1), V(0.45, -0.3, 0.85)) };
+      // the pinch closes on its right-hand side, whatever its size
+      const r = clamp(Math.max(it.size.x, it.size.z) / 2, 0.01, 0.06);
+      const anchor = { p: c.clone().add(V(r * 0.55, -0.03, 0.03)), q: anchorQ(V(-0.2, 1, 0.1), V(0.45, -0.3, 0.85)) };
       const placed = handFromAnchor('right', 'pinch', anchor);
       placed.p.add(PALM_CONTACT.clone().sub(PINCH_TIP).applyQuaternion(placed.q));
       const arms = defaultArms();
@@ -2295,6 +2350,8 @@ export class Interaction {
       }
       const arms = defaultArms();
       h.left.visible = true;
+      // a plank or a sheet: flat hands underneath (curled fingers would come up through it)
+      const thin = Math.min(sz.x, sz.y, sz.z) < 0.06;
       for (const side of ['right', 'left']) {
         const sg = side === 'left' ? -1 : 1;
         const edge = sg > 0 ? hi.x : lo.x;
@@ -2302,15 +2359,38 @@ export class Interaction {
         // round the sides a little below the middle (a wheel at three and nine o'clock)
         const y = c.y - Math.min(0.06, (hi.y - lo.y) * 0.06);
         // palm toward the item when the hand is at its edge; from below when the item is too wide
-        const wide = Math.abs(edge - x) > 0.08 ? 1 : 0;
+        const wide = thin || Math.abs(edge - x) > 0.08 ? 1 : 0;
         const thumb = wide ? V(sg, 0.1, 0.25) : V(0.15 * sg, 1, 0.2);
         const wrist = wide ? V(0.25 * sg, -0.5, 0.85) : V(0.45 * sg, -0.35, 0.8);
         // the hands stay on the item as it is pulled in or pushed out; beyond the arms' reach they
         // stretch toward it, open, steadying rather than gripping
-        const anchor = { p: V(x, wide ? lo.y + 0.01 : y, Math.min(-0.24, c.z + 0.05)), q: anchorQFor(side, thumb, wrist) };
+        const anchor = { p: V(x, thin ? lo.y - 0.002 : wide ? lo.y + 0.01 : y, Math.min(-0.24, c.z + 0.05)), q: anchorQFor(side, thumb, wrist) };
         const placed = handFromAnchor(side, 'carry', anchor);
         const far = reachClamp(placed, arms[side].shoulder);
-        h.setPose(side, far ? 'palm' : 'carry');
+        h.setPose(side, far || thin ? 'palm' : 'carry');
+        h.place(side, placed.p, placed.q);
+        h.solveArm(side, arms[side].shoulder, arms[side].pole);
+      }
+    } else if (this.fists && !seated) {
+      // fists up in a loose guard; the punching hand goes out toward the middle and comes back
+      const p = this.game.player;
+      const arms = defaultArms();
+      const P = this.punch;
+      const out = P.t < 0.32 ? 1 - Math.pow(1 - P.t / 0.32, 2) : P.t < 0.42 ? 1 : 1 - smoothstep(0.42, 1, P.t);
+      const bob = Math.sin(p.bob * 2) * p.bobAmp * 0.01;
+      h.left.visible = true;
+      for (const [side, sg] of [
+        ['right', 1],
+        ['left', -1],
+      ]) {
+        const k = P.side === side && P.t < 1 ? out : 0;
+        // (a closed hand: the grip pose with nothing in it reads as a fist)
+        const guard = V(0.13 * sg, -0.135 + bob, side === 'left' ? -0.4 : -0.37);
+        const pos = guard.lerp(V(0.03 * sg, -0.08, -0.6), k);
+        const wrist = V(0.25 * sg, -0.3, 0.92).lerp(V(0.08 * sg, -0.12, 1), k);
+        const anchor = { p: pos, q: anchorQFor(side, V(-0.35 * sg, 1, -0.15), wrist) };
+        const placed = handFromAnchor(side, 'grip', anchor);
+        h.setPose(side, 'grip');
         h.place(side, placed.p, placed.q);
         h.solveArm(side, arms[side].shoulder, arms[side].pole);
       }

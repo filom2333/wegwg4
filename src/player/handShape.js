@@ -144,10 +144,12 @@ function segFrame(a, b, upHint) {
 export function handArrays(poseName) {
   const pose = POSES[poseName] || POSES.relax;
   const m = new SDFModel();
-  m.colorBlend = 0.0012;
+  // skin, palm and knuckle tones run into each other over a few millimetres (a hard edge reads
+  // as a sticker on the hand)
+  m.colorBlend = 0.007;
   m.layerBias = 0.0005;
   m.material('skin', [0.74, 0.53, 0.42], 0.55, 0.05);
-  m.material('palm', [0.79, 0.58, 0.48], 0.6, 0.04);
+  m.material('palm', [0.77, 0.56, 0.46], 0.6, 0.04);
   m.material('knuckle', [0.71, 0.49, 0.39], 0.55, 0.05);
   m.material('nail', [0.86, 0.7, 0.64], 0.3, 0.02);
   m.material('nailTip', [0.92, 0.86, 0.8], 0.35, 0.02);

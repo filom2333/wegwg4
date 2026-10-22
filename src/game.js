@@ -216,7 +216,7 @@ export class Game {
       const inst = this.pois.loaded.get(0);
       if (inst) {
         inst.root.updateMatrixWorld(true);
-        const w = new THREE.Vector3(13.6, 0, 3.5).applyMatrix4(inst.root.matrixWorld);
+        const w = new THREE.Vector3(15.0, 0, 3.0).applyMatrix4(inst.root.matrixWorld);
         w.y = this.groundHeightAt(w.x, w.z) + 0.05;
         this.trailers.spawn(w, inst.poi.rot + Math.PI);
       }
@@ -559,8 +559,8 @@ export class Game {
     // yard spots: tidy rows where someone stripping a car would lay things out: behind the
     // garage, down its far side, and behind the house; kept off roofs, floors and fences
     const rows = [
-      { from: [5.4, -6.7], step: [1.55, 0], n: 5, a: 0 },
-      { from: [13.1, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
+      { from: [5.0, -7.2], step: [1.6, 0], n: 5, a: 0 },
+      { from: [14.0, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
       { from: [-12.5, -9.3], step: [1.6, 0], n: 7, a: 0 },
       { from: [3.2, 6.5], step: [-1.6, 0], n: 5, a: 0 },
     ];
@@ -652,15 +652,19 @@ export class Game {
     const at = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(inst.root.matrixWorld);
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), inst.poi.rot);
     const gx = 8.5,
-      gz = -1.5; // garage centre in POI space
+      gz = -1.5; // garage centre in POI space (8 x 9 m, back wall at gz - 4.5)
+    // spread about the workshop: on the bench, the tool chest, the fridge, the wall shelf, the
+    // crates and the floor, rather than in a row
     const list = [
-      ['jack', gx + 1.6, 0.1, gz - 2.6, null],
-      ['jerryCan', gx - 2.4, 0.4, gz + 2.0, { liquid: 12, liquidType: 'fuel' }],
-      ['oilBottle', gx - 1.6, 1.1, gz - 3.2, null],
-      ['waterBottle', gx - 2.0, 1.1, gz - 3.2, null],
-      ['cannedBeans', gx - 2.4, 1.1, gz - 3.2, null],
-      ['wrench', gx - 1.0, 1.1, gz - 3.25, null],
-      ['repairKit', gx + 2.6, 0.35, gz + 2.6, null],
+      ['jack', gx + 2.4, 0.1, gz - 0.6, null],
+      ['jerryCan', gx - 3.0, 0.3, gz + 2.4, { liquid: 12, liquidType: 'fuel' }],
+      ['wrench', gx - 3.0, 0.95, gz - 3.95, null],
+      ['oilBottle', gx - 2.1, 0.95, gz - 3.9, null],
+      ['repairKit', gx - 1.05, 1.1, gz - 4.1, null],
+      ['waterBottle', gx - 3.55, 1.8, gz - 2.5, null],
+      ['cannedBeans', gx - 3.7, 1.62, gz - 1.2, null],
+      ['lantern', gx + 3.48, 1.08, gz + 2.38, null],
+      ['sprayPaint', gx - 3.7, 1.62, gz - 0.2, null],
     ];
     for (const [id, x, y, z, st] of list) {
       const it = this.items.spawn(id, at(x, y + 0.1, z), q.clone(), st ? { ...st } : null);

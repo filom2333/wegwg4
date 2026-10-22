@@ -128,6 +128,21 @@ canvas#game {
   opacity: 1;
   transform: none;
 }
+/* what you hold: in the corner, not on top of the thing in your hand */
+.hud-card.held {
+  left: auto;
+  top: auto;
+  right: 26px;
+  bottom: 26px;
+}
+.hud-card.held.seated {
+  bottom: 236px;
+}
+@media (max-width: 1180px) {
+  .hud-card.held {
+    bottom: 108px;
+  }
+}
 .hud-card-title {
   font-size: 15px;
   font-weight: 600;
@@ -581,6 +596,19 @@ kbd {
 }
 .hb-slot.empty {
   background: rgba(18, 16, 14, 0.3);
+}
+.hb-fists {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+}
+.hb-fists .hb-fist {
+  width: 30px;
+  height: 30px;
+}
+.hb-fists.on {
+  color: var(--ink);
 }
 .hb-slot.on {
   border-color: var(--amber);

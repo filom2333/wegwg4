@@ -338,7 +338,9 @@ export class UI {
       const go = this.item(a, 'Start the drive', () => {
         const seed = +(cfg.seed || 1) || 1;
         if (hasSave()) {
-          this.confirm('Starting a new game replaces your current save.', 'Start anyway', () => this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, car: cfg.car, fresh: 1 }));
+          const sum = saveSummary();
+          const what = sum ? `Day ${sum.day}, ${(Math.max(0, sum.distance) / 1000).toFixed(1)} km` : 'your current game';
+          this.confirm(`A new game erases your saved game (${what}) for good. It cannot be loaded again.`, 'Erase and start', () => this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, car: cfg.car, fresh: 1 }));
         } else this.go({ seed, difficulty: cfg.difficulty, start: cfg.start, car: cfg.car, fresh: 1 });
       });
       go.classList.add('primary');

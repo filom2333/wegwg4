@@ -96,7 +96,7 @@ export class Container {
   }
 }
 
-// The player's bag: slots 0-5 are the hotbar (keys 1-6), the rest is the backpack.
+// The player's bag: slots 0-5 are the hotbar (keys 2-7; 1 is the fists), the rest is the backpack.
 export class Inventory extends Container {
   constructor() {
     super('player', 'Backpack', HOTBAR + BACKPACK, { capacity: Infinity });

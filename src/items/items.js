@@ -395,7 +395,13 @@ export class ItemSystem {
     if (dt > 0) this.updateCargo(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || !it.body) continue;
-      if (it.body.isSleeping()) continue;
+      // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
+      // while the place was loading went to sleep before the first update ever saw them, and
+      // their meshes stayed hanging where they appeared (aiming at them missed the collider)
+      if (it.body.isSleeping()) {
+        if (it.restSynced) continue;
+        it.restSynced = true;
+      } else it.restSynced = false;
       const t = it.body.translation(),
         r = it.body.rotation();
       it.mesh.position.set(t.x, t.y, t.z);

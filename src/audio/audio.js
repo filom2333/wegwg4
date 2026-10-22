@@ -132,13 +132,12 @@ export class AudioSystem {
     if (this.musicRec) this.musicRec.applyVolume();
   }
 
-  // What is still made here rather than recorded: noise for the shaped layers, and the plucked
-  // notes of the radio station and the title theme.
+  // What is still made here rather than recorded: hiss for the spray can, the radio's static and
+  // the engine's intake, and the plucked notes of the radio station and the title theme.
   buildBuffers() {
     const c = this.ctx;
     const B = this.buffers;
     B.white = GEN.noise(c, 3, 'white', 1);
-    B.pink = GEN.noise(c, 3, 'pink', 2);
     B.brown = GEN.noise(c, 3, 'brown', 3);
     const notes = [110, 130.81, 146.83, 164.81, 196, 220, 246.94, 261.63, 293.66, 329.63];
     B.pluck = notes.map((f, i) => GEN.pluck(c, { f, len: 2.6, seed: 90 + i }));
@@ -170,9 +169,9 @@ export class AudioSystem {
     // ambience: the recorded wind and rain, with shaped noise for the high whistle of a gale and
     // the drumming on a roof
     this.loops.wind = mkNoise(this.sample('wind'), this.amb, 'lowpass', 1500, 0.7, this.trim('wind'));
-    this.loops.windHigh = mkNoise(this.buffers.white, this.amb, 'bandpass', 2400, 0.6);
     this.loops.rain = mkNoise(this.sample('rain'), this.amb, 'highpass', 300, 0.7, this.trim('rain'));
-    this.loops.rainLow = mkNoise(this.buffers.brown, this.amb, 'lowpass', 400);
+    // the drumming on a roof over your head: the recorded rain's low end
+    this.loops.rainLow = mkNoise(this.sample('rain'), this.amb, 'lowpass', 400, 0.7, this.trim('rain') * 2);
     // the car, as two places: the engine (in the bay, or at the tailpipe when you stand behind)
     // and the wheels under the floor. Sitting inside, the body takes the top off both and the
     // cabin booms a little.
@@ -574,7 +573,6 @@ export class AudioSystem {
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
     set(this.loops.wind.f.frequency, (700 + wind * 1800) * (1 - this.inCabin * 0.5) + drive * 900, now);
-    set(this.loops.windHigh.g.gain, (wind * 0.05 + env.w.dust * 0.12) * (1 - this.inCabin * 0.8) + drive * 0.03, now);
     // snow falls without a sound
     const rain = env.snowing ? 0 : env.w.rain;
     set(this.loops.rain.g.gain, rain * 0.22 * (1 - this.inCabin * 0.4), now);
@@ -795,20 +793,10 @@ export class AudioSystem {
     }
   }
 
-  // UI ticks: short filtered clicks for hover / select.
+  // Menu ticks: the recorded click, a faint high one for hover, a fuller one for choosing.
   uiSound(kind = 'hover') {
     if (!this.ready) return;
-    const c = this.ctx;
-    const o = c.createOscillator();
-    const g = c.createGain();
-    o.type = 'triangle';
-    o.frequency.value = kind === 'hover' ? 1400 : 520;
-    o.frequency.exponentialRampToValueAtTime(kind === 'hover' ? 1100 : 300, c.currentTime + 0.08);
-    g.gain.value = kind === 'hover' ? 0.035 : 0.09;
-    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + (kind === 'hover' ? 0.06 : 0.16));
-    o.connect(g).connect(this.sfx);
-    o.start();
-    o.stop(c.currentTime + 0.2);
+    this.play('click', kind === 'hover' ? { volume: 0.12, rate: 1.5, pitchVar: 0.04 } : { volume: 0.45, rate: 0.9, pitchVar: 0.04 });
   }
 
   radioNote() {
@@ -934,12 +922,9 @@ const VOL = {
   poorwill: 1,
   chime: 1,
   signCreak: 1,
-  floorCreak: 1,
-  keys: 1,
   tick: 1,
   ping: 1,
   clunk: 1,
-  squeak: 1,
   swish: 1,
   heartbeat: 1,
   stomach: 1,

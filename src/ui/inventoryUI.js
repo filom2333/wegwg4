@@ -1,7 +1,7 @@
 // Inventory screen: backpack (hotbar row + pack) on the left, the hands in the middle, and a
 // second panel on the right for whatever is at hand: things lying nearby, the car's trunk or
 // glovebox. Drag and drop between any slots, shift-click to send to the other side,
-// double-click to take in hand, right-click for actions, hover for details, 1-6 over a slot to
+// double-click to take in hand, right-click for actions, hover for details, 2-7 over a slot to
 // put it on the hotbar.
 
 import * as THREE from 'three';
@@ -234,7 +234,7 @@ export class InventoryUI {
     this.bagGrid.innerHTML = '';
     for (let i = 0; i < inv.slots.length; i++) {
       const d = this.slotEl(i < HOTBAR ? this.hotGrid : this.bagGrid, 'player', i, inv.slots[i], i < HOTBAR ? ' hot' : '');
-      if (i < HOTBAR) el('span', 'inv-key', d, String(i + 1));
+      if (i < HOTBAR) el('span', 'inv-key', d, String(i + 2));
       if (i === inv.heldFrom && g.interaction.held) d.classList.add('inhand');
     }
     const w = inv.weight();
@@ -433,9 +433,9 @@ export class InventoryUI {
 
   keyDown(e) {
     if (!this.open) return;
-    const m = /^Digit([1-6])$/.exec(e.code);
+    const m = /^Digit([2-7])$/.exec(e.code);
     if (m && this.hover) {
-      const k = +m[1] - 1;
+      const k = +m[1] - 2;
       const { cId, i } = this.hover;
       if (!(cId === 'player' && i === k)) this.transfer(cId, i, 'player', k);
       e.preventDefault();

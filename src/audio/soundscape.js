@@ -3,7 +3,7 @@
 // the day and crickets at night - a soft bed plus a few singers placed on the ground around you,
 // so they come from every side - birdsong thickest at dawn and dusk, ravens and a hawk over the
 // desert, owls, coyotes and a poorwill at night, running water near rivers with frogs along the
-// bank after dark, a campfire's crackle, the hum of a lit sign, wind chimes and creaking signs at
+// bank after dark, a campfire's crackle, wind chimes and creaking signs at
 // the places along the road, and old houses creaking and knocking inside (muffled through the
 // walls from outside). Indoors the world outside is muffled and your steps get a room; inside the
 // car the cabin closes in. Where each sound sits and what it passes through is space.js.
@@ -12,7 +12,6 @@
 // heartbeat when hurt, a stomach complaining, teeth chattering in the cold.
 
 import * as THREE from 'three';
-import { GEN } from './synth.js';
 import { G, groups } from '../physics/physics.js';
 import { clamp, smoothstep } from '../core/noise.js';
 
@@ -49,10 +48,6 @@ export class Soundscape {
     const a = this.a,
       c = a.ctx,
       B = a.buffers;
-    B.hum = GEN.hum(c);
-    B.floorCreak = [GEN.creak(c, { f: 210, len: 0.45, seed: 383 }), GEN.creak(c, { f: 160, len: 0.6, seed: 384 })];
-    B.keys = GEN.keys(c);
-    B.squeak = [GEN.squeak(c, { seed: 411 }), GEN.squeak(c, { seed: 412, len: 0.22 })];
     // beds: the whole country at once, not placed
     const bed = (buf, { filter = null, freq = 1000, q = 0.7, name = null } = {}) => {
       const src = c.createBufferSource();
@@ -102,17 +97,16 @@ export class Soundscape {
     };
     this.waterAt = new THREE.Vector3();
     this.fireAt = new THREE.Vector3();
-    this.lampAt = new THREE.Vector3();
     this.L = {
       cicadas: bed(a.sample('cicadas'), { name: 'cicadas' }),
       crickets: bed(a.sample('crickets'), { name: 'crickets' }),
-      leaves: bed(B.pink, { filter: 'highpass', freq: 1700, q: 0.5 }),
-      sand: bed(B.white, { filter: 'bandpass', freq: 5200, q: 0.6 }),
-      whistle: bed(B.pink, { filter: 'bandpass', freq: 900, q: 9 }),
+      // the recorded wind's top end: leaves in the woods, sand hissing, a gale whistling in a narrow band
+      leaves: bed(a.sample('wind'), { filter: 'highpass', freq: 1700, q: 0.5, name: 'wind' }),
+      sand: bed(a.sample('wind'), { filter: 'bandpass', freq: 5200, q: 0.6, name: 'wind' }),
+      whistle: bed(a.sample('wind'), { filter: 'bandpass', freq: 900, q: 9, name: 'wind' }),
       water: spot('stream', 10, () => (this.water ? this.waterAt : null)),
       frogs: spot('frogs', 8, () => (this.water ? this.waterAt : null)),
       fire: spot('crackle', 2.5, () => (this.fire ? this.fireAt : null), a.sfxPos),
-      hum: spot('hum', 3, () => (this.lamp ? this.lampAt : null), a.ambPos, 600),
     };
     // singers spread out around you: crickets in the grass at night, cicadas in the bushes by day
     this.choir = { crickets: this.chorus('crickets', 5, 4), cicadas: this.chorus('cicadas', 3, 5) };
@@ -267,11 +261,11 @@ export class Soundscape {
     set(L.crickets.g.gain, cri * 0.4, now, 0.8);
     this.sing(this.choir.cicadas, cic * 1.2, cam, now, dt);
     this.sing(this.choir.crickets, cri * 1.1, cam, now, dt);
-    set(L.leaves.g.gain, 0.11 * Math.min(1, M.forest) * (0.18 + wind * 0.82) * (0.4 + this.gust), now, 0.4);
+    set(L.leaves.g.gain, 0.16 * Math.min(1, M.forest) * (0.18 + wind * 0.82) * (0.4 + this.gust), now, 0.4);
     set(L.leaves.f.frequency, 1500 + this.gust * 1600, now, 0.4);
-    set(L.sand.g.gain, (0.09 * Math.min(1, M.dunes) * wind * wind + dust * 0.12) * (0.4 + this.gust), now, 0.4);
+    set(L.sand.g.gain, (0.13 * Math.min(1, M.dunes) * wind * wind + dust * 0.17) * (0.4 + this.gust), now, 0.4);
     const howling = smoothstep(0.45, 0.9, wind + dust * 0.3);
-    set(L.whistle.g.gain, 0.045 * howling * this.gust * this.gust, now, 0.3);
+    set(L.whistle.g.gain, 0.07 * howling * this.gust * this.gust, now, 0.3);
     set(L.whistle.f.frequency, 620 + this.gust * 950, now, 0.5);
     // water
     if (this.water) {
@@ -290,22 +284,6 @@ export class Soundscape {
       this.fireAt.set(fire.pos.x, fire.pos.y + 0.3, fire.pos.z);
       set(L.fire.g.gain, 0.5 * Math.min(1, fire.hours * 2), now, 0.3);
     } else set(L.fire.g.gain, 0, now, 0.5);
-    // a lit sign or lamp humming close by at night
-    let lamp = null,
-      ld = 40;
-    if (g.pois)
-      for (const l of g.pois.lightPool) {
-        if (!(l.intensity > 0) || l.userData.beacon) continue;
-        const d = l.position.distanceTo(cam.position);
-        if (d < ld) {
-          ld = d;
-          lamp = l;
-        }
-      }
-    this.lamp = lamp;
-    if (lamp) this.lampAt.copy(lamp.position);
-    set(L.hum.g.gain, lamp ? 0.05 : 0, now, 0.4);
-
     // ---- creatures and places
     this.events(dt, { sunY, rain, wind, night, day, cam, indoors });
     this.carTouches(dt, now);
@@ -398,8 +376,10 @@ export class Soundscape {
       const at = this.roomNear(cam);
       if (at) {
         const r = Math.random();
-        const name = r < 0.4 ? 'doorCreak' : r < 0.75 ? 'floorCreak' : 'doorShut';
-        this.a.play(name, { at, volume: name === 'doorShut' ? 0.3 : 0.45, ref: 3, pitchVar: 0.15, bus: 'amb' });
+        // a door creaking in the draught, a board settling (the creak, quick and dull), a door knocking
+        const kind = r < 0.4 ? 'door' : r < 0.75 ? 'board' : 'knock';
+        if (kind === 'knock') this.a.play('doorShut', { at, volume: 0.3, ref: 3, pitchVar: 0.15, bus: 'amb' });
+        else this.a.play('doorCreak', { at, volume: kind === 'board' ? 0.3 : 0.45, ref: 3, pitchVar: 0.15, bus: 'amb', rate: kind === 'board' ? 1.7 : 1, lowpass: kind === 'board' ? 1400 : undefined });
       }
     }
     void day;
@@ -414,7 +394,7 @@ export class Soundscape {
     const d = car.dyn;
     const engineAt = () => car.type.POINTS.engine.clone().applyMatrix4(car.root.matrixWorld);
     // keys turning in the ignition
-    if (this.prevIgn !== undefined && car.ignition !== this.prevIgn && seated) this.a.play('keys', { volume: 0.25 });
+    if (this.prevIgn !== undefined && car.ignition !== this.prevIgn && seated) this.a.play('click', { volume: 0.3, rate: 0.7, pitchVar: 0.05 });
     this.prevIgn = car.ignition;
     // a hot engine ticks as it cools after it stops
     const running = d.engine.running;
@@ -459,7 +439,7 @@ export class Soundscape {
       const end = Math.cos(car.wiperPhase) > 0.98 ? 0 : Math.cos(car.wiperPhase) < -0.98 ? 1 : -1;
       if (end >= 0 && end !== this.wiperEnd) {
         const wet = g.env.w.rain > 0.15;
-        this.a.play(wet ? 'swish' : 'squeak', { volume: (wet ? 0.08 : 0.16) * (seated ? 1 : 0.4) });
+        this.a.play('swish', { volume: (wet ? 0.08 : 0.05) * (seated ? 1 : 0.4), rate: wet ? 1 : 1.2 });
       }
       this.wiperEnd = end >= 0 ? end : this.wiperEnd;
     }
@@ -486,20 +466,21 @@ export class Soundscape {
       if (p.food < 18 && Math.random() < 0.45) this.a.play('stomach', { volume: 0.22, pitchVar: 0.15 });
       else if (p.warmth < 25 && !p.seat) this.a.play('chatter', { volume: 0.2, pitchVar: 0.1 });
     }
-    // out of breath
-    if (p.stamina < 25 && !p.seat) {
+    // out of breath: breaths come quicker and louder the more winded you are, never quite the same
+    if (p.stamina < 30 && !p.seat) {
+      const tired = 1 - p.stamina / 30;
       this.pantT = (this.pantT ?? 0) - dt;
       if (this.pantT <= 0) {
-        this.pantT = rnd(0.7, 1.0);
-        this.a.play('pant', { volume: 0.18 * (1 - p.stamina / 25) + 0.05, pitchVar: 0.08 });
+        this.pantT = (1.7 - 0.8 * tired) * rnd(0.88, 1.15);
+        this.a.play('pant', { volume: 0.04 + 0.11 * tired * rnd(0.8, 1), pitchVar: 0.06, rate: rnd(0.93, 1.0), lowpass: 2600 + 1800 * tired });
       }
-    }
+    } else this.pantT = 0;
     // floorboards in old houses
     if (indoors && p.onWood && p.moving) {
       T.floor -= dt;
       if (T.floor <= 0) {
         T.floor = rnd(1.2, 4);
-        this.a.play('floorCreak', { at: p.position, volume: 0.25, ref: 2, pitchVar: 0.2 });
+        this.a.play('doorCreak', { at: p.position, volume: 0.16, ref: 2, pitchVar: 0.2, rate: 1.8, lowpass: 1300 });
       }
     }
   }

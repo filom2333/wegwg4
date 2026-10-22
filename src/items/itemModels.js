@@ -571,8 +571,9 @@ export function medkit() {
     [0.025, 0.08],
   ])
     g.add(mesh(new THREE.BoxGeometry(w, 0.002, d).translate(0, 0.046, 0), M.redPaint));
-  g.add(mesh(tubeAlong([V(-0.04, 0.045, -0.1), V(-0.04, 0.07, -0.13), V(0.04, 0.07, -0.13), V(0.04, 0.045, -0.1)], 0.008, 6), M.rubber));
-  grip(g, 'side', 'wrap12', V(0, 0.068, -0.125), RIGHT, V(0, 0, 1));
+  // the carrying handle in the middle of the lid, so the case hangs level from the fist
+  g.add(mesh(tubeAlong([V(-0.045, 0.045, 0), V(-0.045, 0.072, 0), V(0.045, 0.072, 0), V(0.045, 0.045, 0)], 0.008, 6), M.rubber));
+  grip(g, 'side', 'wrap12', V(0, 0.07, 0), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
