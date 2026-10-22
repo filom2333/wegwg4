@@ -38,6 +38,8 @@ export class Car {
     this.root = model.root;
     game.worldGroup.add(this.root);
     if (model.mats) addGlassRain(model.mats.glass);
+    this.shade = contactShade(type);
+    this.root.add(this.shade);
     this.parts = {};
     for (const id of Object.keys(model.parts)) {
       this.parts[id] = { installed: true, condition: 1, item: null, tune: null };
@@ -1088,6 +1090,7 @@ export class Car {
       this.root.quaternion.set(r.x, r.y, r.z, r.w);
     }
     this.root.updateMatrixWorld(true);
+    this.placeShade();
     const mw = this.model.wheels;
     for (const w of this.dyn.wheels) {
       const v = mw[w.id];
@@ -1147,6 +1150,23 @@ export class Car {
     return this.type.SEATS[seat].pos.clone().applyMatrix4(this.root.matrixWorld);
   }
 
+  // The contact shade sits on the ground the wheels stand on, and fades as they leave it.
+  placeShade() {
+    const sh = this.shade;
+    let n = 0,
+      y = 0;
+    SHADE_M.copy(this.root.matrixWorld).invert();
+    for (const w of this.dyn.wheels) {
+      if (!w.contact || !w.installed) continue;
+      n++;
+      y += SHADE_P.copy(w.contactPoint).applyMatrix4(SHADE_M).y;
+    }
+    if (n) sh.position.y = y / n + 0.035;
+    const want = 0.7 * (n / 4);
+    sh.material.opacity += (want - sh.material.opacity) * 0.2;
+    sh.visible = sh.material.opacity > 0.02;
+  }
+
   dispose() {
     this.game.physics.untrack(this.smooth);
     for (const l of [...this.headLights, this.headFill, this.tailLight, this.reverseLight, this.cabinLamp]) this.game.lights.remove(l);
@@ -1155,3 +1175,46 @@ export class Car {
   }
 }
 
+// ------------------------------------------------------------------ contact shade
+// A soft dark patch on the ground under the body, where the sky is shut out: without it a car
+// under a low sun (its shadow thrown away behind it) looks as if it floated.
+const SHADE_M = new THREE.Matrix4();
+const SHADE_P = new THREE.Vector3();
+let SHADE_TEX = null;
+function shadeTexture() {
+  if (SHADE_TEX) return SHADE_TEX;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const x = c.getContext('2d');
+  // a rounded footprint blurred soft, darkest under the middle
+  x.filter = 'blur(16px)';
+  x.fillStyle = 'rgba(0,0,0,0.75)';
+  x.beginPath();
+  x.roundRect(26, 30, 76, 196, 22);
+  x.fill();
+  x.filter = 'blur(26px)';
+  x.fillStyle = 'rgba(0,0,0,0.5)';
+  x.beginPath();
+  x.roundRect(40, 60, 48, 136, 20);
+  x.fill();
+  SHADE_TEX = new THREE.CanvasTexture(c);
+  SHADE_TEX.colorSpace = THREE.SRGBColorSpace;
+  return SHADE_TEX;
+}
+function contactShade(type) {
+  const [w, , l] = type.massSize || [1.8, 1.3, 4.6];
+  const g = new THREE.PlaneGeometry(w * 1.55, l * 1.22);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.MeshBasicMaterial({ map: shadeTexture(), color: 0x000000, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'contactShade';
+  mesh.renderOrder = -1;
+  mesh.frustumCulled = false;
+  // (not something to aim at)
+  mesh.raycast = () => {};
+  // centred between the axles
+  const zs = (type.HARDPOINTS || []).map((h) => h.z);
+  if (zs.length) mesh.position.z = (Math.max(...zs) + Math.min(...zs)) / 2;
+  return mesh;
+}
