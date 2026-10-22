@@ -489,17 +489,38 @@ add them to `src/world/props.js` PROPS.
   `PropLibrary.geometryOf/materialOf`), real tyre stacks, a real carp for fish items
   (`registerRealModel` in itemModels.js).
 
+- Night sky (two-layer twinkling stars, Milky Way), brighter nights, forked lightning with
+  ground current near the car, real snow (flakes, breath, snow-covered ground with sastrugi),
+  birch groves in taiga/tundra, sharper distant ridges.
+- Cabin interaction: fuel flap and jerry-can pouring stream, readable speedometers, radio
+  stations (`src/audio/stations.js`: KDRT, KLOW, Haven 98.1, numbers 88.3, EBS 640 AM), hazard,
+  heater and dome switches, free look and RMB zoom in the seat; now-playing card; shop shelves
+  stocked with packaged goods (`goodsMaterial`).
+- Player body in third person (`src/player/glbAvatar.js`): the Ready Player Me avatar from the
+  three.js examples (`public/models/props/survivor_rpm.glb`), re-coloured for the road (canvas
+  coat, dark waistcoat, denim, boots, felt hat; recolour script in the scratchpad, see the
+  commit). The Soldier's Idle/Walk/Run live mesh-less in `survivor_anim.glb` and are retargeted
+  onto the avatar at load (`retargetClips`: world-space turn from each rig's T-pose). Two-bone IK
+  (`GlbAvatar.reach`) puts the seated feet on the footwell floor and the driver's hands on the rim
+  (they turn with it); big carried things sit against the chest in third person with the palms
+  on their flanks (`interaction.js`, `from`/`bodyQ`). NOTE: Ready Player Me avatars are usually
+  licensed CC BY-NC-SA 4.0 (non-commercial); check before any commercial release.
+- Engine bay parts on both front-engined cars (`frontEngineParts.js`, `procParts.js`):
+  alternator (charging; without it the battery runs flat and the engine dies), water pump
+  (cooling; missing = coolant runs out), starter (cranking; missing = key clicks, roll-start in
+  gear on a manual: `Car.update` "rolling start"), spark plugs (W203 coil packs, Riverside six
+  plugs with leads to a distributor; worn = misfire/power loss, none = no spark), oil filter
+  (clogged = wear, missing = oil pumps out). `Car.partCond(id)` treats parts a type lacks as
+  fine. The belt is `PP.beltLoop` round crank, pump and alternator and needs both. The W203's
+  plastic engine shroud is split out of the source body (`tools/cars/w203.py` classify rule,
+  re-run the importer as above) as part `enginecover`; the coils need it off (`needsOpen`).
+
 ### Still to do (in the user's priority order)
-1. Night sky with twinkling stars, brighter nights, lightning near the car in storms, snow that
-   looks like snow (not a flat white plane), birch forests in taiga, better distant forests and
-   mountains (also on the menu pictures).
-2. Car interior interaction: fuel caps on the car and the jerry can with a pouring animation,
-   readable speedometer, radio channels, working dashboard buttons, free look inside.
-3. UI: rework the CD/stereo menu and the overlay cards; bigger interiors (gas station shelves).
-4. More engine-bay parts for repairs (alternator, starter, plugs, water pump, oil filter...).
-5. Player model looks poor in third person (merged pockets/hands, blurry): consider the
-   survivor.glb (Soldier, Mixamo) as the avatar.
-6. Car destruction (deformation) — the user asked to note it as a plan only.
-7. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
+1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
+   models"); make more objects interactive.
+2. Distant mountains: isolated cone shapes still show at biome belt edges; regenerate the menu
+   pictures with the new sky/snow/birch look.
+3. Car destruction (deformation) — the user asked to note it as a plan only.
+4. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
    this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
    or remove by absolute path).
