@@ -490,7 +490,7 @@ export class Interaction {
   engineBay(t) {
     const car = this.game.car;
     if (!car || !t) return false;
-    if (t.kind === 'part') return ['engine', 'airfilter', 'fanbelt'].includes(t.part);
+    if (t.kind === 'part') return ['engine', 'airfilter', 'fanbelt', 'alternator', 'waterpump', 'starter', 'sparkplugs', 'oilfilter'].includes(t.part);
     return t.kind === 'hotspot' && t.hotspot.id === 'oil';
   }
 
@@ -595,6 +595,8 @@ export class Interaction {
         if (id === 'fanbelt') info.sub = `Condition ${Math.round(car.fanbeltCondition * 100)}%${car.fanbeltCondition < 0.25 ? ' · cracked, replace soon' : ''}`;
         if (id === 'fueltank') info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
         if (id === 'radiator') info.sub = `Condition ${cond}% · coolant ${car.coolant.toFixed(1)} / ${car.coolantCap} l`;
+        const worn = { sparkplugs: [0.3, 'fouled, misfiring'], oilfilter: [0.25, 'clogged'], waterpump: [0.3, 'weeping coolant'], starter: [0.3, 'cranks slowly'], alternator: [0.25, 'charges weakly'] }[id];
+        if (worn) info.sub = `Condition ${cond}%${cond / 100 < worn[0] ? ' · ' + worn[1] : ''}${id === 'alternator' && car.dyn.engine.running ? (car.charging ? ' · charging' : ' · not charging') : ''}`;
         if (id.startsWith('wheel')) {
           const w = car.dyn.wheels.find((x) => x.id === id);
           info.sub = `Tyre ${cond}%${w && w.flat ? ' · flat' : ''}`;

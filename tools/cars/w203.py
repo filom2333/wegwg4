@@ -33,7 +33,7 @@ def to_car_dir(n):
 
 # meshes whose pieces are sorted one by one (interior trim holds the seats, some panels sit under
 # the wrong node in the source)
-SPLIT = {'Salon-material', 'Gray2-material', 'Glass-material', 'midsize-material'}
+SPLIT = {'Salon-material', 'Gray2-material', 'Glass-material', 'midsize-material', 'Gray-material', 'Chrome-material'}
 
 # mesh (= source material) -> material key
 MESH_KEY = {
@@ -117,6 +117,10 @@ def classify(name, inf):
             return 'seat_F' + side
         if mx[2] < -1.15 and mn[1] > 0.95 and mx[1] < 1.06:
             return 'seat_R'
+    # the engine's plastic shroud (star, ridges, throttle body) and the trim ahead of it: one part
+    # that comes off to get at the coils and the front of the engine
+    if o == 'W203_body' and abs(c[0]) < 0.36 and 0.6 < c[1] < 0.92 and 1.03 < c[2] < 1.66 and s[0] < 0.7 and s[2] < 0.45:
+        return 'enginecover'
     part = OWNER.get(o, 'body')
     return part
 

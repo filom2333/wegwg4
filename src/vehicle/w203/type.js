@@ -1,7 +1,8 @@
 // The '04 Kronberg C200: a German rear-drive saloon with a supercharged 1.8 four and a five-speed
 // stick. Model: "Mercedes-Benz C-class W203 2007" by szymonpasterczyk734, CC-BY-4.0, converted by
-// tools/cars/w203.py (measurements in w203Meta.json). The source has no engine bay: the engine,
-// radiator, belt and filter are the game's own, the battery lives in the boot as on the real car.
+// tools/cars/w203.py (measurements in w203Meta.json). The source has no engine bay: the engine and
+// everything on it (pump, alternator, belt, starter, filters, coils) and the radiator are the
+// game's own, the battery lives in the boot as on the real car.
 
 import * as THREE from 'three';
 import META from './w203Meta.json';
@@ -118,6 +119,10 @@ P.PARTS.fender_FL = { label: 'Front wing (left)', mass: 5, requires: ['body'] };
 P.PARTS.fender_FR = { label: 'Front wing (right)', mass: 5, requires: ['body'] };
 P.PARTS.battery = { ...P.PARTS.battery, needsOpen: 'trunk', desc: 'Under the boot floor on the right, as Kronberg put it.' };
 P.ASSEMBLY_ORDER.splice(P.ASSEMBLY_ORDER.indexOf('bumper_F'), 0, 'fender_FL', 'fender_FR');
+// the plastic shroud over the engine: the coils are under it
+P.PARTS.enginecover = { label: 'Engine cover', mass: 3, requires: ['engine'], needsOpen: 'hood', desc: 'The plastic shroud with the star. The coils and plugs are under it.' };
+P.PARTS.sparkplugs = { ...P.PARTS.sparkplugs, needsOpen: 'enginecover' };
+P.ASSEMBLY_ORDER.splice(P.ASSEMBLY_ORDER.indexOf('fanbelt') + 1, 0, 'enginecover');
 
 export const W203 = {
   id: 'w203',
@@ -156,7 +161,7 @@ export const W203 = {
   coolantCap: 8.5,
   cooling: 'water',
   crash: { front: 'engine', rear: 'tank' },
-  lids: { hood: 'bonnet', trunk: 'boot lid' },
+  lids: { hood: 'bonnet', trunk: 'boot lid', enginecover: 'engine cover' },
   trunk: { label: 'Boot', slots: 18, capacity: 180, com: [0, 0.62, -1.95] },
   cabin: { hw: 0.78, y0: 0.25, y1: 1.3, z0: -1.55, z1: 0.75 },
   MOUNTS: {
@@ -189,7 +194,14 @@ export const W203 = {
   extras(model, M) {
     model.addPart('engine', PP.inlineFour(M, V(0, 0.47, 1.2), { len: 0.56, rot: -Math.PI / 2 }));
     model.addPart('radiator', PP.radiator(M, V(0, 0.5, 1.78), { w: 0.64, h: 0.36 }));
-    model.addPart('fanbelt', PP.belt({ c: V(0.02, 0.39, 1.5), r: 0.07 }, { c: V(0.14, 0.59, 1.5), r: 0.045 }, { plane: 'z' }));
+    // on the nose: water pump over the crank, alternator up on the exhaust side, one belt round all
+    model.addPart('waterpump', PP.waterPump(M, V(0, 0.56, 1.495), { face: 'z' }));
+    model.addPart('alternator', PP.alternator(M, V(0.2, 0.62, 1.473), { face: 'z' }));
+    model.addPart('fanbelt', PP.beltLoop([{ c: V(0, 0.39, 1.58), r: 0.07 }, { c: V(0, 0.56, 1.58), r: 0.05 }, { c: V(0.2, 0.62, 1.58), r: 0.035 }], { plane: 'z' }));
+    // starter low on the intake side, its pinion into the bell housing; the filter up front
+    model.addPart('starter', PP.starter(M, V(-0.17, 0.36, 1.0), { face: '-z' }));
+    model.addPart('oilfilter', PP.oilFilter(M, V(-0.27, 0.79, 1.56)));
+    model.addPart('sparkplugs', PP.plugLeads(M, [-0.2, -0.067, 0.067, 0.2].map((dz) => V(-0.04, 0.77, 1.2 + dz)), { coils: true }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.68, 1.4), { h: 0.09 }));
     model.addPart('battery', PP.battery(M, V(-0.5, 0.52, -1.95), { spec: '12V  74Ah', size: [0.19, 0.19, 0.28] }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.3, -0.98), { w: 0.82, h: 0.22, d: 0.46 }));

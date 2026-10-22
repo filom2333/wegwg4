@@ -718,6 +718,8 @@ export class UI {
       meter(b, 'Battery', car.battery, 0.2);
       meter(b, 'Engine', car.isInstalled('engine') ? car.engineCondition : 0, 0.35);
       meter(b, car.PARTS.fanbelt.label, car.isInstalled('fanbelt') ? car.fanbeltCondition : 0, 0.3);
+      if (car.parts.sparkplugs) meter(b, 'Spark plugs', car.partCond('sparkplugs'), 0.3);
+      if (car.parts.oilfilter) meter(b, 'Oil filter', car.partCond('oilfilter'), 0.25);
       if (car.coolantCap) meter(b, `Coolant · ${car.coolant.toFixed(1)} of ${car.coolantCap} l`, car.isInstalled('radiator') ? car.coolant / car.coolantCap : 0, 0.3);
       meter(b, `Engine temp · ${Math.round(car.engineTemp)}°C`, 1 - Math.max(0, Math.min(1, (car.engineTemp - 90) / 40)), 0.4);
       const tyres = car.dyn.wheels.filter((w) => w.installed);

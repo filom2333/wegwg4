@@ -316,7 +316,7 @@ function abandonedState(seed, k) {
 // still about the place (the battery on the bench, a wheel against the wall), worn but there.
 function neglect(car, seed, k, diff, inst, g) {
   const r = (i) => hash01(seed, k, 940 + i);
-  const pool = ['battery', 'fanbelt', 'wheel_RR', 'wheel_FL', 'airfilter', 'spare', 'steeringWheel', 'seat_FL', 'seat_FR', 'headlight_R', 'headlight_L', 'exhaust', 'radiator', 'fueltank', 'hood', 'door_FR', 'bumper_F'];
+  const pool = ['battery', 'fanbelt', 'wheel_RR', 'wheel_FL', 'airfilter', 'spare', 'steeringWheel', 'seat_FL', 'seat_FR', 'headlight_R', 'headlight_L', 'exhaust', 'radiator', 'fueltank', 'hood', 'door_FR', 'bumper_F', 'alternator', 'starter', 'sparkplugs', 'waterpump', 'oilfilter'];
   const [lo, hi] = { Easy: [1, 3], Normal: [3, 5], Hard: [4, 7] }[diff && diff.label] || [3, 5];
   const n = lo + Math.floor(r(0) * (hi - lo + 1));
   const taken = [];
@@ -328,6 +328,11 @@ function neglect(car, seed, k, diff, inst, g) {
     car.setInstalled(id, false);
     taken.push(id);
   }
+  // what is left under the bonnet has sat for years: fouled plugs, a clogged filter, a tired
+  // starter and alternator, a pump seal gone hard
+  ['sparkplugs', 'oilfilter', 'starter', 'alternator', 'waterpump'].forEach((id, i) => {
+    if (car.parts[id] && car.isInstalled(id)) car.parts[id].condition = 0.08 + r(70 + i) * 0.55;
+  });
   // flat tyres on what wheels are left
   car.dyn.wheels.forEach((w, i) => {
     if (!w.installed || r(40 + i) > 0.35) return;

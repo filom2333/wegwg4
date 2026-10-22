@@ -111,6 +111,19 @@ export class Car {
     return !!(this.parts[id] && this.parts[id].installed);
   }
 
+  // Condition of a part as the engine sees it: 0 when it is off the car, 1 when this type never
+  // had one (the old Beetle has no alternator or water pump of its own).
+  partCond(id) {
+    const st = this.parts[id];
+    return !st ? 1 : st.installed ? (st.condition ?? 1) : 0;
+  }
+
+  // Is the alternator turning and charging?
+  get charging() {
+    const belt = this.isInstalled('fanbelt') ? this.fanbeltCondition : 0;
+    return this.dyn.engine.running && belt > 0.02 && this.partCond('alternator') > 0.05;
+  }
+
   canInstall(id) {
     const def = this.PARTS[id];
     if (!def || this.isInstalled(id)) return { ok: false, reason: 'Already installed' };
@@ -124,7 +137,8 @@ export class Car {
   lidBlocking(id) {
     const lid = lidOf(this.PARTS, id);
     if (!lid || !this.isInstalled(lid) || this.model.parts[lid].openT >= 0.5) return null;
-    return `Open the ${this.type.lids[lid] || lid} first`;
+    // a cover with no hinge has to come off
+    return `${this.model.parts[lid].hinge ? 'Open' : 'Take off'} the ${this.type.lids[lid] || lid} first`;
   }
 
   // Is a lid open (or gone)?
@@ -583,7 +597,7 @@ export class Car {
     e.gauge.emissiveIntensity = ign ? (on ? 0.9 : 0.35) : 0.04;
     e.needle.emissiveIntensity = ign && on ? 0.9 : 0;
     const running = this.dyn.engine.running;
-    const charging = running && this.isInstalled('fanbelt') && this.fanbeltCondition > 0.02;
+    const charging = this.charging;
     if (e.lamps.gen) e.lamps.gen.emissiveIntensity = ign && !charging ? 2.4 : 0;
     if (e.lamps.oil) e.lamps.oil.emissiveIntensity = ign && (!running || this.oil < 0.6) ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
@@ -623,16 +637,33 @@ export class Car {
   crank(dt) {
     if (!this.ignition || this.dyn.engine.running) return;
     if (!this.isInstalled('battery') || this.battery < 0.05) return;
+    // no starter (or a burnt-out one): the solenoid clicks once and nothing turns
+    const st = this.partCond('starter');
+    if (st < 0.02) {
+      if (this.cranking === 0) {
+        this.cranking = 1e-3;
+        this.game.audio && this.game.audio.play('click');
+        const what = this.isInstalled('starter') ? 'The starter is dead' : 'No starter motor';
+        this.game.hud && this.game.hud.toast(this.type.automaticOnly ? what : what + ' · roll it: key on, a gear in, get it moving');
+      }
+      return;
+    }
     this.cranking += dt;
     this.battery = Math.max(0, this.battery - dt * 0.012);
-    this.dyn.engine.omega = Math.max(this.dyn.engine.omega, (260 * 2 * Math.PI) / 60);
-    const canRun = this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03;
-    const chance = this.engineCondition * (this.battery > 0.25 ? 1 : 0.4);
-    if (canRun && this.cranking > 0.6 + (1 - chance) * 1.6) {
+    // a tired starter turns it over slowly, and wears a little with every go
+    this.dyn.engine.omega = Math.max(this.dyn.engine.omega, ((150 + 110 * Math.min(1, st * 1.5)) * 2 * Math.PI) / 60);
+    if (this.parts.starter) this.parts.starter.condition = Math.max(0, st - dt * 0.0003);
+    const chance = this.engineCondition * (this.battery > 0.25 ? 1 : 0.4) * (0.35 + 0.65 * this.partCond('sparkplugs')) * (0.5 + 0.5 * Math.min(1, st * 2));
+    if (this.canRun() && this.cranking > 0.6 + (1 - chance) * 1.6) {
       this.dyn.startEngine();
       this.cranking = 0;
       this.game.audio && this.game.audio.play('engineStart');
     }
+  }
+
+  // Fuel, oil, a sound enough engine and a spark: will it fire?
+  canRun() {
+    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
   }
 
   // ---------------------------------------------------------------- simulation
@@ -716,11 +747,27 @@ export class Car {
     d.controls.handbrake = c.handbrake || (!hasDriver && !running && slow ? 0.6 : 0);
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
     const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
-    d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1);
-    if (running && (!fuelOk || this.oil <= 0.02 || this.engineCondition <= 0.01 || !this.ignition)) {
+    const plugs = this.partCond('sparkplugs');
+    d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1) * (0.7 + 0.3 * plugs);
+    // fouled plugs: the engine stumbles, cylinders dropping out for a beat
+    if (running && plugs < 0.3 && Math.random() < dt * 6 * (0.3 - plugs) / 0.3) d.powerScale *= 0.35;
+    // no spark: plugs gone, or the battery flat with nothing charging it
+    const spark = plugs > 0.02 && (this.charging || (this.isInstalled('battery') && this.battery > 0.004));
+    if (running && (!fuelOk || this.oil <= 0.02 || this.engineCondition <= 0.01 || !this.ignition || !spark)) {
       d.stopEngine();
       this.game.audio && this.game.audio.play('stall');
     }
+    // rolling start: key on, a gear in and the car moving turns the engine over through the
+    // wheels (no good for a real automatic; the self-shifting manual is fine)
+    if (!running && this.ignition && hasDriver && !this.type.automaticOnly && d.gear >= 2 && Math.abs(d.forwardSpeed) > 2.2 && this.canRun()) {
+      this.rollStart = (this.rollStart || 0) + dt;
+      const chance = this.engineCondition * (0.35 + 0.65 * plugs);
+      if (this.rollStart > 0.5 + (1 - chance) * 1.5) {
+        d.startEngine();
+        this.rollStart = 0;
+        this.game.audio && this.game.audio.play('engineStart');
+      }
+    } else this.rollStart = 0;
     // grip from weather
     const env = this.game.env;
     d.wet = env ? env.w.rain * 0.9 : 0;
@@ -744,7 +791,11 @@ export class Car {
         // cuts in when hot and the battery can run it)
         // a water-cooled engine swapped into a car without a radiator slot brought its own
         const coolFrac = !this.parts.radiator ? 1 : this.isInstalled('radiator') ? clamp(this.coolant / this.coolantCap, 0, 1) : 0;
-        const pump = belt > 0.02 ? 1 : 0.15;
+        // the pump turns with the belt; a worn one moves less and weeps
+        const wp = this.partCond('waterpump');
+        const pump = belt > 0.02 && wp > 0.02 ? 0.3 + 0.7 * Math.min(1, wp * 1.4) : 0.15;
+        if (wp < 0.3 && this.parts.waterpump) this.coolant = Math.max(0, this.coolant - dt * 0.0006 * (0.3 - wp) / 0.3);
+        if (this.parts.waterpump) this.parts.waterpump.condition = Math.max(0, (this.parts.waterpump.condition ?? 1) - dt * 0.0000012 * diff.wear);
         const fanOn = this.engineTemp > 96 && this.isInstalled('battery') && this.battery > 0.05;
         coolingCap = pump * Math.pow(coolFrac, 0.6) * (0.6 + Math.min(1, d.speed / 20) * 0.45 + (fanOn ? 0.4 : 0)) * (0.7 + 0.3 * oilFrac);
         // boiling over loses coolant
@@ -771,9 +822,19 @@ export class Car {
       if (this.oil < 0.8) wear += 0.0002 * (0.8 - this.oil) * diff.wear;
       if (!this.isInstalled('airfilter')) wear += 0.000004 * (1 + (env ? env.w.dust * 20 : 0));
       if (env && env.w.dust > 0.3 && this.isInstalled('airfilter')) wear += 0.0000015 * env.w.dust;
+      // a clogged oil filter lets grit through; without one the oil pumps out of the housing
+      const filt = this.partCond('oilfilter');
+      wear += 0.0000025 * (1 - filt) * diff.wear;
+      if (this.parts.oilfilter) {
+        if (filt <= 0) this.oil = Math.max(0, this.oil - dt * 0.004);
+        else this.parts.oilfilter.condition = Math.max(0, filt - dt * 0.000003 * diff.wear);
+      }
+      if (this.parts.sparkplugs && plugs > 0) this.parts.sparkplugs.condition = Math.max(0, plugs - dt * 0.000004 * diff.wear * (rpm / 3000));
       this.engineCondition = Math.max(0, this.engineCondition - wear * dt);
-      // the generator charges the battery while the belt turns it
-      if (this.isInstalled('battery') && belt > 0.02) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3));
+      // the alternator charges the battery while the belt turns it
+      const alt = this.partCond('alternator');
+      if (this.isInstalled('battery') && this.charging) this.battery = Math.min(1, this.battery + dt * 0.0012 * (rpm > 1200 ? 1 : 0.3) * (0.4 + 0.6 * alt));
+      if (this.parts.alternator && alt > 0) this.parts.alternator.condition = Math.max(0, alt - dt * 0.0000015 * diff.wear);
       // a sport box pops and crackles on the overrun: lift off high in the revs
       if (isSport(this)) {
         const thr = d.controls.throttle;
@@ -794,20 +855,25 @@ export class Car {
         }
       }
       // misfires / backfires at low condition
-      if (this.engineCondition < 0.35 && Math.random() < dt * (0.35 - this.engineCondition) * 3) {
+      const worst = Math.min(this.engineCondition, plugs);
+      if (worst < 0.35 && Math.random() < dt * (0.35 - worst) * 3) {
         this.game.effects && this.game.effects.backfire(this);
         this.game.audio && this.game.audio.play('backfire', { at: this.root.position });
       }
     } else {
       this.engineTemp += (22 + (env ? env.daylight * 14 : 0) - this.engineTemp) * Math.min(1, dt * 0.004);
     }
+    // the water pump's place left open: the coolant runs out on the ground
+    if (this.parts.waterpump && !this.isInstalled('waterpump') && this.coolant > 0) this.coolant = Math.max(0, this.coolant - dt * 0.02);
     // electrical drain
     if (this.isInstalled('battery')) {
       let drain = 0;
       if (this.lightsOn) drain += this.lightsOn === 2 ? 0.00006 : 0.00004;
       if (this.radioOn) drain += 0.000012;
       if (this.ignition) drain += 0.000008;
-      if (!running) this.battery = Math.max(0, this.battery - drain * dt);
+      // running with nothing charging: the ignition and pumps live off the battery
+      if (running && !this.charging) drain += 0.00012;
+      if (!running || !this.charging) this.battery = Math.max(0, this.battery - drain * dt);
     }
     // smoke / fire from a failing engine
     this.smoke = running ? clamp((0.3 - this.engineCondition) * 3, 0, 1) + clamp((this.engineTemp - 112) / 20, 0, 1) : clamp((this.engineTemp - 110) / 20, 0, 1) * 0.6;

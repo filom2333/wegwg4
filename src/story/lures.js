@@ -20,7 +20,7 @@ const PLACE = { house: 'the house', houses: 'the houses', farm: 'the farm', ranc
 const CACHES = {
   fuel: [['jerryCan', 1], ['jerryCan', 0.6], ['oilBottle', 0.8], ['coolantJug', 0.4], ['waterBottle', 0.6]],
   food: [['waterJug', 1], ['mre', 1], ['cannedMeat', 0.8], ['cannedPeaches', 0.6], ['waterBottle', 0.7], ['coffee', 0.4]],
-  parts: [['part:battery', 1], ['part:fanbelt', 0.8], ['tyreKit', 0.7], ['repairKit', 0.7], ['part:wheel_FL', 0.35], ['oilBottle', 0.6]],
+  parts: [['part:battery', 1], ['part:fanbelt', 0.8], ['part:sparkplugs', 0.5], ['part:alternator', 0.35], ['part:starter', 0.3], ['tyreKit', 0.7], ['repairKit', 0.7], ['part:wheel_FL', 0.35], ['oilBottle', 0.6]],
   aid: [['medkit', 1], ['bandage', 0.8], ['painkillers', 0.7], ['ammo38', 0.6], ['revolver', 0.3], ['waterBottle', 0.8]],
 };
 const SIGNS = [
