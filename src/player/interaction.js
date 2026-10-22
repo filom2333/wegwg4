@@ -1408,7 +1408,7 @@ export class Interaction {
         const cam = this.cam;
         const at = cam.position.clone().add(V(0, -0.05, -0.25).applyQuaternion(cam.quaternion));
         for (let k = 0; k < 6; k++) setTimeout(() => g.effects && g.effects.smoke && g.effects.smoke.emit({ pos: at.clone(), vel: V((Math.random() - 0.5) * 0.1, 0.25, (Math.random() - 0.5) * 0.1), size: 0.06, grow: 0.5, life: 2.2, color: [0.75, 0.75, 0.75], alpha: 0.25, drag: 1 }), k * 120);
-        g.audio && g.audio.play('breath' in (g.audio.buffers || {}) ? 'breath' : 'click');
+        g.audio && g.audio.play('breath');
         it.state.charges = (it.state.charges ?? def.charges ?? 1) - 1;
         if (it.state.charges <= 0) this.consumeHeld();
         else this.useAnim = 1;

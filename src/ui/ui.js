@@ -501,6 +501,7 @@ export class UI {
         this.range(body, 'Effects', 0, 1, 0.01, d.sfxVolume, (v) => set('sfxVolume', v), pct);
         this.range(body, 'Ambience and weather', 0, 1, 0.01, d.ambientVolume, (v) => set('ambientVolume', v), pct);
         this.range(body, 'Radio', 0, 1, 0.01, d.musicVolume, (v) => set('musicVolume', v), pct);
+        this.seg(body, 'Listening on', [['headphones', 'Headphones'], ['speakers', 'Speakers']], d.sound3d || 'headphones', (v) => set('sound3d', v), 'Headphones: sounds come from all round you, in front, behind and above. Speakers: plain left and right.');
       } else if (tab === 'controls') {
         this.range(body, 'Mouse sensitivity', 0.2, 3, 0.05, d.sensitivity, (v) => set('sensitivity', v), (v) => v.toFixed(2));
         this.toggle(body, 'Invert vertical look', d.invertY, (v) => set('invertY', v));

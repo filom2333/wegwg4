@@ -572,8 +572,32 @@ add them to `src/world/props.js` PROPS.
     `AudioSystem.trim(name)` applies it (play(), the starter, wind/rain/tyre/skid loops and the
     soundscape loops). With a recorded wind/rain the filters open up (`windF`, rain highpass
     150-300 Hz instead of 600-1500): the recordings have their body lower than white noise.
-  - Left synthesized on purpose: the engine (the recorded rpm layers did not match in pitch;
-    `ENGINE_LAYERS` stays for future layers), squeak, floorCreak, hum and keys.
+  - Still synthesized (synth.js keeps only these): the engine (oscillator voice in audio.js; the
+    recorded rpm layers did not match in pitch and were dropped with their code), noise for the
+    shaped layers, squeak, floorCreak, hum, keys, and the radio/title plucks. Every other sound
+    is a recording; there is no synthesized fallback any more.
+  - Night additions (sfx3 batch): `frogs` loop at the water after dark, `poorwill` calls in the
+    open at night. `sfxproc2.py` takes the third batch dir as a 4th argument; stereo loops are
+    auto-balanced (the wind came out 9 dB right-heavy).
+- Spatial sound (`src/audio/space.js`): every sound placed in the world goes through a Voice:
+  low-pass for air (cutoff 20 kHz/(1+d/40)) and for what is in between (two rays from the
+  listener to the source and 2 m above it against static world colliders: houses, terrain,
+  rocks; blocked = ~700 Hz and half level), the shelter rule (sitting in the car or lying in the
+  tent, anything outside it is cut to ~1.2 kHz and -5 dB), then a PannerNode (HRTF by default,
+  equalpower with Settings > Audio > Listening on: Speakers), and an echo send into three spaces
+  (room indoors, open land: a few late echoes, woods: dense short tail; crossfaded by indoors and
+  the forest mix). The send does not fall with distance, so far sounds are mostly echo.
+  - Buses: `sfx`/`amb` for unplaced sounds (amb is low-passed indoors/in the cabin, sfx gets the
+    room via `sfxSend` indoors), `sfxPos`/`ambPos` for placed ones (their voices do the muffling).
+  - The car: engine voice at the engine bay, sliding to the tailpipe as you walk behind; wheel
+    voice under the floor; seated, both get a body low-pass and a +5 dB low-shelf boom. The
+    radio/CD play straight to you when seated and from the car (placed voice) when outside.
+  - Night: crickets (and cicadas by day) are a bed at 40% plus 5 (3) singers placed on the ground
+    5-22 m around you, re-seeded when you get 30 m away. Old houses: every 10-30 s a creak/knock
+    at a spot inside a nearby building (`Soundscape.roomNear`: rays find a roof, then a floor
+    2 m+ below it), so it is muffled through the walls from outside.
+  - Cost: never automate panner or listener positions (sets `.value`): automation puts the
+    panner on its per-sample path (4x the cost). Static HRTF is ~0.7% CPU per source here.
 
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for

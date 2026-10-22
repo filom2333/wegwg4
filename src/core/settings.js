@@ -51,6 +51,7 @@ export const DEFAULTS = {
   musicVolume: 0.6,
   sfxVolume: 0.9,
   ambientVolume: 0.8,
+  sound3d: 'headphones', // 'headphones': 3D (HRTF) panning; 'speakers': plain left-right
   language: 'en',
   units: 'metric',
   transmission: 'auto',

@@ -1,40 +1,19 @@
-// Audio engine: buses, positional one-shots, real-time engine synthesis, tyre/wind/rain loops,
-// ambience scheduler and the car radio's generative music.
+// Audio engine: buses, recorded one-shots placed in the world, real-time engine synthesis,
+// tyre/wind/rain loops, the ambience (soundscape), where it all sits in space (space.js), and the
+// car radio's generative music.
 
 import * as THREE from 'three';
 import { GEN } from './synth.js';
 import { Soundscape } from './soundscape.js';
+import { Space } from './space.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
 import { tunedVoice } from '../vehicle/tuning.js';
 import { STATIONS, stationProgram } from './stations.js';
 
 const SOUNDS = (import.meta.env.BASE_URL || '/') + 'sounds/';
-// Engine recordings, if any: looped at a steady speed, each played faster or slower around its
-// own rpm and crossfaded with its neighbours.
-const ENGINE_LAYERS = [
-  ['engine_idle', 800],
-  ['engine_low', 2000],
-  ['engine_mid', 3500],
-  ['engine_high', 5500],
-];
-
-const STEP_SURF = {
-  sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
-  dirt: { cut: 2200, grains: 22, spread: 0.08, body: 0.3 },
-  gravel: { cut: 4200, grains: 46, spread: 0.12, body: 0.2 },
-  rock: { cut: 3000, grains: 8, spread: 0.03, body: 0.5, bodyF: 140 },
-  asphalt: { cut: 2600, grains: 10, spread: 0.03, body: 0.45, bodyF: 110 },
-  concrete: { cut: 2800, grains: 9, spread: 0.03, body: 0.45, bodyF: 120 },
-  wood: { cut: 1400, grains: 6, spread: 0.02, body: 0.9, bodyF: 95 },
-  metal: { cut: 5000, grains: 5, spread: 0.02, body: 0.6, bodyF: 320 },
-  salt: { cut: 5200, grains: 40, spread: 0.1, body: 0.15 },
-  // soft squeaky crunch of packed snow, a swish through grass, needles underfoot in the forest
-  snow: { cut: 2400, grains: 55, spread: 0.16, body: 0.35, bodyF: 260 },
-  snowRoad: { cut: 2600, grains: 40, spread: 0.12, body: 0.3, bodyF: 300 },
-  grass: { cut: 3600, grains: 34, spread: 0.18, body: 0.08 },
-  ice: { cut: 4200, grains: 6, spread: 0.02, body: 0.5, bodyF: 420 },
-};
+// surfaces with their own footsteps (step_<surface> in sounds/index.json)
+const STEP_SURF = new Set(['sand', 'dirt', 'gravel', 'rock', 'asphalt', 'concrete', 'wood', 'metal', 'salt', 'snow', 'snowRoad', 'grass', 'ice']);
 
 export class AudioSystem {
   constructor(game) {
@@ -62,39 +41,42 @@ export class AudioSystem {
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     this.master.connect(comp).connect(ctx.destination);
+    // the player's own sounds (sfx) and the world's bed (amb) are not placed; everything placed
+    // in the world goes through a voice of the Space into sfxPos / ambPos
     this.sfx = ctx.createGain();
+    this.sfxPos = ctx.createGain();
     this.amb = ctx.createGain();
+    this.ambPos = ctx.createGain();
     this.music = ctx.createGain();
     this.sfx.connect(this.master);
-    // the world outside, muffled indoors and in the cabin (the soundscape moves the cutoff)
+    this.sfxPos.connect(this.master);
+    this.ambPos.connect(this.master);
+    // the world's bed, muffled indoors and in the cabin (the soundscape moves the cutoff)
     this.ambLP = ctx.createBiquadFilter();
     this.ambLP.type = 'lowpass';
     this.ambLP.frequency.value = 20000;
     this.amb.connect(this.ambLP).connect(this.master);
     this.music.connect(this.master);
-    // a small room answering footsteps and doors when indoors
-    this.room = ctx.createConvolver();
-    this.room.buffer = roomImpulse(ctx);
-    this.roomWet = ctx.createGain();
-    this.roomWet.gain.value = 0;
-    this.sfx.connect(this.room).connect(this.roomWet).connect(this.master);
+    this.space = new Space(this);
+    // your own sounds get the room when indoors (the soundscape opens this)
+    this.sfxSend = ctx.createGain();
+    this.sfxSend.gain.value = 0;
+    this.sfx.connect(this.sfxSend).connect(this.space.send);
     this.windGust = 1;
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
-    await this.buildBuffers();
+    this.buildBuffers();
     await this.loadSamples();
     this.applySamples();
     this.buildLoops();
     this.scape = new Soundscape(this);
-    await this.scape.build(() => new Promise((r) => setTimeout(r, 0)));
-    this.applySamples();
+    this.scape.build();
     this.ready = true;
   }
 
-  // Recorded or generated sounds put in public/sounds/ and listed in sounds/index.json take the
-  // place of the synthesized ones: { "sounds": { name: file | [files] }, "music": { "album:track":
-  // file } }. Several files for a name are variants picked at random. Anything missing or broken
-  // keeps its synthesized voice.
+  // The sounds are recordings in public/sounds/ listed in sounds/index.json: { "sounds": { name:
+  // file | [files] }, "music": { "album:track": file }, "gain": { name: level } }. Several files
+  // for a name are variants picked at random.
   async loadSamples() {
     this.samples = {};
     this.musicFiles = {};
@@ -129,9 +111,9 @@ export class AudioSystem {
     for (const [k, v] of Object.entries(this.samples || {})) this.buffers[k] = v;
   }
 
-  // Level correction for a sound while a recording stands in for it.
+  // A recording's level correction from the index.
   trim(name) {
-    return this.samples && this.samples[name] ? (this.sampleGain || {})[name] ?? 1 : 1;
+    return (this.sampleGain || {})[name] ?? 1;
   }
 
   // A loaded recording for a loop (its first variant), or null.
@@ -144,70 +126,19 @@ export class AudioSystem {
     if (!this.ctx) return;
     const s = settings.data;
     this.master.gain.value = s.masterVolume;
-    this.sfx.gain.value = s.sfxVolume;
-    this.amb.gain.value = s.ambientVolume;
+    this.sfx.gain.value = this.sfxPos.gain.value = s.sfxVolume;
+    this.amb.gain.value = this.ambPos.gain.value = s.ambientVolume;
     this.music.gain.value = s.musicVolume;
   }
 
-  async buildBuffers() {
+  // What is still made here rather than recorded: noise for the shaped layers, and the plucked
+  // notes of the radio station and the title theme.
+  buildBuffers() {
     const c = this.ctx;
     const B = this.buffers;
-    const tick = () => new Promise((r) => setTimeout(r, 0));
     B.white = GEN.noise(c, 3, 'white', 1);
     B.pink = GEN.noise(c, 3, 'pink', 2);
     B.brown = GEN.noise(c, 3, 'brown', 3);
-    await tick();
-    for (const [k, v] of Object.entries(STEP_SURF)) B['step_' + k] = [0, 1, 2].map((i) => GEN.crunch(c, { ...v, len: 0.22, seed: 100 + i * 7 + k.length }));
-    await tick();
-    B.doorOpen = GEN.thump(c, { f: 90, decay: 0.05, click: 0.8, rattle: 0.2, seed: 3, len: 0.5, noiseCut: 3000 });
-    B.doorClose = GEN.thump(c, { f: 60, decay: 0.14, click: 0.6, rattle: 0.35, seed: 4, len: 0.7 });
-    B.hood = GEN.thump(c, { f: 55, decay: 0.2, click: 0.5, rattle: 0.5, seed: 5, len: 0.9 });
-    B.trunk = GEN.thump(c, { f: 65, decay: 0.16, click: 0.5, rattle: 0.3, seed: 6, len: 0.8 });
-    B.doorCreak = GEN.creak(c, { f: 150, len: 1.1 });
-    B.doorShut = GEN.thump(c, { f: 80, decay: 0.09, click: 0.5, rattle: 0.1, seed: 8, len: 0.5, noiseCut: 900 });
-    B.pickup = [0, 1].map((i) => GEN.crunch(c, { grains: 8, cut: 3000, len: 0.15, seed: 200 + i, body: 0.3, bodyF: 220, spread: 0.03 }));
-    B.pickupHeavy = GEN.thump(c, { f: 75, decay: 0.06, click: 0.3, rattle: 0.4, seed: 9, len: 0.4 });
-    B.throw = GEN.whoosh(c, { len: 0.3, f0: 300, f1: 1100 });
-    B.swing = GEN.whoosh(c, { len: 0.25, f0: 500, f1: 2000, seed: 12 });
-    B.pocket = GEN.crunch(c, { grains: 14, cut: 2400, len: 0.2, seed: 33, spread: 0.12 });
-    await tick();
-    B.click = GEN.metal(c, { f: 2600, decay: 0.01, partials: [1, 1.7], len: 0.08, hit: 0.4 });
-    B.ratchet = GEN.crunch(c, { grains: 9, cut: 6000, len: 0.18, seed: 41, spread: 0.12, body: 0.2, bodyF: 1800 });
-    B.install = GEN.metal(c, { f: 180, decay: 0.12, partials: [1, 2.3, 4.1], len: 0.6, hit: 0.8 });
-    B.remove = GEN.metal(c, { f: 240, decay: 0.08, partials: [1, 2.9], len: 0.4, hit: 0.6 });
-    B.hitMetal = GEN.metal(c, { f: 520, decay: 0.25, len: 0.8 });
-    B.hitFlesh = GEN.thump(c, { f: 95, decay: 0.05, click: 0.9, seed: 44, len: 0.3, noiseCut: 900 });
-    B.crash = GEN.metal(c, { f: 150, decay: 0.25, partials: [1, 2.31, 3.7, 6.1, 9.3], len: 1.2, hit: 2.5, seed: 45 });
-    B.crashHeavy = GEN.metal(c, { f: 95, decay: 0.45, partials: [1, 1.7, 2.6, 4.3, 7.1], len: 2.0, hit: 3.5, seed: 46 });
-    await tick();
-    B.revolver = GEN.gunshot(c, { body: 160, tail: 0.55, crack: 1.2, seed: 51 });
-    B.shotgun = GEN.gunshot(c, { body: 90, tail: 0.8, crack: 1.4, seed: 52, len: 2.2 });
-    B.dryfire = GEN.metal(c, { f: 3100, decay: 0.008, partials: [1, 1.5], len: 0.06, hit: 0.5 });
-    B.reloadRevolver = GEN.crunch(c, { grains: 6, cut: 7000, len: 1.6, spread: 1.4, seed: 53, body: 0.25, bodyF: 2200 });
-    B.reloadShotgun = GEN.crunch(c, { grains: 5, cut: 4000, len: 1.8, spread: 1.6, seed: 54, body: 0.5, bodyF: 600 });
-    B.backfire = GEN.gunshot(c, { body: 60, tail: 0.3, crack: 0.6, seed: 55, len: 0.9 });
-    B.engineStart = GEN.starter(c, { len: 0.8 });
-    B.starter = GEN.starter(c, { len: 1.0, seed: 20 });
-    B.stall = GEN.thump(c, { f: 40, decay: 0.3, click: 0.2, rattle: 0.6, seed: 56, len: 0.9 });
-    await tick();
-    B.eat = GEN.crunch(c, { grains: 40, cut: 3000, len: 1.1, spread: 1.0, seed: 61 });
-    B.drink = GEN.gulp(c, { len: 0.55 });
-    B.pour = GEN.pourLoop(c, { len: 2 });
-    B.bandage = GEN.crunch(c, { grains: 60, cut: 5000, len: 0.9, spread: 0.8, seed: 62 });
-    B.extinguish = GEN.noise(c, 1.5, 'white', 63);
-    B.ignite = GEN.whoosh(c, { len: 0.9, f0: 160, f1: 900, seed: 90 });
-    B.hurt = GEN.breath(c, { len: 0.45, seed: 64 });
-    B.land = GEN.thump(c, { f: 60, decay: 0.08, click: 0.6, seed: 65, len: 0.4, noiseCut: 1500 });
-    B.seat = GEN.crunch(c, { grains: 20, cut: 1500, len: 0.5, spread: 0.4, seed: 66, body: 0.4, bodyF: 70 });
-    B.thunder = [GEN.thunder(c, { seed: 71, close: 0.9 }), GEN.thunder(c, { seed: 72, close: 0.2 })];
-    await tick();
-    B.chirp = [GEN.chirp(c, { f: 4300 }), GEN.chirp(c, { f: 3800, len: 0.09 }), GEN.chirp(c, { f: 5200, len: 0.07 })];
-    B.howl = GEN.howl(c, {});
-    B.growl = [GEN.growl(c, { seed: 81 }), GEN.growl(c, { seed: 82, f: 55, len: 2.2 })];
-    B.screech = GEN.screech(c, {});
-    B.vagrant = [GEN.breath(c, { len: 0.8, seed: 85 }), GEN.growl(c, { f: 120, len: 0.8, seed: 86 })];
-    B.bird = [GEN.chirp(c, { f: 2600, len: 0.18 }), GEN.chirp(c, { f: 3100, len: 0.12 })];
-    // radio: plucked notes of a slow minor progression
     const notes = [110, 130.81, 146.83, 164.81, 196, 220, 246.94, 261.63, 293.66, 329.63];
     B.pluck = notes.map((f, i) => GEN.pluck(c, { f, len: 2.6, seed: 90 + i }));
   }
@@ -235,24 +166,33 @@ export class AudioSystem {
       src.start();
       return { src, f, g };
     };
-    // ambience
-    // (a recorded wind or rain replaces the shaped noise; the filters still follow the weather)
-    this.loops.wind = mkNoise(this.sample('wind') || this.buffers.pink, this.amb, 'lowpass', 500, 0.7, this.trim('wind'));
+    // ambience: the recorded wind and rain, with shaped noise for the high whistle of a gale and
+    // the drumming on a roof
+    this.loops.wind = mkNoise(this.sample('wind'), this.amb, 'lowpass', 1500, 0.7, this.trim('wind'));
     this.loops.windHigh = mkNoise(this.buffers.white, this.amb, 'bandpass', 2400, 0.6);
-    this.loops.rain = mkNoise(this.sample('rain') || this.buffers.white, this.amb, 'highpass', 1200, 0.7, this.trim('rain'));
+    this.loops.rain = mkNoise(this.sample('rain'), this.amb, 'highpass', 300, 0.7, this.trim('rain'));
     this.loops.rainLow = mkNoise(this.buffers.brown, this.amb, 'lowpass', 400);
-    // car: engine synthesis with panner at the car
-    const pan = (this.carPanner = c.createPanner());
-    pan.panningModel = 'equalpower';
-    pan.distanceModel = 'inverse';
-    pan.refDistance = 3;
-    pan.rolloffFactor = 1;
-    const cabin = (this.cabinFilter = c.createBiquadFilter());
-    cabin.type = 'lowpass';
-    cabin.frequency.value = 20000;
-    const carBus = c.createGain();
-    carBus.connect(cabin).connect(pan).connect(this.sfx);
-    this.carBus = carBus;
+    // the car, as two places: the engine (in the bay, or at the tailpipe when you stand behind)
+    // and the wheels under the floor. Sitting inside, the body takes the top off both and the
+    // cabin booms a little.
+    const carVoice = (track, ref, cut) => {
+      const bus = c.createGain();
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 20000;
+      const boom = c.createBiquadFilter();
+      boom.type = 'lowshelf';
+      boom.frequency.value = 130;
+      boom.gain.value = 0;
+      const v = this.space.voice({ ref, own: true, track, bus: this.sfxPos, wet: 0.6 });
+      bus.connect(lp).connect(boom).connect(v.input);
+      return { bus, lp, boom, v, cut };
+    };
+    this.engineAt = new THREE.Vector3();
+    this.wheelsAt = new THREE.Vector3();
+    this.engineVoice = carVoice(() => (this.game.car ? this.engineAt : null), 3, 1700);
+    this.wheelVoice = carVoice(() => (this.game.car ? this.wheelsAt : null), 2.5, 1100);
+    const carBus = (this.carBus = this.engineVoice.bus);
     // engine: an oscillator at the firing frequency with the car type's harmonic recipe
     const eng = c.createOscillator();
     const sub = c.createOscillator();
@@ -283,7 +223,7 @@ export class AudioSystem {
     this.loops.intake = n;
     // starter
     const st = c.createBufferSource();
-    st.buffer = this.buffers.starter;
+    st.buffer = this.sample('starter');
     st.loop = true;
     const stG = c.createGain();
     stG.gain.value = 0;
@@ -292,24 +232,12 @@ export class AudioSystem {
     st.connect(stT).connect(stG).connect(carBus);
     st.start();
     this.loops.starter = { src: st, g: stG };
-    // tyres & skid (not filtered by cabin as strongly but fine)
-    this.loops.tyre = mkNoise(this.sample('tyreRoll') || this.buffers.brown, carBus, 'lowpass', 300, 0.7, this.trim('tyreRoll'));
-    this.loops.skid = mkNoise(this.sample('skid') || this.buffers.pink, carBus, 'bandpass', 950, this.sample('skid') ? 0.5 : 4, this.trim('skid'));
-    // recorded engine layers, when there are at least two of them
-    const layers = ENGINE_LAYERS.filter(([k]) => this.sample(k)).map(([k, rpm]) => {
-      const src = c.createBufferSource();
-      src.buffer = this.sample(k);
-      src.loop = true;
-      const g = c.createGain();
-      g.gain.value = 0;
-      src.connect(g).connect(carBus);
-      src.start(0, Math.random() * src.buffer.duration);
-      return { src, g, rpm };
-    });
-    this.engineRec = layers.length >= 2 ? layers : null;
+    // tyres rolling and skidding
+    this.loops.tyre = mkNoise(this.sample('tyreRoll'), this.wheelVoice.bus, 'lowpass', 300, 0.7, this.trim('tyreRoll'));
+    this.loops.skid = mkNoise(this.sample('skid'), this.wheelVoice.bus, 'bandpass', 950, 0.5, this.trim('skid'));
     // pour loop (non positional)
     const ps = c.createBufferSource();
-    ps.buffer = this.buffers.pour;
+    ps.buffer = this.sample('pour');
     ps.loop = true;
     const pg = c.createGain();
     pg.gain.value = 0;
@@ -325,7 +253,15 @@ export class AudioSystem {
     rf.Q.value = 0.5;
     const rg = c.createGain();
     rg.gain.value = 0;
-    rf.connect(rg).connect(this.music);
+    // the car's stereo plays straight to you in the seat, and from the car when you stand outside
+    const stereo = c.createGain();
+    this.stereoDirect = c.createGain();
+    this.stereoOut = c.createGain();
+    this.stereoOut.gain.value = 0;
+    const sv = this.space.voice({ ref: 3, own: true, bus: this.music, wet: 0.5, track: () => (this.game.car ? this.game.car.root.position : null) });
+    stereo.connect(this.stereoDirect).connect(this.music);
+    stereo.connect(this.stereoOut).connect(sv.input);
+    rf.connect(rg).connect(stereo);
     this.radio = { in: rf, g: rg, step: 0 };
     this.loops.static = mkNoise(this.buffers.white, rf, 'bandpass', 3000, 0.4);
     // CD player: full-range through door speakers (a little bass lift, rolled-off top); muffled by
@@ -342,7 +278,7 @@ export class AudioSystem {
     cdLp.frequency.value = 14000;
     const cdG = c.createGain();
     cdG.gain.value = 0;
-    cdHp.connect(cdLow).connect(cdLp).connect(cdG).connect(this.music);
+    cdHp.connect(cdLow).connect(cdLp).connect(cdG).connect(stereo);
     this.cd = { in: cdHp, lp: cdLp, g: cdG, src: null, key: null, buffers: new Map(), pending: new Map(), worker: null, startedAt: 0, offset: 0 };
   }
 
@@ -467,7 +403,7 @@ export class AudioSystem {
     if (!this.ready) return;
     const c = this.ctx;
     let key = name;
-    if (name === 'step') key = 'step_' + (opts.surface in STEP_SURF ? opts.surface : 'dirt');
+    if (name === 'step') key = 'step_' + (STEP_SURF.has(opts.surface) ? opts.surface : 'dirt');
     if (name === 'pickup' && opts.mass > 6) key = 'pickupHeavy';
     let buf = this.buffers[key];
     if (name === 'pour') {
@@ -489,15 +425,14 @@ export class AudioSystem {
       node = node.connect(f);
     }
     if (opts.at) {
-      const p = c.createPanner();
-      p.panningModel = 'equalpower';
-      p.distanceModel = 'inverse';
-      p.refDistance = opts.ref ?? 2;
-      p.rolloffFactor = opts.rolloff ?? 1;
-      p.positionX.value = opts.at.x;
-      p.positionY.value = opts.at.y;
-      p.positionZ.value = opts.at.z;
-      node.connect(p).connect(opts.bus === 'amb' ? this.amb : this.sfx);
+      // placed in the world: panned, muffled by what is in between, answered by the space
+      const v = this.space.voice({ ref: opts.ref ?? 2, rolloff: opts.rolloff ?? 1, bus: opts.bus === 'amb' ? this.ambPos : this.sfxPos, wet: opts.wet });
+      node.connect(v.input);
+      v.place(opts.at);
+      src.onended = () => {
+        node.disconnect();
+        v.dispose();
+      };
     } else node.connect(opts.bus === 'amb' ? this.amb : this.sfx);
     src.start();
     return src;
@@ -569,9 +504,10 @@ export class AudioSystem {
     const fwd = V3.set(0, 0, -1).applyQuaternion(cam.quaternion);
     const up = V3b.set(0, 1, 0).applyQuaternion(cam.quaternion);
     if (L.positionX) {
-      L.positionX.setTargetAtTime(cam.position.x, now, 0.02);
-      L.positionY.setTargetAtTime(cam.position.y, now, 0.02);
-      L.positionZ.setTargetAtTime(cam.position.z, now, 0.02);
+      // set, not automated (see Voice.place)
+      L.positionX.value = cam.position.x;
+      L.positionY.value = cam.position.y;
+      L.positionZ.value = cam.position.z;
       L.forwardX.value = fwd.x;
       L.forwardY.value = fwd.y;
       L.forwardZ.value = fwd.z;
@@ -594,15 +530,12 @@ export class AudioSystem {
     const windGain = (0.05 + wind * 0.25 + env.w.dust * 0.3) * this.windGust;
     const drive = seated ? Math.min(1, carSpeed / 30) : 0;
     set(this.loops.wind.g.gain, (windGain + drive * 0.25) * (1 - this.inCabin * 0.5), now);
-    // a recorded wind keeps its airy hiss (the shaped noise is mostly rumble above 800 Hz)
-    const windF = this.sample('wind') ? (700 + wind * 1800) * (1 - this.inCabin * 0.5) + drive * 900 : 300 + wind * 500 + drive * 600;
-    set(this.loops.wind.f.frequency, windF, now);
+    set(this.loops.wind.f.frequency, (700 + wind * 1800) * (1 - this.inCabin * 0.5) + drive * 900, now);
     set(this.loops.windHigh.g.gain, (wind * 0.05 + env.w.dust * 0.12) * (1 - this.inCabin * 0.8) + drive * 0.03, now);
     // snow falls without a sound
     const rain = env.snowing ? 0 : env.w.rain;
     set(this.loops.rain.g.gain, rain * 0.22 * (1 - this.inCabin * 0.4), now);
-    // (a recorded rain has its body lower down than the white noise it replaces)
-    set(this.loops.rain.f.frequency, this.sample('rain') ? (seated ? 150 : 300) : seated ? 600 : 1500, now);
+    set(this.loops.rain.f.frequency, seated ? 150 : 300, now);
     set(this.loops.rainLow.g.gain, rain * (seated ? 0.35 : 0.12), now);
     // ---- car
     if (car) {
@@ -612,12 +545,23 @@ export class AudioSystem {
       const ET = tunedVoice(car, car.engineType || car.type);
       if (ET !== this.carType) this.setCarType(ET);
       const S = ET.sound;
-      const ep = V3.copy(car.type.POINTS.engine).applyMatrix4(car.root.matrixWorld);
-      this.carPanner.positionX.value = ep.x;
-      this.carPanner.positionY.value = ep.y;
-      this.carPanner.positionZ.value = ep.z;
-      void p;
-      set(this.cabinFilter.frequency, lerp(18000, 1800, this.inCabin), now);
+      // where the engine is heard from: the bay, or the tailpipe as you walk round behind
+      const P = car.type.POINTS;
+      const ep = V3.copy(P.engine).applyMatrix4(car.root.matrixWorld);
+      const xp = V3b.copy(P.exhaust || P.engine).applyMatrix4(car.root.matrixWorld);
+      const ownSeat = !!player.seat && player.car === car;
+      const span = Math.max(0.5, ep.distanceTo(xp));
+      const toTail = ownSeat ? 0 : clamp(((cam.position.distanceTo(ep) - cam.position.distanceTo(xp)) / span) * 0.5 + 0.5, 0, 1);
+      this.engineAt.lerpVectors(ep, xp, toTail);
+      // the wheels: under the middle of the car
+      this.wheelsAt.copy(p);
+      this.wheelsAt.y -= 0.25;
+      // in the seat the body takes the top off and the cabin booms
+      const k = ownSeat ? this.inCabin : 0;
+      for (const cv of [this.engineVoice, this.wheelVoice]) {
+        set(cv.lp.frequency, lerp(20000, cv.cut, k), now);
+        set(cv.boom.gain, k * 5, now, 0.2);
+      }
       const d = car.dyn;
       const rpm = Math.max(0, d.engine.rpm);
       const running = d.engine.running;
@@ -630,21 +574,7 @@ export class AudioSystem {
       set(e.f.frequency, S.tone + rpm * S.toneRpm + load * 900 + (exhaustMissing ? 1200 : 0), now, 0.04);
       const rough = car.engineCondition < 0.4 ? (Math.random() - 0.5) * 0.25 * (0.4 - car.engineCondition) * 2 : 0;
       const synthGain = running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0;
-      if (this.engineRec) {
-        // recordings: each layer pitched to the rpm, weighted by how near its own rpm it is
-        const L = this.engineRec;
-        set(e.g.gain, synthGain * 0.12, now, 0.05);
-        const r = Math.max(L[0].rpm, Math.min(L[L.length - 1].rpm, rpm));
-        L.forEach((l, i) => {
-          const lo = i > 0 ? L[i - 1].rpm : l.rpm,
-            hi = i < L.length - 1 ? L[i + 1].rpm : l.rpm;
-          let w = 0;
-          if (r <= l.rpm) w = l.rpm === lo ? 1 : clamp((r - lo) / (l.rpm - lo), 0, 1);
-          else w = l.rpm === hi ? 1 : clamp((hi - r) / (hi - l.rpm), 0, 1);
-          set(l.src.playbackRate, clamp(Math.max(rpm, 300) / l.rpm, 0.5, 2), now, 0.03);
-          set(l.g.gain, running ? Math.sqrt(w) * (0.45 + load * 0.55 + rough) * (exhaustMissing ? 1.6 : 1) * S.gain : 0, now, 0.05);
-        });
-      } else set(e.g.gain, synthGain, now, 0.05);
+      set(e.g.gain, synthGain, now, 0.05);
       set(this.loops.intake.g.gain, running ? (0.05 + load * 0.25) * S.intake : 0, now);
       set(this.loops.intake.f.frequency, 200 + rpm * 0.25, now);
       set(this.loops.starter.g.gain, car.cranking > 0 && !running ? 0.5 : 0, now, 0.02);
@@ -686,6 +616,9 @@ export class AudioSystem {
     const radioOn = car && car.radioOn && car.isInstalled('battery') && car.battery > 0.03 && !(car.stereo && car.stereo.mode === 'cd');
     const kind = radioOn ? STATIONS[car.stereo.station ?? 1].kind : null;
     set(this.radio.g.gain, radioOn ? 0.5 * (seated ? 1 : 0.35) : 0, now, 0.1);
+    const inside = player.seat && player.car === car ? 1 : 0;
+    set(this.stereoDirect.gain, inside, now, 0.15);
+    set(this.stereoOut.gain, 1 - inside, now, 0.15);
     set(this.loops.static.g.gain, kind === 'numbers' ? 0.14 : kind === 'ebs' ? 0.06 : radioOn ? 0.03 : 0, now, 0.1);
     if (kind === 'haven') {
       this.timers.radio -= dt;
@@ -870,21 +803,6 @@ export class AudioSystem {
   }
 }
 
-// A short warm room: stereo noise dying away over half a second.
-function roomImpulse(ctx) {
-  const n = Math.floor(ctx.sampleRate * 0.55);
-  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < n; i++) {
-      lp += (Math.random() * 2 - 1 - lp) * 0.35;
-      d[i] = lp * Math.exp((-i / n) * 6) * (i < 60 ? i / 60 : 1);
-    }
-  }
-  return buf;
-}
-
 const V3 = new THREE.Vector3();
 const V3b = new THREE.Vector3();
 
@@ -938,6 +856,7 @@ const VOL = {
   caw: 1,
   hawk: 1,
   yips: 1,
+  poorwill: 1,
   chime: 1,
   signCreak: 1,
   floorCreak: 1,

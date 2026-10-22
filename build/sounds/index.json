@@ -20,6 +20,11 @@
    "ping_2.mp3",
    "ping_3.mp3"
   ],
+  "frogs": "frogs.mp3",
+  "poorwill": [
+   "poorwill_1.mp3",
+   "poorwill_2.mp3"
+  ],
   "ratchet": [
    "ratchet_1.mp3",
    "ratchet_2.mp3",
@@ -210,10 +215,10 @@
  },
  "music": {},
  "gain": {
-  "wind": 1.73,
+  "wind": 1.354,
   "tyreRoll": 1.038,
   "skid": 0.12,
-  "rain": 5.267,
+  "rain": 5.544,
   "pocket": 0.851,
   "pickupHeavy": 1.072,
   "hitMetal": 1.216,
