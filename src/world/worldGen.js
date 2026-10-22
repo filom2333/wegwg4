@@ -605,7 +605,7 @@ export class WorldGen {
     // ranges run with the road (long belts across the land, like basin-and-range country); the
     // eroded fBm on them makes the crests, spurs and gullies, flat between the ranges
     const belt = n.noise2(x * 0.00034 + 3, z * 0.00011 - 1) + 0.3 * n.noise2(x * 0.0009 + 7, z * 0.0007);
-    const k = smoothstep(-0.2, 0.45, belt) * mask;
+    const k = smoothstep(-0.4, 0.3, belt) * mask;
     if (k <= 0.001) return 0;
     const e = erodedFbm(x * 0.00052, z * 0.00052, this.seed | 0);
     let relief = Math.pow(e / 0.45, 1.6);
@@ -630,8 +630,13 @@ export class WorldGen {
     relief *= 0.6 + 0.85 * r * smoothstep(0.06, 0.5, relief);
     bw = bw || this.biomeWeights(x, z);
     const amp = 520 + bw.highland * 380 + bw.taiga * 450 + bw.saltflat * 200 + bw.forest * 150 - bw.prairie * 150 - bw.dunes * 260;
-    // foothills where the belt thins out, full height in its middle
-    return relief * amp * k * k * (3 - 2 * k);
+    // where the belt thins out the range sinks into the plain instead of shrinking: only its
+    // crests and spurs stand out (a ragged edge of outcrops, not a smooth dome or a lone cone),
+    // full height in its middle. v^2/(v+w) eases the foot into the flat; the last factor takes it
+    // to nothing at the belt's very edge
+    const kk = k * k * (3 - 2 * k);
+    const v = relief * (0.7 + 0.3 * kk) - (1 - kk) * 0.45;
+    return v > 0 ? ((v * v) / (v + 0.08)) * amp * Math.min(1, k * 8) : 0;
   }
 
   // ---------------------------------------------------------------- water
