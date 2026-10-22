@@ -579,6 +579,25 @@ add them to `src/world/props.js` PROPS.
   - Night additions (sfx3 batch): `frogs` loop at the water after dark, `poorwill` calls in the
     open at night. `sfxproc2.py` takes the third batch dir as a 4th argument; stereo loops are
     auto-balanced (the wind came out 9 dB right-heavy).
+- Recorded music (`src/audio/music.js`, files in `public/music/`, listed in `music/index.json`):
+  streamed through <audio> elements (MediaElementSource), never decoded whole. Prompt sheet with
+  all 33 tracks and file names: https://claude.ai/artifact/4ioak2dPSVStrWuTZonrWN (menu_theme,
+  8 score_* cues, music_<album>_<n> for the six discs, haven_1..3, jingle_kdrt/klow/haven).
+  Incoming files: `python3 -I tools/sounds/musicproc.py <dir> public/music` (trims, one static
+  gain to -16 LUFS songs / -18 menu / -20 score plus a limiter, mp3 96k, merges index.json).
+  - Background score: a cue now and then (gaps 90-240 s), picked rain > north > night/campfire >
+    dawn/dusk > day; fades out while the car stereo can be heard (seated, or within 18 m) and
+    picks up where it was after; after 90 s of radio it drops the track.
+  - On/off: key U (anywhere, also the menus; UI.onKey), "Music: on/off" in the pause menu,
+    Settings > Audio (Background music, Music volume = scoreVolume; Car radio = musicVolume).
+    The switch also covers the menu theme.
+  - Car stereo: a disc or a music station streams the recording if music/index.json has it,
+    otherwise the old worker-rendered song plays (arrange.js/engine.js/musicWorker.js, ~2200
+    lines: delete them once all 18 album files are in, together with the synthesized title theme
+    in AudioSystem.startMenuMusic and radioNote/pluck for Haven). Station IDs play over the start
+    of a song (songIn ducked to 25%). Haven plays its files in 150 s slots (quiet after each).
+  - Fixed: stations played the same track of each album every time (track was tied to the slot);
+    now all nine songs of a station come round.
 - Spatial sound (`src/audio/space.js`): every sound placed in the world goes through a Voice:
   low-pass for air (cutoff 20 kHz/(1+d/40)) and for what is in between (two rays from the
   listener to the source and 2 m above it against static world colliders: houses, terrain,

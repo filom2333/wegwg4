@@ -72,6 +72,7 @@ const LABELS = {
   photo: 'Photo mode',
   inventory: 'Inventory',
   nextTrack: 'Next CD track',
+  music: 'Music on / off',
   stow: 'Put in backpack',
   sleep: 'Sleep (car, tent or bed)',
   view: 'First / third person',
@@ -500,7 +501,9 @@ export class UI {
         this.range(body, 'Master', 0, 1, 0.01, d.masterVolume, (v) => set('masterVolume', v), pct);
         this.range(body, 'Effects', 0, 1, 0.01, d.sfxVolume, (v) => set('sfxVolume', v), pct);
         this.range(body, 'Ambience and weather', 0, 1, 0.01, d.ambientVolume, (v) => set('ambientVolume', v), pct);
-        this.range(body, 'Radio', 0, 1, 0.01, d.musicVolume, (v) => set('musicVolume', v), pct);
+        this.toggle(body, 'Background music', d.musicOn !== false, (v) => set('musicOn', v));
+        this.range(body, 'Music', 0, 1, 0.01, d.scoreVolume ?? 0.6, (v) => set('scoreVolume', v), pct);
+        this.range(body, 'Car radio', 0, 1, 0.01, d.musicVolume, (v) => set('musicVolume', v), pct);
         this.seg(body, 'Listening on', [['headphones', 'Headphones'], ['speakers', 'Speakers']], d.sound3d || 'headphones', (v) => set('sound3d', v), 'Headphones: sounds come from all round you, in front, behind and above. Speakers: plain left and right.');
       } else if (tab === 'controls') {
         this.range(body, 'Mouse sensitivity', 0.2, 3, 0.05, d.sensitivity, (v) => set('sensitivity', v), (v) => v.toFixed(2));
@@ -580,6 +583,7 @@ export class UI {
     if (k === 'showFps') this.fpsEl.style.display = d.showFps ? '' : 'none';
     if (!g) return;
     if (/Volume$/.test(k) && g.audio && g.audio.applyVolumes) g.audio.applyVolumes();
+    if (k === 'musicOn' && g.audio && g.audio.syncMusic) g.audio.syncMusic();
     // on the title screen there is no world yet: the rest applies when a game starts
     if (!g.renderer) return;
     if (k === 'transmission' && g.car) g.car.dyn.automatic = d.transmission === 'auto';
@@ -667,6 +671,10 @@ export class UI {
         this.resume();
       });
       this.item(m, 'Journal', () => this.showJournal(() => this.showPause()));
+      this.item(m, settings.data.musicOn === false ? 'Music: off' : 'Music: on', () => {
+        g.audio && g.audio.toggleMusic();
+        this.showPause();
+      }, 'U');
       this.item(m, 'Settings', () => this.showSettings(() => this.showPause()));
       this.item(m, 'Main menu', () => this.confirm('Leave to the main menu? Progress since your last save is lost.', 'Save and leave', () => {
         writeSave(g);
@@ -675,6 +683,15 @@ export class UI {
       el('div', 'ui-foot', s, `Seed ${g.seed} · ${g.difficulty.label}`);
     });
     this.show('pause');
+  }
+
+  // A short line at the bottom of the screen (in the menus, where there is no HUD).
+  note(text) {
+    if (!this.noteEl) this.noteEl = el('div', 'ui-note', this.root);
+    this.noteEl.textContent = text;
+    this.noteEl.classList.add('on');
+    clearTimeout(this._noteT);
+    this._noteT = setTimeout(() => this.noteEl.classList.remove('on'), 1600);
   }
 
   // ---------------------------------------------------------------- journal (stats screen)
@@ -1084,6 +1101,13 @@ export class UI {
       }
       btn.textContent = keyName(settings.data.bindings[action]);
       return;
+    }
+    // music on/off from anywhere (not while typing)
+    if (e.code === (settings.data.bindings.music || 'KeyU') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '') && this.game && this.game.audio && this.game.audio.toggleMusic) {
+      const on = this.game.audio.toggleMusic();
+      if (this.game.hud && this.mode === 'play') this.game.hud.toast(on ? 'Music on' : 'Music off');
+      else this.note(on ? 'Music on' : 'Music off');
+      if (this.current === 'pause') this.showPause();
     }
     if (this.mode === 'menu' && this.nav && this.current === 'title') {
       const { items, focus } = this.nav;

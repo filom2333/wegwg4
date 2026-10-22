@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { GEN } from './synth.js';
 import { Soundscape } from './soundscape.js';
 import { Space } from './space.js';
+import { Music } from './music.js';
 import { settings } from '../core/settings.js';
 import { clamp, lerp } from '../core/noise.js';
 import { tunedVoice } from '../vehicle/tuning.js';
@@ -58,6 +59,7 @@ export class AudioSystem {
     this.amb.connect(this.ambLP).connect(this.master);
     this.music.connect(this.master);
     this.space = new Space(this);
+    this.musicRec = new Music(this);
     // your own sounds get the room when indoors (the soundscape opens this)
     this.sfxSend = ctx.createGain();
     this.sfxSend.gain.value = 0;
@@ -66,7 +68,7 @@ export class AudioSystem {
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
     this.buildBuffers();
-    await this.loadSamples();
+    await Promise.all([this.loadSamples(), this.musicRec.load()]);
     this.applySamples();
     this.buildLoops();
     this.scape = new Soundscape(this);
@@ -75,11 +77,10 @@ export class AudioSystem {
   }
 
   // The sounds are recordings in public/sounds/ listed in sounds/index.json: { "sounds": { name:
-  // file | [files] }, "music": { "album:track": file }, "gain": { name: level } }. Several files
-  // for a name are variants picked at random.
+  // file | [files] }, "gain": { name: level } }. Several files for a name are variants picked at
+  // random. (Music is streamed from public/music/, see music.js.)
   async loadSamples() {
     this.samples = {};
-    this.musicFiles = {};
     let list = null;
     try {
       const r = await fetch(SOUNDS + 'index.json');
@@ -88,7 +89,6 @@ export class AudioSystem {
       list = null;
     }
     if (!list) return;
-    this.musicFiles = list.music || {};
     // level corrections for recorded loops, so they sit where the shaped noise they replace did
     this.sampleGain = list.gain || {};
     await Promise.all(
@@ -129,6 +129,7 @@ export class AudioSystem {
     this.sfx.gain.value = this.sfxPos.gain.value = s.sfxVolume;
     this.amb.gain.value = this.ambPos.gain.value = s.ambientVolume;
     this.music.gain.value = s.musicVolume;
+    if (this.musicRec) this.musicRec.applyVolume();
   }
 
   // What is still made here rather than recorded: noise for the shaped layers, and the plucked
@@ -279,33 +280,18 @@ export class AudioSystem {
     const cdG = c.createGain();
     cdG.gain.value = 0;
     cdHp.connect(cdLow).connect(cdLp).connect(cdG).connect(stereo);
-    this.cd = { in: cdHp, lp: cdLp, g: cdG, src: null, key: null, buffers: new Map(), pending: new Map(), worker: null, startedAt: 0, offset: 0 };
+    // songs come in through songIn, so a station ID can push them back for a moment
+    const songIn = c.createGain();
+    songIn.connect(cdHp);
+    this.cd = { in: cdHp, songIn, lp: cdLp, g: cdG, src: null, p: null, streaming: false, key: null, buffers: new Map(), pending: new Map(), worker: null, startedAt: 0, offset: 0 };
   }
 
   // ------------------------------------------------------------------ CD player
-  // Rendered tracks come from a worker; the two most recent stay cached.
+  // A song with no recording yet is rendered by a worker; the two most recent stay cached.
   cdTrack(album, track) {
     const cd = this.cd;
     const key = album + ':' + track;
     if (cd.buffers.has(key)) return cd.buffers.get(key);
-    // a real recording of this song, if one was put in public/sounds/
-    const file = this.musicFiles && this.musicFiles[key];
-    if (file && !cd.pending.has(key)) {
-      cd.pending.set(key, true);
-      fetch(SOUNDS + file)
-        .then((r) => r.arrayBuffer())
-        .then((a) => this.ctx.decodeAudioData(a))
-        .then((b) => {
-          cd.buffers.set(key, b);
-          while (cd.buffers.size > 2) cd.buffers.delete(cd.buffers.keys().next().value);
-        })
-        .catch((e) => {
-          console.warn('song', file, 'did not load:', e.message || e);
-          delete this.musicFiles[key];
-        })
-        .finally(() => cd.pending.delete(key));
-      return null;
-    }
     if (!cd.pending.has(key)) {
       if (!cd.worker) {
         cd.worker = new Worker(new URL('./music/musicWorker.js', import.meta.url), { type: 'module' });
@@ -345,57 +331,114 @@ export class AudioSystem {
       prog = stationProgram(station, this.radioClock + (st.radioShift || 0));
       want = 'fm:' + prog.album + ':' + prog.track;
     }
+    // Haven plays its recordings between the bulletins (a quiet gap after each)
+    const haven = this.musicRec.havenFiles();
+    if (powered && station && station.kind === 'haven' && haven.length) {
+      const slot = Math.floor(this.radioClock / 150);
+      prog = { haven: true, slot, file: haven[slot % haven.length], pos: this.radioClock - slot * 150 };
+      want = 'haven:' + slot;
+    }
     if (cd.key !== want || st?.restart) {
-      if (cd.src) {
-        try {
-          cd.src.stop();
-        } catch (e) {
-          /* already stopped */
-        }
-        cd.src = null;
-      }
+      this.stopSong();
       cd.key = null;
       if (st) st.restart = false;
-      if (want) {
-        const buf = prog ? this.cdTrack(prog.album, prog.track) : this.cdTrack(st.disc, st.track);
-        if (buf) {
-          const src = this.ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(cd.in);
-          const off = Math.min(prog ? prog.pos : st.pos || 0, buf.duration - 0.5);
-          src.start(now + 0.05, Math.max(0, off));
-          cd.src = src;
-          cd.key = want;
-          cd.startedAt = now + 0.05 - Math.max(0, off);
-          cd.duration = buf.duration;
-          const radioSlot = prog ? prog.slot : null;
-          src.onended = () => {
-            if (cd.src !== src) return;
-            if (radioSlot !== null) {
-              // the song is over before its slot: the station moves on to the next one
-              const now2 = stationProgram(STATIONS[car.stereo.station ?? 1], this.radioClock + (car.stereo.radioShift || 0));
-              if (now2.slot === radioSlot) car.stereo.radioShift = (car.stereo.radioShift || 0) + (210 - now2.pos);
-              return;
-            }
-            if (car.stereo.disc >= 0) {
-              car.stereo.pos = 0;
-              car.nextTrack();
-            }
-          };
-          if (prog) this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(prog.album, prog.track, station);
-          if (!prog) {
-            this.game.hud && this.game.hud.nowPlaying && this.game.hud.nowPlaying(st.disc, st.track);
-            // render the next one in the background
-            this.cdTrack(st.disc, (st.track + 1) % 3);
-          }
-        }
-      }
+      if (want) this.startSong(car, station, prog, want, now);
     }
-    if (cd.key && st && !prog) st.pos = Math.max(0, now - cd.startedAt);
+    if (cd.key && st && !prog) st.pos = cd.streaming ? cd.p.el.currentTime : Math.max(0, now - cd.startedAt);
     set(cd.g.gain, cd.key ? (prog ? 0.7 : 0.85) * (seated ? 1 : 0.4) : 0, now, 0.08);
     // over the air: no deep bass, no sparkle
     set(cd.lp.frequency, seated ? (prog ? 5200 : 14000) : 1600, now, 0.2);
     return { loading: !!want && !cd.key, playing: !!cd.key, pos: st ? st.pos || 0 : 0, prog };
+  }
+
+  stopSong() {
+    const cd = this.cd;
+    if (cd.src) {
+      try {
+        cd.src.stop();
+      } catch (e) {
+        /* already stopped */
+      }
+      cd.src = null;
+    }
+    if (cd.streaming) {
+      cd.p.el.onended = null;
+      cd.p.el.pause();
+      cd.p.g.gain.cancelScheduledValues(this.ctx.currentTime);
+      cd.p.g.gain.value = 0;
+      cd.streaming = false;
+    }
+  }
+
+  // Starts the song `want` names: the recording streamed if there is one, else the rendered one
+  // (which may still be rendering: then this is tried again next frame).
+  startSong(car, station, prog, want, now) {
+    const cd = this.cd,
+      M = this.musicRec,
+      st = car.stereo;
+    const album = prog ? prog.album : st.disc,
+      track = prog ? prog.track : st.track;
+    const file = prog && prog.haven ? prog.file : M.songFile(album, track);
+    const off = prog ? prog.pos : st.pos || 0;
+    const radioSlot = prog && !prog.haven ? prog.slot : null;
+    const ended = () => {
+      if (prog && prog.haven) return;
+      if (radioSlot !== null) {
+        // the song is over before its slot: the station moves on to the next one
+        const now2 = stationProgram(STATIONS[st.station ?? 1], this.radioClock + (st.radioShift || 0));
+        if (now2.slot === radioSlot) st.radioShift = (st.radioShift || 0) + (210 - now2.pos);
+        return;
+      }
+      if (st.disc >= 0) {
+        st.pos = 0;
+        car.nextTrack();
+      }
+    };
+    if (file) {
+      cd.p = cd.p || M.player(cd.songIn);
+      M.start(cd.p, file, { at: off, fadeIn: 0.05 });
+      cd.p.el.onended = () => cd.key === want && ended();
+      cd.streaming = true;
+    } else {
+      const buf = this.cdTrack(album, track);
+      if (!buf) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(cd.songIn);
+      const o = Math.max(0, Math.min(off, buf.duration - 0.5));
+      src.start(now + 0.05, o);
+      cd.src = src;
+      cd.startedAt = now + 0.05 - o;
+      src.onended = () => cd.src === src && ended();
+    }
+    cd.key = want;
+    const hud = this.game.hud;
+    if (prog && !prog.haven) hud && hud.nowPlaying && hud.nowPlaying(prog.album, prog.track, station);
+    if (!prog) {
+      hud && hud.nowPlaying && hud.nowPlaying(st.disc, st.track);
+      // render the next one in the background
+      if (!M.songFile(st.disc, (st.track + 1) % 3)) this.cdTrack(st.disc, (st.track + 1) % 3);
+    }
+    // the station's ID when you tune in and before each song
+    if (station && (cd.lastStation !== station.id || off < 4)) this.jingle(station.id);
+    cd.lastStation = station ? station.id : null;
+  }
+
+  // A station ID over the start of a song, the song stepping back under it.
+  jingle(stationId) {
+    const M = this.musicRec,
+      cd = this.cd;
+    const f = M.jingleFile(stationId);
+    if (!f) return;
+    cd.jp = cd.jp || M.player(cd.in);
+    M.start(cd.jp, f, { fadeIn: 0.02 });
+    const g = cd.songIn.gain,
+      now = this.ctx.currentTime;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(0.25, now + 0.3);
+    g.setValueAtTime(0.25, now + 7);
+    g.linearRampToValueAtTime(1, now + 8.5);
   }
 
   // ------------------------------------------------------------------ one-shots
@@ -620,10 +663,22 @@ export class AudioSystem {
     set(this.stereoDirect.gain, inside, now, 0.15);
     set(this.stereoOut.gain, 1 - inside, now, 0.15);
     set(this.loops.static.g.gain, kind === 'numbers' ? 0.14 : kind === 'ebs' ? 0.06 : radioOn ? 0.03 : 0, now, 0.1);
-    if (kind === 'haven') {
+    if (kind === 'haven' && !this.musicRec.havenFiles().length) {
       this.timers.radio -= dt;
       if (this.timers.radio <= 0) this.radioNote();
     }
+    // ---- background music: steps aside while the car stereo can be heard
+    const stereo = !!car && (radioOn || !!(car.stereoState && car.stereoState.playing)) && (inside || car.root.position.distanceTo(cam.position) < 18);
+    const sc = this.scape;
+    this.musicRec.update(dt, {
+      sunY: env.sunDir ? env.sunDir.y : 0.5,
+      morning: env.time < 12,
+      rain: env.snowing ? 0 : env.w.rain,
+      north: sc ? sc.mix.north : 0,
+      fire: !!(player.lying && player.lying.kind === 'tent') || !!(g.campfires && g.campfires.near(cam.position, 12)),
+      stereo,
+      quiet: !!player.dead,
+    });
     // ---- the land's sound (ambience layers, creatures, small touches)
     if (this.scape) this.scape.update(dt);
   }
@@ -632,7 +687,9 @@ export class AudioSystem {
   // A slow, warm pad (detuned saws through a breathing low-pass) under a sparse plucked melody
   // with a long delay: road-movie at dusk. Runs on the music bus.
   startMenuMusic() {
-    if (!this.ready || this.menuMusic) return;
+    if (!this.ready) return;
+    this.inMenu = true;
+    if (!this.musicRec.on || this.musicRec.startMenu() || this.menuMusic) return;
     const c = this.ctx;
     const out = c.createGain();
     out.gain.value = 0;
@@ -706,7 +763,9 @@ export class AudioSystem {
     mm.timer = setTimeout(tick, 1500);
   }
 
-  stopMenuMusic() {
+  stopMenuMusic(keepMenu = false) {
+    if (!keepMenu) this.inMenu = false;
+    if (this.musicRec) this.musicRec.stopMenu();
     const mm = this.menuMusic;
     if (!mm) return;
     this.menuMusic = null;
@@ -718,6 +777,22 @@ export class AudioSystem {
       mm.lfo.stop();
       mm.out.disconnect();
     }, 2500);
+  }
+
+  // Background music and the menu theme on or off (key U, the pause menu, Settings).
+  toggleMusic() {
+    settings.set('musicOn', settings.data.musicOn === false);
+    this.syncMusic();
+    return settings.data.musicOn;
+  }
+
+  syncMusic() {
+    if (!this.ready) return;
+    this.musicRec.sync();
+    if (this.inMenu) {
+      if (this.musicRec.on) this.startMenuMusic();
+      else this.stopMenuMusic(true);
+    }
   }
 
   // UI ticks: short filtered clicks for hover / select.

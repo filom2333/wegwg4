@@ -26,6 +26,7 @@ export function stationProgram(st, seconds) {
   const SLOT = 210;
   const slot = Math.floor(seconds / SLOT);
   const album = st.albums[slot % st.albums.length];
-  const track = (slot * 7 + st.id.length) % 3;
+  // (the track moves on once per round of the albums, so all nine songs come round)
+  const track = (Math.floor(slot / st.albums.length) + st.id.length) % 3;
   return { slot, album, track, pos: seconds - slot * SLOT };
 }
