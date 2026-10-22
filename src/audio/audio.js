@@ -9,6 +9,16 @@ import { clamp, lerp } from '../core/noise.js';
 import { tunedVoice } from '../vehicle/tuning.js';
 import { STATIONS, stationProgram } from './stations.js';
 
+const SOUNDS = (import.meta.env.BASE_URL || '/') + 'sounds/';
+// Engine recordings, if any: looped at a steady speed, each played faster or slower around its
+// own rpm and crossfaded with its neighbours.
+const ENGINE_LAYERS = [
+  ['engine_idle', 800],
+  ['engine_low', 2000],
+  ['engine_mid', 3500],
+  ['engine_high', 5500],
+];
+
 const STEP_SURF = {
   sand: { cut: 1600, grains: 30, spread: 0.12, body: 0.15 },
   dirt: { cut: 2200, grains: 22, spread: 0.08, body: 0.3 },
@@ -72,10 +82,55 @@ export class AudioSystem {
     this.applyVolumes();
     settings.onChange(() => this.applyVolumes());
     await this.buildBuffers();
+    await this.loadSamples();
+    this.applySamples();
     this.buildLoops();
     this.scape = new Soundscape(this);
     await this.scape.build(() => new Promise((r) => setTimeout(r, 0)));
+    this.applySamples();
     this.ready = true;
+  }
+
+  // Recorded or generated sounds put in public/sounds/ and listed in sounds/index.json take the
+  // place of the synthesized ones: { "sounds": { name: file | [files] }, "music": { "album:track":
+  // file } }. Several files for a name are variants picked at random. Anything missing or broken
+  // keeps its synthesized voice.
+  async loadSamples() {
+    this.samples = {};
+    this.musicFiles = {};
+    let list = null;
+    try {
+      const r = await fetch(SOUNDS + 'index.json');
+      if (r.ok) list = await r.json();
+    } catch {
+      list = null;
+    }
+    if (!list) return;
+    this.musicFiles = list.music || {};
+    await Promise.all(
+      Object.entries(list.sounds || {}).map(async ([name, files]) => {
+        const bufs = [];
+        for (const f of [].concat(files)) {
+          try {
+            const r = await fetch(SOUNDS + f);
+            bufs.push(await this.ctx.decodeAudioData(await r.arrayBuffer()));
+          } catch (e) {
+            console.warn('sound', f, 'did not load:', e.message || e);
+          }
+        }
+        if (bufs.length) this.samples[name] = bufs.length === 1 ? bufs[0] : bufs;
+      })
+    );
+  }
+
+  applySamples() {
+    for (const [k, v] of Object.entries(this.samples || {})) this.buffers[k] = v;
+  }
+
+  // A loaded recording for a loop (its first variant), or null.
+  sample(name) {
+    const s = this.samples && this.samples[name];
+    return s ? (Array.isArray(s) ? s[0] : s) : null;
   }
 
   applyVolumes() {
@@ -168,9 +223,10 @@ export class AudioSystem {
       return { src, f, g };
     };
     // ambience
-    this.loops.wind = mkNoise(this.buffers.pink, this.amb, 'lowpass', 500);
+    // (a recorded wind or rain replaces the shaped noise; the filters still follow the weather)
+    this.loops.wind = mkNoise(this.sample('wind') || this.buffers.pink, this.amb, 'lowpass', 500);
     this.loops.windHigh = mkNoise(this.buffers.white, this.amb, 'bandpass', 2400, 0.6);
-    this.loops.rain = mkNoise(this.buffers.white, this.amb, 'highpass', 1200);
+    this.loops.rain = mkNoise(this.sample('rain') || this.buffers.white, this.amb, 'highpass', 1200);
     this.loops.rainLow = mkNoise(this.buffers.brown, this.amb, 'lowpass', 400);
     // car: engine synthesis with panner at the car
     const pan = (this.carPanner = c.createPanner());
@@ -222,8 +278,20 @@ export class AudioSystem {
     st.start();
     this.loops.starter = { src: st, g: stG };
     // tyres & skid (not filtered by cabin as strongly but fine)
-    this.loops.tyre = mkNoise(this.buffers.brown, carBus, 'lowpass', 300);
-    this.loops.skid = mkNoise(this.buffers.pink, carBus, 'bandpass', 950, 4);
+    this.loops.tyre = mkNoise(this.sample('tyreRoll') || this.buffers.brown, carBus, 'lowpass', 300);
+    this.loops.skid = mkNoise(this.sample('skid') || this.buffers.pink, carBus, 'bandpass', 950, this.sample('skid') ? 0.5 : 4);
+    // recorded engine layers, when there are at least two of them
+    const layers = ENGINE_LAYERS.filter(([k]) => this.sample(k)).map(([k, rpm]) => {
+      const src = c.createBufferSource();
+      src.buffer = this.sample(k);
+      src.loop = true;
+      const g = c.createGain();
+      g.gain.value = 0;
+      src.connect(g).connect(carBus);
+      src.start(0, Math.random() * src.buffer.duration);
+      return { src, g, rpm };
+    });
+    this.engineRec = layers.length >= 2 ? layers : null;
     // pour loop (non positional)
     const ps = c.createBufferSource();
     ps.buffer = this.buffers.pour;
@@ -269,6 +337,24 @@ export class AudioSystem {
     const cd = this.cd;
     const key = album + ':' + track;
     if (cd.buffers.has(key)) return cd.buffers.get(key);
+    // a real recording of this song, if one was put in public/sounds/
+    const file = this.musicFiles && this.musicFiles[key];
+    if (file && !cd.pending.has(key)) {
+      cd.pending.set(key, true);
+      fetch(SOUNDS + file)
+        .then((r) => r.arrayBuffer())
+        .then((a) => this.ctx.decodeAudioData(a))
+        .then((b) => {
+          cd.buffers.set(key, b);
+          while (cd.buffers.size > 2) cd.buffers.delete(cd.buffers.keys().next().value);
+        })
+        .catch((e) => {
+          console.warn('song', file, 'did not load:', e.message || e);
+          delete this.musicFiles[key];
+        })
+        .finally(() => cd.pending.delete(key));
+      return null;
+    }
     if (!cd.pending.has(key)) {
       if (!cd.worker) {
         cd.worker = new Worker(new URL('./music/musicWorker.js', import.meta.url), { type: 'module' });
@@ -524,7 +610,22 @@ export class AudioSystem {
       const exhaustMissing = !car.isInstalled('exhaust');
       set(e.f.frequency, S.tone + rpm * S.toneRpm + load * 900 + (exhaustMissing ? 1200 : 0), now, 0.04);
       const rough = car.engineCondition < 0.4 ? (Math.random() - 0.5) * 0.25 * (0.4 - car.engineCondition) * 2 : 0;
-      set(e.g.gain, running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0, now, 0.05);
+      const synthGain = running ? (0.16 + load * 0.22 + rpm / 30000 + rough) * (exhaustMissing ? 1.8 : 1) * S.gain : 0;
+      if (this.engineRec) {
+        // recordings: each layer pitched to the rpm, weighted by how near its own rpm it is
+        const L = this.engineRec;
+        set(e.g.gain, synthGain * 0.12, now, 0.05);
+        const r = Math.max(L[0].rpm, Math.min(L[L.length - 1].rpm, rpm));
+        L.forEach((l, i) => {
+          const lo = i > 0 ? L[i - 1].rpm : l.rpm,
+            hi = i < L.length - 1 ? L[i + 1].rpm : l.rpm;
+          let w = 0;
+          if (r <= l.rpm) w = l.rpm === lo ? 1 : clamp((r - lo) / (l.rpm - lo), 0, 1);
+          else w = l.rpm === hi ? 1 : clamp((hi - r) / (hi - l.rpm), 0, 1);
+          set(l.src.playbackRate, clamp(Math.max(rpm, 300) / l.rpm, 0.5, 2), now, 0.03);
+          set(l.g.gain, running ? Math.sqrt(w) * (0.45 + load * 0.55 + rough) * (exhaustMissing ? 1.6 : 1) * S.gain : 0, now, 0.05);
+        });
+      } else set(e.g.gain, synthGain, now, 0.05);
       set(this.loops.intake.g.gain, running ? (0.05 + load * 0.25) * S.intake : 0, now);
       set(this.loops.intake.f.frequency, 200 + rpm * 0.25, now);
       set(this.loops.starter.g.gain, car.cranking > 0 && !running ? 0.5 : 0, now, 0.02);

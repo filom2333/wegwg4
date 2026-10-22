@@ -74,6 +74,8 @@ export class Soundscape {
     B.chatter = GEN.chatter(c);
     B.pant = [GEN.breath(c, { len: 0.5, seed: 421 }), GEN.breath(c, { len: 0.45, seed: 422 })];
 
+    // recordings put in public/sounds/ replace these before the loops start
+    a.applySamples();
     // continuous layers
     const loop = (buf, bus, { filter = null, freq = 1000, q = 0.7, positional = false } = {}) => {
       const src = c.createBufferSource();
