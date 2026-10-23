@@ -113,10 +113,28 @@
   color: var(--reflect);
   background-color: var(--sign);
   /* a little grime toward the bottom, the sheen of retroreflective sheeting at the top */
+  /* sheeting grain, scratches and dust (signTextures.js) and the weathering of this sign: rust
+     weeping from the bolts, grime along the bottom */
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0) 70%, rgba(40, 30, 10, 0.16)),
-    radial-gradient(ellipse at 20% 110%, rgba(60, 45, 20, 0.22), transparent 55%);
+    radial-gradient(ellipse at 20% 110%, rgba(60, 45, 20, 0.22), transparent 55%), var(--tex-grime, none), var(--tex-sheet, none);
+  background-size: auto, auto, 100% 100%, 230px 230px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 -2px 0 rgba(0, 0, 0, 0.25) inset, 0 24px 48px rgba(0, 0, 0, 0.42), 0 4px 10px rgba(0, 0, 0, 0.3);
   font-family: var(--f-sign);
+}
+/* light sliding across the sheeting as the view moves (--sheen follows the pointer) */
+.sign::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0) calc(var(--sheen, 0.5) * 100% - 24%),
+    rgba(255, 255, 250, 0.1) calc(var(--sheen, 0.5) * 100%),
+    rgba(255, 255, 255, 0) calc(var(--sheen, 0.5) * 100% + 24%)
+  );
+  mix-blend-mode: screen;
 }
 .sign.service {
   background-color: var(--service);
@@ -160,7 +178,8 @@
   top: 0;
   bottom: 0;
   width: 12px;
-  background: linear-gradient(90deg, #5a5e62, #b8bcc0 35%, #8d9196 60%, #4f5357);
+  background: var(--tex-metal, none), linear-gradient(90deg, #5a5e62, #b8bcc0 35%, #8d9196 60%, #4f5357);
+  background-size: 12px 256px, auto;
   box-shadow: 4px 0 10px rgba(0, 0, 0, 0.35);
 }
 .posts::before {
@@ -185,6 +204,8 @@
 /* lines on a sign: what you can choose. Mixed case, as signs are; an arrow says where it goes. */
 .sign-line {
   all: unset;
+  position: relative;
+  overflow: hidden;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -230,6 +251,28 @@
 .sign.service .sign-line.kb,
 .sign.service .sign-line:focus-visible {
   color: var(--service);
+}
+/* a glint across the line as it lights up, like sheeting caught in headlights */
+.sign-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.75) 50%, transparent 70%);
+  transform: translateX(-130%);
+}
+.sign-line:hover::after,
+.sign-line.kb::after {
+  animation: glint 0.75s ease-out;
+}
+@keyframes glint {
+  to {
+    transform: translateX(130%);
+  }
+}
+.sign-line:hover,
+.sign-line.kb {
+  box-shadow: 0 0 22px rgba(255, 255, 235, 0.28);
 }
 .sign-line:hover .arrow,
 .sign-line.kb .arrow {

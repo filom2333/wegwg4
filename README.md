@@ -62,7 +62,8 @@ You need a desktop browser with WebGL2. Click the canvas to capture the mouse; E
   grip and visibility.
 - **Effects and sound**: wheel dust, exhaust, engine smoke and fire, backfires, debris, muzzle
   flashes, tracers, casings, blood, rain splashes, lightning, dust devils, tumbleweeds, vultures,
-  meteors, moths at lamps. All sound is synthesised at runtime with WebAudio.
+  meteors, moths at lamps. Sound and music are recordings (`public/sounds/`, `public/music/`)
+  placed in 3D with WebAudio: distance, walls and hills between, the cabin, echoes (`src/audio/space.js`).
 - **Story**: twelve notes left along Route 9 tell what happened and where everyone went; Haven
   broadcasts on the car radio (98.1); distance signs every 5 km; reaching Haven (150 km) ends the
   run, or you keep driving.

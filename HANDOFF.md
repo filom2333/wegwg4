@@ -10,9 +10,11 @@ works like a shared log between two sessions.
 ## 0. Rules from the user (always follow)
 
 - **Reply to the user in Russian.** They write casual Russian and sometimes use swear words; stay friendly.
-- Develop on branch **`claude/task-4exkyg`**. Push with `git push -u origin claude/task-4exkyg`
-  (retry on network errors). Do **not** open PRs unless asked. A PR already exists:
-  filom2333/wegwg4#1.
+- Develop on the branch your harness names (sessions so far: `claude/task-4exkyg`, then
+  `claude/awesome-dirac-a852qz`). Push with `git push -u origin <branch>` (retry on network
+  errors). Do **not** open PRs unless asked. The user merges PRs into `main` themselves and plays
+  `main` (start-game.bat runs the dev server on it): work that is not merged is invisible to them.
+  filom2333/wegwg4#7 carries everything up to this session into `main`.
 - Commit messages must contain **no model identifiers**. End each one with the attribution lines
   your harness gives you.
 - Commit and push after each finished feature, and post short progress updates in Russian.
@@ -617,6 +619,38 @@ add them to `src/world/props.js` PROPS.
     2 m+ below it), so it is muffled through the walls from outside.
   - Cost: never automate panner or listener positions (sets `.value`): automation puts the
     panner on its per-sample path (4x the cost). Static HRTF is ~0.7% CPU per source here.
+
+### Session of 23.10 (branch claude/awesome-dirac-a852qz, PR filom2333/wegwg4#7)
+The user thought the other account's last update was lost: it was on `claude/task-4exkyg`, 15
+commits ahead of `main` and never merged. This branch starts from it (plus a merge of `main`).
+- Forests to the horizon (user: "trees far away look like green stones, nothing drawn far off"):
+  - twig cards keep their cover down the mip chain (`trees.js` leaf shader: alpha scaled by mip
+    level, Golus) — the mid-distance trees were bare trunks before;
+  - tree cards (`impostor.js`) bake a normal atlas next to the colour one and are lit through it;
+    per-tree tint from the instance's scale/turn (same on model and card); a dithered fade where
+    the ring ends (`uImpFar`), and a matching fade-in for cards that take over (`uImpNear`);
+  - far forest (`farForest.js` + worker `farForestGen.js`): one card per ~13 m where groves are,
+    from the scatter's edge out to 1.4/1.9/2.4 km (medium/high/ultra; off on low);
+  - `treeCover.js`: the scatter's tree densities and grove noise as a smooth field; terrain tiles
+    carry it as attribute `tree`, the terrain shader paints a dark canopy from the card ring on
+    (`uCanopy`/`uCanopySnow` from the cards' average colour, `uTreeFar`).
+- Mountains: `erosionAt()` in the terrain shader — ridged noise drawn into downhill streaks (two
+  fixed orientations blended by slope aspect, `tNoisedP` wraps per axis) for gullies and spurs in
+  colour and normals, snow lying in the gullies.
+- Promo shots and menu pictures, staged: `tools/promo/stage.js` (friends = copies of the player's
+  rigged body dressed by `LOOKS`, posed with the clips + two-bone IK: stand/walk, seat in a car,
+  sit, push, wave, look at, hold an item; cars placed/flipped/opened; real props; camera),
+  `scenes.mjs` (8 scenes), `shoot.mjs` (renders at SS x size with the pixel budget lifted, Lanczos
+  down, writes a disparity depth map), `caption.mjs` (EN/RU captions on a guide sign; Russian needs
+  Cyrillic Overpass/IBM Plex Mono woff2 from @fontsource via env FONTS). Usage in the files.
+  NOTE: the game has no multiplayer; the "friends" are staged. Captions avoid promising co-op.
+- Title menu: `menuBackdrop.js` shows `public/menu/<scene>.webp` with `<scene>_depth.webp` in depth
+  (parallax from the pointer and a slow dolly, cross-fades, dust motes at their depth); the old
+  flat slideshow is the fallback. Signs: `signTextures.js` (sheeting grain, scratches, rust from
+  the bolts, bottom grime, galvanised posts) as CSS vars; signs turn towards the pointer on their
+  posts (`UI.liveSigns`), a sheen slides across them, lines glint on hover.
+- `tools/audiotest.mjs` + `tools/tests/audioScenes.mjs`: record the game's master output per scene
+  headless (for the sound work the user paused).
 
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for

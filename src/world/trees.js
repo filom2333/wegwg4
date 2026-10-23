@@ -316,7 +316,7 @@ function treeShader(m, { sway, snow, leaf, sat = 1 }) {
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, m.userData.uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nvarying vec3 vSnowWP;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWind;\nvarying vec3 vSnowWP;\nvarying float vTreeTint;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -327,6 +327,12 @@ function treeShader(m, { sway, snow, leaf, sat = 1 }) {
   vec4 wp = vec4(0.0);
 #endif
   float ph = wp.x * 0.37 + wp.z * 0.21;
+  // each tree a little lighter or darker (from its scale and turn: the same on its card far off)
+#ifdef USE_INSTANCING
+  vTreeTint = fract(sin(dot(vec2(instanceMatrix[0].x, instanceMatrix[0].z), vec2(127.1, 311.7))) * 43758.5453);
+#else
+  vTreeTint = 0.5;
+#endif
   float h = max(position.y, 0.0);
   float bend = h * h * ${sway.toFixed(4)} * (0.4 + uWind) * (sin(uTime * (1.1 + uWind) + ph) * 0.6 + sin(uTime * 2.7 + ph * 2.0) * 0.25 + uWind * 0.8);
   transformed.x += bend;
@@ -343,7 +349,23 @@ vSnowWP = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 vSnowWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
 #endif`
       );
-    let fs = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;\nfloat gSnow = 0.0;');
+    let fs = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSnowWP;\nvarying float vTreeTint;\nfloat gSnow = 0.0;');
+    if (leaf)
+      // twig cards stay full down the mip chain (averaged alpha would fall under the cut and the
+      // crowns would thin to bare sticks a hundred metres off), and trees differ in shade
+      fs = fs.replace(
+        '#include <alphatest_fragment>',
+        `#ifdef USE_MAP
+{
+  vec2 tsz = vec2(textureSize(map, 0));
+  vec2 ddx = dFdx(vMapUv * tsz), ddy = dFdy(vMapUv * tsz);
+  float mip = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+  diffuseColor.a *= 1.0 + mip * 0.22;
+}
+#endif
+diffuseColor.rgb *= mix(0.82, 1.12, vTreeTint);
+#include <alphatest_fragment>`
+      );
     // desaturated foliage (sagebrush silver, dwarf birch rust) from the same twig photos
     if (sat < 1)
       fs = fs.replace(
