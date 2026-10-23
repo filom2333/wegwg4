@@ -34,7 +34,7 @@ const FRONT = ['driver', 'passenger'];
 // The low-poly source has no switches to speak of: the key, stalk, knobs, buttons, door handles
 // and the parking brake pedal are made here (MOVING), each hotspot on its control.
 const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(0.86, 0.86, -1.6), r: 0.12, part: 'fueltank' },
+  { id: 'fuel', label: 'Fuel filler', pos: V(0.804, 0.86, -1.6), r: 0.08, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.2, 0.86, 1.35), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.33, 0.76, 1.95), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(0.5, 0.78, 1.74), r: 0.13, part: 'battery', lid: 'hood' },
@@ -160,6 +160,8 @@ export const SEDAN88 = {
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
   // our own dial over the texture's speedometer (its painted needle would never move)
+  // the fuel filler flap on the left rear wing
+  FILLER: { pos: [0.802, 0.86, -1.6], normal: [0.96, 0.29, -0.05], size: [0.12, 0.1], corner: 0.01, hinge: -1 },
   GAUGES: {
     // (in front of the model's dash face, which sits nearer the driver than its painted dials)
     // (low in the binnacle: its brow hides the top of anything higher)

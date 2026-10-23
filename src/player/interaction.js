@@ -302,6 +302,7 @@ export class Interaction {
     const h = hs.id;
     this.driverReach(hs);
     if (h === 'ignition') return this.turnKey(car);
+    if (h === 'fuel') return car.useFiller();
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
       g.audio && g.audio.play(car.parkBrake ? 'parkBrake' : 'clunk', { volume: car.parkBrake ? 0.8 : 0.45, rate: car.parkBrake ? 1 : 1.1, pitchVar: 0.05 });
@@ -507,6 +508,12 @@ export class Interaction {
           for (const pr of r.prompts) if (pr[0] === 'E') prompts.push(pr);
           if (!blocked && input.wasPressed('interact')) this.useHotspot(t.hotspot);
         }
+        // with a can in the hand, the other hand opens the fuel filler
+        if (!p.seat && t && t.kind === 'hotspot' && t.hotspot.id === 'fuel') {
+          const r = this.describeTarget(t);
+          for (const pr of r.prompts) if (pr[0] === 'E') prompts.push(pr);
+          if (!blocked && input.wasPressed('interact')) this.useHotspot(t.hotspot);
+        }
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
       prompts.push(['G', 'Drop', 'hold to throw']);
@@ -691,7 +698,7 @@ export class Interaction {
     const car = this.game.car;
     if (t.kind === 'hotspot') {
       const h = t.hotspot.id;
-      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank')) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
+      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
@@ -776,8 +783,18 @@ export class Interaction {
         const h = t.hotspot;
         info = { title: h.label };
         if (h.id === 'fuel') {
-          info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
-          info.bar = car.fuel / car.fuelCap;
+          // the level shows once the cap is off and you can look in
+          if (!car.fillerOpen) {
+            info.sub = 'Flap shut';
+            prompts.push(['E', 'Open the flap']);
+          } else if (!car.fillerCapOff) {
+            info.sub = 'Cap on';
+            prompts.push(['E', 'Unscrew the cap']);
+          } else {
+            info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
+            info.bar = car.fuel / car.fuelCap;
+            prompts.push(['E', 'Cap on, flap shut']);
+          }
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
           info.bar = car.oil / car.oilCap;

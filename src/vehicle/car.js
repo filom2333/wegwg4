@@ -76,6 +76,10 @@ export class Car {
     this.heater = false;
     this.indicator = 0; // turn signal: -1 left, 1 right
     this.parkBrake = false;
+    // the fuel filler: flap open, cap off (fuel goes in, and the level shows, only with both)
+    this.fillerOpen = false;
+    this.fillerCapOff = false;
+    this.fillerT = 0;
     this.handlePull = {}; // door -> seconds left of an inside handle being pulled
     // physics
     const pos = opts.position || V(0, 0.5, 0);
@@ -404,6 +408,23 @@ export class Car {
   }
 
   // ---------------------------------------------------------------- doors etc.
+  // E on the fuel filler: open the flap, unscrew the cap, then cap on and flap shut.
+  useFiller() {
+    const a = this.game.audio;
+    const at = this.model.filler ? this.model.filler.group.getWorldPosition(new THREE.Vector3()) : null;
+    if (!this.fillerOpen) {
+      this.fillerOpen = true;
+      a && a.play('click', { volume: 0.5, rate: 0.7, at });
+    } else if (!this.fillerCapOff) {
+      this.fillerCapOff = true;
+      a && a.play('click', { volume: 0.35, rate: 1.3, at });
+    } else {
+      this.fillerCapOff = false;
+      this.fillerOpen = false;
+      a && a.play('clunk', { volume: 0.35, rate: 1.4, at });
+    }
+  }
+
   toggleOpen(id) {
     const p = this.model.parts[id];
     if (!p || !p.hinge || !this.isInstalled(id)) return;
@@ -1124,6 +1145,20 @@ export class Car {
         const off = piv.clone().sub(piv.clone().applyQuaternion(wg.quaternion));
         wg.position.copy(off);
       }
+    }
+    // the fuel filler flap swings open and shut; the cap is in the neck or off
+    const F = this.model.filler;
+    if (F) {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - (this._fillerAt || now)) / 1000);
+      this._fillerAt = now;
+      this.fillerT = Math.max(0, Math.min(1, this.fillerT + (this.fillerOpen ? dt : -dt) * 3.5));
+      const e = this.fillerT * this.fillerT * (3 - 2 * this.fillerT);
+      F.hinge.rotation.y = F.side * 1.95 * e;
+      const seen = this.fillerT > 0.02;
+      F.cap.visible = seen && !this.fillerCapOff;
+      F.mouth.visible = seen && this.fillerCapOff;
+      for (const m of F.inside) m.visible = seen;
     }
     // gauges
     const needles = this.model.cluster && this.model.cluster.userData.needles;

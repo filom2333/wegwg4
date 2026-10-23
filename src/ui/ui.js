@@ -792,7 +792,7 @@ export class UI {
       for (const [pic, title, text, keys] of [
         ['roadside', 'Drive north', 'Gas stations, diners, motels and farms line the road. Stop, look around, take what helps.', [[`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'drive'], [K('handbrake'), 'handbrake']]],
         ['breakdown', 'Fix the car', 'Hold R on a part to take it off. Carry one to the car and press E where it goes.', [[`${K('reload')} hold`, 'unbolt'], [K('interact'), 'fit']]],
-        ['pushing', 'Keep her fed', 'Hold a jerry can to the filler and pour. Some pumps still work. Oil and water matter too.', [['LMB', 'pour'], ['RMB', 'turn it']]],
+        ['pushing', 'Keep her fed', 'Open the filler flap and the cap, hold a jerry can to it and pour. Some pumps still work. Oil and water matter too.', [[`${K('interact')}`, 'open'], ['LMB', 'pour']]],
         ['vista', 'Everything by hand', 'In the seat, look at the key and hold E. Lights, signals, the parking brake and the doors work the same way.', [[`${K('interact')} hold`, 'start'], [K('lights'), 'headlights']]],
         ['campfire', 'Stay alive', 'Food, water, rest and warmth run down. Sleep in the car, a tent or a bed. Nights are dark and not empty.', [[K('sleep'), 'sleep'], [K('flashlight'), 'flashlight']]],
         ['fishing', 'Your things', 'Pick things up, stow them, open the backpack. Notes go in the journal, places on the road atlas.', [[K('interact'), 'take'], [K('stow'), 'stow'], [K('inventory'), 'backpack'], [K('journal'), 'journal']]],

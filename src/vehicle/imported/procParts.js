@@ -155,11 +155,43 @@ export function inlineFour(M, at, { len = 0.5, rot = 0 } = {}) {
   return bake(g);
 }
 
-export function fuelTank(at, { w = 0.7, h = 0.2, d = 0.42 } = {}) {
+// Fuel tank: a pressed steel tank with its seam flange, stiffening ribs pressed into the top,
+// two straps over it, the sender unit (a ring of screws round the plate, the gauge's plug and the
+// feed and return lines leaving it), the filler hose rising toward the filler on one side and a
+// breather beside it.
+export function fuelTank(at, { w = 0.7, h = 0.2, d = 0.42, filler = 1 } = {}) {
   const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x2d2f2c, metalness: 0.55, roughness: 0.55 });
-  mesh(g, roundedBox(w, h, d, 0.05, 3), mat);
-  mesh(g, roundedBox(w + 0.02, 0.012, d + 0.015, 0.005, 1), mat, false);
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3a3c38, metalness: 0.6, roughness: 0.5 });
+  const strap = new THREE.MeshStandardMaterial({ color: 0x1f2020, metalness: 0.5, roughness: 0.6 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.85 });
+  const line = new THREE.MeshStandardMaterial({ color: 0x8c8f92, metalness: 0.8, roughness: 0.35 });
+  mesh(g, roundedBox(w, h, d, 0.05, 3), steel);
+  // the seam all round, at half height
+  mesh(g, roundedBox(w + 0.022, 0.012, d + 0.018, 0.006, 1), steel, false);
+  // ribs pressed into the top: two across, one along
+  for (const x of [-w * 0.22, w * 0.22]) mesh(g, roundedBox(0.03, 0.008, d * 0.78, 0.004, 1).translate(x, h / 2, 0), steel, false);
+  mesh(g, roundedBox(w * 0.7, 0.008, 0.03, 0.004, 1).translate(0, h / 2, -d * 0.22), steel, false);
+  // straps over the top and down the sides
+  for (const z of [-d * 0.32, d * 0.32]) {
+    mesh(g, new THREE.BoxGeometry(w + 0.03, 0.006, 0.04).translate(0, h / 2 + 0.006, z), strap, false);
+    for (const sx of [-1, 1]) mesh(g, new THREE.BoxGeometry(0.006, h * 0.9, 0.04).translate(sx * (w / 2 + 0.014), 0, z), strap, false);
+  }
+  // the sender unit
+  const sx = -w * 0.18,
+    sz = d * 0.12;
+  mesh(g, new THREE.CylinderGeometry(0.055, 0.055, 0.012, 28).translate(sx, h / 2 + 0.006, sz), line);
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    mesh(g, new THREE.CylinderGeometry(0.005, 0.005, 0.008, 6).translate(sx + Math.cos(a) * 0.046, h / 2 + 0.014, sz + Math.sin(a) * 0.046), steel, false);
+  }
+  mesh(g, roundedBox(0.03, 0.018, 0.02, 0.004, 1).translate(sx, h / 2 + 0.022, sz), CASE_BLACK, false);
+  for (const dx of [0.018, 0.03]) mesh(g, tubeAlong([V(sx + dx, h / 2 + 0.014, sz - 0.02), V(sx + dx, h / 2 + 0.03, sz - 0.07), V(sx + dx, h / 2 + 0.02, -d / 2 - 0.05)], 0.0045, 6), line, false);
+  // the filler hose: from the tank's side up toward the filler, with its clamp, and the breather
+  const fx = filler * (w / 2 - 0.06);
+  const hose = [V(fx, h * 0.2, d * 0.28), V(fx + filler * 0.06, h * 0.55, d * 0.3), V(fx + filler * 0.12, h * 0.95, d * 0.34)];
+  mesh(g, tubeAlong(hose, 0.03, 12), rubber);
+  mesh(g, new THREE.TorusGeometry(0.031, 0.004, 6, 18).rotateX(Math.PI / 2).translate(hose[2].x, hose[2].y - 0.02, hose[2].z), line, false);
+  mesh(g, tubeAlong([V(fx - filler * 0.05, h / 2, d * 0.2), V(fx, h * 0.8, d * 0.24), V(fx + filler * 0.1, h * 1.05, d * 0.3)], 0.006, 6), rubber, false);
   g.position.copy(at);
   return g;
 }

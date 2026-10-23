@@ -37,7 +37,7 @@ const FRONT = ['driver', 'passenger'];
 // Inside ones are worked from a seat (seats) with one hand (hand; none for the parking brake
 // pedal); door handles ride on their doors. Each sits on the control itself.
 const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(-0.88, 0.84, -1.62), r: 0.12, part: 'fueltank' },
+  { id: 'fuel', label: 'Fuel filler', pos: V(-0.826, 0.84, -1.62), r: 0.08, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.0, 0.84, 1.3), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.3, 0.74, 1.72), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(-0.48, 0.66, -1.95), r: 0.13, part: 'battery', lid: 'trunk' },
@@ -182,6 +182,8 @@ export const W203 = {
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
   // a dark panel across the hood's opening: rev counter left, speedometer (with the speed in
   // figures) in the middle, fuel over coolant on the right
+  // the fuel filler flap on the right rear wing
+  FILLER: { pos: [-0.824, 0.84, -1.62], normal: [-0.92, 0.38, -0.09], size: [0.115, 0.105], corner: 0.03, hinge: 1 },
   GAUGES: {
     speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.052, face: true, lcd: true },
     panel: [0.27, 0.118, 0, -0.004],
@@ -242,7 +244,7 @@ export const W203 = {
     model.addPart('sparkplugs', PP.plugLeads(M, [-0.2, -0.067, 0.067, 0.2].map((dz) => V(-0.04, 0.77, 1.2 + dz)), { coils: true }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.68, 1.4), { h: 0.09 }));
     model.addPart('battery', PP.battery(M, V(-0.5, 0.52, -1.95), { spec: '12V  74Ah', size: [0.19, 0.19, 0.28] }));
-    model.addPart('fueltank', PP.fuelTank(V(0, 0.3, -0.98), { w: 0.82, h: 0.22, d: 0.46 }));
+    model.addPart('fueltank', PP.fuelTank(V(0, 0.3, -0.98), { w: 0.82, h: 0.22, d: 0.46, filler: -1 }));
     model.addPart('spare', PP.spareWheel(model, V(0.15, 0.44, -1.95)));
   },
 };

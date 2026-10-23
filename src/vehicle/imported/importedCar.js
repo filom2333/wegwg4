@@ -210,6 +210,7 @@ export class ImportedCarModel {
     this.addSteeringWheel();
     this.addWheels();
     this.addGauges();
+    this.addFiller();
     this.addStereo();
     this.addDomeLamp();
     if (type.extras) type.extras(this, mats);
@@ -635,6 +636,68 @@ export class ImportedCarModel {
     g.userData.faces = faces;
     this.parts.body.inner.add(g);
     this.cluster = g;
+  }
+
+  // The fuel filler: a flap in the body's paint over a dark recess, hinged at its front edge,
+  // and in the recess the neck with its screw cap (FILLER: where on the body, the outward
+  // normal, the flap's size and corner radius, which side the hinge is: +1 toward the car's front
+  // in the flap's plane, -1 the other).
+  addFiller() {
+    const F = this.type.FILLER;
+    if (!F) return;
+    const M = this.mats;
+    const n = V(...F.normal).normalize();
+    const g = new THREE.Group();
+    g.name = 'filler';
+    g.position.copy(V(...F.pos)).addScaledVector(n, 0.002);
+    g.quaternion.copy(faceQuat(n));
+    const rr = (w, h, r) => {
+      const s = new THREE.Shape();
+      s.moveTo(-w / 2 + r, -h / 2);
+      s.lineTo(w / 2 - r, -h / 2);
+      s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+      s.lineTo(w / 2, h / 2 - r);
+      s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+      s.lineTo(-w / 2 + r, h / 2);
+      s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+      s.lineTo(-w / 2, -h / 2 + r);
+      s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+      return new THREE.ShapeGeometry(s, 6);
+    };
+    const [w, h] = F.size;
+    const r = F.corner ?? 0.02;
+    // the recess, the neck's steel ring and the dark mouth (seen with the cap off)
+    const pan = new THREE.Mesh(rr(w - 0.006, h - 0.006, Math.max(0.002, r - 0.003)), M.black);
+    pan.position.z = 0.0004;
+    g.add(pan);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.024, 0.033, 28), M.steel);
+    ring.position.z = 0.0009;
+    g.add(ring);
+    const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.0242, 24), new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 }));
+    mouth.position.z = 0.001;
+    g.add(mouth);
+    // the cap: a black disc with a grip bar across it
+    const cap = new THREE.Group();
+    const capMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.55 });
+    cap.add(new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.014, 28).rotateX(Math.PI / 2).translate(0, 0, 0.008), capMat));
+    cap.add(new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.009, 0.012).translate(0, 0, 0.019), capMat));
+    g.add(cap);
+    // the flap, turning about its hinge edge
+    const side = F.hinge ?? 1;
+    const hinge = new THREE.Group();
+    hinge.position.set((side * w) / 2, 0, 0.0024);
+    // (the body's paint without its texture: the flap's own UVs would pick a stray patch of the
+    // atlas; the colour object is the shared one, so a respray covers the flap too)
+    const paint = M.paint.clone();
+    paint.map = null;
+    paint.color = M.paint.color;
+    const flap = new THREE.Mesh(rr(w, h, r).translate((-side * w) / 2, 0, 0), paint);
+    flap.castShadow = true;
+    hinge.add(flap);
+    g.add(hinge);
+    this.parts.body.inner.add(g);
+    // what lies behind the flap shows only while it is open (the cap stands proud of the body)
+    this.filler = { group: g, hinge, side, cap, mouth, inside: [pan, ring] };
   }
 
   addStereo() {

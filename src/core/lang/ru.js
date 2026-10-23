@@ -959,6 +959,18 @@ export const RU = {
   'A heavy old set with rabbit ears. No signal out here, but it is yours now.': 'Тяжёлый старый телевизор с антенной-рожками. Сигнала тут нет, но теперь он ваш.',
   'Fuel drum': 'Бочка для топлива',
   'A 60 l steel drum. Fill it at a pump, pour it into the car like a can. Heavy when full.': 'Стальная бочка на 60 л. Наполните на колонке и заливайте в машину, как из канистры. Полная — тяжёлая.',
+  // the fuel filler
+  'Flap shut': 'Лючок закрыт',
+  'Open the flap': 'Открыть лючок',
+  'Cap on': 'Крышка закручена',
+  'Unscrew the cap': 'Открутить крышку',
+  'Cap on, flap shut': 'Закрутить и закрыть',
+  'Hold the can to the filler, LMB to pour': 'Поднесите канистру к горловине, ЛКМ — лить',
+  'Open the filler (E on the flap, again for the cap), then pour, LMB': 'Откройте горловину (E на лючке, ещё раз — крышка), потом лейте, ЛКМ',
+  'open the flap, then the cap': 'открыть лючок, потом крышку',
+  'Take a jerry can to the filler on the rear wing. Open it, hold the can to it and hold the left button.': 'Несите канистру к лючку на заднем крыле. Откройте его, поднесите канистру и держите левую кнопку.',
+  'Open the filler flap and the cap, hold a jerry can to it and pour. Some pumps still work. Oil and water matter too.': 'Открой лючок и крышку, поднеси канистру и лей. Некоторые колонки ещё работают. Масло и вода тоже важны.',
+  open: 'открыть',
   // tutorial
   Tutorial: 'Обучение',
   'Look around': 'Осмотритесь',
