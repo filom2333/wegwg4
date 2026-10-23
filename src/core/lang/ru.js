@@ -971,6 +971,20 @@ export const RU = {
   'Take a jerry can to the filler on the rear wing. Open it, hold the can to it and hold the left button.': 'Несите канистру к лючку на заднем крыле. Откройте его, поднесите канистру и держите левую кнопку.',
   'Open the filler flap and the cap, hold a jerry can to it and pour. Some pumps still work. Oil and water matter too.': 'Открой лючок и крышку, поднеси канистру и лей. Некоторые колонки ещё работают. Масло и вода тоже важны.',
   open: 'открыть',
+  // windows
+  'Window switch': 'Стеклоподъёмник',
+  Driver: 'Водительское',
+  Passenger: 'Пассажирское',
+  'Wind it up': 'Поднять стекло',
+  'Wind it down': 'Опустить стекло',
+  // mirrors
+  Mirror: 'Зеркало',
+  Mirrors: 'Зеркала',
+  'Aim it': 'Настроить',
+  'Aim the mirror': 'Наклонить зеркало',
+  Done: 'Готово',
+  'Move the mouse to aim the mirror · E when done': 'Двигайте мышью, чтобы настроить зеркало · E — готово',
+  'The car mirrors show the road behind you. Costs a little frame rate.': 'В зеркалах видна дорога позади. Немного снижает FPS.',
   // tutorial
   Tutorial: 'Обучение',
   'Look around': 'Осмотритесь',

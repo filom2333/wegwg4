@@ -303,6 +303,14 @@ export class Interaction {
     this.driverReach(hs);
     if (h === 'ignition') return this.turnKey(car);
     if (h === 'fuel') return car.useFiller();
+    if (h === 'mirrorL' || h === 'mirrorR' || h === 'mirrorC') {
+      // the mouse aims the mirror until E again
+      this.aimingMirror = h.slice(6);
+      g.player.lookFrozen = true;
+      g.hud && g.hud.toast('Move the mouse to aim the mirror · E when done');
+      return;
+    }
+    if (h === 'windowFL' || h === 'windowFR') return car.toggleWindow(h === 'windowFL' ? 'door_FL' : 'door_FR');
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
       g.audio && g.audio.play(car.parkBrake ? 'parkBrake' : 'clunk', { volume: car.parkBrake ? 0.8 : 0.45, rate: car.parkBrake ? 1 : 1.1, pitchVar: 0.05 });
@@ -401,6 +409,21 @@ export class Interaction {
     }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.updateKey(dt);
+    // aiming a mirror: the mouse turns it, E (or getting out) ends it
+    if (this.aimingMirror) {
+      if (!p.seat || !g.car || blocked) {
+        this.aimingMirror = null;
+        p.lookFrozen = false;
+      } else {
+        g.mirrors && g.mirrors.aim(g.car, this.aimingMirror, -input.mouse.dx * 0.0025, -input.mouse.dy * 0.0025);
+        g.hud && g.hud.setPrompts && g.hud.setPrompts([['Mouse', 'Aim the mirror'], ['E', 'Done']]);
+        if (input.wasPressed('interact') || input.mousePressed(0)) {
+          this.aimingMirror = null;
+          p.lookFrozen = false;
+        }
+        return;
+      }
+    }
     // pulling a trailer by its drawbar for as long as E is held
     if (this.pullingTrailer) {
       const tr = this.pullingTrailer;
@@ -819,6 +842,12 @@ export class Interaction {
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
           prompts.push(['E', open ? 'Close the door' : 'Open the door']);
+        } else if (h.id === 'mirrorL' || h.id === 'mirrorR' || h.id === 'mirrorC') {
+          prompts.push(['E', 'Aim it']);
+        } else if (h.id === 'windowFL' || h.id === 'windowFR') {
+          const door = h.id === 'windowFL' ? 'door_FL' : 'door_FR';
+          info.sub = h.id === 'windowFL' ? 'Driver' : 'Passenger';
+          prompts.push(['E', car.windowDown[door] ? 'Wind it up' : 'Wind it down']);
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
           prompts.push(['E', ['Low beam', 'High beam', 'Off'][car.lightsOn]]);

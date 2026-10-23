@@ -211,6 +211,7 @@ export class ImportedCarModel {
     this.addWheels();
     this.addGauges();
     this.addFiller();
+    this.findWindows();
     this.addStereo();
     this.addDomeLamp();
     if (type.extras) type.extras(this, mats);
@@ -636,6 +637,19 @@ export class ImportedCarModel {
     g.userData.faces = faces;
     this.parts.body.inner.add(g);
     this.cluster = g;
+  }
+
+  // Each door's glass (its own mesh in the source) and how far it winds down into the door.
+  findWindows() {
+    this.windows = {};
+    for (const id of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) {
+      const part = this.parts[id];
+      const glass = part && part.inner.children.find((m) => m.name === id + ':glass');
+      if (!glass) continue;
+      glass.geometry.computeBoundingBox();
+      const b = glass.geometry.boundingBox;
+      this.windows[id] = { mesh: glass, drop: (b.max.y - b.min.y) * 0.95 };
+    }
   }
 
   // The fuel filler: a flap in the body's paint over a dark recess, hinged at its front edge,

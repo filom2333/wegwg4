@@ -80,6 +80,9 @@ export class Car {
     this.fillerOpen = false;
     this.fillerCapOff = false;
     this.fillerT = 0;
+    // door windows: wound down (1) or up (0), and where each is now
+    this.windowDown = {};
+    this.windowT = {};
     this.handlePull = {}; // door -> seconds left of an inside handle being pulled
     // physics
     const pos = opts.position || V(0, 0.5, 0);
@@ -423,6 +426,14 @@ export class Car {
       this.fillerOpen = false;
       a && a.play('clunk', { volume: 0.35, rate: 1.4, at });
     }
+  }
+
+  // A window switch: the glass runs down, or back up.
+  toggleWindow(door) {
+    const w = this.model.windows && this.model.windows[door];
+    if (!w || !this.isInstalled(door)) return;
+    this.windowDown[door] = !this.windowDown[door];
+    this.game.audio && this.game.audio.play('click', { volume: 0.3, rate: 0.9 });
   }
 
   toggleOpen(id) {
@@ -1146,12 +1157,22 @@ export class Car {
         wg.position.copy(off);
       }
     }
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this._fillerAt || now)) / 1000);
+    this._fillerAt = now;
+    // windows wind down and up in about three seconds (only with power)
+    const powered = this.isInstalled('battery') && this.battery > 0.03;
+    for (const [door, w] of Object.entries(this.model.windows || {})) {
+      const t = this.windowT[door] || 0;
+      const to = this.windowDown[door] ? 1 : 0;
+      if (t === to) continue;
+      const nt = powered ? (to > t ? Math.min(to, t + dt / 3) : Math.max(to, t - dt / 3)) : t;
+      this.windowT[door] = nt;
+      w.mesh.position.y = -w.drop * nt;
+    }
     // the fuel filler flap swings open and shut; the cap is in the neck or off
     const F = this.model.filler;
     if (F) {
-      const now = performance.now();
-      const dt = Math.min(0.1, (now - (this._fillerAt || now)) / 1000);
-      this._fillerAt = now;
       this.fillerT = Math.max(0, Math.min(1, this.fillerT + (this.fillerOpen ? dt : -dt) * 3.5));
       const e = this.fillerT * this.fillerT * (3 - 2 * this.fillerT);
       F.hinge.rotation.y = F.side * 1.95 * e;

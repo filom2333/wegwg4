@@ -49,6 +49,13 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.285, -0.12), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.694, 0.85, 0.42), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.694, 0.85, 0.42), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
+  // the mirrors, aimed from the seat
+  { id: 'mirrorL', label: 'Mirror', pos: V(0.858, 0.937, 0.49), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'mirrorR', label: 'Mirror', pos: V(-0.858, 0.937, 0.49), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
+  { id: 'mirrorC', label: 'Mirror', pos: V(0.0, 1.21, 0.204), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
+  // window switches on the driver's armrest
+  { id: 'windowFL', label: 'Window switch', pos: V(0.706, 0.8, 0.07), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'windowFR', label: 'Window switch', pos: V(0.706, 0.8, 0.02), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
 ];
 const MOVING = {
   key: { make: 'key', pivot: V(0.25, 0.69, 0.676), axis: V(0, 0.1, 1), angles: [0, 0.9, 1.35] },
@@ -160,6 +167,12 @@ export const SEDAN88 = {
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
   // our own dial over the texture's speedometer (its painted needle would never move)
+  // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
+  MIRRORS: [
+    { id: 'L', part: 'door_FL', center: [0.858, 0.937, 0.49], normal: [-0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [0.16, 0.01, -1], wide: 2.2 },
+    { id: 'R', part: 'door_FR', center: [-0.858, 0.937, 0.49], normal: [0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [-0.16, 0.01, -1], wide: 2.2 },
+    { id: 'C', part: 'body', center: [0.0, 1.21, 0.204], normal: [0.12, -0.13, -0.99], size: [0.22, 0.055], round: 0.4, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
+  ],
   // the fuel filler flap on the left rear wing
   FILLER: { pos: [0.802, 0.86, -1.6], normal: [0.96, 0.29, -0.05], size: [0.12, 0.1], corner: 0.01, hinge: -1 },
   GAUGES: {
