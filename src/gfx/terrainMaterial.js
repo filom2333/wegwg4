@@ -103,6 +103,46 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   vec3 a = texture(uNrm, vec3(uvNear, L)).xyz * 2.0 - 1.0;
   vec3 b = texture(uNrm, vec3(uvFar, L)).xyz * 2.0 - 1.0;
   return normalize(mix(a, b, farT));
+}
+// Gullies and spurs on steep ground: ridged noise drawn out into streaks that run downhill, the
+// relief rain cuts into every mountainside, which the coarse far mesh cannot carry. Two fixed
+// orientations (streaks along z, streaks along x) blended by which way the slope faces keep it
+// seamless across the 2048 m uv wrap. Returns (ridge 0 gully..1 crest, d/dx, d/dz, weight).
+vec4 gEro;
+// tNoised with its own wrap on each axis
+vec3 tNoisedP(vec2 p, vec2 P) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  vec2 i1 = mod(i + 1.0, P);
+  i = mod(i, P);
+  float a = tHash(i), b = tHash(vec2(i1.x, i.y)), c = tHash(vec2(i.x, i1.y)), d = tHash(i1);
+  float k1 = b - a, k2 = c - a, k4 = a - b - c + d;
+  return vec3(a + k1 * u.x + k2 * u.y + k4 * u.x * u.y, du * (vec2(k1, k2) + k4 * u.yx));
+}
+vec3 ridged(vec3 n) {
+  float s = sign(n.x * 2.0 - 1.0);
+  return vec3(1.0 - abs(n.x * 2.0 - 1.0), -2.0 * s * n.yz);
+}
+vec4 erosionAt() {
+  vec3 N = normalize(vWN);
+  float steep = smoothstep(0.93, 0.62, N.y);
+  if (steep <= 0.0) return vec4(0.5, 0.0, 0.0, 0.0);
+  vec2 dd = normalize(N.xz + 1e-5);
+  float wz = dd.y * dd.y;
+  // streaks along z (a slope facing north or south)
+  vec3 a1 = ridged(tNoisedP(vec2(vWuv.x / 64.0, vWuv.y / 512.0), vec2(32.0, 4.0)));
+  vec3 a2 = ridged(tNoisedP(vec2(vWuv.x / 16.0 + 0.5, vWuv.y / 128.0), vec2(128.0, 16.0)));
+  float rA = a1.x * 0.68 + a2.x * 0.32;
+  vec2 gA = vec2(a1.y / 64.0, a1.z / 512.0) * 0.68 + vec2(a2.y / 16.0, a2.z / 128.0) * 0.32;
+  // streaks along x (facing east or west)
+  vec3 b1 = ridged(tNoisedP(vec2(vWuv.x / 512.0, vWuv.y / 64.0), vec2(4.0, 32.0)));
+  vec3 b2 = ridged(tNoisedP(vec2(vWuv.x / 128.0, vWuv.y / 16.0 + 0.5), vec2(16.0, 128.0)));
+  float rB = b1.x * 0.68 + b2.x * 0.32;
+  vec2 gB = vec2(b1.y / 512.0, b1.z / 64.0) * 0.68 + vec2(b2.y / 128.0, b2.z / 16.0) * 0.32;
+  float r = mix(rB, rA, wz);
+  vec2 g = mix(gB, gA, wz);
+  return vec4(r, g, steep);
 }`
       )
       .replace(
@@ -194,6 +234,14 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   float lum = max(dot(vTint, vec3(0.333)), 0.01);
   vec3 tintN = vTint / lum;
   alb *= mix(vec3(1.0), tintN, (0.55 * (wDirt + wRock) + 0.25 * wSand + 0.4 * wGrav) * (1.0 - wSnow));
+  // gullies in shade and full of scree, spurs catching the light; snow lies in the gullies and
+  // blows off the crests, so snowy peaks are streaked white and dark
+  gEro = erosionAt();
+  if (gEro.w > 0.0) {
+    float e = gEro.w * (0.5 + 0.5 * smoothstep(60.0, 500.0, vViewDist));
+    alb *= mix(1.0, mix(0.72, 1.14, gEro.x), e * (1.0 - wSnow * 0.5));
+    alb = mix(alb, alb * mix(0.42, 1.0, 1.0 - smoothstep(0.45, 0.9, gEro.x)), wSnow * e);
+  }
   // soil crust: dark, slightly greyer blotches with crisp edges on bare earth
   {
     float cn = tNoised(vWuv / 4.0, 512.0).x * 0.65 + tNoised(vWuv / 1.0, 2048.0).x * 0.35;
@@ -331,13 +379,15 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, fogC, smoothstep(uFadeFar * 0.7, uFadeF
       float h = tHash(mod(sc, 4096.0) + vec2(3.0, 91.0));
       if (h > 0.986) g += (vec2(tHash(sc + 7.0), tHash(sc + 19.0)) - 0.5) * 1.6 * gSnowW;
     }
+    // the gullies' relief: a few metres deep near, up to tens of metres on far mountainsides
+    if (gEro.w > 0.0) g += gEro.yz * mix(6.0, 22.0, far) * gEro.w;
     nw = normalize(nw - vec3(g.x, 0.0, g.y) + N * dot(vec3(g.x, 0.0, g.y), N));
   }
   normal = normalize((viewMatrix * vec4(nw, 0.0)).xyz);
 }`
       );
   };
-  mat.customProgramCacheKey = () => 'terrain-v7';
+  mat.customProgramCacheKey = () => 'terrain-v8';
   return mat;
 }
 
