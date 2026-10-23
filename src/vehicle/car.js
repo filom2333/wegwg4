@@ -7,7 +7,7 @@ import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
-import { setNeedle } from './gauges.js';
+import { setNeedle, drawSpeedLcd } from './gauges.js';
 import { setPartSource, applyEngine } from './swap.js';
 import { applyTune, refreshTuneVisual, tunedLabel, isSport } from './tuning.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
@@ -565,6 +565,7 @@ export class Car {
       dome: M.domeLens,
       signal: M.signal || null,
       lamps: this.model.cluster ? this.model.cluster.userData.lamps : {},
+      faces: (this.model.cluster && this.model.cluster.userData.faces) || [],
     };
   }
 
@@ -614,7 +615,9 @@ export class Car {
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
+    // dials lit from behind with the ignition, brighter with the lights on
     e.gauge.emissiveIntensity = ign ? (on ? 0.9 : 0.35) : 0.04;
+    for (const f of e.faces) f.emissiveIntensity = ign ? (on ? 1.0 : 0.6) : 0.05;
     e.needle.emissiveIntensity = ign && on ? 0.9 : 0;
     const running = this.dyn.engine.running;
     const charging = this.charging;
@@ -623,6 +626,9 @@ export class Car {
     if (e.lamps.turnL) e.lamps.turnL.emissiveIntensity = bl ? 2.6 : 0;
     if (e.lamps.turnR) e.lamps.turnR.emissiveIntensity = br ? 2.6 : 0;
     if (e.lamps.park) e.lamps.park.emissiveIntensity = ign && this.parkBrake ? 2.4 : 0;
+    if (e.lamps.hot) e.lamps.hot.emissiveIntensity = ign && this.engineTemp > 112 ? 2.4 : 0;
+    if (e.lamps.lowFuel) e.lamps.lowFuel.emissiveIntensity = ign && this.fuel < this.fuelCap * 0.12 ? 2.2 : 0;
+    if (e.lamps.beam) e.lamps.beam.emissiveIntensity = powered && this.lightsOn === 2 ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
     if (powered && this.radioOn) this.drawStereo(e.display);
     else if (this._stereoKey && this._stereoKey !== 'off') {
@@ -1127,6 +1133,24 @@ export class Car {
       setNeedle(needles, 'speed', spd / this.type.SPEEDO_MAX);
       setNeedle(needles, 'fuel', powered ? this.fuel / this.fuelCap : 0);
       setNeedle(needles, 'rpm', powered ? this.dyn.engine.rpm / 8000 : 0);
+      setNeedle(needles, 'temp', powered && this.ignition ? (this.engineTemp - 50) / 80 : 0);
+      // the speed in figures (redrawn when the whole number changes)
+      const lcd = this.model.cluster.userData.lcd;
+      if (lcd) {
+        const on = powered && this.ignition;
+        lcd.mat.emissiveIntensity = on ? 1.1 : 0;
+        const shown = on ? Math.round(spd) : -1;
+        if (shown !== lcd.shown) {
+          lcd.shown = shown;
+          const ctx = lcd.canvas.getContext('2d');
+          if (on) drawSpeedLcd(ctx, lcd.canvas.width, lcd.canvas.height, spd);
+          else {
+            ctx.fillStyle = '#050805';
+            ctx.fillRect(0, 0, lcd.canvas.width, lcd.canvas.height);
+          }
+          lcd.tex.needsUpdate = true;
+        }
+      }
     }
     // pedals (floor hinged: pressing tips the pad forward)
     if (this.model.pedals) {

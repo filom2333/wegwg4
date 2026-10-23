@@ -180,7 +180,17 @@ export const W203 = {
     trunk: { axis: [1, 0, 0], max: 1.15 },
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
-  GAUGES: { speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.056, face: true, odo: '1 8 4 3 0 7' } },
+  // a dark panel across the hood's opening: rev counter left, speedometer (with the speed in
+  // figures) in the middle, fuel over coolant on the right
+  GAUGES: {
+    speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.052, face: true, lcd: true },
+    panel: [0.27, 0.118, 0, -0.004],
+    tacho: { offset: [-0.088, -0.004], radius: 0.04 },
+    small: [
+      { kind: 'fuel', offset: [0.086, 0.018], radius: 0.026 },
+      { kind: 'temp', offset: [0.086, -0.032], radius: 0.026 },
+    ],
+  },
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_FR'],
   fuelCap: 62,
@@ -227,7 +237,8 @@ export const W203 = {
     model.addPart('fanbelt', PP.beltLoop([{ c: V(0, 0.39, 1.58), r: 0.07 }, { c: V(0, 0.56, 1.58), r: 0.05 }, { c: V(0.2, 0.62, 1.58), r: 0.035 }], { plane: 'z' }));
     // starter low on the intake side, its pinion into the bell housing; the filter up front
     model.addPart('starter', PP.starter(M, V(-0.17, 0.36, 1.0), { face: '-z' }));
-    model.addPart('oilfilter', PP.oilFilter(M, V(-0.27, 0.79, 1.56)));
+    // (low enough to clear the bonnet's underside)
+    model.addPart('oilfilter', PP.oilFilter(M, V(-0.27, 0.735, 1.56)));
     model.addPart('sparkplugs', PP.plugLeads(M, [-0.2, -0.067, 0.067, 0.2].map((dz) => V(-0.04, 0.77, 1.2 + dz)), { coils: true }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.68, 1.4), { h: 0.09 }));
     model.addPart('battery', PP.battery(M, V(-0.5, 0.52, -1.95), { spec: '12V  74Ah', size: [0.19, 0.19, 0.28] }));

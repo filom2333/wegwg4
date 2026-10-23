@@ -280,7 +280,8 @@ export function oilFilter(M, at, { r = 0.042, h = 0.11, tilt = 0 } = {}) {
 
 // Spark plugs with their leads: a boot on each plug point, leads looping to `to` where a
 // distributor cap sits (or, `coils`: a coil on each plug and a loom along the top).
-export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}) {
+// arch: how much higher a lead rises per metre of its length (kept low under a flat bonnet)
+export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03, arch = 0.12 } = {}) {
   const g = new THREE.Group();
   const boot = new THREE.MeshStandardMaterial({ color: coils ? 0x3a3c3f : 0x8a1c14, roughness: coils ? 0.45 : 0.55 });
   const plugTop = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.5 });
@@ -305,7 +306,7 @@ export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}
       const a = V(p.x, p.y + 0.065, p.z);
       const b = to.clone().add(V(Math.cos((i / plugs.length) * Math.PI * 2) * 0.022, 0.03, Math.sin((i / plugs.length) * Math.PI * 2) * 0.022));
       // longer leads arch higher over what lies between
-      const mid = a.clone().lerp(b, 0.5).add(V(0, up + 0.12 * a.distanceTo(b), 0));
+      const mid = a.clone().lerp(b, 0.5).add(V(0, up + arch * a.distanceTo(b), 0));
       mesh(g, tubeAlong([a, a.clone().add(V(0, 0.03, 0)), mid, b.clone().add(V(0, 0.03, 0)), b], 0.0045, 6), lead, false);
     }
     // distributor: cap and body on the head

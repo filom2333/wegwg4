@@ -160,7 +160,17 @@ export const SEDAN88 = {
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
   // our own dial over the texture's speedometer (its painted needle would never move)
-  GAUGES: { speedo: { center: [0.376, 0.848, 0.668], normal: [0, 0.25, -1], radius: 0.066, face: true, odo: '0 9 8 6 4 2' } },
+  GAUGES: {
+    // (in front of the model's dash face, which sits nearer the driver than its painted dials)
+    // (low in the binnacle: its brow hides the top of anything higher)
+    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.055, face: true, lcd: true },
+    panel: [0.29, 0.12, 0, -0.002],
+    tacho: { offset: [-0.094, -0.002], radius: 0.041 },
+    small: [
+      { kind: 'fuel', offset: [0.09, 0.016], radius: 0.026 },
+      { kind: 'temp', offset: [0.09, -0.032], radius: 0.026 },
+    ],
+  },
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'seat_FL', 'seat_R', 'engine'],
   fuelCap: 60,
@@ -205,16 +215,22 @@ export const SEDAN88 = {
     // the V6's left end: crank, water pump behind it, alternator ahead, one belt; the starter on
     // the gearbox end, six plugs with leads to the distributor
     model.addPart('waterpump', PP.waterPump(M, V(0.495, 0.73, 1.28), { face: 'x' }));
-    model.addPart('alternator', PP.alternator(M, V(0.473, 0.8, 1.53), { face: 'x', pulleyR: 0.04 }));
-    model.addPart('fanbelt', PP.beltLoop([{ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.73, 1.28), r: 0.05 }, { c: V(0.58, 0.8, 1.53), r: 0.04 }], { plane: 'x' }));
+    model.addPart('alternator', PP.alternator(M, V(0.473, 0.772, 1.53), { face: 'x', pulleyR: 0.04 }));
+    model.addPart('fanbelt', PP.beltLoop([{ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.73, 1.28), r: 0.05 }, { c: V(0.58, 0.772, 1.53), r: 0.04 }], { plane: 'x' }));
     model.addPart('starter', PP.starter(M, V(-0.32, 0.6, 1.12), { face: '-x' }));
     model.addPart('oilfilter', PP.oilFilter(M, V(-0.42, 0.63, 1.76)));
     // rear bank behind the plenum, front bank between it and the manifold, the distributor at
     // the back of the head
     const plugs = [...[-0.2, 0, 0.2].map((x) => V(x, 0.8, 1.2)), ...[-0.04, 0.12, 0.28].map((x) => V(x, 0.77, 1.56))];
-    model.addPart('sparkplugs', PP.plugLeads(M, plugs, { to: V(-0.12, 0.83, 1.07) }));
+    // (the leads lie low: the bonnet comes down close over the plenum at the back)
+    model.addPart('sparkplugs', PP.plugLeads(M, plugs, { to: V(-0.12, 0.8, 1.12), up: 0, arch: 0.03 }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.78, 1.55), { h: 0.08 }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.27, -0.65), { w: 0.85, h: 0.2, d: 0.5 }));
     model.addPart('spare', PP.spareWheel(model, V(0, 0.55, -1.85)));
+    // the scuttle panel under the windscreen: the source leaves a gap there between the glass
+    // and the bonnet's back edge, and from the seat you looked through it into the engine bay
+    const cowl = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35).rotateX(-Math.PI / 2), M.black);
+    cowl.position.set(0, 0.9, 1.045);
+    model.parts.body.inner.add(cowl);
   },
 };

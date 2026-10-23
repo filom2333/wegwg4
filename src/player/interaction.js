@@ -13,7 +13,7 @@ import { fitMatrix } from '../vehicle/swap.js';
 import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate, worldSpot, tiltSpot } from '../vehicle/plates.js';
 import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
-import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
+import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms, naturalQ, elbowDir } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { STATIONS } from '../audio/stations.js';
 import { ALBUMS, trackOn } from '../audio/music/albums.js';
@@ -2399,13 +2399,11 @@ export class Interaction {
       const a = (side === 'left' ? Math.PI - 0.5 : 0.5) + turn;
       const rimW = V(Math.cos(a) * R, Math.sin(a) * R, 0).applyMatrix4(pivotW);
       const tanW = V(-Math.sin(a), Math.cos(a), 0).transformDirection(pivotW);
-      const radW = V(Math.cos(a), Math.sin(a), 0).transformDirection(pivotW);
-      const nW = V(0, 0, 1).transformDirection(pivotW);
-      // fist round the rim: thumb side toward 12 o'clock, back of the hand outward and a little
-      // toward the driver, so the wrist points back at the elbow
+      // fist round the rim, thumb side toward 12 o'clock; turned about the rim (which keeps it
+      // inside the fist) so the wrist runs on toward the elbow as straight as it can
       const thumb = side === 'left' ? tanW.clone().negate() : tanW.clone();
-      const back = radW.clone().multiplyScalar(0.9).addScaledVector(nW, 0.4);
-      const anchor = { p: toCam(rimW), q: inv.clone().multiply(frameQ(thumb, back)) };
+      const pC = toCam(rimW);
+      const anchor = { p: pC, q: anchorQFor(side, thumb.applyQuaternion(inv), elbowDir(pC, arms[side].shoulder, arms[side].pole)) };
       const placed = handFromAnchor(side, 'grip', anchor);
       let pose = 'grip';
       let posC = placed.p,
@@ -2538,8 +2536,8 @@ export class Interaction {
         // (a closed hand: the grip pose with nothing in it reads as a fist)
         const guard = V(0.13 * sg, -0.135 + bob, side === 'left' ? -0.4 : -0.37);
         const pos = guard.lerp(V(0.03 * sg, -0.08, -0.6), k);
-        const wrist = V(0.25 * sg, -0.3, 0.92).lerp(V(0.08 * sg, -0.12, 1), k);
-        const anchor = { p: pos, q: anchorQFor(side, V(-0.35 * sg, 1, -0.15), wrist) };
+        // knuckles forward, thumb up and a little in, the wrist straight with the forearm
+        const anchor = { p: pos, q: naturalQ(side, pos, V(-0.35 * sg, 1, 0), arms[side].shoulder, arms[side].pole) };
         const placed = handFromAnchor(side, 'grip', anchor);
         h.setPose(side, 'grip');
         h.place(side, placed.p, placed.q);
@@ -2555,11 +2553,13 @@ export class Interaction {
       const k = this.reachT;
       const pos = V(0.22, -0.3, -0.36).lerp(V(0.13, -0.2, -0.46), k * 0.7);
       pos.y += Math.sin(p.bob * 2) * p.bobAmp * 0.012;
-      const anchor = { p: pos, q: anchorQ(V(-0.35, 0.3 + k * 0.4, -0.9), V(0.4, -0.35, 0.85)) };
+      // the hand carries on from the forearm, thumb up and in (palm toward the middle, turning
+      // down a little as it reaches)
+      const arms = defaultArms();
+      const anchor = { p: pos, q: naturalQ('right', pos, V(-0.5 - k * 0.3, 1 - k * 0.3, 0), arms.right.shoulder, arms.right.pole) };
       const placed = handFromAnchor('right', 'relax', anchor);
       h.setPose('right', k > 0.5 ? 'pinch' : 'relax');
       h.place('right', placed.p, placed.q);
-      const arms = defaultArms();
       h.solveArm('right', arms.right.shoulder, arms.right.pole);
       h.right.visible = k > 0.15;
     }
