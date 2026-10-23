@@ -1169,6 +1169,7 @@ export const RU_PATTERNS = [
   // tutorial and settings (this version)
   [/^Step (\d+) of (\d+)$/, (m) => `Шаг ${m[1]} из ${m[2]}`],
   [/^(\d+) hp$/, (m) => `${m[1]} л.с.`],
+  [/^(\S{1,6}) hold$/, (m) => `${m[1]} (держать)`],
   [/^Fuel tank ([\d.,]+) l$/, (m) => `Бензобак ${m[1]} л`],
   [/^(\d+) fps · Ping: soon$/, (m) => `${m[1]} к/с · Пинг: скоро`],
 ];

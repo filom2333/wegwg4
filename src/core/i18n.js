@@ -34,7 +34,8 @@ export function tr(s) {
 function look(s) {
   const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s);
   const core = m[2];
-  if (!core || !/[A-Za-z]/.test(core)) return s;
+  // (a single letter is a key name: E stays E)
+  if (!core || core.length < 2 || !/[A-Za-z]/.test(core)) return s;
   let out = RU[core];
   if (out === undefined)
     for (const [re, f] of RU_PATTERNS) {
