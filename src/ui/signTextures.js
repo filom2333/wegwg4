@@ -135,6 +135,106 @@ function metal() {
   return c.toDataURL();
 }
 
+
+// Paper, in two layers: fibres and speckle that tile, and one sheet's life stretched over it:
+// a fold across and one down, the edges gone darker with handling, a faint ring where a cup
+// stood. Drawn light, to be multiplied over the paper colour.
+function fibres() {
+  const [c, x] = canvas(256, 256);
+  const r = rng(71);
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, 256, 256);
+  x.lineCap = 'round';
+  for (let k = 0; k < 1500; k++) {
+    const x0 = r() * 256,
+      y0 = r() * 256,
+      a = r() * Math.PI,
+      l = 2 + r() * 9;
+    x.strokeStyle = r() < 0.75 ? `rgba(120,96,60,${0.05 + r() * 0.09})` : `rgba(255,255,255,${0.3 + r() * 0.4})`;
+    x.lineWidth = 0.4 + r() * 0.6;
+    for (const ox of [-256, 0, 256])
+      for (const oy of [-256, 0, 256]) {
+        x.beginPath();
+        x.moveTo(x0 + ox, y0 + oy);
+        x.quadraticCurveTo(x0 + ox + Math.cos(a + 0.6) * l * 0.5, y0 + oy + Math.sin(a + 0.6) * l * 0.5, x0 + ox + Math.cos(a) * l, y0 + oy + Math.sin(a) * l);
+        x.stroke();
+      }
+  }
+  for (let k = 0; k < 2200; k++) {
+    x.fillStyle = `rgba(90,70,40,${r() * 0.1})`;
+    x.fillRect(r() * 256, r() * 256, 1, 1);
+  }
+  return c.toDataURL();
+}
+
+function sheet() {
+  const W = 512,
+    H = 512;
+  const [c, x] = canvas(W, H);
+  const r = rng(97);
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, W, H);
+  // mottling
+  for (let k = 0; k < 26; k++) {
+    const px = r() * W,
+      py = r() * H,
+      rad = 40 + r() * 140;
+    const g = x.createRadialGradient(px, py, 0, px, py, rad);
+    g.addColorStop(0, `rgba(160,130,80,${0.03 + r() * 0.05})`);
+    g.addColorStop(1, 'rgba(160,130,80,0)');
+    x.fillStyle = g;
+    x.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+  }
+  // folds: a valley in shade beside a ridge catching the light, a little wavy
+  const fold = (horiz, at) => {
+    for (const [off, col] of [
+      [0, 'rgba(70,55,30,0.16)'],
+      [2, 'rgba(255,255,255,0.9)'],
+      [-3, 'rgba(70,55,30,0.06)'],
+    ]) {
+      x.strokeStyle = col;
+      x.lineWidth = off === 0 ? 1.4 : 2.2;
+      x.beginPath();
+      for (let t = 0; t <= 1.0001; t += 0.05) {
+        const w = Math.sin(t * 9 + at) * 1.5;
+        const u = t * (horiz ? W : H),
+          v = at + off + w;
+        horiz ? (t === 0 ? x.moveTo(u, v) : x.lineTo(u, v)) : t === 0 ? x.moveTo(v, u) : x.lineTo(v, u);
+      }
+      x.stroke();
+    }
+  };
+  fold(true, H * 0.36);
+  fold(false, W * 0.63);
+  // handled edges and corners
+  const e = x.createLinearGradient(0, 0, W, 0);
+  e.addColorStop(0, 'rgba(120,90,50,0.16)');
+  e.addColorStop(0.06, 'rgba(120,90,50,0)');
+  e.addColorStop(0.94, 'rgba(120,90,50,0)');
+  e.addColorStop(1, 'rgba(120,90,50,0.18)');
+  x.fillStyle = e;
+  x.fillRect(0, 0, W, H);
+  const e2 = x.createLinearGradient(0, 0, 0, H);
+  e2.addColorStop(0, 'rgba(120,90,50,0.12)');
+  e2.addColorStop(0.05, 'rgba(120,90,50,0)');
+  e2.addColorStop(0.93, 'rgba(120,90,50,0)');
+  e2.addColorStop(1, 'rgba(120,90,50,0.2)');
+  x.fillStyle = e2;
+  x.fillRect(0, 0, W, H);
+  // a cup ring, faint, in a corner
+  x.strokeStyle = 'rgba(140,95,45,0.13)';
+  x.lineWidth = 3;
+  x.beginPath();
+  x.arc(W * 0.86, H * 0.82, 38, 0.3, Math.PI * 1.85);
+  x.stroke();
+  x.lineWidth = 1;
+  x.strokeStyle = 'rgba(140,95,45,0.09)';
+  x.beginPath();
+  x.arc(W * 0.86 + 2, H * 0.82 + 1, 34, 0, Math.PI * 2);
+  x.stroke();
+  return c.toDataURL();
+}
+
 let done = false;
 export function applySignTextures() {
   if (done || typeof document === 'undefined') return;
@@ -144,6 +244,8 @@ export function applySignTextures() {
     s.setProperty('--tex-sheet', `url(${sheeting()})`);
     s.setProperty('--tex-grime', `url(${grime()})`);
     s.setProperty('--tex-metal', `url(${metal()})`);
+    s.setProperty('--tex-fibre', `url(${fibres()})`);
+    s.setProperty('--tex-sheet-paper', `url(${sheet()})`);
   } catch (e) {
     /* plain signs then */
   }

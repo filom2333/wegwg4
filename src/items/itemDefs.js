@@ -54,6 +54,8 @@ export const ITEMS = {
   plywood: { name: 'Plywood sheet', model: ['plate', 'plywood'], mass: 3.4, plate: 'plywood', bulky: true, hold: 'side', desc: 'Light and wide: board up a broken window, build a roof deck.' },
   plasticPanel: { name: 'Plastic panel', model: ['plate', 'plasticPanel'], mass: 1.7, plate: 'plasticPanel', bulky: true, variants: 5, hold: 'side', desc: 'Light, keeps the rain and dust out. Bolts on anywhere.' },
   plasticSheet: { name: 'Plastic sheet', model: ['plate', 'plasticSheet'], mass: 3.2, plate: 'plasticSheet', bulky: true, variants: 5, hold: 'side', desc: 'A big light panel. Bolts on anywhere.' },
+  tv: { name: 'Television', model: ['tv'], mass: 14, bulky: true, hold: 'side', desc: 'A heavy old set with rabbit ears. No signal out here, but it is yours now.' },
+  drum: { name: 'Fuel drum', model: ['drum'], mass: 9, liquid: { type: 'fuel', cap: 60, density: 0.74 }, bulky: true, variants: 3, hold: 'side', desc: 'A 60 l steel drum. Fill it at a pump, pour it into the car like a can. Heavy when full.' },
   sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
   meat: { name: 'Raw meat', model: ['meatChunk', false], mass: 0.5, consume: { food: 26, water: -4 }, raw: true, cooksTo: 'cookedMeat', hold: 'hand', desc: 'Cook it over a fire. Eaten raw it may make you sick.' },
   cookedMeat: { name: 'Cooked meat', model: ['meatChunk', true], mass: 0.45, consume: { food: 48, water: -2, energy: 6, warmth: 6 }, hold: 'hand', desc: 'Hot from the fire.' },

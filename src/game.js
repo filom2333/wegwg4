@@ -675,6 +675,8 @@ export class Game {
       ['cannedBeans', gx - 3.7, 1.62, gz - 1.2, null],
       ['lantern', gx + 3.48, 1.08, gz + 2.38, null],
       ['sprayPaint', gx - 3.7, 1.62, gz - 0.2, null],
+      ['drum', gx + 3.2, 0.05, gz - 3.6, { liquid: 18, liquidType: 'fuel' }],
+      ['tv', gx + 1.6, 0.05, gz - 3.75, null],
     ];
     for (const [id, x, y, z, st] of list) {
       const it = this.items.spawn(id, at(x, y + 0.1, z), q.clone(), st ? { ...st } : null);

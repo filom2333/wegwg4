@@ -261,9 +261,12 @@ export class VehicleDynamics {
 
     // ---- controls / steering ----
     const c = this.controls;
-    const steerLimit = p.maxSteer * (1 / (1 + Math.max(0, speedKmh - 20) / 60)) * (this.steeringInstalled ? 1 : 0);
+    // less lock and a slower wheel as the speed rises (a full key-press at 100 km/h asks for what
+    // the tyres can hold, not a spin), and the wheel comes back to centre quicker than it turns in
+    const steerLimit = p.maxSteer * (1 / (1 + Math.max(0, speedKmh - 15) / 46)) * (this.steeringInstalled ? 1 : 0);
     const target = -c.steer * steerLimit;
-    const rate = 2.6; // rad/s
+    const centring = Math.abs(target) < Math.abs(this.steerSmoothed) || target * this.steerSmoothed < 0;
+    const rate = (2.6 / (1 + Math.max(0, speedKmh - 30) / 90)) * (centring ? 1.6 : 1); // rad/s
     const dS = target - this.steerSmoothed;
     this.steerSmoothed += Math.max(-rate * dt, Math.min(rate * dt, dS));
     // Ackermann
@@ -455,7 +458,9 @@ export class VehicleDynamics {
             const fLong = magic(sl * tyre.peakSlip, tyre.longB, tyre.longC, tyre.longE);
             const fLat = magic(sl * tyre.peakAngle, tyre.latB, tyre.latC, tyre.latE);
             Fx = D * fLong * (sx / sl);
-            Fy = -D * fLat * (sy / sl) * 1.0;
+            // the rear holds a little more sideways than the front: the car pushes wide before it
+            // spins (as road cars are set up)
+            Fy = -D * fLat * (sy / sl) * (w.front ? 1 : p.rearLatGrip ?? 1.1);
           }
           // sliding sideways the tyre ploughs into soft ground (or a flat's rim into anything) and
           // trips: the side force grows past what the tread alone could hold, low at the contact
@@ -529,6 +534,7 @@ export class VehicleDynamics {
       impulses.push([drag, comWorld.clone().addScaledVector(up, 0.1)]);
     }
     for (const [imp, at] of impulses) body.applyImpulseAtPoint({ x: imp.x, y: imp.y, z: imp.z }, { x: at.x, y: at.y, z: at.z }, true);
+    this.stabilise(body, up, fwd, linvel, dt);
 
     // wheel visual spin
     for (const w of this.wheels) {
@@ -573,6 +579,31 @@ export class VehicleDynamics {
 
   surfaces(name) {
     return SURFACES[name] || SURFACES.asphalt;
+  }
+
+  // A light stability aid: when the tail steps out (turning faster than the front wheels ask, with
+  // the body sliding sideways) a yaw torque takes part of the extra rotation out. Off with the
+  // handbrake pulled, at low speed, and in the air; it slows a slide, it does not stop one.
+  stabilise(body, up, fwd, linvel, dt) {
+    if (this.assist === false || this.controls.handbrake > 0.1 || !this.wheels.some((w) => w.contact)) return;
+    const v = Math.abs(this.forwardSpeed);
+    if (v < 7) return;
+    const av = body.angvel();
+    const yaw = av.x * up.x + av.y * up.y + av.z * up.z;
+    const front = this.wheels.filter((w) => w.steer);
+    const steer = front.length ? front.reduce((a, w) => a + w.steerAngle, 0) / front.length : 0;
+    const want = (this.forwardSpeed * Math.tan(steer)) / this.p.wheelbase;
+    // how far the body slides sideways (angle between where it points and where it goes)
+    const flat = linvel.clone().addScaledVector(up, -linvel.dot(up));
+    const vh = flat.length();
+    const beta = vh > 1 ? Math.acos(Math.min(1, Math.abs(flat.dot(fwd)) / vh)) : 0;
+    const excess = yaw - want;
+    // only rotation beyond what is asked for, in the direction of the slide
+    if (Math.abs(excess) < 0.12 || Math.abs(yaw) < Math.abs(want) || beta < 0.07) return;
+    const k = Math.min(1, (beta - 0.07) / 0.15) * 0.55;
+    const Izz = this.mass * (this.p.wheelbase * this.p.wheelbase + this.p.track * this.p.track) / 12;
+    const T = -Math.sign(excess) * Math.min(Math.abs(excess) - 0.12, 1.2) * Izz * 2.4 * k * dt;
+    body.applyTorqueImpulse({ x: up.x * T, y: up.y * T, z: up.z * T }, true);
   }
 
   // Interpolated visual state of each wheel (in car-local space): centre y offset, steer, spin.

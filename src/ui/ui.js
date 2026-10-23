@@ -142,6 +142,8 @@ export class UI {
     this.autosaveT = 0;
     document.addEventListener('pointerlockchange', () => this.onLockChange());
     this.inventory = new InventoryUI(this);
+    // the surfaces of signs and paper (drawn once)
+    applySignTextures();
     window.addEventListener('keydown', (e) => this.onKey(e), true);
   }
 
@@ -775,24 +777,33 @@ export class UI {
   }
 
   // ---------------------------------------------------------------- how to play: the manual
+  // Six photographs from the road pinned to the page, each with what to do and the keys for it,
+  // then the full list of keys.
   showHowTo(back) {
+    const d = settings.data;
+    const K = (a) => keyName(d.bindings[a] || DEFAULT_BINDINGS[a]);
     this.screen('howto', (s) => {
       s.classList.add('scr-dim');
       const { body } = this.doc(s, "Driver's manual", { sub: `Route 9, northbound. Haven is ${HAVEN_KM} km up the road, and the road goes on past it.`, back, cls: 'manual' });
-      const cols = el('div', 'manual-cols', body);
-      for (const [n, title, text] of [
-        ['1', 'The road', `Drive north. Gas stations, diners, motels and farms come every few hundred metres: stop, look around, take what helps. Days pass; nights are dark and cold. The top left corner always says what needs doing next, and a yellow diamond shows where.`],
-        ['2', 'Your car', `Look at a part and hold R to unbolt it; carry one to the car and press E where it goes. Some go on only after others, or with a lid open. To fill up, hold a can to the filler and press the left button. In the seat everything works by hand: look at the key and hold E, and the same for the lights, the turn signals, the parking brake and the doors.`],
-        ['3', 'Staying alive', `Food, water, rest and warmth run down; the rings in the bottom left show them when they matter. Eat and drink what you find. Sleep in the car (B, engine off), in a tent or in a bed. Things move about at night, and light keeps only some of them back.`],
-        ['4', 'Your things', `E picks things up, Q puts them in the backpack and Tab opens it. 1 is your fists, 2 to 7 the hotbar. Notes people left on the road go into the journal (J); the road atlas (M) keeps the places you have been and the notes you pin on it.`],
+      const grid = el('div', 'howto-grid', body);
+      for (const [pic, title, text, keys] of [
+        ['roadside', 'Drive north', 'Gas stations, diners, motels and farms line the road. Stop, look around, take what helps.', [[`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'drive'], [K('handbrake'), 'handbrake']]],
+        ['breakdown', 'Fix the car', 'Hold R on a part to take it off. Carry one to the car and press E where it goes.', [[`${K('reload')} hold`, 'unbolt'], [K('interact'), 'fit']]],
+        ['pushing', 'Keep her fed', 'Hold a jerry can to the filler and pour. Some pumps still work. Oil and water matter too.', [['LMB', 'pour'], ['RMB', 'turn it']]],
+        ['vista', 'Everything by hand', 'In the seat, look at the key and hold E. Lights, signals, the parking brake and the doors work the same way.', [[`${K('interact')} hold`, 'start'], [K('lights'), 'headlights']]],
+        ['campfire', 'Stay alive', 'Food, water, rest and warmth run down. Sleep in the car, a tent or a bed. Nights are dark and not empty.', [[K('sleep'), 'sleep'], [K('flashlight'), 'flashlight']]],
+        ['fishing', 'Your things', 'Pick things up, stow them, open the backpack. Notes go in the journal, places on the road atlas.', [[K('interact'), 'take'], [K('stow'), 'stow'], [K('inventory'), 'backpack'], [K('journal'), 'journal']]],
       ]) {
-        const c = el('div', 'manual-sec', cols);
-        el('h3', '', c, `<span>${n}.</span> ${esc(title)}`);
-        el('p', '', c, esc(text));
+        const c = el('div', 'howto-card', grid);
+        const ph = el('div', 'howto-pic', c);
+        ph.style.backgroundImage = `url(menu/${pic}.webp)`;
+        el('div', 'howto-t', c, esc(title));
+        el('p', 'howto-p', c, esc(text));
+        const kr = el('div', 'howto-keys', c);
+        for (const [k, what] of keys) el('span', '', kr, `<kbd>${esc(k)}</kbd>${esc(what)}`);
       }
       el('h3', 'doc-h3', body, 'Keys');
       const keys = el('div', 'keylist cols', body);
-      const d = settings.data;
       for (const action of Object.keys(LABELS)) el('div', 'keylist-row', keys, `<span>${esc(LABELS[action])}</span><kbd>${esc(keyName(d.bindings[action] || DEFAULT_BINDINGS[action]))}</kbd>`);
       for (const [k, t] of [
         ['LMB', 'Use what you hold'],

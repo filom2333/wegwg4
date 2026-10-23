@@ -388,6 +388,16 @@
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15), 0 18px 40px rgba(0, 0, 0, 0.45), 0 3px 8px rgba(0, 0, 0, 0.25);
   font-family: var(--f-type);
 }
+/* the paper itself: fibres, folds and handled edges (signTextures.js), multiplied over it */
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tex-sheet-paper, none) 0 0 / 100% 100% no-repeat, var(--tex-fibre, none) 0 0 / 256px 256px repeat;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
 /* ruled like a notebook */
 .paper.ruled {
   background-image: linear-gradient(90deg, transparent 52px, rgba(190, 70, 60, 0.35) 52px, rgba(190, 70, 60, 0.35) 53.5px, transparent 53.5px),

@@ -1701,3 +1701,75 @@
   line-height: 1.35;
   color: var(--pencil);
 }
+
+/* ------------------------------------------------------------------ how to play: photographs */
+.howto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 22px 18px;
+  padding: 4px 2px 6px;
+}
+.howto-card {
+  display: flex;
+  flex-direction: column;
+}
+.howto-pic {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: #2a2722 center / cover no-repeat;
+  border: 6px solid #fbf8f0;
+  border-bottom-width: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+.howto-card:nth-child(odd) .howto-pic {
+  rotate: -0.8deg;
+}
+.howto-card:nth-child(even) .howto-pic {
+  rotate: 0.7deg;
+}
+/* a strip of tape holding each photo */
+.howto-pic::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -12px;
+  width: 64px;
+  height: 20px;
+  translate: -50% 0;
+  rotate: -3deg;
+  background: rgba(236, 226, 196, 0.78);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.howto-t {
+  margin-top: 12px;
+  font: 700 17px/1.2 var(--f-type);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.howto-p {
+  margin: 6px 0 8px !important;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.howto-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: auto;
+  font-size: 13px;
+  color: var(--pencil);
+}
+.howto-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.howto-keys kbd {
+  padding: 2px 6px 1px;
+  font: 700 12px/1.2 var(--f-num);
+  border: 1px solid var(--paper-ink);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  color: var(--paper-ink);
+  background: rgba(255, 255, 255, 0.35);
+}
