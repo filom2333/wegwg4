@@ -1,6 +1,8 @@
 // Billboard impostors for distant vegetation: each model is rendered once (unlit vertex colours)
 // from the front and the side into an atlas, then drawn far away as two crossed quads with an
-// alpha-tested, scene-lit material. Four triangles stand in for hundreds.
+// alpha-tested, scene-lit material. Four triangles stand in for hundreds. A second atlas holds
+// the model's own normals (the rounded crown of a tree) from the same views, so a card is lit
+// like the tree it stands for: sunlit on one side, in shade on the other, not a flat cut-out.
 
 import * as THREE from 'three';
 import { RENDER_CAPS } from './caps.js';
@@ -9,7 +11,8 @@ const TILE_W = 128,
   TILE_H = 256;
 
 // geos: [BufferGeometry] with position/normal/color, base near y = 0. Returns
-// { texture, quads: [BufferGeometry] } (one crossed-quad geometry per input).
+// { texture, normals, quads: [BufferGeometry], means: [[r, g, b] linear] } (one crossed-quad
+// geometry and one average colour per input).
 // materials[i]: optional material array for a textured model (geometry groups); unlit copies of
 // its maps are used for the bake.
 export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, snow = [], materials = [] } = {}) {
@@ -65,6 +68,25 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
     );
   };
   snowMat.customProgramCacheKey = () => 'impSnow';
+  // the normal pass: object-space normals, cut by the same alpha as the colour
+  const nrt = rt.clone();
+  nrt.texture.colorSpace = THREE.NoColorSpace;
+  const normalMat = (map = null, alphaTest = 0) =>
+    new THREE.ShaderMaterial({
+      uniforms: { map: { value: map }, alphaTest: { value: alphaTest } },
+      side: THREE.DoubleSide,
+      vertexShader: `varying vec3 vN; varying vec2 vUv;
+void main() { vN = normal; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform sampler2D map; uniform float alphaTest; varying vec3 vN; varying vec2 vUv;
+void main() {
+  ${map ? 'if (texture2D(map, vUv).a < alphaTest) discard;' : ''}
+  vec3 n = normalize(vN);
+  ${map ? '' : 'if (!gl_FrontFacing) n = -n;'}
+  gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
+}`,
+    });
+  const plainN = normalMat();
+  const texturedN = (mats) => mats.map((m) => normalMat(m.map || null, m.map ? m.alphaTest || 0.4 : 0));
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
   scene.add(mesh);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
@@ -81,6 +103,10 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
   renderer.toneMapping = THREE.NoToneMapping;
   // average foliage colour as the transparent background so mip levels don't fringe dark
   const avg = new THREE.Color(0.2, 0.26, 0.14);
+  renderer.setRenderTarget(nrt);
+  renderer.setClearColor(new THREE.Color(0.5, 1, 0.5), 0);
+  renderer.clear(true, true, true);
+  renderer.setRenderTarget(rt);
   renderer.setClearColor(avg, 0);
   renderer.clear(true, true, true);
   renderer.autoClear = false;
@@ -117,18 +143,33 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
       const px = cx * tileW,
         py = cy * tileH;
       // render-target viewports are in target pixels (no device pixel ratio)
-      rt.viewport.set(px, py, tileW, tileH);
-      rt.scissor.set(px, py, tileW, tileH);
-      rt.scissorTest = true;
+      for (const target of [rt, nrt]) {
+        target.viewport.set(px, py, tileW, tileH);
+        target.scissor.set(px, py, tileW, tileH);
+        target.scissorTest = true;
+      }
       renderer.setRenderTarget(rt);
       renderer.render(scene, cam);
+      // the same view again, normals this time
+      const colour = mesh.material;
+      if (materials[i]) {
+        if (!materials[i].bakedN) materials[i].bakedN = texturedN(materials[i]);
+        mesh.material = materials[i].bakedN;
+      } else mesh.material = plainN;
+      renderer.setRenderTarget(nrt);
+      renderer.clearDepth();
+      renderer.render(scene, cam);
+      mesh.material = colour;
+      renderer.setRenderTarget(rt);
       rects.push({ u0: px / W, u1: (px + tileW) / W, v0: py / H, v1: (py + tileH) / H, halfW, height: halfH * 2, y0 });
     });
     quads.push(crossedQuads(rects));
   });
-  rt.viewport.set(0, 0, W, H);
-  rt.scissor.set(0, 0, W, H);
-  rt.scissorTest = false;
+  for (const target of [rt, nrt]) {
+    target.viewport.set(0, 0, W, H);
+    target.scissor.set(0, 0, W, H);
+    target.scissorTest = false;
+  }
   renderer.autoClear = prev.autoClear;
   renderer.setRenderTarget(prev.target);
   renderer.setClearColor(prev.clear, prev.alpha);
@@ -136,21 +177,49 @@ export function bakeImpostors(renderer, geos, { tileW = TILE_W, tileH = TILE_H, 
   renderer.toneMapping = prev.tone;
   mat.dispose();
   snowMat.dispose();
-  for (const ms of materials) if (ms && ms.baked) for (const m of ms.baked) m.dispose();
+  plainN.dispose();
+  for (const ms of materials) if (ms) for (const m of [...(ms.baked || []), ...(ms.bakedN || [])]) m.dispose();
   // read back and bleed colour into the transparent texels (push-pull), so the mip chain does
   // not average the trees with the background and distant cards keep their colour
   const px = new Uint8Array(W * H * 4);
   renderer.readRenderTargetPixels(rt, 0, 0, W, H, px);
+  const npx = new Uint8Array(W * H * 4);
+  renderer.readRenderTargetPixels(nrt, 0, 0, W, H, npx);
+  // each model's average colour where it is solid (for the far canopy painted on the ground)
+  const means = geos.map((g, i) => {
+    const m = [0, 0, 0];
+    let n = 0;
+    for (let k = 0; k < 2; k++) {
+      const t = i * 2 + k;
+      const x0 = (t % cols) * tileW,
+        y0 = Math.floor(t / cols) * tileH;
+      for (let y = y0; y < y0 + tileH; y++)
+        for (let x = x0; x < x0 + tileW; x++) {
+          const o = (y * W + x) * 4;
+          if (px[o + 3] < 128) continue;
+          for (let c = 0; c < 3; c++) m[c] += Math.pow(px[o + c] / 255, 2.2);
+          n++;
+        }
+    }
+    return m.map((v) => v / Math.max(1, n));
+  });
   pushPull(px, W, H);
-  const tex = new THREE.DataTexture(px, W, H, THREE.RGBAFormat);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = true;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 4;
-  tex.needsUpdate = true;
+  // the normals' empty texels take their neighbours' (the colour's alpha marks what is solid)
+  for (let i = 0; i < W * H; i++) npx[i * 4 + 3] = px[i * 4 + 3];
+  pushPull(npx, W, H);
+  const atlas = (data, srgb) => {
+    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+    tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 4;
+    tex.needsUpdate = true;
+    return tex;
+  };
   rt.dispose();
-  return { texture: tex, quads };
+  nrt.dispose();
+  return { texture: atlas(px, true), normals: atlas(npx, false), quads, means };
 }
 
 // Fills the RGB of transparent pixels from an alpha-weighted pyramid (alpha is kept).
@@ -259,8 +328,16 @@ function crossedQuads(rects) {
   return g;
 }
 
-export function createImpostorMaterial(texture) {
-  return new THREE.MeshStandardMaterial({
+// The cards' material: the colour atlas lit through the baked normals (turned with each
+// instance), each tree a little lighter or darker than the next (the same tint its full model
+// gets, from its scale and turn, so nothing changes when the model swaps for the card), the
+// foliage kept solid down the mip chain, and a dithered fade where the cards end (opts.far, m from
+// the camera) so the forest runs on into the canopy painted on the ground instead of stopping at
+// a line.
+// opts.near: where cards that take over from nearer ones start (the same dither, the other way
+// round, so the two sets cross-dissolve); opts.fade: how long the far fade is (m).
+export function createImpostorMaterial(texture, normals = null, { far = 0, near = 0, fade = 150 } = {}) {
+  const m = new THREE.MeshStandardMaterial({
     map: texture,
     alphaTest: 0.42,
     alphaToCoverage: RENDER_CAPS.msaa > 0,
@@ -268,4 +345,58 @@ export function createImpostorMaterial(texture) {
     roughness: 0.92,
     metalness: 0,
   });
+  m.userData.uniforms = { uImpN: { value: normals }, uImpFar: { value: far }, uImpNear: { value: near }, uImpFade: { value: fade } };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, m.userData.uniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vImpX;\nvarying vec3 vImpY;\nvarying vec3 vImpZ;\nvarying float vImpTint;\nvarying float vImpDist;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+{
+#ifdef USE_INSTANCING
+  mat3 im = mat3(instanceMatrix);
+#else
+  mat3 im = mat3(1.0);
+#endif
+  mat3 o2v = mat3(viewMatrix) * mat3(modelMatrix) * im;
+  vImpX = o2v[0];
+  vImpY = o2v[1];
+  vImpZ = o2v[2];
+  vImpTint = fract(sin(dot(vec2(im[0].x, im[0].z), vec2(127.1, 311.7))) * 43758.5453);
+}`
+      )
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvImpDist = length(mvPosition.xyz);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform sampler2D uImpN;\nuniform float uImpFar;\nuniform float uImpNear;\nuniform float uImpFade;\nvarying vec3 vImpX;\nvarying vec3 vImpY;\nvarying vec3 vImpZ;\nvarying float vImpTint;\nvarying float vImpDist;'
+      )
+      .replace(
+        '#include <alphatest_fragment>',
+        `{
+  // keep the crowns solid far away: alpha averaged down the mips would fall under the cut
+  vec2 tsz = vec2(textureSize(map, 0));
+  vec2 ddx = dFdx(vMapUv * tsz), ddy = dFdy(vMapUv * tsz);
+  float mip = max(0.0, 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy))));
+  diffuseColor.a *= 1.0 + mip * 0.22;
+  diffuseColor.rgb *= mix(0.82, 1.12, vImpTint);
+  // a crown far off shows more of its own shade
+  diffuseColor.rgb *= mix(1.0, 0.8, smoothstep(250.0, 1600.0, vImpDist));
+  float h = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  if (uImpFar > 0.0 && 1.0 - smoothstep(uImpFar - uImpFade, uImpFar, vImpDist) < h) discard;
+  if (uImpNear > 0.0 && smoothstep(uImpNear - 150.0, uImpNear, vImpDist) < 1.0 - h) discard;
+}
+#include <alphatest_fragment>`
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `{
+  vec3 on = texture2D(uImpN, vMapUv).xyz * 2.0 - 1.0;
+  normal = normalize(mat3(vImpX, vImpY, vImpZ) * on);
+}`
+      );
+  };
+  m.customProgramCacheKey = () => 'impostorLit';
+  return m;
 }

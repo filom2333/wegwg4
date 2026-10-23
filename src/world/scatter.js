@@ -238,8 +238,26 @@ export class Scatter {
         { snow: impostorSrc.map((s) => !!s.def.snow), materials: impostorSrc.map((s) => s.mats) }
       );
       this.impostorTex = baked.texture;
-      this.impostorMat = createImpostorMaterial(baked.texture);
+      // the cards fade out where the conifers' ring ends; the ground paints the forest from there
+      this.treeFar = this.farRadius * 0.85;
+      this.impostorMat = createImpostorMaterial(baked.texture, baked.normals, { far: this.treeFar });
+      const u = this.game.terrainMat && this.game.terrainMat.userData.uniforms;
+      if (u && u.uCanopy) {
+        const mean = (id) => {
+          const k = impostorSrc.findIndex((s) => s.def.id === id);
+          return k >= 0 ? baked.means[k] : null;
+        };
+        const pine = mean('pine'),
+          snow = mean('snowpine');
+        if (pine) u.uCanopy.value.setRGB(pine[0], pine[1], pine[2]);
+        if (snow) u.uCanopySnow.value.setRGB(snow[0], snow[1], snow[2]);
+        u.uTreeFar.value = this.treeFar;
+      }
+      this.impostorNormals = baked.normals;
+      // the cards by species, for the far forest
+      this.impostorGeos = {};
       impostorSrc.forEach((s, i) => {
+        (this.impostorGeos[s.def.id] = this.impostorGeos[s.def.id] || [])[s.v] = baked.quads[i];
         const m1 = this.instanced(baked.quads[i], this.impostorMat, s.cap, s.def);
         this.meshes[SPECIES.indexOf(s.def)][s.v][1] = m1;
       });

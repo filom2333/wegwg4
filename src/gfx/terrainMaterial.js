@@ -11,6 +11,11 @@ export function createTerrainMaterial(tex) {
     uWet: { value: 0 },
     uScale: { value: 0.33 },
     uFadeFar: { value: 3200 },
+    // the far forest: average colour of the tree cards (green, and snow-laden), and how far the
+    // cards reach before the canopy painted on the ground takes over
+    uCanopy: { value: new THREE.Color(0.035, 0.058, 0.03) },
+    uCanopySnow: { value: new THREE.Color(0.2, 0.23, 0.22) },
+    uTreeFar: { value: 750 },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, mat.userData.uniforms);
@@ -21,6 +26,8 @@ export function createTerrainMaterial(tex) {
 attribute vec4 mat;
 attribute vec4 matB;
 attribute vec4 tint;
+attribute float tree;
+varying float vTree;
 varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
@@ -37,6 +44,7 @@ vMat = mat;
 vMat2 = matB;
 vTint = tint.rgb;
 vVeg = tint.a;
+vTree = tree;
 vWuv = uv;
 vWy = position.y;
 vWN = normalize(mat3(modelMatrix) * normal);`
@@ -56,6 +64,10 @@ uniform sampler2DArray uNrm;
 uniform float uWet;
 uniform float uScale;
 uniform float uFadeFar;
+uniform vec3 uCanopy;
+uniform vec3 uCanopySnow;
+uniform float uTreeFar;
+varying float vTree;
 varying vec4 vMat;
 varying vec4 vMat2;
 varying vec3 vTint;
@@ -208,26 +220,53 @@ vec3 layerNormal(float L, vec2 uvNear, vec2 uvFar, float farT) {
   // far shrubs: past the ring of scattered meshes, dark crowns speckle the open ground at the
   // biome's cover; once a 4 m cell shrinks to a few pixels they average into a tone, so no shimmer
   {
-    // in wooded country the speckle is forest canopy, taking over where the tree impostors end
-    float wood = smoothstep(0.15, 0.45, w[6] / tot);
-    float veg = max(vVeg, wood * 0.95) * (1.0 - wRock) * (1.0 - wSnow * (1.0 - wood * 0.7)) * (1.0 - wSalt);
-    float fadeIn = smoothstep(mix(210.0, 760.0, wood), mix(330.0, 980.0, wood), vViewDist);
+    float open = (1.0 - wRock) * (1.0 - wSalt);
+    float veg = vVeg * open * (1.0 - wSnow);
+    float fadeIn = smoothstep(210.0, 330.0, vViewDist);
     if (veg > 0.01 && fadeIn > 0.0) {
       vec2 p = vWuv / 4.0;
       vec2 ci = mod(floor(p), 512.0);
       vec2 f = fract(p);
       float pres = step(tHash(ci + vec2(71.0, 3.0)), veg);
       vec2 c = vec2(tHash(ci + vec2(13.0, 7.0)), tHash(ci + vec2(29.0, 17.0))) * 0.5 + 0.25;
-      float r = mix(0.18, 0.36, wood) + 0.14 * tHash(ci + vec2(47.0, 23.0));
+      float r = 0.18 + 0.14 * tHash(ci + vec2(47.0, 23.0));
       float mpp = max(length(fwidth(vWuv)), 1e-4);
       float aa = mpp / 4.0;
       float dotC = pres * (1.0 - smoothstep(r - aa, r + aa, length(f - c)));
-      float rm = mix(0.25, 0.43, wood);
-      float meanC = veg * 3.14159 * rm * rm;
+      float meanC = veg * 3.14159 * 0.25 * 0.25;
       float k = smoothstep(2.5, 7.0, 4.0 / mpp);
       float cov = mix(meanC, dotC, k) * fadeIn;
-      vec3 crown = mix(vec3(0.06, 0.07, 0.04), vec3(0.025, 0.045, 0.025), wood);
-      alb = mix(alb, crown * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
+      alb = mix(alb, vec3(0.06, 0.07, 0.04) * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0))), cov);
+    }
+  }
+  // the forest beyond the tree cards: the same groves the scatter grows (vTree, crown cover from
+  // the terrain worker), painted as a canopy of crowns over a floor in their shade. Up close to
+  // the cards' edge it fades in under them, so the forest carries on to the horizon.
+  {
+    float wood = max(vTree, smoothstep(0.15, 0.45, w[6] / tot) * 0.5) * (1.0 - wRock * 0.85) * (1.0 - wSalt);
+    float woodIn = smoothstep(uTreeFar - 180.0, uTreeFar + 30.0, vViewDist);
+    if (wood > 0.01 && woodIn > 0.0) {
+      // groves are dense inside and ragged at their edges
+      float cover = smoothstep(0.0, 0.75, wood);
+      vec2 p = vWuv / 4.0;
+      vec2 ci = mod(floor(p), 512.0);
+      vec2 f = fract(p);
+      float pres = step(tHash(ci + vec2(17.0, 61.0)), cover);
+      vec2 c = vec2(tHash(ci + vec2(3.0, 19.0)), tHash(ci + vec2(37.0, 11.0))) * 0.4 + 0.3;
+      float r = 0.32 + 0.16 * tHash(ci + vec2(53.0, 29.0));
+      float mpp = max(length(fwidth(vWuv)), 1e-4);
+      float aa = mpp / 4.0;
+      float dotC = pres * (1.0 - smoothstep(r - aa, r + aa, length(f - c)));
+      float k = smoothstep(2.5, 7.0, 4.0 / mpp);
+      float crownCov = mix(cover * 3.14159 * 0.4 * 0.4 * 1.6, dotC, k);
+      // stands of lighter and darker trees, sunlit crowns against shade
+      float stand = tNoised(vWuv / 32.0, 64.0).x * 0.6 + tNoised(vWuv / 8.0, 256.0).x * 0.4;
+      // a canopy seen from afar is far darker than its leaves: every crown shades the next
+      vec3 crown = mix(uCanopy * 0.5, uCanopySnow * 0.8, wSnow) * (0.7 + 0.6 * stand) * (0.8 + 0.4 * tHash(ci + vec2(5.0, 41.0)));
+      vec3 shade = mix(alb * 0.22, crown * 0.35, 0.6);
+      vec3 forest = mix(shade, crown, clamp(crownCov, 0.0, 1.0));
+      alb = mix(alb, forest, cover * woodIn);
+      gRough = mix(gRough, 0.97, cover * woodIn);
     }
   }
   // snow: never paper white. Cold blue in the wind-scoured hollows, a faint warm crust on the

@@ -12,6 +12,7 @@ import { Physics, GROUPS } from './physics/physics.js';
 import { WorldGen } from './world/worldGen.js';
 import { Terrain } from './world/terrain.js';
 import { Scatter } from './world/scatter.js';
+import { FarForest } from './world/farForest.js';
 import { loadTreeTextures } from './world/trees.js';
 import { POIManager } from './world/poi.js';
 import { archMaterials } from './world/buildings/materials.js';
@@ -153,6 +154,7 @@ export class Game {
     registerRealModel('bass', this.props.instance('bass'));
     for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant', 'tyre']) this.props.load(id);
     this.scatter = new Scatter(this, this.groundTex, await treeTex);
+    this.farForest = new FarForest(this, this.scatter);
     this.pois = new POIManager(this);
     this.story = new Story(this);
     if (load && load.story) this.story.restore(load.story);
@@ -192,6 +194,7 @@ export class Game {
     this.terrain.update(spawn.x, spawn.z);
     this.terrain.ensureCollidersAround(spawn.x, spawn.z, 100);
     this.scatter.update(spawn.x, spawn.z);
+    this.farForest.update(spawn.x, spawn.z);
     onProgress('Streaming terrain', 0.55);
     await this.waitForTerrain(spawn.x, spawn.z);
     // places right around the spawn must exist before the car and player are dropped in
@@ -358,6 +361,7 @@ export class Game {
     this.physics.snapAll();
     this.terrain.rebase(dx, dz);
     this.scatter.rebase(dx, dz);
+    this.farForest.rebase();
     this.pois.rebase(dx, dz);
     this.items.rebase(dx, dz);
     this.effects && this.effects.rebase(dx, dz);
@@ -376,6 +380,7 @@ export class Game {
     for (const s of this.systems) s.rebase && s.rebase(dx, dz);
     const f2 = this.focusPoint();
     this.scatter.update(f2.x + this.origin.x, f2.z + this.origin.z);
+    this.farForest.update(f2.x + this.origin.x, f2.z + this.origin.z);
   }
 
   focusPoint() {
@@ -481,6 +486,7 @@ export class Game {
       gz = f.z + this.origin.z;
     this.terrain.update(gx, gz);
     this.scatter.update(gx, gz);
+    this.farForest.update(gx, gz);
     this.scatter.setTime(this.time, this.env.w.wind);
     const sun = this.env.sun;
     this.scatter.setShadowReach(this.env.shadowExtent, (sun.position.y - sun.target.position.y) / sun.position.distanceTo(sun.target.position));

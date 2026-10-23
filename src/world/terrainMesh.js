@@ -1,6 +1,7 @@
 // Terrain tile mesher (pure, worker-safe). Vertices are relative to the tile origin.
 
 import { BIOMES, BIOME_INFO } from './worldGen.js';
+import { treeCover } from './treeCover.js';
 
 export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
   const step = size / N;
@@ -21,6 +22,8 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
   const mat = new Float32Array(vCount * 4); // sand, dirt, rock, salt
   const mat2 = new Float32Array(vCount * 4); // grass, snow, forest floor, gravel
   const tint = new Float32Array(vCount * 4); // biome colour, shrub cover
+  const tree = new Float32Array(vCount); // tree crown cover (far canopy)
+  const pois = gen.poisNear(z0 + size / 2, Math.ceil(size / 1200) + 1);
   const uv = new Float32Array(vCount * 2);
   const bw = {};
   let minY = Infinity,
@@ -77,6 +80,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
       tint[k * 4 + 1] = g * cv[1];
       tint[k * 4 + 2] = b * cv[2];
       tint[k * 4 + 3] = veg * (0.55 + 0.9 * Math.max(0, gen.nC.noise2(x * 0.004 + 3, z * 0.004 - 8) * 0.5 + 0.5 - 0.2));
+      tree[k] = treeCover(gen, x, z, bw, ny, pois);
       // world-space texture coordinates wrapped to keep float precision
       uv[k * 2] = ((x % 2048) + 2048) % 2048;
       uv[k * 2 + 1] = ((z % 2048) + 2048) % 2048;
@@ -115,6 +119,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
         mat.set(mat.subarray(src * 4, src * 4 + 4), k * 4);
         mat2.set(mat2.subarray(src * 4, src * 4 + 4), k * 4);
         tint.set(tint.subarray(src * 4, src * 4 + 4), k * 4);
+        tree[k] = tree[src];
         uv.set(uv.subarray(src * 2, src * 2 + 2), k * 2);
       }
       for (let t = 0; t < W - 1; t++) {
@@ -135,6 +140,7 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
     mat,
     mat2,
     tint,
+    tree,
     uv,
     index: new Uint32Array(idx),
     minY,
