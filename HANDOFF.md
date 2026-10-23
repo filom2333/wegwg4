@@ -667,7 +667,9 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
   shadows, draw distance, aa, sharpen, bloom/glow, sun shafts, heat haze, grain). The renderer,
   scatter, far forest and terrain read it; shadows/post effects change live, distance and MSAA on
   the next start. Custom shows a card per option with an example picture per choice
-  (`public/settings/<option>_<choice>.webp`, rendered by `tools/promo/settingsScenes.mjs`
+  (`public/settings/<option>_<choice>.webp`, rendered by `tools/promo/settingsScenes.mjs`;
+  shadows, glow, sun rays and heat haze have none yet: their test shots showed no difference,
+  they need a view into the low sun and a clear hard-shadow scene
   through `shoot.mjs` variants — renderer options changed in the running page, crops for detail).
 - Tutorial (`ui/tutorial.js`): a card per step on the right (look, walk, find a part, pick up,
   fit, put the car together, fuel, get in, key, parking brake, drive, north), judged from game

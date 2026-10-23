@@ -121,6 +121,8 @@ const GFX_OPTIONS = [
   ['grain', 'Film grain', [[true, 'On'], [false, 'Off']], 'A light grain over the picture, like film.', true],
 ];
 
+const GFX_PICTURES = new Set(['distance', 'resolution', 'aa', 'sharpen', 'grain']);
+
 const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
 
 export class UI {
@@ -677,7 +679,8 @@ export class UI {
     const grid = el('div', 'gfx-grid', body);
     for (const [k, label, opts, note, live] of GFX_OPTIONS) {
       const card = el('div', 'gfx-card', grid);
-      const pic = el('div', 'gfx-pic', card);
+      // (shadows, glow, sun rays and heat haze have no example picture yet)
+      const pic = el('div', 'gfx-pic', GFX_PICTURES.has(k) ? card : null);
       const tag = el('span', 'gfx-tag', pic);
       const show = (v) => {
         pic.style.backgroundImage = `url(settings/${k}_${v}.webp)`;
