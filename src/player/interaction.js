@@ -227,6 +227,8 @@ export class Interaction {
       if (seated) break;
       if (!car.isInstalled(id) || id === 'body' || id === 'chassis') continue;
       if (!part.bbox || part.bbox.isEmpty()) continue;
+      // under a closed bonnet or boot lid: out of reach (and out of sight)
+      if (car.lidBlocking(id)) continue;
       inv.copy(this.partMatrix(car, id)).invert();
       tmpRay.origin.copy(origin).applyMatrix4(inv);
       tmpRay.direction.copy(dir).transformDirection(inv);

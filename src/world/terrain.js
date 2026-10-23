@@ -13,7 +13,7 @@ const COLLIDER_TILE = 48;
 const COLLIDER_RADIUS = 110;
 
 export class Terrain {
-  constructor({ gen, scene, physics, terrainMaterial, roadMaterial, origin, quality = 'high' }) {
+  constructor({ gen, scene, physics, terrainMaterial, roadMaterial, origin, viewRadius = null }) {
     this.gen = gen;
     this.scene = scene;
     this.physics = physics;
@@ -31,7 +31,7 @@ export class Terrain {
     this.trackMeshes = new Map(); // side track index -> mesh
     this.colliders = new Map();
     this.nextId = 1;
-    this.viewRadius = quality === 'low' ? 3000 : VIEW_RADIUS;
+    this.viewRadius = viewRadius ?? VIEW_RADIUS;
     // the far edge fades into the haze instead of ending against the sky
     if (terrainMaterial.userData.uniforms) terrainMaterial.userData.uniforms.uFadeFar.value = this.viewRadius;
     this.ready = false;

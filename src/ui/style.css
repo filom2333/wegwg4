@@ -370,6 +370,7 @@ canvas#game {
   display: none;
 }
 .hud-goal .g-s {
+  white-space: nowrap;
   font: 600 12.5px/1 var(--f-num);
   color: var(--hud-2);
 }
@@ -1376,4 +1377,144 @@ canvas#game {
 .inv-menu button:hover {
   color: var(--red-pen);
   background: rgba(176, 51, 31, 0.08);
+}
+
+/* ---------------------------------------------- the tutorial (right, a card per step) */
+.tut {
+  position: absolute;
+  right: 30px;
+  top: max(176px, 25vh);
+  width: 318px;
+  padding: 14px 16px 12px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(18, 17, 15, 0.78), rgba(12, 11, 10, 0.7));
+  border: 1px solid rgba(246, 243, 235, 0.14);
+  border-left: 4px solid var(--warn);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  text-shadow: none;
+  opacity: 0;
+  transform: translateX(14px);
+  transition: opacity 0.35s, transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.1), border-color 0.25s;
+}
+.tut.on {
+  opacity: 1;
+  transform: none;
+}
+.tut.gone {
+  opacity: 0;
+  transform: translateX(14px);
+}
+.hud.intro .tut {
+  opacity: 0;
+}
+.tut-head {
+  display: flex;
+  justify-content: space-between;
+  font: 800 11px/1 var(--f-sign);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.tut-k {
+  color: var(--warn);
+}
+.tut-n {
+  color: var(--hud-3);
+}
+.tut-main {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+.tut-icon {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(246, 243, 235, 0.07);
+  color: var(--hud);
+  transition: color 0.2s, background 0.2s;
+}
+.tut-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tut-t {
+  font: 800 20px/1.15 var(--f-sign);
+  color: var(--hud);
+  margin: 2px 0 8px;
+}
+.tut-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 14px;
+  color: var(--hud-2);
+}
+.tut-key kbd {
+  min-width: 26px;
+  padding: 3px 7px 2px;
+  font: 700 13px/1.2 var(--f-num);
+  text-align: center;
+  border-radius: 4px;
+  border: 1px solid rgba(246, 243, 235, 0.6);
+  border-bottom-width: 3px;
+  background: rgba(246, 243, 235, 0.08);
+}
+.tut-hint {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--hud-2);
+}
+.tut-dots {
+  display: flex;
+  gap: 5px;
+  margin-top: 12px;
+}
+.tut-dots i {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(246, 243, 235, 0.16);
+}
+.tut-dots i.d {
+  background: rgba(240, 181, 27, 0.75);
+}
+.tut-dots i.c {
+  background: var(--hud);
+}
+.tut-skip {
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--hud-3);
+}
+/* done: a tick in green, then the next card */
+.tut.ok {
+  border-left-color: #8cc47e;
+}
+.tut.ok .tut-icon {
+  color: #9fd88f;
+  background: rgba(140, 196, 126, 0.16);
+}
+.tut.ok .tut-t {
+  color: #b9e6ad;
+}
+/* a long step tucks its hint away */
+.tut.settled .tut-hint,
+.tut.settled .tut-skip {
+  display: none;
+}
+.tut.settled {
+  opacity: 0.86;
+}
+/* the FPS counter takes the top right corner: the kilometre marker moves down */
+body.fps-on .hud-mile {
+  top: 50px;
+}
+body.fps-on .hud-music {
+  top: 154px;
 }

@@ -10,7 +10,7 @@ import { ITEMS } from '../items/itemDefs.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // panels and trim: the car runs and drives without them, so they wait until it does
-const COSMETIC = /door|fender|bumper|hood|trunk|seat_R|seat_FR|spare|enginecover|mirror/;
+export const COSMETIC = /door|fender|bumper|hood|trunk|seat_R|seat_FR|spare|enginecover|mirror/;
 
 export class Goals {
   constructor(game) {

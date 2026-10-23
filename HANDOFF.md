@@ -652,6 +652,59 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
 - `tools/audiotest.mjs` + `tools/tests/audioScenes.mjs`: record the game's master output per scene
   headless (for the sound work the user paused).
 
+### Session of 23.10, part 2 (same branch, after PR #9 merged)
+- Russian: `core/i18n.js` translates what reaches the screen (MutationObserver over the page:
+  text nodes and placeholder/title/aria-label), from `core/lang/ru.js` (exact lines + regex
+  patterns for lines with numbers and names, parts lowercased inside sentences). The code stays
+  in English; elements with class `no-tr` are left alone. New UI text needs a line in ru.js —
+  check with a node script importing `tr` (stub `localStorage`). Cyrillic faces: Overpass and
+  Overpass Mono have them; Courier Prime does not, so Russian typewriter text falls to IBM Plex
+  Mono (unicode-range in theme.css). Flags (US/RU) in the top right of the title screens
+  (`UI.langFlags`), and Settings > Game > Language.
+- FPS and ping plate (top right, on by default, settings v2 migration turns it on once); the
+  kilometre marker moves down while it shows (`body.fps-on`). Ping says "soon" (no multiplayer).
+- Picture settings: `core/gfx.js` — presets low..ultra or Custom (`settings.custom`: resolution,
+  shadows, draw distance, aa, sharpen, bloom/glow, sun shafts, heat haze, grain). The renderer,
+  scatter, far forest and terrain read it; shadows/post effects change live, distance and MSAA on
+  the next start. Custom shows a card per option with an example picture per choice
+  (`public/settings/<option>_<choice>.webp`, rendered by `tools/promo/settingsScenes.mjs`;
+  shadows, glow, sun rays and heat haze have none yet: their test shots showed no difference,
+  they need a view into the low sun and a clear hard-shadow scene
+  through `shoot.mjs` variants — renderer options changed in the running page, crops for detail).
+- Tutorial (`ui/tutorial.js`): a card per step on the right (look, walk, find a part, pick up,
+  fit, put the car together, fuel, get in, key, parking brake, drive, north), judged from game
+  state, steps already done are skipped, assembled start skips the building. Shown once
+  (`settings.tutorial`), skip from the pause menu, back on in Settings > Game.
+- How to play: six photographs (menu pictures) with what to do and the keys, then the key list.
+- The first screen of a run lost the keys card and the footer (the tutorial teaches the keys).
+- Driving: steering lock and speed fall off more with speed, the wheel recentres faster, rear
+  tyres hold ~10% more sideways (`rearLatGrip`), and a light stability aid
+  (`VehicleDynamics.stabilise`: yaw torque against rotation beyond what the steering asks, only
+  while the body slides, off with the handbrake).
+- Parts under a closed bonnet/boot can no longer be aimed at or highlighted (`carTarget` skips
+  parts whose lid blocks them).
+- Menu backdrop: the depth lookup marches from near to far (first surface wins) instead of the
+  fixed-point search that doubled edges; smaller pointer sway.
+- Paper: fibres, folds, handled edges and a cup ring (`signTextures.js` -> `--tex-fibre`,
+  `--tex-sheet-paper`, multiplied over every `.paper` by `::after`).
+- New items: `tv` (CRT in a wood cabinet, 14 kg) and `drum` (60 l fuel drum, 3 paints); one of
+  each in the homestead garage.
+
+### User's list from 23.10 not done yet (they asked for all of it; do these next)
+1. Hands: arms look twisted in ordinary interactions (check `player/grips.js` poses first person).
+2. Dashboards: in both imported cars the speedometer is hard/impossible to see from the seat;
+   make real clusters (speed, rpm, fuel, temperature, warning lamps) readable from the eye point.
+3. Seen through the bonnet from the seat: engine parts show through it; wires stick out under
+   the bonnet of the second car. Check part bboxes against the bonnet's inner surface.
+4. Fuel filler flap and tank: the flap opening looks wrong (the interactive bit appears from
+   nowhere); a more detailed tank with a cap to open and a look inside showing the level; the
+   same "look at it to read the level" for other containers.
+5. More engine-bay items (antifreeze reservoir etc.), wear that shows on parts.
+6. In the car: windows that wind down, mirrors that move, take items while driving, in every car.
+7. Models: the mailbox and other low-detail props; a TV in houses (the item exists now), barrels
+   to pick up in the world (item exists; spawn more at farms and gas stations).
+8. HUD and UI text still looks plain to the user ("mechanical yellow and white"): more texture.
+
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for
    models"); make more objects interactive.

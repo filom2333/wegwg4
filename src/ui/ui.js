@@ -14,6 +14,8 @@ import { NOTES, HAVEN_KM } from '../story/story.js';
 import { drawAtlas } from '../story/atlas.js';
 import { MenuBackdrop } from './menuBackdrop.js';
 import { applySignTextures } from './signTextures.js';
+import { LANGS, lang } from '../core/i18n.js';
+import { gfx, startCustom } from '../core/gfx.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -87,12 +89,39 @@ function shieldSvg(n) {
   return `<svg viewBox="0 0 100 100" aria-hidden="true"><rect x="1" y="1" width="98" height="98" rx="9" fill="#141414"/><path d="M50 10c9 6 21 7 34 3 5 21 3 40-6 56-7 12-16 19-28 23-12-4-21-11-28-23-9-16-11-35-6-56 13 4 25 3 34-3z" fill="#f7f6f0"/><text x="50" y="72" text-anchor="middle" font-family="Overpass, Arial Narrow, sans-serif" font-weight="800" font-size="52" fill="#141414">${n}</text></svg>`;
 }
 
-function keyName(code) {
+// The flags in the corner of the title, for the language.
+function usFlag() {
+  let stars = '';
+  for (let r = 0; r < 9; r++) for (let c = 0; c < (r % 2 ? 5 : 6); c++) stars += `<circle cx="${(1.27 + c * 2.53 + (r % 2 ? 1.27 : 0)).toFixed(2)}" cy="${(1.08 + r * 1.08).toFixed(2)}" r="0.42"/>`;
+  return `<svg viewBox="0 0 38 20" aria-hidden="true"><rect width="38" height="20" fill="#b22234"/><path d="M0 2.31h38M0 5.38h38M0 8.46h38M0 11.54h38M0 14.62h38M0 17.69h38" stroke="#fff" stroke-width="1.54"/><rect width="15.2" height="10.77" fill="#3c3b6e"/><g fill="#fff">${stars}</g></svg>`;
+}
+const FLAGS = {
+  en: usFlag(),
+  ru: '<svg viewBox="0 0 30 20" aria-hidden="true"><rect width="30" height="20" fill="#fff"/><rect y="6.67" width="30" height="6.67" fill="#0039a6"/><rect y="13.33" width="30" height="6.67" fill="#d52b1e"/></svg>',
+};
+
+export function keyName(code) {
   if (!code) return '—';
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
   return { ShiftLeft: 'Shift', ShiftRight: 'R Shift', ControlLeft: 'Ctrl', ControlRight: 'R Ctrl', Space: 'Space', AltLeft: 'Alt', Tab: 'Tab', Escape: 'Esc', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Backspace: 'Backspace' }[code] || code;
 }
+
+// Custom picture settings: what each one is, its choices, what it does, and whether it changes at
+// once (or on the next start). Each choice has a picture of what it looks like (public/settings/).
+const GFX_OPTIONS = [
+  ['distance', 'Draw distance', [['low', 'Near'], ['medium', 'Medium'], ['high', 'Far'], ['ultra', 'Very far']], 'How far out trees, the forest and the land are drawn.', false],
+  ['shadows', 'Shadows', [['off', 'Off'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], 'Sharper shadows, reaching further from you.', true],
+  ['resolution', 'Resolution', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], 'Pixels drawn for each frame. Ultra draws more than the screen has and smooths it down.', true],
+  ['aa', 'Anti-aliasing', [['off', 'Off'], ['fxaa', 'FXAA'], ['msaa', 'MSAA 4×']], 'Smooths jagged edges. MSAA is cleaner, FXAA cheaper.', false],
+  ['sharpen', 'Sharpening', [['off', 'Off'], ['light', 'Light'], ['strong', 'Strong']], 'Crisper fine detail: gravel, leaves, wires.', true],
+  ['bloom', 'Glow', [[true, 'On'], [false, 'Off']], 'Lamps, headlights, the sun and fire glow.', true],
+  ['shafts', 'Sun rays', [[true, 'On'], [false, 'Off']], 'Rays of sunlight through trees and gaps.', true],
+  ['heat', 'Heat haze', [[true, 'On'], [false, 'Off']], 'The air shimmers over hot ground at midday.', true],
+  ['grain', 'Film grain', [[true, 'On'], [false, 'Off']], 'A light grain over the picture, like film.', true],
+];
+
+const GFX_PICTURES = new Set(['distance', 'resolution', 'aa', 'sharpen', 'grain']);
 
 const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
 
@@ -105,13 +134,18 @@ export class UI {
     this.current = null;
     this.game = null;
     this.mode = 'menu'; // menu | loading | play
-    this.fpsEl = el('div', 'ui-fps', document.body);
+    // frames a second, and the ping (for when there is company on the road)
+    this.fpsEl = el('div', 'ui-fps', document.body, '<span class="fps-v"><b>--</b> FPS</span><i></i><span class="fps-ping"><em></em>Ping: soon</span>');
+    this.fpsNum = this.fpsEl.querySelector('b');
     this.fpsEl.style.display = settings.data.showFps ? '' : 'none';
+    document.body.classList.toggle('fps-on', !!settings.data.showFps);
     this.fpsAcc = 0;
     this.fpsN = 0;
     this.autosaveT = 0;
     document.addEventListener('pointerlockchange', () => this.onLockChange());
     this.inventory = new InventoryUI(this);
+    // the surfaces of signs and paper (drawn once)
+    applySignTextures();
     window.addEventListener('keydown', (e) => this.onKey(e), true);
   }
 
@@ -301,6 +335,26 @@ export class UI {
     el('div', 'title-name', h, `<h1>Dust Road</h1><div class="title-dest"><span>Haven</span><b>${HAVEN_KM}</b></div>`);
   }
 
+  // The language: two flags in the top corner of the title screens.
+  langFlags(parent) {
+    const w = el('div', 'lang-flags no-tr', parent);
+    const bs = LANGS.map(([code, name]) => {
+      const b = el('button', 'flag' + (lang() === code ? ' sel' : ''), w, `${FLAGS[code]}<span>${code.toUpperCase()}</span>`);
+      b.setAttribute('aria-label', name);
+      b.title = name;
+      b.addEventListener('pointerdown', (e) => e.stopPropagation());
+      b.onclick = (e) => {
+        e.stopPropagation();
+        if (lang() === code) return;
+        settings.set('language', code);
+        bs.forEach((x) => x.classList.toggle('sel', x === b));
+        this.game && this.game.audio && this.game.audio.uiSound && this.game.audio.uiSound('select');
+      };
+      return b;
+    });
+    return w;
+  }
+
   // First screen: wait for a key/click (also unlocks audio and starts the title theme).
   showSplash() {
     this.mode = 'menu';
@@ -309,6 +363,7 @@ export class UI {
       const face = this.sign(s, { cls: 'title-sign', posts: 2 });
       this.titleHead(face);
       el('div', 'title-press', s, 'Press any key');
+      this.langFlags(s);
       const go = () => {
         window.removeEventListener('keydown', go, true);
         s.removeEventListener('pointerdown', go);
@@ -350,6 +405,7 @@ export class UI {
         <p>The corner of the screen tells you what needs doing next.</p>
         <div class="flyer-next">Coming: songs for the radio, and company on the road.</div>`;
       el('div', 'title-foot', s, `v${VERSION} · ↑ ↓ and Enter work too`);
+      this.langFlags(s);
       this.menuNav(m);
     });
     this.show('title');
@@ -565,12 +621,23 @@ export class UI {
         this.applySettings(k);
       };
       if (tab === 'graphics') {
-        this.seg(body, 'Quality', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], d.quality, (v) => set('quality', v), 'Shadows, distance and detail. Takes effect on the next start.');
+        this.seg(
+          body,
+          'Quality',
+          [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']],
+          d.quality,
+          (v) => {
+            if (v === 'custom') startCustom();
+            set('quality', v);
+            this.showSettings(back, 'graphics');
+          },
+          d.quality === 'custom' ? 'Each part of the picture on its own. Point at a choice to see it.' : 'A preset sets everything at once. Custom: choose each part yourself, with pictures.'
+        );
+        if (d.quality === 'custom') this.customGfx(body, set);
         this.range(body, 'Field of view', 70, 110, 1, d.hfov, (v) => set('hfov', v), (v) => v + '°');
         this.range(body, 'Render scale', 0.5, 1, 0.05, d.resolutionScale, (v) => set('resolutionScale', v), (v) => Math.round(v * 100) + '%');
         this.toggle(body, 'Dynamic resolution', d.dynamicResolution !== false, (v) => set('dynamicResolution', v));
-        this.toggle(body, 'Bloom', d.bloom, (v) => set('bloom', v));
-        this.toggle(body, 'Frame rate counter', d.showFps, (v) => set('showFps', v));
+        this.toggle(body, 'FPS and ping', d.showFps, (v) => set('showFps', v));
       } else if (tab === 'audio') {
         this.range(body, 'Everything', 0, 1, 0.01, d.masterVolume, (v) => set('masterVolume', v), pct);
         this.range(body, 'Effects', 0, 1, 0.01, d.sfxVolume, (v) => set('sfxVolume', v), pct);
@@ -596,11 +663,47 @@ export class UI {
           this.showSettings(back, 'controls');
         });
       } else {
+        this.seg(body, 'Language', LANGS, lang(), (v) => set('language', v)).classList.add('no-tr');
         this.seg(body, 'Units', [['metric', 'Kilometres'], ['imperial', 'Miles']], d.units, (v) => set('units', v));
         this.toggle(body, 'Head bob', d.headBob, (v) => set('headBob', v));
+        this.toggle(body, 'Tutorial on a new game', d.tutorial !== false, (v) => set('tutorial', v));
       }
     });
     this.show('settings');
+  }
+
+  // Custom picture settings: a card for each, with a picture of the choice (pointing at another
+  // choice shows that one).
+  customGfx(body, set) {
+    const cur = () => settings.data.custom || {};
+    const grid = el('div', 'gfx-grid', body);
+    for (const [k, label, opts, note, live] of GFX_OPTIONS) {
+      const card = el('div', 'gfx-card', grid);
+      // (shadows, glow, sun rays and heat haze have no example picture yet)
+      const pic = el('div', 'gfx-pic', GFX_PICTURES.has(k) ? card : null);
+      const tag = el('span', 'gfx-tag', pic);
+      const show = (v) => {
+        pic.style.backgroundImage = `url(settings/${k}_${v}.webp)`;
+        const o = opts.find((x) => String(x[0]) === String(v));
+        tag.textContent = o ? o[1] : '';
+      };
+      show(gfx()[k]);
+      el('div', 'gfx-k', card, `${esc(label)}${live ? '' : '<small>next start</small>'}`);
+      const w = el('div', 'opts', card);
+      const bs = opts.map(([v, lab]) => {
+        const b = el('button', 'opt' + (String(v) === String(gfx()[k]) ? ' sel' : ''), w, esc(lab));
+        b.addEventListener('pointerenter', () => show(v));
+        b.addEventListener('pointerleave', () => show(gfx()[k]));
+        this.click(b, () => {
+          bs.forEach((x) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          set('custom', { ...gfx(), ...cur(), [k]: v });
+          show(v);
+        });
+        return b;
+      });
+      el('p', 'gfx-note', card, esc(note));
+    }
   }
 
   row(parent, label, note) {
@@ -620,6 +723,7 @@ export class UI {
       });
       return b;
     });
+    return w;
   }
 
   toggle(parent, label, cur, onPick) {
@@ -652,7 +756,10 @@ export class UI {
   applySettings(k) {
     const g = this.game;
     const d = settings.data;
-    if (k === 'showFps') this.fpsEl.style.display = d.showFps ? '' : 'none';
+    if (k === 'showFps') {
+      this.fpsEl.style.display = d.showFps ? '' : 'none';
+      document.body.classList.toggle('fps-on', !!d.showFps);
+    }
     if (!g) return;
     if (/Volume$/.test(k) && g.audio && g.audio.applyVolumes) g.audio.applyVolumes();
     if (k === 'musicOn' && g.audio && g.audio.syncMusic) g.audio.syncMusic();
@@ -660,28 +767,46 @@ export class UI {
     if (!g.renderer) return;
     if (k === 'transmission' && g.car) g.car.dyn.automatic = d.transmission === 'auto';
     if (k === 'resolutionScale' && g.renderer.setScale) g.renderer.setScale(d.resolutionScale);
-    if (k === 'bloom') g.renderer.applyPassSettings();
+    if (k === 'quality' || k === 'custom') {
+      // what can change at once does; distance and antialiasing wait for the next start
+      const msaa = g.renderer.q.msaa;
+      g.renderer.setQuality(d.quality);
+      g.renderer.q.msaa = msaa;
+      g.renderer.applyPassSettings();
+      const q = g.renderer.q;
+      if (g.env && g.env.setShadows) g.env.setShadows(q.shadowsOn, q.shadow, q.shadowExtent);
+      if (g.scatter && g.scatter.setPlantShadows) g.scatter.setPlantShadows(q.plantShadows);
+    }
   }
 
   // ---------------------------------------------------------------- how to play: the manual
+  // Six photographs from the road pinned to the page, each with what to do and the keys for it,
+  // then the full list of keys.
   showHowTo(back) {
+    const d = settings.data;
+    const K = (a) => keyName(d.bindings[a] || DEFAULT_BINDINGS[a]);
     this.screen('howto', (s) => {
       s.classList.add('scr-dim');
       const { body } = this.doc(s, "Driver's manual", { sub: `Route 9, northbound. Haven is ${HAVEN_KM} km up the road, and the road goes on past it.`, back, cls: 'manual' });
-      const cols = el('div', 'manual-cols', body);
-      for (const [n, title, text] of [
-        ['1', 'The road', `Drive north. Gas stations, diners, motels and farms come every few hundred metres: stop, look around, take what helps. Days pass; nights are dark and cold. The top left corner always says what needs doing next, and a yellow diamond shows where.`],
-        ['2', 'Your car', `Look at a part and hold R to unbolt it; carry one to the car and press E where it goes. Some go on only after others, or with a lid open. To fill up, hold a can to the filler and press the left button. In the seat everything works by hand: look at the key and hold E, and the same for the lights, the turn signals, the parking brake and the doors.`],
-        ['3', 'Staying alive', `Food, water, rest and warmth run down; the rings in the bottom left show them when they matter. Eat and drink what you find. Sleep in the car (B, engine off), in a tent or in a bed. Things move about at night, and light keeps only some of them back.`],
-        ['4', 'Your things', `E picks things up, Q puts them in the backpack and Tab opens it. 1 is your fists, 2 to 7 the hotbar. Notes people left on the road go into the journal (J); the road atlas (M) keeps the places you have been and the notes you pin on it.`],
+      const grid = el('div', 'howto-grid', body);
+      for (const [pic, title, text, keys] of [
+        ['roadside', 'Drive north', 'Gas stations, diners, motels and farms line the road. Stop, look around, take what helps.', [[`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'drive'], [K('handbrake'), 'handbrake']]],
+        ['breakdown', 'Fix the car', 'Hold R on a part to take it off. Carry one to the car and press E where it goes.', [[`${K('reload')} hold`, 'unbolt'], [K('interact'), 'fit']]],
+        ['pushing', 'Keep her fed', 'Hold a jerry can to the filler and pour. Some pumps still work. Oil and water matter too.', [['LMB', 'pour'], ['RMB', 'turn it']]],
+        ['vista', 'Everything by hand', 'In the seat, look at the key and hold E. Lights, signals, the parking brake and the doors work the same way.', [[`${K('interact')} hold`, 'start'], [K('lights'), 'headlights']]],
+        ['campfire', 'Stay alive', 'Food, water, rest and warmth run down. Sleep in the car, a tent or a bed. Nights are dark and not empty.', [[K('sleep'), 'sleep'], [K('flashlight'), 'flashlight']]],
+        ['fishing', 'Your things', 'Pick things up, stow them, open the backpack. Notes go in the journal, places on the road atlas.', [[K('interact'), 'take'], [K('stow'), 'stow'], [K('inventory'), 'backpack'], [K('journal'), 'journal']]],
       ]) {
-        const c = el('div', 'manual-sec', cols);
-        el('h3', '', c, `<span>${n}.</span> ${esc(title)}`);
-        el('p', '', c, esc(text));
+        const c = el('div', 'howto-card', grid);
+        const ph = el('div', 'howto-pic', c);
+        ph.style.backgroundImage = `url(menu/${pic}.webp)`;
+        el('div', 'howto-t', c, esc(title));
+        el('p', 'howto-p', c, esc(text));
+        const kr = el('div', 'howto-keys', c);
+        for (const [k, what] of keys) el('span', '', kr, `<kbd>${esc(k)}</kbd>${esc(what)}`);
       }
       el('h3', 'doc-h3', body, 'Keys');
       const keys = el('div', 'keylist cols', body);
-      const d = settings.data;
       for (const action of Object.keys(LABELS)) el('div', 'keylist-row', keys, `<span>${esc(LABELS[action])}</span><kbd>${esc(keyName(d.bindings[action] || DEFAULT_BINDINGS[action]))}</kbd>`);
       for (const [k, t] of [
         ['LMB', 'Use what you hold'],
@@ -741,23 +866,8 @@ export class UI {
                 : `The ${esc(name)} is in the garage and she runs, more or less. There is a little fuel in her. Find more, and get north to Haven: ${HAVEN_KM} km up Route 9.`
             }</p><p>Don't drive at night if you can help it.</p><div class="intro-sig">R.</div>`;
         }
-        const b = settings.data.bindings;
-        const K = (a) => keyName(b[a] || DEFAULT_BINDINGS[a]);
-        const card = el('div', 'paper intro-card', s);
-        el('div', 'intro-card-h', card, 'Keys');
-        for (const [k, t] of [
-          [`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'walk, drive'],
-          [K('interact'), 'use, pick up, open, get in'],
-          ['LMB / RMB', 'use what you hold / turn it'],
-          [`${K('reload')} (hold)`, 'unbolt a part'],
-          [`${K('interact')} on the key`, 'start the engine (hold)'],
-          [`${K('drop')} · ${K('stow')} · ${K('inventory')}`, 'drop · into the backpack · open it'],
-          [`${K('journal')} · ${K('atlas')}`, 'journal · road atlas'],
-        ])
-          el('div', 'intro-key', card, `<kbd>${esc(k)}</kbd><span>${esc(t)}</span>`);
       }
       el('div', 'intro-go', s, first ? 'Click to begin' : 'Click to go on');
-      el('div', 'intro-foot', s, 'Esc pauses · the manual is in the pause menu');
       if (g && g.hud) g.hud.root.classList.add('intro');
       s.addEventListener('click', () => this.resume());
     });
@@ -798,6 +908,11 @@ export class UI {
         g.hud && g.hud.toast(ok ? 'Saved' : 'Could not save', ok ? '' : 'warn');
         this.resume();
       });
+      if (g.tutorial && g.tutorial.active)
+        this.line(m, 'Skip the tutorial', () => {
+          g.tutorial.finish();
+          this.resume();
+        });
       this.line(m, 'Journal', () => this.showJournal(() => this.showPause()));
       this.line(m, "Driver's manual", () => this.showHowTo(() => this.showPause()));
       this.line(m, settings.data.musicOn === false ? 'Music: off' : 'Music: on', () => {
@@ -1192,7 +1307,10 @@ export class UI {
     this.fpsAcc += dt;
     this.fpsN++;
     if (this.fpsAcc > 0.5) {
-      this.fpsEl.textContent = Math.round(this.fpsN / this.fpsAcc) + ' fps';
+      const fps = Math.round(this.fpsN / this.fpsAcc);
+      this.fpsNum.textContent = fps;
+      this.fpsEl.classList.add('live');
+      this.fpsEl.dataset.band = fps >= 55 ? 'ok' : fps >= 30 ? 'mid' : 'low';
       this.fpsAcc = 0;
       this.fpsN = 0;
     }

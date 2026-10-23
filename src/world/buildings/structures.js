@@ -825,13 +825,32 @@ export function buildCamp(rnd) {
 // ------------------------------------------------------------------ small site props
 export function mailbox(b, x, z, rot, name) {
   const M = archMaterials();
-  b.box(x, 0.55, z, 0.08, 1.1, 0.08, M.woodDark, { surface: 'wood' });
-  const g = new THREE.CylinderGeometry(0.13, 0.13, 0.48, 16, 1, false, 0, Math.PI);
-  g.rotateZ(Math.PI / 2);
-  g.rotateY(rot);
-  g.translate(x, 1.15, z);
-  b.add(g, M.metalPainted);
+  // a point beside the post in the box's own frame (dx across, dz along the box)
+  const at = (dx, dz) => [x + dx * Math.cos(rot) + dz * Math.sin(rot), z - dx * Math.sin(rot) + dz * Math.cos(rot)];
+  // the post and the board the box sits on
+  b.box(x, 0.52, z, 0.09, 1.04, 0.09, M.woodDark, { surface: 'wood' });
+  b.box(x, 1.02, z, 0.16, 0.04, 0.5, M.woodDark, { collide: false, rotY: rot });
+  // the box: flat sides and a rounded top along its length, both ends closed
+  const top = new THREE.CylinderGeometry(0.13, 0.13, 0.48, 18, 1, false, -Math.PI / 2, Math.PI);
+  top.rotateX(-Math.PI / 2);
+  top.rotateY(rot);
+  top.translate(x, 1.16, z);
+  b.add(top, M.metalPainted);
   b.box(x, 1.1, z, 0.26, 0.12, 0.48, M.metalPainted, { collide: false, rotY: rot });
+  // the door at the road end, a little proud, with its latch
+  const [dx, dz] = at(0, 0.243);
+  b.box(dx, 1.1, dz, 0.27, 0.13, 0.008, M.metalPainted, { collide: false, rotY: rot });
+  const door = new THREE.CircleGeometry(0.135, 18, 0, Math.PI);
+  door.rotateY(rot);
+  door.translate(dx + Math.sin(rot) * 0.001, 1.16, dz + Math.cos(rot) * 0.001);
+  b.add(door, M.metalPainted);
+  const [lx, lz] = at(0, 0.252);
+  b.box(lx, 1.27, lz, 0.05, 0.025, 0.014, M.metal, { collide: false, rotY: rot });
+  // the red flag on its arm, down (no mail)
+  const [fx, fz] = at(0.137, 0.08);
+  b.box(fx, 1.13, fz, 0.012, 0.022, 0.24, M.metalRed, { collide: false, rotY: rot });
+  const [gx, gz] = at(0.137, -0.04);
+  b.box(gx, 1.13, gz, 0.012, 0.09, 0.07, M.metalRed, { collide: false, rotY: rot });
   void name;
 }
 

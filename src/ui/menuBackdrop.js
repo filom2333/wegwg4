@@ -25,12 +25,23 @@ vec2 fit(vec2 uv, float zoom) {
   return p / zoom + 0.5;
 }
 float disp(sampler2D d, vec2 p) { float v = texture(d, p).r; return v * v; }
-// a picture seen from an eye moved by off: near pixels slide further than far ones (a few steps
-// of fixed-point search for the pixel that lands here)
+// a picture seen from an eye moved by off: near pixels slide further than far ones. The line of
+// pixels that could land here is walked from the nearest depth to the farthest, and the first
+// surface it meets is what shows (so a near edge covers what is behind it, never doubled), then
+// the crossing is narrowed down.
 vec3 view(sampler2D img, sampler2D dep, vec2 uv, vec2 off, float zoom, float focus, out float dsp) {
   vec2 p = fit(uv, zoom);
-  vec2 q = p;
-  for (int i = 0; i < 5; i++) q = p - off * (disp(dep, q) - focus);
+  float lo = 1.0, hi = 0.0;
+  for (int i = 0; i <= 20; i++) {
+    float s = 1.0 - float(i) / 20.0;
+    if (disp(dep, p - off * (s - focus)) >= s) { hi = s; break; }
+    lo = s;
+  }
+  for (int k = 0; k < 5; k++) {
+    float m = 0.5 * (lo + hi);
+    if (disp(dep, p - off * (m - focus)) >= m) hi = m; else lo = m;
+  }
+  vec2 q = clamp(p - off * (hi - focus), vec2(0.001), vec2(0.999));
   dsp = disp(dep, q);
   return texture(img, q).rgb;
 }
@@ -159,7 +170,7 @@ export class MenuBackdrop {
       const e = k * k * (3 - 2 * k);
       const p = s.path;
       return {
-        off: [p.x0 + (p.x1 - p.x0) * e - M.sx * 0.022, p.y0 + (p.y1 - p.y0) * e + M.sy * 0.012],
+        off: [p.x0 + (p.x1 - p.x0) * e - M.sx * 0.014, p.y0 + (p.y1 - p.y0) * e + M.sy * 0.008],
         zoom: p.z0 + (p.z1 - p.z0) * e,
       };
     };

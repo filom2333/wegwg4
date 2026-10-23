@@ -3,6 +3,9 @@
 // with Lanczos for clean edges, and a depth map (disparity, for the menu's parallax).
 // Usage: node tools/promo/shoot.mjs <scenes.mjs> <out dir> [names,comma,separated]
 // env: W, H (output size, default 1920x1080), SS (supersampling, default 2), BASE (dev server)
+// A scene with `variants` ([name, apply(g), crop?]) is shot once per variant instead (no depth):
+// the examples in Settings, where apply changes one picture setting in the running game and
+// crop ([x, y, w, h] as fractions) zooms in on the detail it changes.
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import fs from 'fs';
 import path from 'path';
@@ -24,7 +27,7 @@ for (const sc of scenes) {
   const logs = [];
   page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
-  await page.addInitScript((q) => localStorage.setItem('dustroad.settings.v1', JSON.stringify({ quality: q, dynamicResolution: false, musicOn: false, hfov: 90 })), sc.quality || 'ultra');
+  await page.addInitScript((q) => localStorage.setItem('dustroad.settings.v1', JSON.stringify({ quality: q[0], dynamicResolution: false, musicOn: false, hfov: 90, showFps: false, v: 2, ...q[1] })), [sc.quality || 'ultra', sc.settings || {}]);
   const q = `seed=${sc.seed || 1234}&time=${sc.time ?? 18}&z=${sc.z}&manual=1&weather=${sc.weather || 'clear'}&car=${sc.car || 'w203'}`;
   await page.goto((process.env.BASE || 'http://127.0.0.1:5173/') + '?' + q, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__ready === true', null, { timeout: 600000 });
@@ -52,6 +55,46 @@ for (const sc of scenes) {
     continue;
   }
   await page.addStyleTag({ content: 'body > :not(#game){display:none!important}' });
+  if (sc.variants) {
+    for (const [vn, apply, crop] of sc.variants) {
+      // apply: a function run in the page, or renderer options to set (msaa: rebuilds the scene
+      // buffers with that many samples; heat: the shimmer held at that strength)
+      await page.evaluate(
+        async ([src, o]) => {
+          const g = window.game;
+          if (src) await new Function('g', 'return (' + src + ')(g)')(g);
+          if (o) {
+            const R = g.renderer;
+            if (o.msaa !== undefined)
+              for (const rt of [R.composer.renderTarget1, R.composer.renderTarget2]) {
+                rt.samples = o.msaa;
+                rt.dispose();
+              }
+            if (o.heatHold !== undefined) {
+              const f = Object.getPrototypeOf(R).setHeat;
+              R.setHeat = () => f.call(R, o.heatHold);
+            }
+            Object.assign(R.q, o);
+            R.applyPassSettings();
+            R.applyPixelRatio();
+            g.env.setShadows(R.q.shadowsOn, R.q.shadow, R.q.shadowExtent);
+          }
+          g.renderNow();
+          g.renderNow();
+        },
+        [typeof apply === 'function' ? apply.toString() : null, typeof apply === 'object' ? apply : null]
+      );
+      const big = path.join(outDir, `${sc.name}_${vn}_big.png`);
+      await page.screenshot({ path: big, timeout: 900000 });
+      const vf = (crop ? `crop=iw*${crop[2]}:ih*${crop[3]}:iw*${crop[0]}:ih*${crop[1]},` : '') + `scale=${W}:${H}:flags=lanczos`;
+      execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', big, '-vf', vf, '-quality', '82', path.join(outDir, `${sc.name}_${vn}.webp`)]);
+      fs.unlinkSync(big);
+    }
+    console.log(sc.name, ((Date.now() - t0) / 1000).toFixed(0) + ' s');
+    for (const l of logs.filter((l) => /pageerror|error/i.test(l) && !/GL Driver/.test(l)).slice(-8)) console.log('  ', l);
+    await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 5000))]);
+    continue;
+  }
   await page.evaluate(() => window.game.renderNow());
   await page.evaluate(() => window.game.renderNow());
   const big = path.join(outDir, sc.name + '_big.png');

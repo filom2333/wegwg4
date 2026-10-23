@@ -5,6 +5,9 @@ import { Game } from './game.js';
 import { UI } from './ui/ui.js';
 import { readSave, deleteSave } from './core/save.js';
 import { AudioSystem } from './audio/audio.js';
+import { startTranslation } from './core/i18n.js';
+import { settings } from './core/settings.js';
+import { Tutorial } from './ui/tutorial.js';
 import * as THREE from 'three';
 window.__THREE = THREE;
 
@@ -16,6 +19,8 @@ const params = new URLSearchParams(location.search);
 const canvas = document.createElement('canvas');
 canvas.id = 'game';
 document.body.appendChild(canvas);
+// text on screen in the chosen language (see core/i18n.js)
+startTranslation();
 const ui = new UI();
 window.ui = ui;
 
@@ -73,6 +78,8 @@ async function boot() {
     });
     game.start();
     game.paused = true;
+    // a new game teaches the first steps (once; Settings > Game turns it back on)
+    if (!load && settings.data.tutorial !== false) game.tutorial = new Tutorial(game, game.startMode);
     ui.showClickToPlay(true);
     window.__ready = true;
     return;

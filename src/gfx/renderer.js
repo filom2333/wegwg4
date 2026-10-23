@@ -11,15 +11,11 @@ import { SelectionOutlinePass } from './outline.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import './fogSun.js';
 import { RENDER_CAPS } from './caps.js';
+import { renderOptions } from '../core/gfx.js';
 
-// maxPixels caps the internal resolution: a 4K or retina panel at full device resolution costs
-// four times the shading of 1080p for little visible gain at the post-processed output.
-export const QUALITY = {
-  low: { pixelRatio: 0.75, maxPixels: 1.0e6, shadow: 1024, shadowExtent: 35, bloom: false, aa: true, msaa: 0, sharpen: 0.25, shafts: false, view: 1800 },
-  medium: { pixelRatio: 1, maxPixels: 2.1e6, shadow: 2048, shadowExtent: 45, bloom: true, aa: true, msaa: 0, sharpen: 0.3, shafts: true, view: 2600 },
-  high: { pixelRatio: 1, maxPixels: 3.7e6, shadow: 2048, shadowExtent: 55, bloom: true, aa: false, msaa: 4, sharpen: 0.32, shafts: true, view: 3200 },
-  ultra: { pixelRatio: 1.5, maxPixels: 6.0e6, shadow: 4096, shadowExtent: 65, bloom: true, aa: false, msaa: 4, sharpen: 0.25, shafts: true, view: 3200 },
-};
+// The preset (or custom) options come from core/gfx.js. maxPixels caps the internal resolution:
+// a 4K or retina panel at full device resolution costs four times the shading of 1080p for
+// little visible gain at the post-processed output.
 
 // Final grade, after tone mapping: light sharpening, sun shafts and lens glare from the scene
 // depth, a film-like curve and split toning, vignette and grain.
@@ -207,9 +203,9 @@ export class Renderer {
     this.setQuality(quality);
   }
 
-  setQuality(q) {
+  setQuality(q = settings.data.quality) {
     this.qualityName = q;
-    this.q = QUALITY[q] || QUALITY.high;
+    this.q = renderOptions(q);
     this.applyPixelRatio();
   }
 
@@ -308,10 +304,11 @@ export class Renderer {
 
   applyPassSettings() {
     if (!this.composer) return;
-    this.bloom.enabled = this.q.bloom && settings.data.bloom !== false;
-    this.fxaa.enabled = this.q.aa;
-    this.grade.uniforms.uSharpen.value = settings.data.sharpen === false ? 0 : this.q.sharpen ?? 0.3;
+    this.bloom.enabled = !!this.q.bloom;
+    this.fxaa.enabled = !!this.q.aa;
+    this.grade.uniforms.uSharpen.value = this.q.sharpen ?? 0.3;
     this.grade.uniforms.uShafts.value = this.q.shafts ? 1 : 0;
+    this.grade.uniforms.uGrain.value = this.q.grain === false ? 0 : 0.02;
   }
 
   resize() {

@@ -61,6 +61,72 @@
   font-display: swap;
   src: url('./fonts/courier-prime-latin-700-normal.woff2') format('woff2');
 }
+/* Cyrillic: the same faces where they have it; Courier Prime has none, so the typewriter
+   lines in Russian fall to IBM Plex Mono (unicode-range keeps Latin on Courier Prime) */
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-cyrillic-400-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  src: url('./fonts/overpass-cyrillic-400-italic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-cyrillic-600-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-cyrillic-800-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Overpass Mono';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-mono-cyrillic-600-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-cyrillic-400-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-cyrillic-400-italic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/ibm-plex-mono-cyrillic-700-normal.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
 
 :root {
   /* signs */
@@ -321,6 +387,16 @@
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.27  0 0 0 0.09 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15), 0 18px 40px rgba(0, 0, 0, 0.45), 0 3px 8px rgba(0, 0, 0, 0.25);
   font-family: var(--f-type);
+}
+/* the paper itself: fibres, folds and handled edges (signTextures.js), multiplied over it */
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tex-sheet-paper, none) 0 0 / 100% 100% no-repeat, var(--tex-fibre, none) 0 0 / 256px 256px repeat;
+  mix-blend-mode: multiply;
+  pointer-events: none;
 }
 /* ruled like a notebook */
 .paper.ruled {

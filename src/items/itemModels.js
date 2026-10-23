@@ -996,8 +996,61 @@ export function sandbag() {
   return centered(g);
 }
 
+// ------------------------------------------------------------------ big things to carry
+// A CRT television in a wood cabinet: the bezel and a bulging screen, the channel and volume
+// knobs, the speaker slots, rabbit ears on top. Carried in both arms.
+export function tv() {
+  const M = itemMats();
+  if (!M.tvBezel) {
+    M.tvBezel = new THREE.MeshStandardMaterial({ color: 0x1c1b1a, roughness: 0.55 });
+    M.tvGlass = new THREE.MeshPhysicalMaterial({ color: 0x1e2522, roughness: 0.12, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 });
+  }
+  const g = new THREE.Group();
+  // cabinet: wood sides and top, the tube's housing tapering to the back
+  g.add(mesh(roundedBox(0.56, 0.44, 0.3, 0.02, 3).translate(0, 0.22, 0.03), M.walnut));
+  g.add(mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.16, 4, 1).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0.23, -0.19), M.tvBezel));
+  // front: bezel, screen (a shallow dome), control panel on the right
+  g.add(mesh(roundedBox(0.52, 0.4, 0.02, 0.012, 2).translate(0, 0.22, 0.185), M.tvBezel));
+  const scr = new THREE.SphereGeometry(0.5, 24, 16, Math.PI / 2 - 0.36, 0.72, Math.PI / 2 - 0.3, 0.6);
+  scr.translate(0, 0, -0.5 + 0.012);
+  scr.scale(1, 1, 1);
+  g.add(mesh(scr.translate(-0.06, 0.225, 0.195), M.tvGlass));
+  for (let k = 0; k < 2; k++) {
+    const knob = latheY([[0.022, 0], [0.022, 0.016], [0.017, 0.022], [0, 0.022]], 16);
+    knob.rotateX(Math.PI / 2).translate(0.2, 0.32 - k * 0.075, 0.195);
+    g.add(mesh(knob, M.darkSteel));
+  }
+  for (let k = 0; k < 6; k++) g.add(mesh(new THREE.BoxGeometry(0.06, 0.006, 0.004).translate(0.2, 0.16 - k * 0.014, 0.197), M.rubber));
+  // rabbit ears
+  g.add(mesh(new THREE.SphereGeometry(0.03, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.44, 0.02), M.tvBezel));
+  for (const s of [-1, 1]) g.add(mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.36, 6).translate(0, 0.18, 0).rotateZ(s * 0.5).translate(0, 0.45, 0.02), M.steel));
+  grip(g, 'side', 'wrap12', V(0, 0.44, 0.03), RIGHT, V(0, 0, 1));
+  return centered(g);
+}
+
+// A 60-litre steel drum: rolled hoops, a rim each end, two bungs in the lid.
+export function drum(color = 0) {
+  const M = itemMats();
+  const paint = [0x2f4f7a, 0x8a2b20, 0x55603d][color % 3];
+  const key = 'drum' + (color % 3);
+  if (!M[key]) M[key] = addSurfaceDetail(new THREE.MeshStandardMaterial({ color: paint, roughness: 0.55, metalness: 0.45 }), 'cast', 0.45);
+  const g = new THREE.Group();
+  const R = 0.2,
+    H = 0.6;
+  g.add(mesh(new THREE.CylinderGeometry(R, R, H, 28, 1, true).translate(0, H / 2, 0), M[key]));
+  for (const y of [0.012, H - 0.012]) g.add(mesh(new THREE.TorusGeometry(R, 0.011, 6, 28).rotateX(Math.PI / 2).translate(0, y, 0), M[key]));
+  for (const y of [H * 0.33, H * 0.67]) g.add(mesh(new THREE.TorusGeometry(R + 0.004, 0.007, 6, 28).rotateX(Math.PI / 2).translate(0, y, 0), M[key]));
+  g.add(mesh(new THREE.CircleGeometry(R, 28).rotateX(-Math.PI / 2).translate(0, H - 0.008, 0), M[key]));
+  g.add(mesh(new THREE.CircleGeometry(R, 28).rotateX(Math.PI / 2).translate(0, 0.006, 0), M[key]));
+  for (const [x, z, r] of [[0.11, 0.02, 0.026], [-0.12, -0.03, 0.016]]) g.add(mesh(new THREE.CylinderGeometry(r, r, 0.014, 12).translate(x, H - 0.002, z), M.darkSteel));
+  grip(g, 'side', 'wrap12', V(0, H, 0), RIGHT, V(0, 0, 1));
+  return centered(g);
+}
+
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
+  tv,
+  drum,
   sandbag,
   jack: () => jackModel(),
   carbKit: () => carbKitModel(),
