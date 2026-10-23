@@ -12,7 +12,7 @@ import { texturedConifer, texturedBroadleaf, texturedShrub, treeMaterials } from
 import { bakeImpostors, createImpostorMaterial } from '../gfx/impostor.js';
 import { SPECIES, CELL, STRIDE, BIOME_LIST, sinkOf, cellInstances } from './scatterGen.js';
 import { BIOME_INFO } from './worldGen.js';
-import { settings } from '../core/settings.js';
+import { distance, renderOptions } from '../core/gfx.js';
 
 // Loose rock takes the same tint the terrain shader gives exposed rock in that biome, so boulders,
 // hoodoos and cliffs read as one stone.
@@ -58,8 +58,6 @@ const CAP = {
   stump: [200, 0],
   log: [120, 0],
 };
-
-const FAR_BY_QUALITY = { low: 520, medium: 700, high: 880, ultra: 1000 };
 
 const SHADOW = { rings: 99 };
 
@@ -116,7 +114,8 @@ export class Scatter {
     this.meshes = []; // [species][variant] -> [lod0, lod1|null]
     this.cells = new Map(); // key -> { ci, cj, data: Float32Array|null, colliders }
     this.lastCell = null;
-    this.farRadius = FAR_BY_QUALITY[settings.data.quality] || 880;
+    this.farRadius = distance().trees;
+    this.plantShadows = renderOptions().plantShadows;
     this.dirty = false;
     this.lastRebuild = 0;
     this.buildVariants();
@@ -224,7 +223,7 @@ export class Scatter {
           const g2 = this.geometryFor(def, v, 1);
           g2.computeBoundingSphere();
           m2 = this.instanced(g2, mat, cap[2] || cap[0] * 2, def);
-          m2.castShadow = def.shadow !== false && settings.data.quality !== 'low';
+          m2.castShadow = def.shadow !== false && this.plantShadows;
         }
         list.push([m0, m1, m2]);
       }

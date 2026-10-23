@@ -46,7 +46,7 @@ export const DEFAULTS = {
   ao: true,
   motionBlur: false,
   vsync: true,
-  showFps: false,
+  showFps: true,
   masterVolume: 0.85,
   musicVolume: 0.6,
   sfxVolume: 0.9,
@@ -55,6 +55,8 @@ export const DEFAULTS = {
   scoreVolume: 0.6,
   sound3d: 'headphones', // 'headphones': 3D (HRTF) panning; 'speakers': plain left-right
   language: 'en',
+  tutorial: true, // the first steps, shown on a new game
+  v: 2,
   units: 'metric',
   transmission: 'auto',
   headBob: true,
@@ -93,6 +95,9 @@ class Settings {
       if (raw) {
         const parsed = JSON.parse(raw);
         this.data = { ...structuredClone(DEFAULTS), ...parsed, bindings: { ...DEFAULT_BINDINGS, ...(parsed.bindings || {}) } };
+        // v2: the FPS and ping counter shows unless turned off since
+        if (!(parsed.v >= 2)) this.data.showFps = true;
+        this.data.v = 2;
       } else this.data.quality = detectQuality();
     } catch (e) {
       /* storage unavailable */

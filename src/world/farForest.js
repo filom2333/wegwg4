@@ -8,16 +8,15 @@ import * as THREE from 'three';
 import { createImpostorMaterial } from '../gfx/impostor.js';
 import { FCELL, FSTRIDE } from './farForestGen.js';
 import { TREES } from './treeCover.js';
-import { settings } from '../core/settings.js';
+import { distance } from '../core/gfx.js';
 
-// how far the far forest reaches (m) by quality; none on low
-const REACH = { low: 0, medium: 1400, high: 1900, ultra: 2400 };
 const CAP = 9000;
 
 export class FarForest {
   constructor(game, scatter) {
     this.game = game;
-    this.far = REACH[settings.data.quality] ?? 1900;
+    // how far it reaches comes with the draw distance (none on the lowest)
+    this.far = distance().forest;
     this.near = scatter.treeFar || 750;
     this.cells = new Map();
     this.lastCell = null;

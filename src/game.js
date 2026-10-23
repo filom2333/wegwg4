@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
+import { distance } from './core/gfx.js';
 import { LightPool } from './gfx/lightPool.js';
 import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
@@ -133,6 +134,7 @@ export class Game {
       seed,
       shadowSize: this.renderer.q.shadow,
       shadowExtent: this.renderer.q.shadowExtent,
+      shadows: this.renderer.q.shadowsOn,
     });
     this.env.onLightning = (r) => this.effects && this.effects.lightning(r);
     this.terrain = new Terrain({
@@ -142,7 +144,7 @@ export class Game {
       terrainMaterial: this.terrainMat,
       roadMaterial: this.roadMat,
       origin: this.origin,
-      quality: settings.data.quality,
+      viewRadius: distance().land,
     });
     const treeTex = loadTreeTextures(this.renderer.renderer);
     await this.terrain.workerReady;
@@ -479,6 +481,7 @@ export class Game {
     if (!this.attract) {
       this.hud.update(dt);
       this.goals.update(dt);
+      if (this.tutorial) this.tutorial.update(dt);
     }
     // streaming
     const f = this.focusPoint();
@@ -879,7 +882,7 @@ export class Game {
       const clear = (1 - E.w.overcast * 0.9) * (1 - E.w.dust * 0.6) * (1 - E.w.rain * 0.8);
       this.renderer.setSun(E.sunDir, E.sun.color, THREE.MathUtils.smoothstep(up, -0.02, 0.06) * clear);
       const hot = E.biome === 'dunes' || E.biome === 'badlands' || E.biome === 'saltflat' ? 1 : E.biome === 'scrub' || E.biome === 'highland' ? 0.7 : 0;
-      this.renderer.setHeat(hot * THREE.MathUtils.smoothstep(up, 0.45, 0.85) * clear * (1 - E.w.rain) * (settings.data.quality === 'low' ? 0 : 1));
+      this.renderer.setHeat(hot * THREE.MathUtils.smoothstep(up, 0.45, 0.85) * clear * (1 - E.w.rain) * (this.renderer.q.heat ? 1 : 0));
       // mist lies in the low ground: its base follows the land under you slowly, so it stays put
       // in a valley as you drive down into it
       const gy = this.gen.height(cam.position.x + this.origin.x, cam.position.z + this.origin.z);

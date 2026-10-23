@@ -49,7 +49,8 @@ export class Environment {
     scene.add(this.sky.mesh);
     this.baker = new EnvironmentBaker(renderer);
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
-    this.sun.castShadow = true;
+    this.shadowsOn = opts.shadows !== false;
+    this.sun.castShadow = this.shadowsOn;
     const q = opts.shadowSize ?? 2048;
     this.sun.shadow.mapSize.set(q, q);
     this.shadowExtent = opts.shadowExtent ?? 45;
@@ -210,6 +211,25 @@ export class Environment {
     return 'clear';
   }
 
+  // Shadow settings changed in the menu: a new map size and reach, or none at all.
+  setShadows(on, size, extent) {
+    this.shadowsOn = on;
+    if (!on) this.sun.castShadow = false;
+    const sh = this.sun.shadow;
+    if (sh.mapSize.x !== size) {
+      sh.mapSize.set(size, size);
+      if (sh.map) {
+        sh.map.dispose();
+        sh.map = null;
+      }
+    }
+    this.shadowExtent = extent;
+    const c = sh.camera;
+    c.left = c.bottom = -extent;
+    c.right = c.top = extent;
+    c.updateProjectionMatrix();
+  }
+
   update(dt, gameHours = null) {
     // time
     const dh = gameHours !== null ? gameHours : (dt / 60) * this.timeScale;
@@ -299,7 +319,7 @@ export class Environment {
     // moonlight bright enough to drive by on a clear night (shadows and all)
     this.moon.intensity = 0.8 * moonUp * night * (1 - this.w.overcast * 0.75);
     // the stronger of sun/moon casts shadows
-    this.sun.castShadow = this.sun.intensity > 0.05;
+    this.sun.castShadow = this.shadowsOn && this.sun.intensity > 0.05;
 
     // ambient
     const skyCol = new THREE.Color().setRGB(0.46, 0.55, 0.68).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);
