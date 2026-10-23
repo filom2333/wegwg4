@@ -1,7 +1,7 @@
 // Inventory screen: backpack (hotbar row + pack) on the left, the hands in the middle, and a
 // second panel on the right for whatever is at hand: things lying nearby, the car's trunk or
 // glovebox. Drag and drop between any slots, shift-click to send to the other side,
-// double-click to take in hand, right-click for actions, hover for details, 1-6 over a slot to
+// double-click to take in hand, right-click for actions, hover for details, 2-7 over a slot to
 // put it on the hotbar.
 
 import * as THREE from 'three';
@@ -153,7 +153,7 @@ export class InventoryUI {
       if (e.target === s) this.closeMenu();
     });
     // left: the backpack
-    const left = el('div', 'inv-panel inv-bag', wrap);
+    const left = el('div', 'paper inv-panel inv-bag', wrap);
     const head = el('div', 'inv-head', left);
     el('div', 'inv-title', head, 'Backpack');
     this.weightEl = el('div', 'inv-weight', head);
@@ -163,14 +163,14 @@ export class InventoryUI {
     this.bagGrid = el('div', 'inv-grid', left);
     this.pouchEl = el('div', 'inv-pouch', left);
     // middle: hands
-    const mid = el('div', 'inv-panel inv-hands', wrap);
+    const mid = el('div', 'paper inv-panel inv-hands', wrap);
     el('div', 'inv-title', mid, 'Hands');
     this.handSlot = el('div', 'inv-slot inv-handslot', mid);
     this.handSlot.dataset.c = 'hands';
     this.handSlot.dataset.i = '0';
     this.handName = el('div', 'inv-handname', mid);
     // right: nearby / trunk / glovebox
-    const right = el('div', 'inv-panel inv-side', wrap);
+    const right = el('div', 'paper inv-panel inv-side', wrap);
     this.tabs = el('div', 'inv-tabs', right);
     this.sideHead = el('div', 'inv-head', right);
     this.sideGrid = el('div', 'inv-grid', right);
@@ -180,7 +180,7 @@ export class InventoryUI {
       'div',
       'inv-help',
       s,
-      '<span><kbd>Drag</kbd> move</span><span><kbd>Shift</kbd>+click send across</span><span><kbd>Double-click</kbd> take in hand</span><span><kbd>RMB</kbd> actions</span><span><kbd>1</kbd>–<kbd>6</kbd> over a slot: hotbar</span><span><kbd>Tab</kbd> close</span>'
+      '<span><kbd>Drag</kbd> move</span><span><kbd>Shift</kbd>+click send across</span><span><kbd>Double-click</kbd> take in hand</span><span><kbd>RMB</kbd> actions</span><span><kbd>2</kbd>–<kbd>7</kbd> over a slot: hotbar</span><span><kbd>Tab</kbd> close</span>'
     );
     this.refresh();
   }
@@ -234,7 +234,7 @@ export class InventoryUI {
     this.bagGrid.innerHTML = '';
     for (let i = 0; i < inv.slots.length; i++) {
       const d = this.slotEl(i < HOTBAR ? this.hotGrid : this.bagGrid, 'player', i, inv.slots[i], i < HOTBAR ? ' hot' : '');
-      if (i < HOTBAR) el('span', 'inv-key', d, String(i + 1));
+      if (i < HOTBAR) el('span', 'inv-key', d, String(i + 2));
       if (i === inv.heldFrom && g.interaction.held) d.classList.add('inhand');
     }
     const w = inv.weight();
@@ -433,9 +433,9 @@ export class InventoryUI {
 
   keyDown(e) {
     if (!this.open) return;
-    const m = /^Digit([1-6])$/.exec(e.code);
+    const m = /^Digit([2-7])$/.exec(e.code);
     if (m && this.hover) {
-      const k = +m[1] - 1;
+      const k = +m[1] - 2;
       const { cId, i } = this.hover;
       if (!(cId === 'player' && i === k)) this.transfer(cId, i, 'player', k);
       e.preventDefault();

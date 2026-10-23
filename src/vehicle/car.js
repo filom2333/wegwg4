@@ -2,7 +2,7 @@
 // (fuel, oil, battery, engine temperature and condition, fan belt, tyres) + lights.
 
 import * as THREE from 'three';
-import { ALBUMS } from '../audio/music/albums.js';
+import { ALBUMS, trackOn } from '../audio/music/albums.js';
 import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
@@ -38,6 +38,8 @@ export class Car {
     this.root = model.root;
     game.worldGroup.add(this.root);
     if (model.mats) addGlassRain(model.mats.glass);
+    this.shade = contactShade(type);
+    this.root.add(this.shade);
     this.parts = {};
     for (const id of Object.keys(model.parts)) {
       this.parts[id] = { installed: true, condition: 1, item: null, tune: null };
@@ -72,6 +74,9 @@ export class Car {
     this.cabinLight = false;
     this.hazards = false;
     this.heater = false;
+    this.indicator = 0; // turn signal: -1 left, 1 right
+    this.parkBrake = false;
+    this.handlePull = {}; // door -> seconds left of an inside handle being pulled
     // physics
     const pos = opts.position || V(0, 0.5, 0);
     const q = opts.quaternion || new THREE.Quaternion();
@@ -435,7 +440,7 @@ export class Car {
   nextTrack() {
     const s = this.stereo;
     if (s.disc < 0) return;
-    s.track = (s.track + 1) % 3;
+    s.track = trackOn(s.disc, s.track + 1);
     s.pos = 0;
     s.mode = 'cd';
     s.restart = true;
@@ -490,7 +495,7 @@ export class Car {
       const al = ALBUMS[s.disc % ALBUMS.length];
       if (this.stereoState.loading) return { a: 'CD', b: 'READING\u2026' };
       const p = Math.floor(this.stereoState.pos || 0);
-      return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[s.track].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
+      return { a: `CD  ${String(s.track + 1).padStart(2, '0')}`, b: al.tracks[trackOn(s.disc, s.track)].toUpperCase(), t: `${Math.floor(p / 60)}:${String(p % 60).padStart(2, '0')}` };
     }
     const st = STATIONS[s.station ?? 1];
     const prog = this.stereoState.prog;
@@ -558,6 +563,7 @@ export class Car {
       needle: M.needle,
       display: M.display,
       dome: M.domeLens,
+      signal: M.signal || null,
       lamps: this.model.cluster ? this.model.cluster.userData.lamps : {},
     };
   }
@@ -582,15 +588,29 @@ export class Car {
     this.headFill.intensity = on ? 26 * (hcount / 2) * dim : 0;
     const e = this.emissive;
     e.head.emissiveIntensity = on ? (hiBeam ? 6.5 : 4.5) * dim : 0;
-    // tail lamps and brake lights share the bulb housings
-    // hazards: both tail lamps blinking
-    const blink = this.hazards && powered && performance.now() % 800 < 400;
-    if (this.hazards && powered && blink !== this._blinkWas) {
+    // tail lamps and brake lights share the bulb housings; turn signals and hazards blink the
+    // amber lenses of a side (on a car without them, that side's tail lamp), with the relay
+    // ticking in the cabin
+    const signalling = powered && (this.hazards || this.indicator !== 0);
+    const blink = signalling && performance.now() % 760 < 380;
+    if (signalling && blink !== this._blinkWas) {
       this._blinkWas = blink;
-      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.25 : 0.18 });
+      if (this.game.player && this.game.player.seat && this.game.player.car === this) this.game.audio && this.game.audio.play('click', { volume: blink ? 0.2 : 0.14, rate: blink ? 1.25 : 1.05 });
+    } else if (!signalling) this._blinkWas = false;
+    const bl = blink && (this.hazards || this.indicator < 0),
+      br = blink && (this.hazards || this.indicator > 0);
+    const S = e.signal;
+    const tailOn = powered ? (braking ? 3.2 : on ? 1.1 : 0) : 0;
+    e.tail.emissiveIntensity = tailOn;
+    if (S) {
+      S.tailL.emissiveIntensity = bl ? 3.0 : tailOn;
+      S.tailR.emissiveIntensity = br ? 3.0 : tailOn;
+      if (S.amberL) {
+        S.amberL.emissiveIntensity = bl ? 1.7 : 0;
+        S.amberR.emissiveIntensity = br ? 1.7 : 0;
+      }
     }
-    e.tail.emissiveIntensity = powered ? (braking ? 3.2 : blink ? 3.0 : on ? 1.1 : 0) : 0;
-    this.tailLight.intensity = powered ? (braking ? 2.2 : blink ? 2.0 : on ? 0.7 : 0) : 0;
+    this.tailLight.intensity = powered ? (braking ? 2.2 : on ? 0.7 : bl || br ? 0.5 : 0) : 0;
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
@@ -600,6 +620,9 @@ export class Car {
     const charging = this.charging;
     if (e.lamps.gen) e.lamps.gen.emissiveIntensity = ign && !charging ? 2.4 : 0;
     if (e.lamps.oil) e.lamps.oil.emissiveIntensity = ign && (!running || this.oil < 0.6) ? 2.4 : 0;
+    if (e.lamps.turnL) e.lamps.turnL.emissiveIntensity = bl ? 2.6 : 0;
+    if (e.lamps.turnR) e.lamps.turnR.emissiveIntensity = br ? 2.6 : 0;
+    if (e.lamps.park) e.lamps.park.emissiveIntensity = ign && this.parkBrake ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
     if (powered && this.radioOn) this.drawStereo(e.display);
     else if (this._stereoKey && this._stereoKey !== 'off') {
@@ -760,7 +783,18 @@ export class Car {
     // nobody at the wheel: the car rolls on (engine braking only) and the parking brake only
     // holds it once it has nearly stopped, so leaving a moving car never stops it dead
     const slow = Math.abs(d.forwardSpeed) < 0.8;
-    d.controls.handbrake = c.handbrake || (!hasDriver && !running && slow ? 0.6 : 0);
+    d.controls.handbrake = Math.max(c.handbrake || 0, this.parkBrake ? 1 : 0, !hasDriver && !running && slow ? 0.6 : 0);
+    // the turn signal stalk drops back once the wheel has gone that way and come back
+    if (this.indicator && hasDriver) {
+      const s = d.steerSmoothed * this.indicator;
+      if (s > 0.3) this._signalTurned = true;
+      else if (this._signalTurned && s < 0.06) {
+        this.indicator = 0;
+        this._signalTurned = false;
+        this.game.audio && this.game.audio.play('click', { volume: 0.3, rate: 0.8 });
+      }
+    } else this._signalTurned = false;
+    for (const k in this.handlePull) this.handlePull[k] -= dt;
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
     const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
     const plugs = this.partCond('sparkplugs');
@@ -928,6 +962,7 @@ export class Car {
     this.updateLights(d.controls.brake > 0.1 && hasDriver, d.gear === 0 && running);
     if (this.model.setGearLever) this.model.setGearLever(d.gear, dt);
     if (this.model.setHandbrake) this.model.setHandbrake(d.controls.handbrake > 0.3 || (!hasDriver && !running), dt);
+    if (this.model.updateMoving) this.model.updateMoving(this, dt);
     this.syncVisual();
   }
 
@@ -1055,6 +1090,7 @@ export class Car {
       this.root.quaternion.set(r.x, r.y, r.z, r.w);
     }
     this.root.updateMatrixWorld(true);
+    this.placeShade();
     const mw = this.model.wheels;
     for (const w of this.dyn.wheels) {
       const v = mw[w.id];
@@ -1114,6 +1150,23 @@ export class Car {
     return this.type.SEATS[seat].pos.clone().applyMatrix4(this.root.matrixWorld);
   }
 
+  // The contact shade sits on the ground the wheels stand on, and fades as they leave it.
+  placeShade() {
+    const sh = this.shade;
+    let n = 0,
+      y = 0;
+    SHADE_M.copy(this.root.matrixWorld).invert();
+    for (const w of this.dyn.wheels) {
+      if (!w.contact || !w.installed) continue;
+      n++;
+      y += SHADE_P.copy(w.contactPoint).applyMatrix4(SHADE_M).y;
+    }
+    if (n) sh.position.y = y / n + 0.035;
+    const want = 0.8 * (n / 4);
+    sh.material.opacity += (want - sh.material.opacity) * 0.2;
+    sh.visible = sh.material.opacity > 0.02;
+  }
+
   dispose() {
     this.game.physics.untrack(this.smooth);
     for (const l of [...this.headLights, this.headFill, this.tailLight, this.reverseLight, this.cabinLamp]) this.game.lights.remove(l);
@@ -1122,3 +1175,46 @@ export class Car {
   }
 }
 
+// ------------------------------------------------------------------ contact shade
+// A soft dark patch on the ground under the body, where the sky is shut out: without it a car
+// under a low sun (its shadow thrown away behind it) looks as if it floated.
+const SHADE_M = new THREE.Matrix4();
+const SHADE_P = new THREE.Vector3();
+let SHADE_TEX = null;
+function shadeTexture() {
+  if (SHADE_TEX) return SHADE_TEX;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const x = c.getContext('2d');
+  // a rounded footprint blurred soft, darkest under the middle
+  x.filter = 'blur(16px)';
+  x.fillStyle = 'rgba(0,0,0,0.75)';
+  x.beginPath();
+  x.roundRect(26, 30, 76, 196, 22);
+  x.fill();
+  x.filter = 'blur(26px)';
+  x.fillStyle = 'rgba(0,0,0,0.5)';
+  x.beginPath();
+  x.roundRect(40, 60, 48, 136, 20);
+  x.fill();
+  SHADE_TEX = new THREE.CanvasTexture(c);
+  SHADE_TEX.colorSpace = THREE.SRGBColorSpace;
+  return SHADE_TEX;
+}
+function contactShade(type) {
+  const [w, , l] = type.massSize || [1.8, 1.3, 4.6];
+  const g = new THREE.PlaneGeometry(w * 1.55, l * 1.22);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.MeshBasicMaterial({ map: shadeTexture(), color: 0x000000, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'contactShade';
+  mesh.renderOrder = -1;
+  mesh.frustumCulled = false;
+  // (not something to aim at)
+  mesh.raycast = () => {};
+  // centred between the axles
+  const zs = (type.HARDPOINTS || []).map((h) => h.z);
+  if (zs.length) mesh.position.z = (Math.max(...zs) + Math.min(...zs)) / 2;
+  return mesh;
+}

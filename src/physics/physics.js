@@ -31,7 +31,9 @@ export const GROUPS = {
   // would stop dead against it like a wall. Car <-> player is resolved by hand instead
   // (Player.carContact) while the character controller still sees the car (playerQuery).
   player: groups(G.PLAYER, G.WORLD | G.ITEM | G.NPC),
-  playerQuery: groups(G.PLAYER, G.WORLD | G.CAR | G.ITEM | G.NPC | G.TRAILER),
+  // (Rapier tests groups both ways: the query must also be a member of something the car's
+  // filter accepts, or the controller walks straight through parked cars; NPC is such a bit)
+  playerQuery: groups(G.PLAYER | G.NPC, G.WORLD | G.CAR | G.ITEM | G.NPC | G.TRAILER),
   npc: groups(G.NPC, G.WORLD | G.CAR | G.PLAYER | G.ITEM | G.TRAILER),
   debris: groups(G.DEBRIS, G.WORLD | G.CAR | G.ITEM),
   // queries

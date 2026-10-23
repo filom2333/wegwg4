@@ -1,11 +1,11 @@
 # Builds public/sounds from the first batch (sfx/raw) and the re-made candidates (sfx2/raw):
 # picks the chosen take of each re-made sound, cuts bursts down to single events, damps ringing
 # tails, cuts footstep takes into clean single steps, matches loop levels to the synthesized noise
-# they replace, and encodes small mp3s. Sounds whose recordings were not good enough are left out
-# so the game keeps its synthesized versions.
+# they replaced (the game's synth.js, since removed), and encodes small mp3s.
 import json, os, subprocess, sys
 import numpy as np
 D1, D2, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+D3 = sys.argv[4] if len(sys.argv) > 4 else None  # later additions (night: frogs, poorwill)
 SR = 44100
 KB = {'shot': 64, 'step': 56, 'loop': 80, 'loop2': 96}
 SKIP = {'engine_idle', 'engine_low', 'engine_mid', 'engine_high', 'squeak', 'floorCreak', 'hum', 'keys'}
@@ -17,6 +17,8 @@ PICK = {
     'wind': [(1, 0, None)], 'tyreRoll': [(3, 0, None)], 'skid': [(3, 1.1, None)],
     'ping': [(3, 0, None), (2, 0, None), (1, 0, 0.2)],
 }
+# from the later batch (D3)
+PICK3 = {'frogs': [(1, 0, None)], 'poorwill': [(3, 0, None), (1, 0, None)]}
 BURST = {'ratchet': (3, [1, 2, 3]), 'tick': (1, [1, 3])}  # keep the first n events of each take
 DAMP = {'hitMetal': 0.12, 'install': 0.16, 'remove': 0.2, 'ping': 0.06, 'tick': 0.04, 'ratchet': 0.05, 'click': 0.05, 'pickup': 0.1}
 LOWPASS = {'ratchet': 7000, 'click': 9000, 'reloadRevolver': 9000, 'eat': 10000}
@@ -31,7 +33,7 @@ MEASURED = {'pocket': 4.4, 'pickupHeavy': -3.6, 'hitMetal': -4.7, 'hitFlesh': -4
             'reloadShotgun': -7.2, 'swing': 5.3, 'chatter': 3.7, 'doorCreak': -8, 'doorShut': -4.8, 'hurt': 4.4, 'ping': -3.5,
             'ratchet': -3.8, 'yips': -3.7, 'growl': 4, 'step_ice': -3.6, 'song': -5.2, 'step_dirt': -3.5, 'step_asphalt': -5.1,
             'step_rock': -5.5, 'step_wood': -4.1, 'step_salt': -3.5, 'step_snowRoad': -4.1, 'step_concrete': -3.7}
-LOOP_STEREO = {'wind', 'rain', 'cicadas', 'crickets', 'stream', 'crackle'}
+LOOP_STEREO = {'wind', 'rain', 'cicadas', 'crickets', 'stream', 'crackle', 'frogs'}
 
 def decode(path, ch=1):
     r = subprocess.run(['ffmpeg', '-v', 'error', '-i', path, '-f', 'f32le', '-ac', str(ch), '-ar', str(SR), '-'], capture_output=True)
@@ -170,7 +172,7 @@ def loudness(a, kind, rec=True):
 
 REF = {}
 def ref_noise():
-    # the synthesized pink, brown and white noise from synth.js, through the game's filters
+    # the pink, brown and white noise the old synth.js made, through the game's filters
     r = np.random.default_rng(1)
     w = r.uniform(-1, 1, SR * 3)
     p = np.zeros(7)
@@ -216,6 +218,15 @@ def loop_seam(a, xf=0.4):
     mixed = a[-n:] * np.cos(t * np.pi / 2) + a[:n] * np.sin(t * np.pi / 2)
     return np.concatenate([mixed, a[n:-n]])
 
+def balance(a, win=3.0):
+    # a stereo loop leaning to one side (the wind came out 9 dB louder on the right) is brought
+    # back to the middle over a few seconds, keeping the quick movement of the gusts
+    w = int(win * SR)
+    k = np.ones(w) / w
+    e = [np.sqrt(np.convolve(a[:, c] ** 2, k, 'same') + 1e-9) for c in (0, 1)]
+    mid = np.sqrt(e[0] * e[1])
+    return np.stack([a[:, c] * (mid / e[c]) ** 0.85 for c in (0, 1)], 1).astype(np.float32)
+
 def level_out(a, win=0.5):
     # take the slow swells out of a loop that should be steady (skid, road noise)
     m = mono(a)
@@ -252,6 +263,8 @@ def finish_loop(name, a, fn):
     a = filt(a, HIGHPASS.get(name), LOWPASS.get(name))
     if name in ('skid', 'tyreRoll'):
         a = level_out(a)
+    if ch == 2:
+        a = balance(a)
     if name in LIMIT:
         a = limit(a, LIMIT[name])
     a = loop_seam(a)
@@ -271,6 +284,14 @@ for name, takes in PICK.items():
     for i, (c, s, e) in enumerate(takes):
         loop = name in ('wind', 'tyreRoll', 'skid')
         a = decode(os.path.join(D2, 'raw', f'{name}_c{c}.mp3'), 2 if name in LOOP_STEREO else 1)
+        a = a[int(s * SR): int(e * SR) if e else None]
+        fn = f'{name}.mp3' if len(takes) == 1 else f'{name}_{i + 1}.mp3'
+        (finish_loop if loop else finish_shot)(name, a, fn)
+    done.add(name)
+for name, takes in (PICK3.items() if D3 else []):
+    for i, (c, s, e) in enumerate(takes):
+        loop = name == 'frogs'
+        a = decode(os.path.join(D3, 'raw', f'{name}_c{c}.mp3'), 2 if name in LOOP_STEREO else 1)
         a = a[int(s * SR): int(e * SR) if e else None]
         fn = f'{name}.mp3' if len(takes) == 1 else f'{name}_{i + 1}.mp3'
         (finish_loop if loop else finish_shot)(name, a, fn)

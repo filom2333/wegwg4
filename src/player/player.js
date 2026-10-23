@@ -23,8 +23,9 @@ export class Player {
     this.cc.enableSnapToGround(0.4);
     this.cc.setMaxSlopeClimbAngle((48 * Math.PI) / 180);
     this.cc.setMinSlopeSlideAngle((55 * Math.PI) / 180);
-    this.cc.setApplyImpulsesToDynamicBodies(true);
-    this.cc.setCharacterMass(80);
+    // things you walk into are nudged by hand below (only loose items: a car is not shoved along
+    // by somebody walking into it)
+    this.cc.setApplyImpulsesToDynamicBodies(false);
     this.yaw = 0;
     this.pitch = 0;
     this.vy = 0;
@@ -161,6 +162,25 @@ export class Player {
     return !hit;
   }
 
+  // Loose things the capsule walked into get a push in the walking direction (heavier ones less).
+  nudgeItems(dt) {
+    const ph = this.game.physics;
+    const n = this.cc.numComputedCollisions();
+    const sp = Math.hypot(this.velocity.x, this.velocity.z);
+    if (!n || sp < 0.3) return;
+    for (let i = 0; i < n; i++) {
+      const c = this.cc.computedCollision(i);
+      const col = c && c.collider;
+      const o = col && ph.ownerOf(col);
+      if (!o || o.kind !== 'item' || !o.item || !o.item.body) continue;
+      const b = o.item.body;
+      // a can skitters off at walking pace; a tyre or a door only shifts
+      const m = Math.max(0.2, o.item.mass || 1);
+      const dv = Math.min(1.2, 12 / m) * Math.min(1.5, sp / 3);
+      b.applyImpulse({ x: (this.velocity.x / sp) * m * dv, y: m * dv * 0.15, z: (this.velocity.z / sp) * m * dv }, true);
+    }
+  }
+
   // ------------------------------------------------------------------ update
   update(dt) {
     if (this.dead) return;
@@ -231,6 +251,7 @@ export class Player {
     } else this.vy -= 9.81 * dt;
     const desired = { x: this.velocity.x * dt, y: this.vy * dt, z: this.velocity.z * dt };
     this.cc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
+    this.nudgeItems(dt);
     const mv = this.cc.computedMovement();
     const t = this.body.translation();
     const next = { x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z };
@@ -317,10 +338,11 @@ export class Player {
     // carried along with the car's velocity, knocked off the ground when hit fast
     this.velocity.x = v.x;
     this.velocity.z = v.z;
-    if (vRel > 3) {
+    // only a real hit hurts (16 km/h and up); a car rolling into you just shoves you aside
+    if (vRel > 4.5) {
       if (!this._carHitT || g.time - this._carHitT > 0.6) {
         this._carHitT = g.time;
-        this.damage((vRel - 3) * (vRel - 3) * 1.1 + 4, 'crash');
+        this.damage((vRel - 4.5) * (vRel - 4.5) * 1.1 + 4, 'crash');
         this.vy = Math.min(6, 1.5 + vRel * 0.25);
         this.grounded = false;
         // thrown clear to the side rather than carried on the bumper

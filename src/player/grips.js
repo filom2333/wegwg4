@@ -73,7 +73,8 @@ export const ANCHORS = {
   wrap: { p: V(0.15, -0.19, -0.4), q: anchorQ(V(-0.12, 1, 0.2), V(0.45, -0.25, 0.85)) },
   palm: { p: V(0.1, -0.2, -0.4), q: anchorQ(V(1, 0.15, 0), V(0.25, -0.45, 0.85)) },
   // held up a little so the can or lantern hanging from the fist stays in view
-  side: { p: V(0.19, -0.17, -0.47), q: anchorQ(V(-1, 0, 0.1), V(0.25, -0.1, 0.95)) },
+  // (the wrist leaves the fist down and back toward the elbow, so it does not bend over the handle)
+  side: { p: V(0.19, -0.17, -0.47), q: anchorQ(V(-1, 0, 0.1), V(0.22, -0.42, 0.88)) },
   tool: { p: V(0.18, -0.21, -0.38), q: anchorQ(V(-0.15, 0.95, -0.25), V(0.4, -0.05, 0.9)) },
 };
 

@@ -15,7 +15,6 @@ export const DEFAULT_BINDINGS = {
   reload: 'KeyR',
   flashlight: 'KeyF',
   lights: 'KeyL',
-  ignition: 'KeyI',
   horn: 'KeyH',
   gearUp: 'KeyX',
   gearDown: 'KeyZ',
@@ -31,6 +30,7 @@ export const DEFAULT_BINDINGS = {
   winch: 'KeyY',
   atlas: 'KeyM',
   photo: 'KeyP',
+  music: 'KeyU',
 };
 
 export const DEFAULTS = {
@@ -51,6 +51,9 @@ export const DEFAULTS = {
   musicVolume: 0.6,
   sfxVolume: 0.9,
   ambientVolume: 0.8,
+  musicOn: true, // background music and the menu theme (key U)
+  scoreVolume: 0.6,
+  sound3d: 'headphones', // 'headphones': 3D (HRTF) panning; 'speakers': plain left-right
   language: 'en',
   units: 'metric',
   transmission: 'auto',

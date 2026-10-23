@@ -120,6 +120,19 @@ export function createImportedMaterials(type, asset, opts = {}) {
   // the lamp lenses each car needs even if the source shares a material with something else
   const headLens = byName[type.META.keys.find((k) => roles[k] === 'lens')] || new THREE.MeshStandardMaterial({ color: 0xf4f6f8, transparent: true, opacity: 0.45, emissive: 0xfff1d6, emissiveIntensity: 0 });
   const tailLens = byName[type.META.keys.find((k) => roles[k] === 'tail')] || new THREE.MeshStandardMaterial({ color: 0x5a0a06, emissive: 0xff1a08, emissiveIntensity: 0 });
+  // turn signals blink one side at a time: the amber lenses (type.SIGNAL_KEY) and the tail lamps
+  // get a material for each side
+  const tailKey = type.META.keys.find((k) => roles[k] === 'tail');
+  const signal = { amber: byName[type.SIGNAL_KEY] ? type.SIGNAL_KEY : null, tail: tailKey || null };
+  for (const side of ['L', 'R']) {
+    if (signal.amber) {
+      const m = byName[signal.amber].clone();
+      m.emissive = new THREE.Color(0xff6200);
+      m.emissiveIntensity = 0;
+      signal['amber' + side] = m;
+    }
+    signal['tail' + side] = tailLens.clone();
+  }
   const gauge = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, emissive: 0xfff4dc, emissiveIntensity: 0.25, transparent: true });
   const needle = new THREE.MeshStandardMaterial({ color: 0xff6a20, roughness: 0.4, emissive: 0xff8040, emissiveIntensity: 0 });
   const lamp = new THREE.MeshStandardMaterial({ color: 0x220a06, emissive: 0xff2a10, emissiveIntensity: 0, roughness: 0.3 });
@@ -134,6 +147,7 @@ export function createImportedMaterials(type, asset, opts = {}) {
     glass: byName[type.META.keys.find((k) => roles[k] === 'glass')],
     headLens,
     tailLens,
+    signal,
     tyre: byName[type.META.keys.find((k) => roles[k] === 'tyre')],
     gauge,
     needle,
@@ -151,6 +165,16 @@ export function createImportedMaterials(type, asset, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------- model
+// Which side of the car a part's piece is on (+X is the car's left): from the part's name, or
+// where the piece itself lies; '' for one in the middle (a third brake light).
+function sideOf(id, geometry) {
+  const m = /_[FR]?([LR])$/.exec(id);
+  if (m) return m[1];
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const x = (geometry.boundingBox.max.x + geometry.boundingBox.min.x) / 2;
+  return x > 0.15 ? 'L' : x < -0.15 ? 'R' : '';
+}
+
 function pivotGroup(pivot, name) {
   const g = new THREE.Group();
   g.name = name;
@@ -182,6 +206,7 @@ export class ImportedCarModel {
     for (const [id, h] of Object.entries(type.HINGES)) this.hinges[id] = { origin: V(...H[id]), axis: V(...h.axis).normalize(), max: h.max };
     for (const id of Object.keys(asset.parts)) if (id !== 'tyre' && id !== 'steeringWheel' && !id.startsWith('x_')) this.addAssetPart(id);
     this.addControls();
+    this.addMovingControls();
     this.addSteeringWheel();
     this.addWheels();
     this.addGauges();
@@ -193,7 +218,10 @@ export class ImportedCarModel {
   meshesFor(id, { shadow = true } = {}) {
     const out = [];
     for (const { geometry, mat } of this.asset.parts[id] || []) {
-      const m = this.mats.byName[mat] || this.mats.plastic;
+      let m = this.mats.byName[mat] || this.mats.plastic;
+      const S = this.mats.signal;
+      const side = S && (mat === S.amber || mat === S.tail) ? sideOf(id, geometry) : '';
+      if (side) m = S[(mat === S.amber ? 'amber' : 'tail') + side];
       const mesh = new THREE.Mesh(geometry, m);
       mesh.name = id + ':' + mat;
       const clear = m.transparent;
@@ -285,6 +313,126 @@ export class ImportedCarModel {
       body.add(g);
       this.gearLever = g;
       g.userData.top = V(c.x, b.max.y, c.z);
+    }
+  }
+
+  // The driver's controls that move (type.MOVING): the source's own pieces where it has them
+  // (x_key, x_stalk, ...), simple stand-ins (MOVING[id].make) where it does not. Pivots and axes
+  // are in car space; door handles ride on their doors.
+  addMovingControls() {
+    this.moving = {};
+    for (const [id, d] of Object.entries(this.type.MOVING || {})) {
+      const src = this.asset.parts['x_' + id];
+      const parent = d.door ? this.parts[d.door] && this.parts[d.door].inner : this.parts.body.inner;
+      if ((!src && !d.make) || !parent) continue;
+      const { g, holder } = pivotGroup(d.pivot, 'ctl_' + id);
+      if (src) for (const m of this.meshesFor('x_' + id, { shadow: false })) holder.add(m);
+      else this.makeControl(d, holder, parent);
+      parent.add(g);
+      this.moving[id] = { g, d, axis: (d.axis || V(0, 0, 1)).clone().normalize(), v: 0 };
+    }
+  }
+
+  // Stand-ins in car space: a key in a chrome lock ring, a column stalk, a parking brake pedal.
+  makeControl(d, holder, parent) {
+    const M = this.mats;
+    const n = (d.axis || V(0, 0, 1)).clone().normalize();
+    if (d.make === 'key') {
+      // (the ring stays put, the key turns)
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.015, 0.0032, 8, 24), M.chrome);
+      ring.position.copy(d.pivot);
+      ring.quaternion.copy(faceQuat(n.clone().negate()));
+      parent.add(ring);
+      const k = new THREE.Group();
+      k.position.copy(d.pivot);
+      k.quaternion.copy(faceQuat(n.clone().negate()));
+      const head = new THREE.Mesh(roundedBox(0.009, 0.032, 0.026, 0.004, 2), M.plastic);
+      head.position.set(0, 0.004, 0.024);
+      const shank = new THREE.Mesh(new THREE.BoxGeometry(0.0035, 0.009, 0.014), M.steel);
+      shank.position.set(0, 0, 0.007);
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.007, 0.0012, 6, 16), M.steel);
+      loop.position.set(0, -0.004, 0.042);
+      loop.rotation.y = Math.PI / 2;
+      k.add(head, shank, loop);
+      holder.add(k);
+    } else if (d.make === 'stalk') {
+      // a black stalk out of the column shroud, thicker at the tip
+      const dir = d.dir.clone().normalize();
+      const L = d.length || 0.12;
+      const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), dir);
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0055, L, 10), M.plastic);
+      rod.position.copy(d.pivot).addScaledVector(dir, L / 2);
+      rod.quaternion.copy(q);
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.008, 0.034, 12), M.plastic);
+      tip.position.copy(d.pivot).addScaledVector(dir, L - 0.012);
+      tip.quaternion.copy(q);
+      holder.add(rod, tip);
+    } else if (d.make === 'knob') {
+      // a ribbed knob standing out of the dash, a white mark on its face
+      const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), n.clone().negate());
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.0135, 0.014, 18), M.plastic);
+      knob.position.copy(d.pivot).addScaledVector(n, -0.007);
+      knob.quaternion.copy(q);
+      M.markWhite = M.markWhite || new THREE.MeshStandardMaterial({ color: 0xd8d4c8, roughness: 0.6 });
+      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.0025, 0.0012, 0.009), M.markWhite);
+      mark.position.copy(d.pivot).addScaledVector(n, -0.0142);
+      mark.quaternion.copy(faceQuat(n.clone().negate()));
+      mark.translateY(0.006);
+      mark.rotateX(Math.PI / 2);
+      holder.add(knob, mark);
+    } else if (d.make === 'button') {
+      // the hazard button: red, a little proud of the panel
+      M.hazardRed = M.hazardRed || new THREE.MeshStandardMaterial({ color: 0x9a1c12, roughness: 0.45 });
+      const b = new THREE.Mesh(roundedBox(0.03, 0.018, 0.01, 0.003, 2), M.hazardRed);
+      b.position.copy(d.pivot).addScaledVector(n, -0.004);
+      b.quaternion.copy(faceQuat(n.clone().negate()));
+      holder.add(b);
+    } else if (d.make === 'handle') {
+      // a chrome lever in a dark recess on the door panel, hinged at its front end
+      const along = d.at.clone().sub(d.pivot);
+      const len = along.length() * 2;
+      const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), along.clone().normalize());
+      const bar = new THREE.Mesh(roundedBox(0.011, 0.016, len, 0.004, 2), M.chrome);
+      bar.position.copy(d.at);
+      bar.quaternion.copy(q);
+      holder.add(bar);
+      const cup = new THREE.Mesh(roundedBox(0.006, 0.032, len + 0.02, 0.003, 1), M.black);
+      cup.position.copy(d.at).add(V(Math.sign(d.at.x) * 0.007, 0, 0));
+      cup.quaternion.copy(q);
+      parent.add(cup);
+    } else if (d.make === 'pedal') {
+      // hung from the pivot, the pad facing the driver's foot
+      const pad = new THREE.Mesh(roundedBox(0.052, 0.062, 0.012, 0.004, 1), M.rubber);
+      pad.position.copy(d.at);
+      pad.rotation.x = -0.45;
+      const arm = d.pivot.clone().sub(d.at);
+      const rod = new THREE.Mesh(new THREE.BoxGeometry(0.012, arm.length(), 0.012), M.black);
+      rod.position.copy(d.at).addScaledVector(arm, 0.5);
+      rod.quaternion.setFromUnitVectors(V(0, 1, 0), arm.normalize());
+      holder.add(pad, rod);
+    }
+  }
+
+  // Each frame: the key to OFF / ON / START, the stalk up or down with the turn signal, knobs
+  // to their settings, the hazard button in while it is on, a door handle pulled, the parking
+  // brake on or off. `s` holds the car's state.
+  updateMoving(s, dt) {
+    const k = Math.min(1, dt * 14);
+    for (const [id, c] of Object.entries(this.moving)) {
+      const d = c.d;
+      let to = 0;
+      if (id === 'key') to = d.angles[s.cranking ? 2 : s.ignition ? 1 : 0];
+      else if (id === 'stalk') to = -s.indicator * d.angle;
+      else if (id === 'lever') to = s.wipers ? d.angle : 0;
+      else if (id === 'lightKnob') to = d.angles[s.lightsOn] || 0;
+      else if (id === 'heater') to = s.heater ? d.angle : 0;
+      else if (id === 'hazard') to = s.hazards ? 1 : 0;
+      else if (id === 'park') to = s.parkBrake ? d.angle : 0;
+      else if (id.startsWith('handle')) to = (s.handlePull[d.door] > 0 ? 1 : 0) * d.angle;
+      if (Math.abs(to - c.v) < 1e-4) continue;
+      c.v += (to - c.v) * k;
+      if (d.push) c.g.position.copy(d.pivot).addScaledVector(c.axis, d.push * c.v);
+      else c.g.quaternion.setFromAxisAngle(c.axis, c.v);
     }
   }
 
@@ -419,6 +567,38 @@ export class ImportedCarModel {
       l.position.set(at[0], at[1], 0.0012);
       g.add(l);
       lamps[name] = mat;
+    }
+    // green turn arrows high on the dial, the red parking brake lamp low between the others
+    for (const [name, sg] of [
+      ['turnL', -1],
+      ['turnR', 1],
+    ]) {
+      const mat = M.lamp.clone();
+      mat.emissive.setHex(0x30ff60);
+      mat.color.setHex(0x0a2a12);
+      mat.transparent = true;
+      mat.opacity = 0.9;
+      const a = R * 0.1;
+      const sh = new THREE.Shape();
+      sh.moveTo(sg * a, 0);
+      sh.lineTo(-sg * a * 0.4, a * 0.75);
+      sh.lineTo(-sg * a * 0.4, -a * 0.75);
+      sh.closePath();
+      const l = new THREE.Mesh(new THREE.ShapeGeometry(sh), mat);
+      l.position.set(sg * 0.32 * R, 0.4 * R, 0.0012);
+      g.add(l);
+      lamps[name] = mat;
+    }
+    {
+      const mat = M.lamp.clone();
+      mat.emissive.setHex(0xff2a10);
+      mat.color.setHex(0xff2a10).multiplyScalar(0.05);
+      mat.transparent = true;
+      mat.opacity = 0.9;
+      const l = new THREE.Mesh(new THREE.RingGeometry(R * 0.045, R * 0.065, 16), mat);
+      l.position.set(0, -0.72 * R, 0.0012);
+      g.add(l);
+      lamps.park = mat;
     }
     g.userData.needles = needles;
     g.userData.lamps = lamps;

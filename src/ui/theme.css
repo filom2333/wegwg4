@@ -1,0 +1,390 @@
+/* The look of everything outside the world: what you would find along Route 9.
+   - Signs (guide green, rest-area blue, warning yellow) in Overpass, the open Highway Gothic:
+     menus, the end of a run, warnings.
+   - Paper (notes, forms, the journal, the manual) in Courier Prime, typed.
+   - In play, plain shadowed type over the world and as little of it as will do.
+   Fonts are served with the game (public/fonts, SIL Open Font License). */
+
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  src: url('./fonts/overpass-latin-400-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Overpass';
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-latin-800-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Overpass Mono';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/overpass-mono-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/courier-prime-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  src: url('./fonts/courier-prime-latin-400-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Courier Prime';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('./fonts/courier-prime-latin-700-normal.woff2') format('woff2');
+}
+
+:root {
+  /* signs */
+  --sign: #0e5b3b;
+  --sign-deep: #0a4a2f;
+  --service: #1c4d8c;
+  --warn: #f0b51b;
+  --warn-ink: #17140e;
+  --stop: #b02a20;
+  --reflect: #f3f2ea;
+  --post: #8d9196;
+  /* paper */
+  --paper: #eee6d4;
+  --paper-2: #e3d8bf;
+  --paper-ink: #25211b;
+  --pencil: #6c6355;
+  --red-pen: #b0331f;
+  --clip: #6b4a2b;
+  /* play */
+  --hud: #f6f3eb;
+  --hud-2: rgba(246, 243, 235, 0.7);
+  --hud-3: rgba(246, 243, 235, 0.42);
+  --hud-shadow: 0 1px 1px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.55), 0 0 18px rgba(0, 0, 0, 0.25);
+  --night: #111214;
+  /* type */
+  --f-sign: 'Overpass', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  --f-type: 'Courier Prime', 'Courier New', monospace;
+  --f-num: 'Overpass Mono', 'Overpass', monospace;
+
+  /* older names still used by a few inline styles */
+  --ink: var(--hud);
+  --ink-2: var(--hud-2);
+  --ink-3: var(--hud-3);
+  --amber: var(--warn);
+  --red: #e0533f;
+  --green: #8cc47e;
+  --line: rgba(246, 243, 235, 0.16);
+  --font: var(--f-sign);
+  --font-display: var(--f-sign);
+  --mono: var(--f-num);
+}
+
+/* ------------------------------------------------------------------ a guide sign
+   green, a reflective white border just inside the edge, white type; .service is rest-area
+   blue. Bolted to galvanised posts when it stands on the ground (.posts). */
+.sign {
+  position: relative;
+  padding: 6px;
+  border-radius: 14px;
+  color: var(--reflect);
+  background-color: var(--sign);
+  /* a little grime toward the bottom, the sheen of retroreflective sheeting at the top */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0) 70%, rgba(40, 30, 10, 0.16)),
+    radial-gradient(ellipse at 20% 110%, rgba(60, 45, 20, 0.22), transparent 55%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 -2px 0 rgba(0, 0, 0, 0.25) inset, 0 24px 48px rgba(0, 0, 0, 0.42), 0 4px 10px rgba(0, 0, 0, 0.3);
+  font-family: var(--f-sign);
+}
+.sign.service {
+  background-color: var(--service);
+}
+.sign-in {
+  position: relative;
+  border: 3px solid var(--reflect);
+  border-radius: 9px;
+  padding: 18px 22px 16px;
+}
+/* bolt heads in the corners of the face */
+.sign-in::before,
+.sign-in::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #d6d8d2, #7d817c 60%, #4e524d);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+.sign-in::before {
+  left: 8px;
+}
+.sign-in::after {
+  right: 8px;
+}
+.posts {
+  position: absolute;
+  top: 100%;
+  height: 100vh;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.posts::before,
+.posts::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  background: linear-gradient(90deg, #5a5e62, #b8bcc0 35%, #8d9196 60%, #4f5357);
+  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.35);
+}
+.posts::before {
+  left: 22%;
+}
+.posts::after {
+  right: 22%;
+}
+.posts.one::before {
+  left: calc(50% - 6px);
+}
+.posts.one::after {
+  display: none;
+}
+/* a white divider across the face */
+.sign-rule {
+  height: 3px;
+  margin: 12px -22px;
+  background: var(--reflect);
+}
+
+/* lines on a sign: what you can choose. Mixed case, as signs are; an arrow says where it goes. */
+.sign-line {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 7px 12px 5px;
+  margin: 1px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font: 600 27px/1.15 var(--f-sign);
+  color: var(--reflect);
+  transition: background 0.12s, color 0.12s;
+}
+.sign-line .t {
+  flex: 1;
+  white-space: nowrap;
+}
+.sign-line small {
+  font: 400 15px/1 var(--f-sign);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.sign-line .arrow {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  transform: rotate(var(--rot, 90deg));
+  transition: transform 0.15s;
+}
+.sign-line .arrow svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: currentColor;
+}
+.sign-line:hover,
+.sign-line.kb,
+.sign-line:focus-visible {
+  background: var(--reflect);
+  color: var(--sign);
+}
+.sign.service .sign-line:hover,
+.sign.service .sign-line.kb,
+.sign.service .sign-line:focus-visible {
+  color: var(--service);
+}
+.sign-line:hover .arrow,
+.sign-line.kb .arrow {
+  transform: rotate(var(--rot, 90deg)) translateY(-3px);
+}
+.sign-line[disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+/* the first choice in a sign: the one most people want */
+.sign-line.primary {
+  font-weight: 800;
+}
+
+/* ------------------------------------------------------------------ route shield and plaques */
+.shield {
+  display: inline-block;
+  width: 64px;
+  height: 64px;
+  flex: none;
+}
+.shield svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.plaque {
+  display: inline-block;
+  padding: 3px 8px 1px;
+  border: 2px solid #121212;
+  border-radius: 4px;
+  background: #f7f6f0;
+  color: #121212;
+  font: 800 14px/1.1 var(--f-sign);
+  letter-spacing: 0.06em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* ------------------------------------------------------------------ paper */
+.paper {
+  position: relative;
+  color: var(--paper-ink);
+  background-color: var(--paper);
+  /* fibre and a little foxing */
+  background-image: radial-gradient(ellipse at 85% 10%, rgba(150, 110, 50, 0.1), transparent 45%), radial-gradient(ellipse at 10% 90%, rgba(120, 90, 40, 0.1), transparent 50%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.27  0 0 0 0.09 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15), 0 18px 40px rgba(0, 0, 0, 0.45), 0 3px 8px rgba(0, 0, 0, 0.25);
+  font-family: var(--f-type);
+}
+/* ruled like a notebook */
+.paper.ruled {
+  background-image: linear-gradient(90deg, transparent 52px, rgba(190, 70, 60, 0.35) 52px, rgba(190, 70, 60, 0.35) 53.5px, transparent 53.5px),
+    repeating-linear-gradient(180deg, transparent 0 25px, rgba(70, 110, 160, 0.22) 25px 26px), radial-gradient(ellipse at 85% 10%, rgba(150, 110, 50, 0.1), transparent 45%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.27  0 0 0 0.09 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  background-position: 0 14px, 0 14px, 0 0, 0 0;
+}
+/* a strip of tape holding it up */
+.tape::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  width: 96px;
+  height: 26px;
+  margin-left: -48px;
+  transform: rotate(-3deg);
+  background: rgba(232, 222, 190, 0.6);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(1px);
+}
+.paper h1,
+.paper h2,
+.paper h3 {
+  font-family: var(--f-type);
+  font-weight: 700;
+  margin: 0;
+}
+/* links typed on paper */
+.typed {
+  all: unset;
+  cursor: pointer;
+  font: 700 16px/1.2 var(--f-type);
+  color: var(--paper-ink);
+  border-bottom: 2px solid rgba(37, 33, 27, 0.3);
+  padding: 2px 1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.typed:hover,
+.typed.kb {
+  color: var(--red-pen);
+  border-color: var(--red-pen);
+}
+.typed.primary {
+  color: var(--red-pen);
+}
+/* a rubber stamp: what the form does when you are done */
+.stamp {
+  all: unset;
+  cursor: pointer;
+  display: inline-block;
+  padding: 8px 18px 6px;
+  border: 3px solid var(--red-pen);
+  border-radius: 6px;
+  color: var(--red-pen);
+  font: 800 22px/1 var(--f-sign);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+  opacity: 0.88;
+  mix-blend-mode: multiply;
+  transition: transform 0.12s, opacity 0.12s, background 0.12s;
+}
+.stamp:hover,
+.stamp.kb {
+  opacity: 1;
+  transform: rotate(-4deg) scale(1.05);
+  background: rgba(176, 51, 31, 0.08);
+}
+
+/* ------------------------------------------------------------------ keys */
+kbd,
+.key {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 6px 1px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  border-bottom-width: 2px;
+  font: 600 12px/1.25 var(--f-num);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ a warning diamond */
+.diamond {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.diamond::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 70%;
+  height: 70%;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: var(--warn);
+  box-shadow: 0 0 0 1.5px var(--warn-ink) inset, 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.diamond svg {
+  grid-area: 1 / 1;
+  width: 52%;
+  height: 52%;
+  position: relative;
+  color: var(--warn-ink);
+}

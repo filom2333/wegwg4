@@ -77,7 +77,8 @@ function signBoard(b, x, y, z, w, h, mat, rotY = 0, { posts = 0, postMat } = {})
 }
 
 // ------------------------------------------------------------------ garage / workshop
-export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true } = {}) {
+// workshop: the homestead's garage, kitted out as somebody's workshop (more to look through).
+export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true, workshop = false } = {}) {
   const M = archMaterials();
   const b = new Builder('garage');
   const x0 = -w / 2,
@@ -112,6 +113,17 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true } = {}) {
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), x1 - 0.4, y, z0 + 2.5, -Math.PI / 2);
   placeIt(b, FUR.tirePile(rnd), x0 + 0.6, y, z1 - 1.2, 0);
   b.prop('oilDrum', x1 - 0.55, y, z1 - 0.8, rnd() * 6);
+  if (workshop) {
+    // a tool chest beside the bench, a shelf on the side wall, an old fridge, crates and a second
+    // drum by the door: places where things were put down and forgotten
+    placeIt(b, FUR.toolChest(rnd), x0 + 2.95, y, z0 + 0.4, 0);
+    placeIt(b, FUR.fridge(rnd), x0 + 0.45, y, z0 + 2.0, Math.PI / 2);
+    placeIt(b, FUR.wallShelf(rnd, 2.2), x0 + 0.2, y + 1.55, z0 + 3.75, Math.PI / 2);
+    placeIt(b, FUR.crate(rnd, 0.6), x1 - 0.5, y, z1 - 2.1, 0.15);
+    placeIt(b, FUR.crate(rnd, 0.45), x1 - 0.52, y + 0.6, z1 - 2.12, -0.25);
+    b.prop('oilDrum', x1 - 1.25, y, z1 - 0.65, rnd() * 6);
+    placeIt(b, FUR.barrel(rnd), x0 + 0.55, y, z0 + 4.6, 0);
+  }
   // a copper lamp over the bench
   b.prop('barnLamp', x0 + 1.4, y + 2.15, z0 + 0.12, 0, { collide: false });
   // light bulb

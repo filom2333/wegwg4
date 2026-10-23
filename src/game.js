@@ -33,6 +33,7 @@ import { Inventory } from './items/inventory.js';
 import { ITEMS, initialState } from './items/itemDefs.js';
 import { Interaction } from './player/interaction.js';
 import { HUD } from './ui/hud.js';
+import { Goals } from './ui/goals.js';
 import { AudioSystem } from './audio/audio.js';
 import { Effects } from './gfx/effects.js';
 import { NPCManager } from './npc/npcs.js';
@@ -165,6 +166,7 @@ export class Game {
     this.interaction = new Interaction(this);
     this.ui = this.ui || null;
     this.hud = new HUD(this);
+    this.goals = new Goals(this);
     this.audio = this.audio || new AudioSystem(this);
     this.effects = new Effects(this);
     this.campfires = new Campfires(this);
@@ -216,7 +218,7 @@ export class Game {
       const inst = this.pois.loaded.get(0);
       if (inst) {
         inst.root.updateMatrixWorld(true);
-        const w = new THREE.Vector3(13.6, 0, 3.5).applyMatrix4(inst.root.matrixWorld);
+        const w = new THREE.Vector3(15.0, 0, 3.0).applyMatrix4(inst.root.matrixWorld);
         w.y = this.groundHeightAt(w.x, w.z) + 0.05;
         this.trailers.spawn(w, inst.poi.rot + Math.PI);
       }
@@ -307,9 +309,9 @@ export class Game {
     const spot = inst.carSpot || new THREE.Vector3(8.5, 0, -1);
     const m = new THREE.Matrix4().compose(new THREE.Vector3(poi.x, poi.y, poi.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), poi.rot), new THREE.Vector3(1, 1, 1));
     const car = spot.clone().applyMatrix4(m);
-    const front = new THREE.Vector3(spot.x - 1.6, 0, spot.z + 5.2).applyMatrix4(m);
-    // face the car in the garage
-    const yaw = Math.atan2(car.x - front.x, car.z - front.z) + 0.12;
+    // just inside the open door, looking in at the car
+    const front = new THREE.Vector3(spot.x - 0.9, 0, spot.z + 4.6).applyMatrix4(m);
+    const yaw = Math.atan2(car.x - front.x, car.z - front.z) + 0.06;
     return { x: front.x, z: front.z, yaw, carX: car.x, carZ: car.z, carYaw: poi.rot + Math.PI, carY: poi.y + 0.12 };
   }
 
@@ -434,12 +436,8 @@ export class Game {
     if (!this.attract) this.player.update(dt);
     // leave the car
     if (this.player.seat && input.wasPressed('interact') && !(this.ui && this.ui.blocksMove)) {
-      const t = this.interaction.target;
-      if (!t || t.kind !== 'hotspot') {
-        const seat = this.player.seat;
-        if (this.player.exitSeat()) this.audio && this.audio.play('seat');
-        void seat;
-      }
+      // (E on something in reach works that instead)
+      if (!this.interaction.target && this.player.exitSeat()) this.audio && this.audio.play('seat');
     }
     // car controls (for the current car); every car near the player is simulated
     this.fleet.updateCurrent();
@@ -473,7 +471,10 @@ export class Game {
     this.updateRefuel(dt);
     this.effects.update(dt);
     this.audio.update(dt);
-    if (!this.attract) this.hud.update(dt);
+    if (!this.attract) {
+      this.hud.update(dt);
+      this.goals.update(dt);
+    }
     // streaming
     const f = this.focusPoint();
     const gx = f.x + this.origin.x,
@@ -559,8 +560,8 @@ export class Game {
     // yard spots: tidy rows where someone stripping a car would lay things out: behind the
     // garage, down its far side, and behind the house; kept off roofs, floors and fences
     const rows = [
-      { from: [5.4, -6.7], step: [1.55, 0], n: 5, a: 0 },
-      { from: [13.1, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
+      { from: [5.0, -7.2], step: [1.6, 0], n: 5, a: 0 },
+      { from: [14.0, 0.4], step: [0, -1.5], n: 4, a: Math.PI / 2 },
       { from: [-12.5, -9.3], step: [1.6, 0], n: 7, a: 0 },
       { from: [3.2, 6.5], step: [-1.6, 0], n: 5, a: 0 },
     ];
@@ -652,15 +653,19 @@ export class Game {
     const at = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(inst.root.matrixWorld);
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), inst.poi.rot);
     const gx = 8.5,
-      gz = -1.5; // garage centre in POI space
+      gz = -1.5; // garage centre in POI space (8 x 9 m, back wall at gz - 4.5)
+    // spread about the workshop: on the bench, the tool chest, the fridge, the wall shelf, the
+    // crates and the floor, rather than in a row
     const list = [
-      ['jack', gx + 1.6, 0.1, gz - 2.6, null],
-      ['jerryCan', gx - 2.4, 0.4, gz + 2.0, { liquid: 12, liquidType: 'fuel' }],
-      ['oilBottle', gx - 1.6, 1.1, gz - 3.2, null],
-      ['waterBottle', gx - 2.0, 1.1, gz - 3.2, null],
-      ['cannedBeans', gx - 2.4, 1.1, gz - 3.2, null],
-      ['wrench', gx - 1.0, 1.1, gz - 3.25, null],
-      ['repairKit', gx + 2.6, 0.35, gz + 2.6, null],
+      ['jack', gx + 2.4, 0.1, gz - 0.6, null],
+      ['jerryCan', gx - 3.0, 0.3, gz + 2.4, { liquid: 12, liquidType: 'fuel' }],
+      ['wrench', gx - 3.0, 0.95, gz - 3.95, null],
+      ['oilBottle', gx - 2.1, 0.95, gz - 3.9, null],
+      ['repairKit', gx - 1.05, 1.1, gz - 4.1, null],
+      ['waterBottle', gx - 3.55, 1.8, gz - 2.5, null],
+      ['cannedBeans', gx - 3.7, 1.62, gz - 1.2, null],
+      ['lantern', gx + 3.48, 1.08, gz + 2.38, null],
+      ['sprayPaint', gx - 3.7, 1.62, gz - 0.2, null],
     ];
     for (const [id, x, y, z, st] of list) {
       const it = this.items.spawn(id, at(x, y + 0.1, z), q.clone(), st ? { ...st } : null);
@@ -704,10 +709,13 @@ export class Game {
     this.deathHandled = true;
     this.sleepHours = 0;
     this.player.deathCause = cause;
+    // the world drains away (grade uDeath), goes quiet, a slow heart; then the reckoning
+    this.hud && this.hud.root.classList.add('gone');
+    this.audio && this.audio.dying && this.audio.dying();
     setTimeout(() => {
       this.paused = true;
       this.ui && this.ui.showDeath(cause);
-    }, 1600);
+    }, 2600);
   }
 
   onCarImpact(severity) {
@@ -811,28 +819,13 @@ export class Game {
     this._steer += (steer - this._steer) * Math.min(1, dt * 6);
     const car = this.car;
     if (!blocked) {
-      // Ignition key: press turns it on (hold to crank), press while running stops the engine,
-      // a quick tap with the ignition on and the engine off switches it off.
+      // the key is turned by hand (E on it, see interaction.turnKey); lights, wipers and the
+      // gear lever also have keys, the hand still goes to them
       const ia = this.interaction;
-      if (input.wasPressed('ignition')) ia.driverReach('key');
-      if (input.wasPressed('lights') || input.wasPressed('wipers')) ia.driverReach('stalk');
+      const spot = (id) => car.type.HOTSPOTS.find((h) => h.id === id);
+      if (input.wasPressed('lights')) ia.driverReach(spot('lights') || 'stalk');
+      if (input.wasPressed('wipers')) ia.driverReach(spot('wipers') || 'stalk');
       if ((input.wasPressed('gearUp') || input.wasPressed('gearDown')) && !car.dyn.automatic) ia.driverReach('shifter');
-      if (input.wasPressed('ignition')) {
-        this._keyWasOn = car.ignition;
-        this._keyHeld = 0;
-        if (car.dyn.engine.running) {
-          car.setIgnition(false);
-          this._keyWasOn = null;
-        } else if (!car.ignition) car.setIgnition(true);
-      }
-      if (input.isDown('ignition')) {
-        this._keyHeld = (this._keyHeld || 0) + dt;
-        if (car.ignition && !car.dyn.engine.running && this._keyWasOn !== null) car.crank(dt);
-      }
-      if (input.wasReleased('ignition')) {
-        if (this._keyWasOn && this._keyHeld < 0.2 && !car.dyn.engine.running) car.setIgnition(false);
-        car.cranking = 0;
-      }
       if (input.wasPressed('lights')) car.lightsOn = (car.lightsOn + 1) % 3;
       if (input.wasPressed('wipers')) car.wipers = !car.wipers;
       if (!car.dyn.automatic) {
@@ -902,6 +895,8 @@ export class Game {
     }
     if (this.player) {
       this.renderer.grade.uniforms.uDamage.value = clamp(this.player.damageFlash + (this.player.health < 30 ? (30 - this.player.health) / 60 : 0), 0, 1);
+      const ud = this.renderer.grade.uniforms.uDeath;
+      ud.value = this.player.dead ? Math.min(1, ud.value + dt / 3.2) : 0;
       // out in a sandstorm with nothing between you and the wind
       const exposed = !this.player.seat && !this.player.indoors ? 1 : 0;
       const gr = this.renderer.grade.uniforms.uGrit;

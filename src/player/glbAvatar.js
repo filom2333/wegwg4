@@ -379,6 +379,7 @@ export class GlbAvatar {
   holdPose(player) {
     const ia = this.g.interaction;
     const it = ia && ia.held;
+    if (!it && ia && ia.fists && !player.seat) return this.fistPose(ia);
     if (!it) return;
     const B = this.bones;
     const qr = this.root.quaternion;
@@ -414,9 +415,41 @@ export class GlbAvatar {
         this.reach(B.upperArmL, B.foreArmL, B.handL, t2, right.clone().negate().addScaledVector(up, -1));
       }
     } else {
-      const t = chest.clone().addScaledVector(fwd, 0.34).addScaledVector(up, -0.22).addScaledVector(right, 0.16);
+      // held out in front (wheel), the arm goes with it, so others see where it is
+      const out = ia.floating ? Math.min(1, Math.max(0, (ia.holdDist - 0.38) / 0.34)) : 0;
+      const t = chest
+        .clone()
+        .addScaledVector(fwd, 0.34 + 0.24 * out)
+        .addScaledVector(up, -0.22 + 0.14 * out)
+        .addScaledVector(right, 0.16 - 0.08 * out);
       this.reach(B.upperArmR, B.foreArmR, B.handR, t, right.clone().addScaledVector(up, -1));
       this.aim(B.handR, B.fingerR, fwd.clone().addScaledVector(up, -0.2));
+    }
+  }
+
+  // Fists up in front of the chest; the punching one goes out at the face height of whoever is in
+  // front and comes back.
+  fistPose(ia) {
+    const B = this.bones;
+    const qr = this.root.quaternion;
+    const up = V(0, 1, 0),
+      fwd = V(0, 0, 1).applyQuaternion(qr),
+      right = V(-1, 0, 0).applyQuaternion(qr);
+    const chest = B.chest.getWorldPosition(V());
+    const P = ia.punch;
+    const out = P.t < 0.32 ? 1 - Math.pow(1 - P.t / 0.32, 2) : P.t < 0.42 ? 1 : Math.max(0, 1 - (P.t - 0.42) / 0.58);
+    for (const [s, sg, side] of [
+      ['L', -1, 'left'],
+      ['R', 1, 'right'],
+    ]) {
+      const k = P.side === side && P.t < 1 ? out : 0;
+      const t = chest
+        .clone()
+        .addScaledVector(fwd, 0.28 + 0.3 * k)
+        .addScaledVector(up, 0.06 + 0.06 * k)
+        .addScaledVector(right, sg * (0.14 - 0.1 * k));
+      this.reach(B['upperArm' + s], B['foreArm' + s], B['hand' + s], t, right.clone().multiplyScalar(sg).addScaledVector(up, -1));
+      this.aim(B['hand' + s], B['finger' + s], fwd.clone().addScaledVector(up, 0.15));
     }
   }
 

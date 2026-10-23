@@ -43,4 +43,6 @@ for (const s of steps) {
   }
 }
 for (const l of logs.slice(-25)) console.log(l);
-await browser.close();
+// (closing can hang on a stalled software-GL process)
+await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 5000))]);
+process.exit(0);

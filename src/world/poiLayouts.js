@@ -19,7 +19,7 @@ function props(fn) {
 export const LAYOUTS = {
   homestead(rnd) {
     const house = buildHouse(rnd, { style: 'siding', abandoned: 0.1 });
-    const garage = ST.buildGarage(rnd, { w: 6.5, d: 7.5, open: true });
+    const garage = ST.buildGarage(rnd, { w: 8, d: 9, open: true, workshop: true });
     const out = [
       { ...house, x: -6.5, z: -2, rot: 0 },
       { ...garage, x: 8.5, z: -1.5, rot: 0, tag: 'garage' },
@@ -34,8 +34,8 @@ export const LAYOUTS = {
             [-14, 9],
             [-14, -9],
           ]);
-          b.prop('oilDrum', 12.8, 0, 3.5, rnd() * 6);
-          FUR.place(b, FUR.crate(rnd), 12.8, 0, 4.6, 0.2);
+          b.prop('oilDrum', 14.2, 0, 3.8, rnd() * 6);
+          FUR.place(b, FUR.crate(rnd), 14.2, 0, 4.9, 0.2);
         }),
         x: 0,
         z: 0,

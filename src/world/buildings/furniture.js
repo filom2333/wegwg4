@@ -69,6 +69,17 @@ const legs4 = (it, w, d, h, r, mat, inset = 0.04, round = true) => {
 };
 
 // ------------------------------------------------------------------ bedroom
+// Colliders for open shelving: the two ends, the back (optional) and every board, so whatever
+// stands on a shelf rests on its board and can be reached. (One box around the whole unit had
+// the things on the shelves buried inside it: they could not be aimed at, and when something
+// woke them the physics shot them out.)
+function shelfCols(it, w, h, d, boards, { back = true, cx = 0, cz = 0 } = {}) {
+  const t = 0.03;
+  for (const sx of [-1, 1]) it.col(t, h, d, cx + sx * (w / 2 - t / 2), h / 2, cz);
+  if (back) it.col(w, h, t, cx, h / 2, cz - d / 2 + t / 2);
+  for (const y of boards) it.col(w, t, d, cx, y, cz);
+}
+
 export function bed(rnd, { double = true } = {}) {
   const M = archMaterials();
   const w = double ? 1.5 : 0.95,
@@ -186,7 +197,8 @@ export function wardrobe(rnd) {
     it.add(h, M.metal);
   }
   it.col(w, 2.0, 0.58, 0, 1.0, 0);
-  it.lootAt(0, 1.3, 0.05, 'clothes');
+  // (the doors stay shut: whatever was kept was left on top)
+  it.lootAt(0, 2.0, 0.0, 'clothes');
   return it;
 }
 
@@ -325,8 +337,9 @@ export function bookshelf(rnd) {
       x += bw + 0.002;
     }
   }
-  it.col(w, h, 0.32, 0, h / 2, 0);
-  it.lootAt(0, 1.1, 0.05, 'shelf');
+  shelfCols(it, w, h, 0.32, Array.from({ length: shelves + 1 }, (_, i) => 0.04 + (i * (h - 0.06)) / shelves));
+  // on the board at chest height, in front of the books
+  it.lootAt(0, 0.04 + (3 * (h - 0.06)) / shelves + 0.012, 0.08, 'shelf');
   return it;
 }
 
@@ -431,7 +444,7 @@ export function kitchenRun(rnd, len = 2.4, { sink = true, stove = true, uppers =
     if (uppers && i !== stoveAt) {
       it.rbox(cw - 0.01, 0.7, 0.34, x, 1.75, -0.13, cab, 0.006);
       it.rbox(cw - 0.04, 0.64, 0.02, x, 1.75, 0.05, cab, 0.006);
-      it.lootAt(x, 1.5, -0.13, 'cupboard');
+      it.lootAt(x, 0.93, -0.2, 'cupboard');
     }
   }
   it.col(len, 0.92, 0.62, 0, 0.46, 0);
@@ -481,7 +494,8 @@ export function fridge(rnd) {
     it.add(h, M.metal);
   }
   it.col(0.72, 1.75, 0.7, 0, 0.87, 0);
-  it.lootAt(0, 0.9, 0.1, 'fridge');
+  // the door stays shut; something was left on top
+  it.lootAt(0, 1.75, 0.0, 'fridge');
   return it;
 }
 
@@ -507,7 +521,7 @@ export function washbasin(rnd) {
   it.rbox(0.5, 0.6, 0.12, 0, 1.45, -0.16, M.trimWhite, 0.01);
   it.rbox(0.46, 0.56, 0.005, 0, 1.45, -0.098, stdMat({ color: 0xa0a8aa, metalness: 1, roughness: 0.05 }), 0.004);
   it.col(0.55, 0.85, 0.45, 0, 0.42, 0);
-  it.lootAt(0, 1.45, -0.16, 'medicine');
+  it.lootAt(0.17, 0.85, 0.08, 'medicine');
   return it;
 }
 
@@ -571,7 +585,7 @@ export function metalShelf(rnd, w = 1.2, h = 1.9, d = 0.45) {
       x += bw + 0.03;
     }
   }
-  it.col(w, h, d, 0, h / 2, 0);
+  shelfCols(it, w, h, d, Array.from({ length: 5 }, (_, i) => 0.1 + (i * (h - 0.15)) / 4), { back: false });
   return it;
 }
 
@@ -593,6 +607,45 @@ export function workbench(rnd) {
   it.col(2.0, 0.9, 0.75, 0, 0.45, 0);
   it.lootAt(-0.4, 0.92, 0.05, 'tools');
   it.lootAt(0.3, 0.92, 0.05, 'tools');
+  return it;
+}
+
+// A rolling tool chest: a red cabinet of drawers with steel pulls, on casters.
+export function toolChest(rnd) {
+  const M = archMaterials();
+  const it = new Item([0.72, 1.05, 0.5]);
+  const red = rnd() < 0.75 ? M.metalRed : M.metalGreen;
+  it.rbox(0.72, 0.95, 0.48, 0, 0.56, 0, red, 0.012);
+  for (let i = 0; i < 5; i++) {
+    const y = 0.2 + i * 0.17;
+    it.rbox(0.68, 0.15, 0.02, 0, y, 0.245, red, 0.004);
+    it.rbox(0.42, 0.016, 0.026, 0, y + 0.045, 0.262, M.metal, 0.004);
+  }
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) it.add(new THREE.CylinderGeometry(0.038, 0.038, 0.03, 12).rotateZ(Math.PI / 2).translate(sx * 0.3, 0.045, sz * 0.19), M.rubber);
+  it.col(0.72, 1.04, 0.5, 0, 0.52, 0);
+  it.lootAt(0, 1.04, 0, 'tools');
+  return it;
+}
+
+// A plank shelf on two steel brackets, its back to the wall (at z = -d/2).
+export function wallShelf(rnd, w = 2.0, d = 0.32) {
+  const M = archMaterials();
+  const it = new Item([w, 0.26, d]);
+  it.rbox(w, 0.035, d, 0, 0, 0, M.woodDark, 0.004);
+  for (const sx of [-1, 1]) {
+    it.rbox(0.03, 0.22, 0.03, sx * (w / 2 - 0.2), -0.12, -d / 2 + 0.03, M.metal, 0.004);
+    it.rbox(0.03, 0.03, d - 0.05, sx * (w / 2 - 0.2), -0.03, 0.0, M.metal, 0.004);
+  }
+  // paint tins and a box left along it
+  for (let x = -w / 2 + 0.15; x < w / 2 - 0.2; x += 0.22 + rnd() * 0.3) {
+    if (rnd() < 0.45) continue;
+    if (rnd() < 0.6) it.add(new THREE.CylinderGeometry(0.07, 0.07, 0.15, 14).translate(x, 0.093, -0.04), rnd() < 0.5 ? M.metal : M.metalPainted);
+    else it.rbox(0.2, 0.14, 0.18, x + 0.05, 0.088, -0.03, M.cardboard || M.fabricBrown, 0.006);
+  }
+  it.col(w, 0.035, d, 0, 0, 0);
+  it.lootAt(-w * 0.28, 0.02, 0.04, 'storage');
+  it.lootAt(w * 0.22, 0.02, 0.04, 'storage');
   return it;
 }
 
@@ -689,7 +742,10 @@ export function gondola(rnd, len = 2.4) {
     g.translate((rnd() - 0.5) * len, 0.04, (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.3));
     it.add(g, M.goods);
   }
-  it.col(len, 1.5, 0.9, 0, 0.75, 0);
+  it.col(len, 0.12, 0.9, 0, 0.06, 0);
+  it.col(len, 1.45, 0.08, 0, 0.75, 0);
+  for (const s of [-1, 1]) it.col(0.04, 1.5, 0.9, s * (len / 2 + 0.02), 0.75, 0);
+  for (const side of [-1, 1]) for (let i = 1; i < 4; i++) it.col(len - 0.04, 0.03, 0.38, 0, 0.15 + i * 0.36, side * 0.23);
   return it;
 }
 
@@ -697,7 +753,11 @@ export function cooler(rnd, doors = 2) {
   const M = archMaterials();
   const w = doors * 0.75;
   const it = new Item([w, 2.0, 0.8]);
-  it.rbox(w, 2.0, 0.78, 0, 1.0, 0, M.metalWhite, 0.01);
+  // a hollow cabinet (back, ends, top and base), so the drinks on its shelves show through the glass
+  it.rbox(w, 2.0, 0.04, 0, 1.0, -0.37, M.metalWhite, 0.01);
+  for (const s of [-1, 1]) it.rbox(0.04, 2.0, 0.78, s * (w / 2 - 0.02), 1.0, 0, M.metalWhite, 0.01);
+  it.rbox(w, 0.2, 0.78, 0, 1.9, 0, M.metalWhite, 0.01);
+  it.rbox(w, 0.25, 0.78, 0, 0.125, 0, M.metalWhite, 0.01);
   for (let i = 0; i < doors; i++) {
     const x = -w / 2 + 0.375 + i * 0.75;
     it.rbox(0.68, 1.6, 0.03, x, 1.0, 0.39, M.metal, 0.01);
@@ -714,7 +774,7 @@ export function cooler(rnd, doors = 2) {
   }
   // lit header
   it.rbox(w, 0.18, 0.04, 0, 1.88, 0.4, M.emissiveWarm, 0.01);
-  it.col(w, 2.0, 0.8, 0, 1.0, 0);
+  shelfCols(it, w, 2.0, 0.78, [0.25, ...[0, 1, 2, 3].map((s) => 0.4 + s * 0.38), 1.8]);
   return it;
 }
 
@@ -747,7 +807,11 @@ export function boothSeat(rnd) {
   const leg = new THREE.CylinderGeometry(0.04, 0.12, 0.73, 12);
   leg.translate(0, 0.365, 0);
   it.add(leg, M.metal);
-  it.col(1.2, 1.0, 1.6, 0, 0.5, 0);
+  for (const sg of [-1, 1]) {
+    it.col(1.2, 0.45, 0.5, 0, 0.225, sg * 0.55);
+    it.col(1.2, 0.6, 0.16, 0, 0.75, sg * 0.74);
+  }
+  it.col(1.0, 0.04, 0.7, 0, 0.75, 0);
   it.lootAt(0, 0.77, 0, 'table');
   return it;
 }

@@ -14,6 +14,7 @@ import { dependentsOf } from './partUtils.js';
 import { ACCESSORIES, fitAccessory, serializeAccessories } from './accessories.js';
 import { serializePlates, restorePlates } from './plates.js';
 import { setTune } from './tuning.js';
+import { trackOn } from '../audio/music/albums.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // cars further than this sleep (their bodies off): terrain colliders only exist near the player
@@ -132,7 +133,6 @@ export class Fleet {
     if (g.car === car) return;
     g.car = car;
     g.carMats = car.mats;
-    g.audio && g.audio.setCarType && g.audio.setCarType(car.type);
   }
 
   // Simulation for cars near the player, parking (hidden, bodies off) for the far ones.
@@ -389,6 +389,7 @@ export function serializeCar(car, o) {
     trip: car.trip,
     dirt: car.dirt,
     lightsOn: car.lightsOn,
+    parkBrake: car.parkBrake,
     paintColor: car.paintColor ?? null,
     partColors: car.partColors || null,
     stereo: car.stereo ? { disc: car.stereo.disc, track: car.stereo.track, mode: car.stereo.mode } : null,
@@ -401,7 +402,7 @@ export function serializeCar(car, o) {
 }
 
 export function applyCarState(car, c, g) {
-  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
+  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn', 'parkBrake']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
   const same = (c.model || 'beetle') === car.type.id;
   if (c.paintColor && car.type.repaintable) {
     car.paintColor = c.paintColor;
@@ -416,7 +417,7 @@ export function applyCarState(car, c, g) {
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
   for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);
   car.rebuildColliders();
-  if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0 });
+  if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0, track: c.stereo.disc >= 0 ? trackOn(c.stereo.disc, c.stereo.track || 0) : 0 });
   for (const id of Object.values(c.accessories || {})) if (ACCESSORIES[id]) fitAccessory(car, id);
   if (same) restorePlates(car, c.plates);
   if (c.storage && car.storage) for (const [k, list] of Object.entries(c.storage)) car.storage[k] && car.storage[k].restore(list);
