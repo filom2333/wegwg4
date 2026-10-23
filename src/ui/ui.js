@@ -12,6 +12,8 @@ import { input } from '../core/input.js';
 import { hasSave, saveSummary, writeSave, readCareer, recordRun, deleteSave } from '../core/save.js';
 import { NOTES, HAVEN_KM } from '../story/story.js';
 import { drawAtlas } from '../story/atlas.js';
+import { MenuBackdrop } from './menuBackdrop.js';
+import { applySignTextures } from './signTextures.js';
 
 const el = (tag, cls, parent, html) => {
   const e = document.createElement(tag);
@@ -24,18 +26,14 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 const VERSION = '0.11';
 
-// Pictures behind the title (public/menu/), each with its own slow camera move.
-const MENU_SHOTS = [
-  { src: 'menu/golden.webp', move: 'in', origin: '42% 58%' },
-  { src: 'menu/gas.webp', move: 'left', origin: '50% 55%' },
-  { src: 'menu/vista.webp', move: 'out', origin: '48% 60%' },
-  { src: 'menu/forest.webp', move: 'in', origin: '52% 62%' },
-  { src: 'menu/taiga.webp', move: 'right', origin: '40% 64%' },
-  { src: 'menu/night.webp', move: 'in', origin: '50% 52%' },
-  { src: 'menu/dunes.webp', move: 'right', origin: '40% 55%' },
-  { src: 'menu/mesas.webp', move: 'out', origin: '55% 50%' },
-  { src: 'menu/valley.webp', move: 'left', origin: '60% 55%' },
-];
+// Pictures behind the title (public/menu/): moments from the road, each with its depth map so
+// the title shows them in depth (menuBackdrop.js); the flat slideshow is the fallback.
+const MENU_SHOTS = ['roadside', 'campfire', 'vista', 'breakdown', 'snow', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
+  src: `menu/${n}.webp`,
+  depth: `menu/${n}_depth.webp`,
+  move: ['in', 'left', 'out', 'right'][i % 4],
+  origin: '50% 55%',
+}));
 const SLIDE_SECONDS = 9;
 
 const TIPS = [
@@ -235,6 +233,13 @@ export class UI {
   showBackdrop() {
     if (this.backdrop) return;
     const b = (this.backdrop = el('div', 'ui-backdrop', document.body));
+    this.liveSigns();
+    try {
+      this.depthView = new MenuBackdrop(b, MENU_SHOTS);
+      return;
+    } catch (e) {
+      console.warn('title pictures without depth:', e.message || e);
+    }
     const start = Math.floor(Math.random() * MENU_SHOTS.length);
     const slides = MENU_SHOTS.map((m) => {
       const d = el('div', 'ui-slide', b);
@@ -260,6 +265,33 @@ export class UI {
     img.onload = img.onerror = () => next();
     img.src = MENU_SHOTS[start].src;
     this.backdropTimer = setInterval(next, SLIDE_SECONDS * 1000);
+  }
+
+  // The signs answer the pointer: they turn a little towards it on their posts and shift against
+  // the pictures behind (depth), and the light slides across their sheeting.
+  liveSigns() {
+    if (this.signsLive) return;
+    this.signsLive = true;
+    applySignTextures();
+    const m = { x: 0, y: 0 };
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      const root = document.documentElement.style;
+      root.setProperty('--sheen', (0.5 + m.x * 0.45).toFixed(3));
+      const ax = -m.y * 3.5,
+        ay = m.x * 6;
+      const ang = Math.hypot(ax, ay);
+      for (const s of document.querySelectorAll('.title-sign, .pause-sign')) {
+        s.style.rotate = ang > 0.05 ? `${(ax / ang).toFixed(3)} ${(ay / ang).toFixed(3)} 0 ${ang.toFixed(2)}deg` : 'none';
+        s.style.translate = `${(-m.x * 10).toFixed(1)}px ${(-m.y * 6).toFixed(1)}px`;
+      }
+    };
+    window.addEventListener('pointermove', (e) => {
+      m.x = (e.clientX / window.innerWidth) * 2 - 1;
+      m.y = (e.clientY / window.innerHeight) * 2 - 1;
+      if (!raf) raf = requestAnimationFrame(apply);
+    });
   }
 
   // The head of the title sign: NORTH over the route marker, the name, where the road goes.
@@ -752,6 +784,7 @@ export class UI {
   showPause() {
     const g = this.game;
     g.paused = true;
+    this.liveSigns();
     if (document.pointerLockElement) document.exitPointerLock();
     this.screen('pause', (s) => {
       s.classList.add('scr-pause');
