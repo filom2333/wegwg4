@@ -242,6 +242,10 @@ export const SEDAN88 = {
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.78, 1.55), { h: 0.08 }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.27, -0.65), { w: 0.85, h: 0.2, d: 0.5 }));
     model.addPart('spare', PP.spareWheel(model, V(0, 0.55, -1.85)));
+    // the reservoirs, fuse box and dipstick round the engine
+    const bay = PP.bayDetails(M, { coolant: V(-0.55, 0.66, 1.3), brake: V(0.42, 0.72, 1.12), washer: V(-0.55, 0.6, 1.82), fuses: V(0.6, 0.68, 1.2), dipstick: V(0.15, 0.74, 1.35) });
+    model.parts.body.inner.add(bay.group);
+    model.bay = bay.refs;
     // the scuttle panel under the windscreen: the source leaves a gap there between the glass
     // and the bonnet's back edge, and from the seat you looked through it into the engine bay
     const cowl = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35).rotateX(-Math.PI / 2), M.black);

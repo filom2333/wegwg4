@@ -8,6 +8,7 @@ import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
 import { setNeedle, drawSpeedLcd } from './gauges.js';
+import { showWear } from './wear.js';
 import { setPartSource, applyEngine } from './swap.js';
 import { applyTune, refreshTuneVisual, tunedLabel, isSport } from './tuning.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
@@ -1169,6 +1170,18 @@ export class Car {
       const nt = powered ? (to > t ? Math.min(to, t + dt / 3) : Math.max(to, t - dt / 3)) : t;
       this.windowT[door] = nt;
       w.mesh.position.y = -w.drop * nt;
+    }
+    // worn parts look it (checked now and then)
+    this._wearT = (this._wearT || 0) - dt;
+    if (this._wearT <= 0) {
+      this._wearT = 1.5;
+      showWear(this);
+    }
+    // the coolant in the expansion tank stands at the circuit's level
+    const bay = this.model.bay;
+    if (bay && bay.coolant && this.coolantCap) {
+      const lv = Math.max(0.02, Math.min(1, this.coolant / this.coolantCap));
+      bay.coolant.mesh.scale.y = lv;
     }
     // the fuel filler flap swings open and shut; the cap is in the neck or off
     const F = this.model.filler;

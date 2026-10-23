@@ -378,3 +378,51 @@ export function beltLoop(pulleys, { plane = 'x' } = {}) {
   mesh(g, tubeAlong(pts, 0.006, 6, { closedEnds: false }), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.8 }));
   return g;
 }
+
+// The rest of an engine bay, fixed to the body: the coolant expansion tank (translucent, its
+// fluid at the level the car's coolant is at, the pressure cap on top), the brake fluid
+// reservoir with its yellow cap, the washer bottle with blue fluid, the fuse box and the
+// dipstick's yellow ring. spots: car-space centres { coolant, brake, washer, fuses, dipstick }.
+export function bayDetails(M, spots) {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.35, transparent: true, opacity: 0.55, depthWrite: false });
+  const capBlack = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.5 });
+  const capYellow = new THREE.MeshStandardMaterial({ color: 0xd9a619, roughness: 0.45 });
+  const capBlue = new THREE.MeshStandardMaterial({ color: 0x2456a8, roughness: 0.45 });
+  const refs = {};
+  // a translucent tank with a fluid block inside; returns the fluid mesh (scaled to the level)
+  const tank = (at, [w, h, d], fluidColor, cap, capR = 0.022) => {
+    const t = new THREE.Mesh(roundedBox(w, h, d, 0.012, 2), shell);
+    t.position.copy(at).add(V(0, h / 2, 0));
+    t.renderOrder = 2;
+    g.add(t);
+    const fluidMat = new THREE.MeshStandardMaterial({ color: fluidColor, roughness: 0.2, transparent: true, opacity: 0.85 });
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(w - 0.012, h - 0.014, d - 0.012).translate(0, (h - 0.014) / 2, 0), fluidMat);
+    fl.position.copy(at).add(V(0, 0.007, 0));
+    g.add(fl);
+    // MIN and MAX marks on the side
+    for (const k of [0.3, 0.75]) mesh(g, new THREE.BoxGeometry(0.003, 0.002, d * 0.4).translate(at.x + w / 2 + 0.001, at.y + h * k, at.z), capBlack, false);
+    mesh(g, new THREE.CylinderGeometry(capR, capR, 0.022, 20).translate(at.x, at.y + h + 0.011, at.z), cap);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      mesh(g, new THREE.BoxGeometry(0.004, 0.02, 0.004).translate(at.x + Math.cos(a) * capR, at.y + h + 0.011, at.z + Math.sin(a) * capR), cap, false);
+    }
+    return { mesh: fl, h: h - 0.014 };
+  };
+  if (spots.coolant) refs.coolant = tank(spots.coolant, [0.12, 0.13, 0.16], 0xd8508c, capBlack, 0.026);
+  if (spots.brake) refs.brake = tank(spots.brake, [0.08, 0.07, 0.065], 0xc8a24a, capYellow, 0.018);
+  if (spots.washer) refs.washer = tank(spots.washer, [0.14, 0.15, 0.12], 0x3a7fd0, capBlue, 0.02);
+  if (spots.fuses) {
+    const f = spots.fuses;
+    mesh(g, roundedBox(0.16, 0.07, 0.1, 0.008, 2).translate(f.x, f.y + 0.035, f.z), capBlack);
+    mesh(g, roundedBox(0.165, 0.012, 0.105, 0.005, 1).translate(f.x, f.y + 0.072, f.z), capBlack, false);
+    for (const dx of [-0.07, 0.07]) mesh(g, new THREE.BoxGeometry(0.012, 0.012, 0.03).translate(f.x + dx, f.y + 0.06, f.z + 0.055), capBlack, false);
+    mesh(g, tubeAlong([V(f.x - 0.05, f.y + 0.02, f.z - 0.05), V(f.x - 0.06, f.y + 0.0, f.z - 0.12), V(f.x - 0.02, f.y - 0.04, f.z - 0.2)], 0.008, 6), capBlack, false);
+  }
+  if (spots.dipstick) {
+    const p = spots.dipstick;
+    mesh(g, new THREE.CylinderGeometry(0.004, 0.004, 0.12, 6).translate(p.x, p.y - 0.06, p.z), M.steel, false);
+    mesh(g, new THREE.TorusGeometry(0.016, 0.005, 6, 16).translate(p.x, p.y + 0.016, p.z), capYellow);
+  }
+  return { group: g, refs };
+}

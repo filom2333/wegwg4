@@ -259,5 +259,9 @@ export const W203 = {
     model.addPart('battery', PP.battery(M, V(-0.5, 0.52, -1.95), { spec: '12V  74Ah', size: [0.19, 0.19, 0.28] }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.3, -0.98), { w: 0.82, h: 0.22, d: 0.46, filler: -1 }));
     model.addPart('spare', PP.spareWheel(model, V(0.15, 0.44, -1.95)));
+    // the reservoirs, fuse box and dipstick round the engine
+    const bay = PP.bayDetails(M, { coolant: V(0.45, 0.6, 1.58), brake: V(0.48, 0.65, 1.0), washer: V(-0.5, 0.55, 1.72), fuses: V(0.5, 0.6, 1.28), dipstick: V(0.1, 0.63, 1.32) });
+    model.parts.body.inner.add(bay.group);
+    model.bay = bay.refs;
   },
 };
