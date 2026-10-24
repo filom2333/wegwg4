@@ -37,7 +37,7 @@ const FRONT = ['driver', 'passenger'];
 // Inside ones are worked from a seat (seats) with one hand (hand; none for the parking brake
 // pedal); door handles ride on their doors. Each sits on the control itself.
 const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(-0.826, 0.84, -1.62), r: 0.08, part: 'fueltank' },
+  { id: 'fuel', label: 'Fuel filler', pos: V(-0.841, 0.804, -1.572), r: 0.1, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.0, 0.84, 1.3), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.3, 0.74, 1.72), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(-0.48, 0.66, -1.95), r: 0.13, part: 'battery', lid: 'trunk' },
@@ -198,7 +198,8 @@ export const W203 = {
     { id: 'C', part: 'body', center: [0.015, 1.205, 0.212], normal: [0.12, -0.02, -1], size: [0.23, 0.058], round: 0.45, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
   ],
   // the fuel filler flap on the right rear wing
-  FILLER: { pos: [-0.824, 0.84, -1.62], normal: [-0.92, 0.38, -0.09], size: [0.115, 0.105], corner: 0.03, hinge: 1 },
+  // (exactly over the model's own flap, its groove inside the cut, so there is one flap, not two)
+  FILLER: { pos: [-0.839, 0.8042, -1.5717], normal: [-0.962, 0.254, -0.095], size: [0.216, 0.147], corner: 0.03, hinge: 1 },
   GAUGES: {
     // (spaced so no two bezels touch: each bezel reaches about 1.09 of its dial's radius)
     speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.048, face: true, lcd: true },

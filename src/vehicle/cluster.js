@@ -5,7 +5,8 @@
 // The faces are drawn large (1024 px) and drawn again once the game's typeface has loaded.
 //
 // G (type.GAUGES): speedo { center, normal, radius, lcd }, tacho { offset, radius }, small:
-// [{ kind: 'fuel'|'temp', offset, radius }], panel [w, h, x, y], depth (how deep the tubes are).
+// [{ kind: 'fuel'|'temp'|'oil'|'volt', offset, radius }], panel [w, h, x, y], curve (how fast the
+// fascia bends toward the driver), depth (how deep the tubes are).
 // The group's +x points to the driver's right, +z toward the driver.
 
 import * as THREE from 'three';
@@ -98,7 +99,8 @@ function drawDial(ctx, S, { max, minor, major, unit, red = null, label = null, s
   }
 }
 
-// A small gauge: fuel or coolant temperature across a 70 degree arc, with its symbol.
+// A small gauge across a 70 degree arc, with its symbol: fuel, coolant temperature, oil pressure or
+// the battery's volts.
 function drawSmall(ctx, S, kind) {
   base(ctx, S);
   const c = S / 2;
@@ -108,7 +110,7 @@ function drawSmall(ctx, S, kind) {
     const t = i / 8;
     const a = needleAngle(kind, t);
     const major = i % 4 === 0;
-    const red = kind === 'fuel' ? t < 0.13 : t > 0.8;
+    const red = kind === 'fuel' || kind === 'oil' ? t < 0.13 : kind === 'temp' ? t > 0.8 : false;
     ctx.strokeStyle = red ? RED : INK;
     ctx.lineWidth = S * (major ? 0.024 : 0.013);
     const r0 = S * (major ? 0.29 : 0.33),
@@ -122,14 +124,14 @@ function drawSmall(ctx, S, kind) {
   ctx.font = `800 ${Math.round(S * 0.11)}px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const [lo, hi] = kind === 'fuel' ? ['E', 'F'] : ['C', 'H'];
+  const [lo, hi] = { fuel: ['E', 'F'], temp: ['C', 'H'], oil: ['L', 'H'], volt: ['8', '16'] }[kind];
   const la = needleAngle(kind, 0),
     ha = needleAngle(kind, 1);
-  ctx.fillStyle = kind === 'fuel' ? RED : INK;
+  ctx.fillStyle = kind === 'fuel' || kind === 'oil' ? RED : INK;
   ctx.fillText(lo, c + Math.cos(la) * S * 0.44, cy + Math.sin(la) * S * 0.44 + S * 0.075);
-  ctx.fillStyle = kind === 'fuel' ? INK : RED;
+  ctx.fillStyle = kind === 'temp' ? RED : INK;
   ctx.fillText(hi, c + Math.cos(ha) * S * 0.44, cy + Math.sin(ha) * S * 0.44 + S * 0.075);
-  symbol(ctx, kind === 'fuel' ? 'fuel' : 'temp', c, c + S * 0.31, S * 0.16, 'rgba(243,239,228,0.7)');
+  symbol(ctx, { fuel: 'fuel', temp: 'temp', oil: 'oil', volt: 'gen' }[kind], c, c + S * 0.31, S * 0.16, 'rgba(243,239,228,0.7)');
 }
 
 // ------------------------------------------------------------------ symbols
@@ -235,6 +237,7 @@ export function buildCluster(model, G, M, type) {
   const y = V(0, 1, 0).addScaledVector(z, -z.y).normalize();
   g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(y, z), y, z));
   const depth = G.depth ?? 0.022;
+  const curve = G.curve ?? 1.1;
   const R = s.radius;
   const faces = [];
   const redraws = [];
@@ -283,7 +286,7 @@ export function buildCluster(model, G, M, type) {
     const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 10 });
     const p = geo.attributes.position;
     // (its face just behind the dials' faces, so the tubes stand out of it)
-    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) - 0.017 + 1.1 * p.getX(i) * p.getX(i));
+    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) - 0.017 + curve * (p.getX(i) + px) ** 2);
     geo.computeVertexNormals();
     const fascia = new THREE.Mesh(geo, fasciaMat);
     fascia.position.set(px, py, 0);
@@ -295,7 +298,7 @@ export function buildCluster(model, G, M, type) {
   const dial = (name, at, r, draw, needleLen, opts = {}) => {
     const d = new THREE.Group();
     // (the fascia curves: a dial sits on it where it is)
-    d.position.set(at[0], at[1], 1.1 * at[0] * at[0] - 0.006);
+    d.position.set(at[0], at[1], curve * at[0] * at[0] - 0.006);
     g.add(d);
     const c = makeCanvas(1024, 1024);
     const tex = canvasTexture(c, { wrap: false });

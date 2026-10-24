@@ -274,7 +274,7 @@ export class Renderer {
     this.grade.uniforms.uRevZ.value = this.revZ ? 1 : 0;
     this.composer.addPass(new DepthCapturePass(this.grade.uniforms.tDepth));
     this.outline = new SelectionOutlinePass(this.camera);
-    this.outline.edgeStrength = 2.2;
+    this.outline.edgeStrength = 1.2;
     this.outline.visibleEdgeColor.set(0xf2e6cf);
     this.outline.enabled = false;
     this.composer.addPass(this.outline);

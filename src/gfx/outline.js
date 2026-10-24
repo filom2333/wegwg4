@@ -12,7 +12,7 @@ export class SelectionOutlinePass extends Pass {
     this.camera = camera;
     this.selectedObjects = [];
     this.visibleEdgeColor = new THREE.Color(0xf2e6cf);
-    this.edgeStrength = 2.2;
+    this.edgeStrength = 1.2;
     this.needsSwap = false;
     this.mask = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, type: THREE.UnsignedByteType });
     this.res = new THREE.Vector2(1, 1);
@@ -45,8 +45,8 @@ vec4 diffuseColor = vec4( diffuse, opacity );`
             for (int i = 0; i < 8; i++) {
               float a = float(i) * 0.7853982;
               vec2 o = vec2(cos(a), sin(a));
-              m = max(m, texture2D(tMask, vUv + o * uTexel * 1.5).r);
-              m = max(m, texture2D(tMask, vUv + o * uTexel * 2.6).r * 0.6);
+              m = max(m, texture2D(tMask, vUv + o * uTexel).r);
+              m = max(m, texture2D(tMask, vUv + o * uTexel * 1.8).r * 0.3);
             }
             float e = clamp(m - c, 0.0, 1.0);
             if (e < 0.01) discard;

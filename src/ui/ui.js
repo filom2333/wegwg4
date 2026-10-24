@@ -30,7 +30,7 @@ const VERSION = '0.11';
 
 // Pictures behind the title (public/menu/): moments from the road, each with its depth map so
 // the title shows them in depth (menuBackdrop.js); the flat slideshow is the fallback.
-const MENU_SHOTS = ['roadside', 'campfire', 'vista', 'breakdown', 'snow', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
+const MENU_SHOTS = ['roadside', 'nightpass', 'campfire', 'vista', 'fogroad', 'breakdown', 'snow', 'winterdusk', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
   src: `menu/${n}.webp`,
   depth: `menu/${n}_depth.webp`,
   move: ['in', 'left', 'out', 'right'][i % 4],
@@ -780,42 +780,85 @@ export class UI {
     }
   }
 
-  // ---------------------------------------------------------------- how to play: the manual
-  // Six photographs from the road pinned to the page, each with what to do and the keys for it,
-  // then the full list of keys.
-  showHowTo(back) {
+  // ---------------------------------------------------------------- how to play
+  // A page per thing to know, like a game's tips: a frame from the game showing it (the prompt on
+  // screen, the thing in the hand), a title, one line and the keys. The topics down the left as
+  // small route signs; arrows, the dots or ← → to turn the page; the full key list on its own.
+  showHowTo(back, page = 0) {
     const d = settings.data;
     const K = (a) => keyName(d.bindings[a] || DEFAULT_BINDINGS[a]);
+    const P = [
+      ['move', 'Look around and walk', 'The road runs north. What you need is somewhere along it.', [[`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'walk'], ['Mouse', 'look'], [K('sprint'), 'run'], [K('jump'), 'jump']]],
+      ['take', 'Pick things up', 'Look at a thing and press the key. Small things go in the backpack.', [[K('interact'), 'take'], [K('stow'), 'stow'], [K('inventory'), 'backpack'], [K('drop'), 'drop']]],
+      ['fit', 'Rebuild the car', 'Carry a part to the car: it shows where it goes. Hold a key on a part to take it off.', [[K('interact'), 'fit'], [`${K('reload')} hold`, 'unbolt']]],
+      ['fuel', 'Fill the tank', 'Open the flap and the cap, hold the can to the neck and pour.', [[K('interact'), 'open'], ['LMB', 'pour']]],
+      ['start', 'Start the engine', 'In the seat, look at the key and hold until she catches. Then the parking brake.', [[`${K('interact')} hold`, 'start'], [K('interact'), 'parking brake']]],
+      ['drive', 'Drive north', 'Stop at gas stations, diners and farms. Haven is at the end of the road.', [[`${K('forward')} ${K('back')}`, 'gas, brake'], [`${K('left')} ${K('right')}`, 'steer'], [K('handbrake'), 'handbrake'], [K('lights'), 'headlights']]],
+      ['eat', 'Eat, drink, sleep', 'The rings in the corner run down. Hold food or water and use it.', [['LMB', 'eat, drink'], [K('sleep'), 'sleep']]],
+      ['night', 'Nights are dark', 'Keep a light on. Not everything out there likes it.', [[K('flashlight'), 'flashlight'], [K('lights'), 'headlights']]],
+    ];
+    const n = P.length;
+    page = ((page % n) + n) % n;
     this.screen('howto', (s) => {
-      s.classList.add('scr-dim');
-      const { body } = this.doc(s, "Driver's manual", { sub: `Route 9, northbound. Haven is ${HAVEN_KM} km up the road, and the road goes on past it.`, back, cls: 'manual' });
-      const grid = el('div', 'howto-grid', body);
-      for (const [pic, title, text, keys] of [
-        ['roadside', 'Drive north', 'Gas stations, diners, motels and farms line the road. Stop, look around, take what helps.', [[`${K('forward')} ${K('left')} ${K('back')} ${K('right')}`, 'drive'], [K('handbrake'), 'handbrake']]],
-        ['breakdown', 'Fix the car', 'Hold R on a part to take it off. Carry one to the car and press E where it goes.', [[`${K('reload')} hold`, 'unbolt'], [K('interact'), 'fit']]],
-        ['pushing', 'Keep her fed', 'Open the filler flap and the cap, hold a jerry can to it and pour. Some pumps still work. Oil and water matter too.', [[`${K('interact')}`, 'open'], ['LMB', 'pour']]],
-        ['vista', 'Everything by hand', 'In the seat, look at the key and hold E. Lights, signals, the parking brake and the doors work the same way.', [[`${K('interact')} hold`, 'start'], [K('lights'), 'headlights']]],
-        ['campfire', 'Stay alive', 'Food, water, rest and warmth run down. Sleep in the car, a tent or a bed. Nights are dark and not empty.', [[K('sleep'), 'sleep'], [K('flashlight'), 'flashlight']]],
-        ['fishing', 'Your things', 'Pick things up, stow them, open the backpack. Notes go in the journal, places on the road atlas.', [[K('interact'), 'take'], [K('stow'), 'stow'], [K('inventory'), 'backpack'], [K('journal'), 'journal']]],
-      ]) {
-        const c = el('div', 'howto-card', grid);
-        const ph = el('div', 'howto-pic', c);
-        ph.style.backgroundImage = `url(menu/${pic}.webp)`;
-        el('div', 'howto-t', c, esc(title));
-        el('p', 'howto-p', c, esc(text));
-        const kr = el('div', 'howto-keys', c);
-        for (const [k, what] of keys) el('span', '', kr, `<kbd>${esc(k)}</kbd>${esc(what)}`);
-      }
-      el('h3', 'doc-h3', body, 'Keys');
-      const keys = el('div', 'keylist cols', body);
-      for (const action of Object.keys(LABELS)) el('div', 'keylist-row', keys, `<span>${esc(LABELS[action])}</span><kbd>${esc(keyName(d.bindings[action] || DEFAULT_BINDINGS[action]))}</kbd>`);
-      for (const [k, t] of [
-        ['LMB', 'Use what you hold'],
-        ['RMB', 'Turn it · lean in, in the car'],
-        ['Wheel', 'Hold it out or nearer'],
-        ['1', 'Fists'],
-      ])
-        el('div', 'keylist-row', keys, `<span>${esc(t)}</span><kbd>${esc(k)}</kbd>`);
+      s.classList.add('scr-dim', 'scr-tips');
+      const box = el('div', 'tips', s);
+      el('div', 'tips-head', box, `<h2>How to play</h2>`);
+      const body = el('div', 'tips-body', box);
+      const nav = el('div', 'tips-nav', body);
+      P.forEach(([, title], k) => {
+        const b = el('button', 'tips-sign' + (k === page ? ' sel' : ''), nav, `<span class="tips-n">${k + 1}</span><span>${esc(title)}</span>`);
+        this.click(b, () => this.showHowTo(back, k));
+      });
+      const keysBtn = el('button', 'tips-sign keys', nav, `<span class="tips-n">⌨</span><span>All keys</span>`);
+      const main = el('div', 'tips-main', body);
+      const [id, title, text, keys] = P[page];
+      const pic = el('div', 'tips-pic', main);
+      pic.style.backgroundImage = `url(howto/${lang()}/${id}.webp), url(howto/en/${id}.webp)`;
+      const cap = el('div', 'tips-cap', pic);
+      el('div', 'tips-t', cap, esc(title));
+      el('p', 'tips-p', cap, esc(text));
+      const kr = el('div', 'tips-keys', cap);
+      for (const [k, what] of keys) el('span', '', kr, `<kbd>${esc(k)}</kbd>${esc(what)}`);
+      const go = (dk) => this.showHowTo(back, page + dk);
+      const prev = el('button', 'tips-arrow prev', pic, '‹');
+      const next = el('button', 'tips-arrow next', pic, '›');
+      this.click(prev, () => go(-1));
+      this.click(next, () => go(1));
+      const dots = el('div', 'tips-dots', main);
+      P.forEach((_, k) => this.click(el('button', k === page ? 'on' : '', dots), () => this.showHowTo(back, k)));
+      // the full list of keys, over the picture
+      this.click(keysBtn, () => {
+        const list = el('div', 'tips-keylist', main);
+        el('div', 'tips-t', list, 'All keys');
+        const keysEl = el('div', 'keylist cols', list);
+        for (const action of Object.keys(LABELS)) el('div', 'keylist-row', keysEl, `<span>${esc(LABELS[action])}</span><kbd>${esc(keyName(d.bindings[action] || DEFAULT_BINDINGS[action]))}</kbd>`);
+        for (const [k, t] of [
+          ['LMB', 'Use what you hold'],
+          ['RMB', 'Turn it · lean in, in the car'],
+          ['Wheel', 'Hold it out or nearer'],
+          ['1', 'Fists'],
+        ])
+          el('div', 'keylist-row', keysEl, `<span>${esc(t)}</span><kbd>${esc(k)}</kbd>`);
+        this.click(el('button', 'tips-close', list, '×'), () => list.remove());
+      });
+      const foot = el('div', 'tips-foot', box);
+      this.typed(foot, '← Back', back);
+      el('span', 'tips-hint', foot, '← → turn the page');
+      // the arrow keys turn the page while this is open
+      this._tipsKeys && window.removeEventListener('keydown', this._tipsKeys, true);
+      this._tipsKeys = (e) => {
+        if (this.current !== 'howto') return window.removeEventListener('keydown', this._tipsKeys, true);
+        if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          go(1);
+        } else if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          e.stopPropagation();
+          go(-1);
+        }
+      };
+      window.addEventListener('keydown', this._tipsKeys, true);
     });
     this.show('howto');
   }

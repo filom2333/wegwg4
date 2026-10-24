@@ -1203,6 +1203,11 @@ export class Car {
       setNeedle(needles, 'fuel', powered ? this.fuel / this.fuelCap : 0);
       setNeedle(needles, 'rpm', powered ? this.dyn.engine.rpm / 8000 : 0);
       setNeedle(needles, 'temp', powered && this.ignition ? (this.engineTemp - 50) / 80 : 0);
+      // oil pressure rises with the revs, and falls away when the oil is low; the volts read the
+      // battery, a little higher with the alternator charging
+      const run = this.dyn.engine.running;
+      setNeedle(needles, 'oil', powered && run ? (0.3 + 0.5 * Math.min(1, this.dyn.engine.rpm / 5000)) * Math.min(1, this.oil / (this.type.oilCap * 0.5)) : 0);
+      setNeedle(needles, 'volt', powered ? (11.4 + this.battery * 1.3 + (this.charging ? 1.4 : 0) - 8) / 8 : 0);
       // the speed in figures (redrawn when the whole number changes)
       const lcd = this.model.cluster.userData.lcd;
       if (lcd) {

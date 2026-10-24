@@ -178,15 +178,18 @@ export const SEDAN88 = {
   // the fuel filler flap on the left rear wing
   FILLER: { pos: [0.802, 0.86, -1.6], normal: [0.96, 0.29, -0.05], size: [0.12, 0.1], corner: 0.01, hinge: -1 },
   GAUGES: {
-    // (in front of the model's dash face, which sits nearer the driver than its painted dials)
-    // (low in the binnacle: its brow hides the top of anything higher)
-    // (spaced so no two bezels touch)
-    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.05, face: true, lcd: true },
-    panel: [0.3, 0.12, -0.008, -0.002],
-    tacho: { offset: [-0.1, -0.002], radius: 0.037 },
+    // laid out as the model's own: the speedometer ahead of the driver, the rev counter beside it,
+    // fuel and temperature to the left, oil pressure and volts to the right, on a fascia that fills
+    // the whole recess so nothing of the painted dials behind shows round it
+    speedo: { center: [0.374, 0.846, 0.636], normal: [0, 0.25, -1], radius: 0.054, face: true, lcd: true },
+    panel: [0.56, 0.165, 0.054, 0.006],
+    curve: 0.25,
+    tacho: { offset: [0.146, 0], radius: 0.054 },
     small: [
-      { kind: 'fuel', offset: [0.084, 0.027], radius: 0.023 },
-      { kind: 'temp', offset: [0.084, -0.027], radius: 0.023 },
+      { kind: 'fuel', offset: [-0.099, 0.031], radius: 0.024 },
+      { kind: 'temp', offset: [-0.099, -0.031], radius: 0.024 },
+      { kind: 'oil', offset: [0.256, 0.031], radius: 0.024 },
+      { kind: 'volt', offset: [0.256, -0.031], radius: 0.024 },
     ],
   },
   STEREO,
@@ -251,8 +254,12 @@ export const SEDAN88 = {
     model.bay = bay.refs;
     // the scuttle panel under the windscreen: the source leaves a gap there between the glass
     // and the bonnet's back edge, and from the seat you looked through it into the engine bay
-    const cowl = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35).rotateX(-Math.PI / 2), M.black);
-    cowl.position.set(0, 0.9, 1.045);
-    model.parts.body.inner.add(cowl);
+    // (it follows the bonnet's crown a centimetre under it, so its ends stay under the bonnet and
+    // the wings instead of showing through where the bonnet falls away at the sides)
+    const cg = new THREE.PlaneGeometry(1.32, 0.29, 16, 3).rotateX(-Math.PI / 2).translate(0, 0, 1.075);
+    const cp = cg.attributes.position;
+    for (let i = 0; i < cp.count; i++) cp.setY(i, 0.905 - 0.075 * cp.getX(i) ** 2 - 0.05 * (cp.getZ(i) - 1.05));
+    cg.computeVertexNormals();
+    model.parts.body.inner.add(new THREE.Mesh(cg, M.black));
   },
 };
