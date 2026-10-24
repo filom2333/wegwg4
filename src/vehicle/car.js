@@ -15,7 +15,7 @@ import { accessoryMass, ACCESSORIES } from './accessories.js';
 import { plateMass, plateColliders, plateArmour, detachPlate, PLATES } from './plates.js';
 import { carType } from './types.js';
 import { clamp } from '../core/noise.js';
-import { addGlassRain } from '../gfx/glassRain.js';
+import { addGlassRain, wipeUniforms, WIPE_BINS } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -30,6 +30,43 @@ const TEARABLE = {
   wheel_FL: 17, wheel_FR: 17, wheel_RL: 17, wheel_RR: 17,
 };
 
+// Panels (and wheels) that rust, and come clean under a wire brush, each on its own; the rest of
+// the shell is the body's (car.rust).
+export const RUST_PARTS = ['hood', 'trunk', 'door_FL', 'door_FR', 'door_RL', 'door_RR', 'fender_FL', 'fender_FR', 'fender_RL', 'fender_RR', 'bumper_F', 'bumper_R', 'wheel_FL', 'wheel_FR', 'wheel_RL', 'wheel_RR'];
+
+// The sweep of a car's wipers for its glass (glassRain.wipeUniforms): the blades the model gives,
+// or worked out from the arm meshes (each parked along its arm, the blade the outer part).
+function wiperSweep(w) {
+  const U = w.userData;
+  if (!U.wipers || !U.wipers.length) return null;
+  const axis = (U.axis || U.wipers[0].userData.axis).clone().normalize();
+  let blades = U.blades;
+  if (!blades) {
+    blades = [];
+    const v = new THREE.Vector3();
+    for (const wg of U.wipers) {
+      const piv = wg.userData.pivot;
+      const dir = new THREE.Vector3();
+      let r1 = 0;
+      wg.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(wg.matrixWorld).invert();
+      wg.traverse((m) => {
+        if (!m.isMesh) return;
+        const mm = inv.clone().multiply(m.matrixWorld);
+        const p = m.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).applyMatrix4(mm).sub(piv);
+          v.addScaledVector(axis, -v.dot(axis));
+          dir.add(v);
+          r1 = Math.max(r1, v.length());
+        }
+      });
+      blades.push({ pivot: piv, dir: dir.normalize(), r0: r1 * 0.35, r1 });
+    }
+  }
+  return wipeUniforms(blades, axis, U.sweep || 1.45);
+}
+
 // type: a car type (see types.js) with its spec, part table and model; model: its scene graph.
 export class Car {
   constructor(game, type, model, opts = {}) {
@@ -38,7 +75,8 @@ export class Car {
     this.model = model;
     this.root = model.root;
     game.worldGroup.add(this.root);
-    if (model.mats) addGlassRain(model.mats.glass);
+    this.wipe = model.wipers ? wiperSweep(model.wipers) : null;
+    if (model.mats) addGlassRain(model.mats.glass, this.wipe);
     this.shade = contactShade(type);
     this.root.add(this.shade);
     this.parts = {};
@@ -69,11 +107,22 @@ export class Car {
     this.fire = 0;
     this.smoke = 0;
     this.dirt = 0.35;
-    // rust on the paint (0..1): creeps on with rain and years, comes off under a wire brush
+    // rust on the paint (0..1): creeps on with rain and years, comes off under a wire brush. A panel
+    // follows the body's until it has been brushed or swapped (partRust), on its own uniform
     this.rust = 0.04;
+    this.partRust = {};
+    this.rustU = {};
+    for (const id of RUST_PARTS) {
+      if (!model.parts[id]) continue;
+      this.rustU[id] = { value: this.rust };
+      this.ownPartMats(id);
+    }
     this.horn = false;
-    this.wipers = false;
+    // wiper switch: 0 off, 1 intermittent (a sweep, then a rest), 2 normal, 3 fast
+    this.wipers = 0;
     this.wiperPhase = 0;
+    this.wiperRest = 0;
+    this.wiperAt = 0;
     this.cabinLight = false;
     this.hazards = false;
     this.heater = false;
@@ -178,12 +227,14 @@ export class Car {
 
   // from: the car type the part came off (another type's part fits the same slot)
   setInstalled(id, on, from = null) {
-    // plates bolted to a part come loose with it
+    // plates and things bolted to a part come loose with it
     if (!on && this.plates) for (const p of this.plates.filter((x) => x.part === id)) this.dropPlate(p);
+    if (!on && this.attached) for (const it of this.attached.filter((x) => x.mounted && x.mounted.part === id)) this.game.items.unmount(it, true);
     const own = this.type.id;
     const src = on ? from || own : this.parts[id].from || own;
     if (on && (src !== (this.parts[id].from || own)) && id !== 'steeringWheel') setPartSource(this, id, this.game.fleet ? this.game.fleet.modelOf(src) : null, src);
     this.parts[id].from = on && src !== own ? src : null;
+    if (on) this.ownPartMats(id);
     if (id === 'engine' && on) applyEngine(this, carType(src));
     this.parts[id].installed = on;
     this.model.setInstalled(id, on);
@@ -232,6 +283,7 @@ export class Car {
     const state = { condition: st.condition, carType: st.from || this.type.id };
     if (this.partColors && this.partColors[id] !== undefined) state.color = this.partColors[id];
     else if (this.paintable(id)) state.color = this.mats.color.getHex();
+    if (id in this.rustU) state.rust = this.rustOf(id);
     if (id === 'battery') state.charge = this.battery;
     if (id === 'fueltank') {
       state.fuel = this.fuel;
@@ -300,22 +352,14 @@ export class Car {
     const mp = this.model.parts[id];
     const P = this.model.mats.paintables;
     if (!mp || !P || !P.size) return false;
-    this.partMats = this.partMats || {};
-    const own = (this.partMats[id] = this.partMats[id] || new Map());
     let any = false;
     mp.inner.traverse((o) => {
       if (!o.isMesh) return;
       const base = o.userData.baseMat || o.material;
       if (!P.has(base) && !base.userData.paint) return;
       o.userData.baseMat = base;
-      let m = own.get(base);
-      if (!m) {
-        m = base.clone();
-        m.onBeforeCompile = base.onBeforeCompile;
-        m.customProgramCacheKey = base.customProgramCacheKey;
-        m.color = new THREE.Color();
-        own.set(base, m);
-      }
+      const m = this.partMat(id, base);
+      if (m.color === base.color) m.color = new THREE.Color();
       m.color.setHex(hex);
       o.material = m;
       any = true;
@@ -370,8 +414,9 @@ export class Car {
     m += accessoryMass(this, com);
     m += plateMass(this, com);
     for (const it of this.attached || []) {
-      if (!it.stowed) continue;
-      com.addScaledVector(it.stowed.rest, it.mass);
+      const at = it.stowed ? it.stowed.rest : it.mounted ? it.mounted.rest : null;
+      if (!at) continue;
+      com.addScaledVector(at, it.mass);
       m += it.mass;
     }
     const packed = this.packedMass();
@@ -432,12 +477,16 @@ export class Car {
     }
   }
 
-  // A window switch: the glass runs down, or back up.
-  toggleWindow(door) {
+  // Turn a window winder: the glass goes down (+) or up (-) by `d` of its travel. Returns how far
+  // it moved.
+  windWindow(door, d) {
     const w = this.model.windows && this.model.windows[door];
-    if (!w || !this.isInstalled(door)) return;
-    this.windowDown[door] = !this.windowDown[door];
-    this.game.audio && this.game.audio.play('click', { volume: 0.3, rate: 0.9 });
+    if (!w || !this.isInstalled(door)) return 0;
+    const t = this.windowT[door] || 0;
+    const nt = Math.max(0, Math.min(1, t + d));
+    this.windowT[door] = nt;
+    this.windowDown[door] = nt > 0.5;
+    return nt - t;
   }
 
   toggleOpen(id) {
@@ -997,11 +1046,32 @@ export class Car {
     if (spd > 2) this.dirt = Math.min(1, this.dirt + dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
     if (env2 && env2.w.rain > 0.3) this.dirt = Math.max(0.05, this.dirt - dt * 0.004 * env2.w.rain);
     // rust creeps on: faster in the wet, faster where it has already got a hold
-    this.rust = Math.min(1, this.rust + dt * (0.0000004 + (env2 ? env2.w.rain : 0) * 0.000004) * (0.5 + this.rust));
+    const creep = dt * (0.0000004 + (env2 ? env2.w.rain : 0) * 0.000004);
+    this.rust = Math.min(1, this.rust + creep * (0.5 + this.rust));
+    for (const id in this.partRust) this.partRust[id] = Math.min(1, this.partRust[id] + creep * (0.5 + this.partRust[id]));
     this.applyWeather();
-    // wipers
-    if (this.wipers && this.isInstalled('battery') && this.battery > 0.03) this.wiperPhase += dt * 2.4;
-    else if (this.wiperPhase % (Math.PI * 2) > 0.05) this.wiperPhase += dt * 2.4;
+    // wipers: a sweep is one turn of wiperPhase; switched off they run on to the parked end
+    const TAU = Math.PI * 2;
+    const lvl = this.isInstalled('battery') && this.battery > 0.03 ? this.wipers : 0;
+    if (lvl === 1 && this.wiperRest > 0) this.wiperRest -= dt;
+    else if (lvl > 0 || this.wiperPhase % TAU > 0.05) {
+      const turn = Math.floor(this.wiperPhase / TAU);
+      this.wiperPhase += dt * (lvl === 3 ? 4.4 : lvl === 2 ? 2.7 : 2.4);
+      if (lvl === 1 && Math.floor(this.wiperPhase / TAU) > turn) {
+        this.wiperPhase = (turn + 1) * TAU;
+        this.wiperRest = 3;
+      }
+    }
+    // the glass shader's record of where a blade has just been
+    if (this.wipe) {
+      const last = this.wipe.uWLast.value;
+      const at = (1 - Math.cos(this.wiperPhase)) * 0.5 * (WIPE_BINS - 1);
+      for (let i = 0; i < WIPE_BINS; i++) last[i] = Math.min(1e3, last[i] + dt);
+      const lo = Math.max(0, Math.floor(Math.min(at, this.wiperAt))),
+        hi = Math.min(WIPE_BINS - 1, Math.ceil(Math.max(at, this.wiperAt)));
+      for (let i = lo; i <= hi; i++) last[i] = 0;
+      this.wiperAt = at;
+    }
     this.updateLights(d.controls.brake > 0.1 && hasDriver, d.gear === 0 && running);
     if (this.model.setGearLever) this.model.setGearLever(d.gear, dt);
     if (this.model.setHandbrake) this.model.setHandbrake(d.controls.handbrake > 0.3 || (!hasDriver && !running), dt);
@@ -1151,7 +1221,7 @@ export class Car {
     }
     // wipers
     if (this.model.wipers && this.model.wipers.userData.wipers) {
-      const a = (1 - Math.cos(this.wiperPhase)) * 0.5 * 1.45;
+      const a = (1 - Math.cos(this.wiperPhase)) * 0.5 * (this.model.wipers.userData.sweep || 1.45);
       for (const wg of this.model.wipers.userData.wipers) {
         const piv = wg.userData.pivot,
           ax = wg.userData.axis;
@@ -1165,15 +1235,13 @@ export class Car {
     const now = performance.now();
     const dt = Math.min(0.1, (now - (this._fillerAt || now)) / 1000);
     this._fillerAt = now;
-    // windows wind down and up in about three seconds (only with power)
-    const powered = this.isInstalled('battery') && this.battery > 0.03;
+    // the glass sits where its winder has wound it (0 shut, 1 all the way down); the winder's arm
+    // goes round three and a half turns from one to the other
     for (const [door, w] of Object.entries(this.model.windows || {})) {
       const t = this.windowT[door] || 0;
-      const to = this.windowDown[door] ? 1 : 0;
-      if (t === to) continue;
-      const nt = powered ? (to > t ? Math.min(to, t + dt / 3) : Math.max(to, t - dt / 3)) : t;
-      this.windowT[door] = nt;
-      w.mesh.position.y = -w.drop * nt;
+      w.mesh.position.copy(w.dir).multiplyScalar(w.drop * t);
+      const spin = this.model.cranks && this.model.cranks[door];
+      if (spin) spin.rotation.z = -t * Math.PI * 7;
     }
     // worn parts look it (checked now and then)
     this._wearT = (this._wearT || 0) - dt;
@@ -1275,6 +1343,59 @@ export class Car {
     if (!wu) return;
     if (wu.uDirt) wu.uDirt.value = this.dirt;
     if (wu.uRust) wu.uRust.value = this.rust;
+    for (const id in this.rustU) this.rustU[id].value = this.rustOf(id);
+  }
+
+  // How rusty a part is: a panel's own, the body's for the rest.
+  rustOf(id) {
+    return id in this.rustU ? (this.partRust[id] ?? this.rust) : this.rust;
+  }
+
+  // A wire brush on one part: a panel comes clean on its own; the body comes clean without the
+  // panels bolted to it, which keep the rust they had.
+  derust(id, amount) {
+    if (id in this.rustU) this.partRust[id] = Math.max(0, this.rustOf(id) - amount);
+    else {
+      for (const p in this.rustU) if (this.partRust[p] === undefined) this.partRust[p] = this.rust;
+      this.rust = Math.max(0, this.rust - amount);
+    }
+    this.applyWeather();
+  }
+
+  // A part's own copy of a shared car material: the same shader with the part's own rust and,
+  // once sprayed, its own colour (the shared one until then, so a respray of the car covers it).
+  partMat(id, base) {
+    this.partMats = this.partMats || {};
+    const own = (this.partMats[id] = this.partMats[id] || new Map());
+    let m = own.get(base);
+    if (m) return m;
+    m = base.clone();
+    m.color = base.color;
+    const rust = this.rustU[id];
+    const prev = base.onBeforeCompile;
+    m.onBeforeCompile = rust
+      ? (shader, r) => {
+          prev.call(base, shader, r);
+          if (shader.uniforms.uRust) shader.uniforms.uRust = rust;
+        }
+      : prev;
+    m.customProgramCacheKey = base.customProgramCacheKey;
+    own.set(base, m);
+    return m;
+  }
+
+  // Gives a rusting panel's weathered surfaces (its own or another car's, after a swap) their
+  // part's materials.
+  ownPartMats(id) {
+    const mp = this.model.parts[id];
+    if (!mp || !this.rustU[id]) return;
+    mp.inner.traverse((o) => {
+      if (!o.isMesh || o.userData.tuneMesh) return;
+      const base = o.userData.baseMat || o.material;
+      if (!base || !base.userData || !base.userData.weathered) return;
+      o.userData.baseMat = base;
+      o.material = this.partMat(id, base);
+    });
   }
 
   dispose() {

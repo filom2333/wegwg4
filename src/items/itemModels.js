@@ -164,7 +164,9 @@ export function waterBottle() {
   const wm = mesh(water, M.water, false);
   wm.name = 'fill';
   g.add(wm);
-  g.add(mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.022, 16).translate(0, 0.3, 0), M.capBlue));
+  const cap = mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.022, 16).translate(0, 0.3, 0), M.capBlue);
+  cap.name = 'cap';
+  g.add(cap);
   const label = labelMat('water', 256, 64, (c, w, h) => {
     c.fillStyle = '#e9f1f4';
     c.fillRect(0, 0, w, h);
@@ -694,7 +696,10 @@ export function oilBottle() {
   const g = new THREE.Group();
   const body = roundedBox(0.12, 0.22, 0.07, 0.02, 3);
   g.add(mesh(body.translate(0, 0.11, 0), M.yellowPlastic));
-  g.add(mesh(latheY([[0.016, 0], [0.016, 0.03], [0.02, 0.035], [0.02, 0.05], [0, 0.05]], 16).translate(0.03, 0.22, 0), M.rubber));
+  g.add(mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.03, 14, 1, true).translate(0.03, 0.235, 0), M.yellowPlastic));
+  const cap = mesh(latheY([[0.017, 0.028], [0.02, 0.033], [0.02, 0.05], [0, 0.05]], 16).translate(0.03, 0.22, 0), M.rubber);
+  cap.name = 'cap';
+  g.add(cap);
   const m = labelMat('oil', 128, 192, (c, w, h) => {
     c.fillStyle = '#d9a619';
     c.fillRect(0, 0, w, h);
@@ -715,7 +720,10 @@ export function coolantJug() {
   const g = new THREE.Group();
   g.add(mesh(roundedBox(0.16, 0.28, 0.1, 0.025, 3).translate(0, 0.14, 0), M.greenPlastic));
   g.add(mesh(tubeAlong([V(0.03, 0.27, 0), V(0.07, 0.31, 0), V(0.075, 0.2, 0)], 0.012, 6), M.greenPlastic));
-  g.add(mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14).translate(-0.04, 0.295, 0), M.capWhite));
+  g.add(mesh(new THREE.CylinderGeometry(0.017, 0.018, 0.02, 12, 1, true).translate(-0.04, 0.285, 0), M.greenPlastic));
+  const cap = mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14).translate(-0.04, 0.3, 0), M.capWhite);
+  cap.name = 'cap';
+  g.add(cap);
   grip(g, 'wrap', 'wrap12', V(0.072, 0.25, 0), UP, RIGHT);
   return centered(g);
 }
@@ -727,7 +735,10 @@ export function waterJug() {
   const fill = mesh(roundedBox(0.185, 0.24, 0.145, 0.03, 2).translate(0, 0.13, 0), M.water, false);
   fill.name = 'fill';
   g.add(fill);
-  g.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 16).translate(0, 0.315, 0), M.capBlue));
+  g.add(mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.02, 14, 1, true).translate(0, 0.305, 0), M.plasticBlue, false));
+  const cap = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 16).translate(0, 0.318, 0), M.capBlue);
+  cap.name = 'cap';
+  g.add(cap);
   g.add(mesh(tubeAlong([V(-0.06, 0.3, 0), V(-0.03, 0.34, 0), V(0.03, 0.34, 0), V(0.06, 0.3, 0)], 0.01, 6), M.capBlue));
   grip(g, 'side', 'wrap12', V(0, 0.34, 0), RIGHT, V(0, 0, 1));
   return centered(g);
@@ -1186,7 +1197,13 @@ export function drum(color = 0) {
   for (const y of [H * 0.33, H * 0.67]) g.add(mesh(new THREE.TorusGeometry(R + 0.004, 0.007, 6, 28).rotateX(Math.PI / 2).translate(0, y, 0), M[key]));
   g.add(mesh(new THREE.CircleGeometry(R, 28).rotateX(-Math.PI / 2).translate(0, H - 0.008, 0), M[key]));
   g.add(mesh(new THREE.CircleGeometry(R, 28).rotateX(Math.PI / 2).translate(0, 0.006, 0), M[key]));
-  for (const [x, z, r] of [[0.11, 0.02, 0.026], [-0.12, -0.03, 0.016]]) g.add(mesh(new THREE.CylinderGeometry(r, r, 0.014, 12).translate(x, H - 0.002, z), M.darkSteel));
+  // the bungs: the big one (the filler) unscrews
+  for (const [x, z, r] of [[0.11, 0.02, 0.026], [-0.12, -0.03, 0.016]]) {
+    const b = mesh(new THREE.CylinderGeometry(r, r, 0.014, 12).translate(x, H - 0.002, z), M.darkSteel);
+    if (r > 0.02) b.name = 'cap';
+    g.add(b);
+  }
+  g.add(mesh(new THREE.CircleGeometry(0.022, 12).rotateX(-Math.PI / 2).translate(0.11, H - 0.0075, 0.02), M.rubber));
   grip(g, 'side', 'wrap12', V(0, H, 0), RIGHT, V(0, 0, 1));
   return centered(g);
 }

@@ -276,6 +276,8 @@ export class Fleet {
       strip(car, r, r(5) < 0.05 ? 0.9 : 0.12 + r(6) * 0.28);
       car.dirt = 0.85 + r(7) * 0.15;
       car.rust = 0.55 + r(8) * 0.4;
+      // the panels each went their own way: one swapped from a newer wreck, one gone to holes
+      Object.keys(car.rustU).forEach((id, i) => (car.partRust[id] = Math.min(1, Math.max(0.05, car.rust + (r(20 + i) - 0.5) * 0.5))));
     }
     car.applyWeather();
     car.syncVisual();
@@ -469,6 +471,7 @@ export function serializeCar(car, o) {
     trip: car.trip,
     dirt: car.dirt,
     rust: car.rust,
+    partRust: car.partRust,
     lightsOn: car.lightsOn,
     parkBrake: car.parkBrake,
     paintColor: car.paintColor ?? null,
@@ -497,6 +500,8 @@ export function applyCarState(car, c, g) {
   }
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
   for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);
+  car.partRust = { ...(same ? c.partRust || {} : {}) };
+  car.applyWeather();
   car.rebuildColliders();
   if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0, track: c.stereo.disc >= 0 ? trackOn(c.stereo.disc, c.stereo.track || 0) : 0 });
   for (const id of Object.values(c.accessories || {})) if (ACCESSORIES[id]) fitAccessory(car, id);

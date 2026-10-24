@@ -11,6 +11,7 @@ import { applyWeathering, weatheringUniforms } from '../weathering.js';
 import { buildCluster } from '../cluster.js';
 import { cutOpening, buildFiller } from '../fillerCut.js';
 import { movePieces } from './pieces.js';
+import { findWindows, addCranks } from '../winders.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/';
@@ -124,7 +125,8 @@ export function createImportedMaterials(type, asset, opts = {}) {
       // and a cabin lighter than its source (the colour multiplies the texture)
       if (type.interiorLift) m.color.multiplyScalar(type.interiorLift);
     }
-    if (WEATHER[role] || (role === 'trim' && key === 'under')) applyWeathering(m, weather, { rustColor: true, strength: WEATHER[role] ?? WEATHER.under });
+    // (rust shows on steel: the paint, the body and the underside, not on plastic trim and chrome)
+    if (WEATHER[role] || (role === 'trim' && key === 'under')) applyWeathering(m, weather, { rustColor: role !== 'trim' || key === 'under', strength: WEATHER[role] ?? WEATHER.under });
     m.name = key;
     byName[key] = m;
   }
@@ -223,7 +225,9 @@ export class ImportedCarModel {
     this.addWheels();
     this.addGauges();
     this.addFiller();
-    this.findWindows();
+    findWindows(this);
+    addCranks(this, type.CRANKS, mats);
+    this.addWipers();
     this.addStereo();
     this.addDomeLamp();
     if (type.extras) type.extras(this, mats);
@@ -414,6 +418,32 @@ export class ImportedCarModel {
       cup.position.copy(d.at).add(V(Math.sign(d.at.x) * 0.007, 0, 0));
       cup.quaternion.copy(q);
       parent.add(cup);
+    } else if (d.make === 'handbrake') {
+      // a hand lever on a console between the front seats: the console stands on the tunnel, the
+      // lever is hinged at its back end, the grip and its release button forward
+      const along = d.at.clone().sub(d.pivot);
+      const L = along.length();
+      const dir = along.clone().normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), dir);
+      const h = d.pivot.y - d.floor - 0.015;
+      const box = new THREE.Mesh(roundedBox(0.1, h, L + 0.16, 0.012, 2), M.black);
+      box.position.set(d.pivot.x, d.floor + h / 2, d.pivot.z + dir.z * (L / 2) - 0.02);
+      parent.add(box);
+      const slot = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.006, L * 0.7), M.rubber);
+      slot.position.set(d.pivot.x, d.floor + h + 0.002, d.pivot.z + dir.z * (L * 0.45));
+      parent.add(slot);
+      const lever = new THREE.Group();
+      lever.position.copy(d.pivot);
+      lever.quaternion.copy(q);
+      const bar = new THREE.Mesh(roundedBox(0.022, 0.026, L, 0.006, 2), M.black);
+      bar.position.set(0, 0.006, L / 2);
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.016, 0.11, 14).rotateX(Math.PI / 2), M.rubber);
+      grip.position.set(0, 0.008, L - 0.05);
+      const button = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.012, 10).rotateX(Math.PI / 2), M.chrome);
+      button.position.set(0, 0.008, L + 0.008);
+      const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 12).rotateZ(Math.PI / 2), M.steel);
+      lever.add(bar, grip, button, knuckle);
+      holder.add(lever);
     } else if (d.make === 'pedal') {
       // hung from the pivot, the pad facing the driver's foot
       const pad = new THREE.Mesh(roundedBox(0.052, 0.062, 0.012, 0.004, 1), M.rubber);
@@ -437,7 +467,7 @@ export class ImportedCarModel {
       let to = 0;
       if (id === 'key') to = d.angles[s.cranking ? 2 : s.ignition ? 1 : 0];
       else if (id === 'stalk') to = -s.indicator * d.angle;
-      else if (id === 'lever') to = s.wipers ? d.angle : 0;
+      else if (id === 'lever') to = s.wipers ? d.angle * (0.4 + 0.2 * s.wipers) : 0;
       else if (id === 'lightKnob') to = d.angles[s.lightsOn] || 0;
       else if (id === 'heater') to = s.heater ? d.angle : 0;
       else if (id === 'hazard') to = s.hazards ? 1 : 0;
@@ -513,17 +543,112 @@ export class ImportedCarModel {
     this.tachoFace = null;
   }
 
-  // Each door's glass (its own mesh in the source) and how far it winds down into the door.
-  findWindows() {
-    this.windows = {};
-    for (const id of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) {
-      const part = this.parts[id];
-      const glass = part && part.inner.children.find((m) => m.name === id + ':glass');
-      if (!glass) continue;
-      glass.geometry.computeBoundingBox();
-      const b = glass.geometry.boundingBox;
-      this.windows[id] = { mesh: glass, drop: (b.max.y - b.min.y) * 0.95 };
+  // Two wiper arms on the scuttle (the sources have none): spindles at the foot of the windscreen,
+  // the arms parked along it toward the passenger's side, the driver's a little above the other,
+  // each blade hung from its arm's tip. They sweep about the screen's normal (car.js turns them);
+  // userData.blades tells the glass shader the band each blade wipes.
+  addWipers() {
+    const glass = this.parts.body.inner.children.find((m) => m.name === 'body:glass');
+    if (!glass) return;
+    const pos = glass.geometry.attributes.position,
+      idx = glass.geometry.index;
+    const a = V(0, 0, 0),
+      b = V(0, 0, 0),
+      c = V(0, 0, 0),
+      fn = V(0, 0, 0);
+    const N = V(0, 0, 0),
+      pts = [];
+    const tris = idx ? idx.count / 3 : pos.count / 3;
+    const at = (i) => (idx ? idx.getX(i) : i);
+    for (let i = 0; i < tris; i++) {
+      a.fromBufferAttribute(pos, at(i * 3));
+      b.fromBufferAttribute(pos, at(i * 3 + 1));
+      c.fromBufferAttribute(pos, at(i * 3 + 2));
+      if (a.z + b.z + c.z < 0.3) continue;
+      fn.subVectors(b, a).cross(c.clone().sub(a));
+      if (fn.y < 0) fn.negate();
+      const area = fn.length();
+      if (area < 1e-9 || fn.z < 0.25 * area) continue;
+      N.add(fn);
+      pts.push(a.clone(), b.clone(), c.clone());
     }
+    if (pts.length < 9) return;
+    N.normalize();
+    let minY = Infinity,
+      maxY = -Infinity;
+    for (const p of pts) (minY = Math.min(minY, p.y)), (maxY = Math.max(maxY, p.y));
+    let zf = 0,
+      nf = 0,
+      halfW = 0;
+    for (const p of pts)
+      if (p.y < minY + 0.03) {
+        zf += p.z;
+        nf++;
+        halfW = Math.max(halfW, Math.abs(p.x));
+      }
+    const foot = V(0, minY, zf / nf);
+    const U = V(0, 1, 0).addScaledVector(N, -N.y).normalize();
+    const slope = (maxY - minY) / U.y;
+    let bulge = 0;
+    for (const p of pts) bulge = Math.max(bulge, p.clone().sub(foot).dot(N));
+    bulge = Math.min(bulge, 0.04);
+    const M = this.mats;
+    M.wiperArm = M.wiperArm || new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.55, metalness: 0.45 });
+    M.wiperRubber = M.wiperRubber || new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.9 });
+    const s = this.type.DRIVER_SIDE ?? 1;
+    const across = V(-s, 0, 0).addScaledVector(N, s * N.x).normalize();
+    const group = new THREE.Group();
+    group.name = 'wipers';
+    const wipers = [],
+      blades = [];
+    // (past upright: the driver's blade ends up near the pillar on that side)
+    const SWEEP = 1.9;
+    for (const [x, reach, tilt, up] of [
+      [s * halfW * 0.46, Math.min(slope - 0.08, halfW * 1.05), 0.07, 0.006],
+      [-s * halfW * 0.05, Math.min(slope * 0.78, halfW * 0.92), 0.02, 0],
+    ]) {
+      const pivot = foot.clone().addScaledVector(V(1, 0, 0), x).addScaledVector(U, -0.02);
+      const dir = across.clone().applyAxisAngle(N, -tilt);
+      const hb = reach * 0.31,
+        L = reach - hb;
+      const lift = bulge + 0.005 + up;
+      // a frame at the spindle: x along the parked arm, y the way it sweeps, z into the glass
+      const sweepDir = dir.clone().cross(N);
+      const f = new THREE.Group();
+      f.position.copy(pivot);
+      f.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, sweepDir, N.clone().negate()));
+      const put = (geo, mat, px, py, pz) => {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(px, py, pz);
+        m.castShadow = true;
+        f.add(m);
+        return m;
+      };
+      // the spindle coming up out of the scuttle and its nut cover
+      put(new THREE.CylinderGeometry(0.016, 0.019, 0.05, 16).rotateX(Math.PI / 2), M.wiperArm, 0, 0, 0.025 - lift - 0.018);
+      put(new THREE.SphereGeometry(0.017, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2), M.wiperArm, 0, 0, -lift - 0.018);
+      // the arm: a channel tapering toward the tip, a cranked hook down onto the blade
+      const arm = roundedBox(L, 0.022, 0.007, 0.0025, 1).translate(L / 2, 0, 0);
+      const ap = arm.attributes.position;
+      for (let i = 0; i < ap.count; i++) ap.setY(i, ap.getY(i) * (1 - 0.45 * (ap.getX(i) / L)));
+      arm.computeVertexNormals();
+      put(arm, M.wiperArm, 0, 0, -lift - 0.022);
+      put(roundedBox(0.03, 0.012, 0.014, 0.003, 1), M.wiperArm, L, 0, -lift - 0.017);
+      // the blade: a sprung carrier with its rubber edge on the glass
+      put(roundedBox(hb * 2, 0.012, 0.009, 0.003, 1), M.wiperArm, L, 0, -lift - 0.009);
+      put(new THREE.BoxGeometry(hb * 2 - 0.01, 0.004, 0.006), M.wiperRubber, L, 0, -lift - 0.002);
+      for (const k of [-0.62, 0.62]) put(roundedBox(0.05, 0.013, 0.006, 0.002, 1), M.wiperArm, L + hb * k, 0, -lift - 0.015);
+      const wg = new THREE.Group();
+      wg.add(f);
+      wg.userData.pivot = pivot;
+      wg.userData.axis = N.clone();
+      group.add(wg);
+      wipers.push(wg);
+      blades.push({ pivot, dir, r0: L - hb, r1: L + hb });
+    }
+    group.userData = { wipers, blades, axis: N.clone(), sweep: SWEEP };
+    this.parts.body.inner.add(group);
+    this.wipers = group;
   }
 
   // The fuel filler (fillerCut.js): an opening cut into the body's paint, a pocket behind it with

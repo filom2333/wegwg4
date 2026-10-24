@@ -259,8 +259,13 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
       }
       for (const sg of segs) {
         if (!sg.r || sg.r.wallMat === M.plaster) continue;
-        const s0 = Math.max(0, sg.s0 - step / 2),
-          s1 = Math.min(L, sg.s1 + step / 2);
+        // the room's own stretch of this wall, stopping at the faces of the walls across its ends
+        // (sampling alone overran them, and two rooms' panels lay over each other there)
+        const r = sg.r;
+        const [ra, rb] = Math.abs(ux) > 0.5 ? [(r.x0 - wdef.a[0]) / ux, (r.x1 - wdef.a[0]) / ux] : [(r.z0 - wdef.a[1]) / uz, (r.z1 - wdef.a[1]) / uz];
+        const s0 = Math.max(0, Math.min(ra, rb) + INT_T / 2),
+          s1 = Math.min(L, Math.max(ra, rb) - INT_T / 2);
+        if (s1 - s0 < 0.1) continue;
         const ops = openings.filter((o) => o.at > s0 && o.at < s1).map((o) => ({ ...o, at: o.at - s0 }));
         const off = INT_T / 2 + 0.006;
         const a2 = [wdef.a[0] + ux * s0 + nx * sgn * off, wdef.a[1] + uz * s0 + nz * sgn * off];
@@ -307,7 +312,7 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
     const pcx = Math.max(x0 + pw / 2, Math.min(x1 - pw / 2, doorAt));
     b.box(pcx, floorY - 0.06, z1 + EXT_T / 2 + pd / 2, pw, 0.12, pd, M.woodDark, { surface: 'wood' });
     // deck boards visual seams
-    for (let x = pcx - pw / 2 + 0.15; x < pcx + pw / 2; x += 0.15) b.box(x, floorY + 0.001, z1 + EXT_T / 2 + pd / 2, 0.006, 0.004, pd, M.trimDark, { collide: false });
+    for (let x = pcx - pw / 2 + 0.15; x < pcx + pw / 2; x += 0.15) b.box(x, floorY + 0.003, z1 + EXT_T / 2 + pd / 2, 0.006, 0.006, pd, M.trimDark, { collide: false });
     const posts = Math.max(2, Math.round(pw / 2.2) + 1);
     for (let i = 0; i < posts; i++) {
       const x = pcx - pw / 2 + 0.1 + ((pw - 0.2) * i) / (posts - 1);
@@ -538,7 +543,8 @@ function furnishRoom(b, r, rnd, y, openings, abandoned = 0.7) {
       break;
     }
   }
-  if (abandoned > 0.3) clutterRoom(b, P, r, rnd, y, openings, { amount: abandoned * 1.3, ceilingY: y + WALL_H });
+  // (on the floor boards' surface, 2 cm over the room's base)
+  if (abandoned > 0.3) clutterRoom(b, P, r, rnd, y + 0.02, openings, { amount: abandoned * 1.3, ceilingY: y + WALL_H });
 }
 
 export { WALL_H, EXT_T, INT_T };

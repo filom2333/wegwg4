@@ -794,3 +794,36 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
   `clutterArea` + `JUNK` sets for garages, gas stations (shop, forecourt `lot`, back lot), motels
   (rooms, walkway, office), diners, barns, trailers. Houses also get boarded windows (`boardUp`).
 - Next: outposts/ruins/camps/ranches sets, the rare trader at gas stations, more yard features.
+
+### 24.10, evening: the user's feedback list (all done, same branch, PR #11)
+- Flicker (z-fighting) fixed at the source: door casings, window frames, motel shared walls,
+  interior finish panels, decals, junk under floors (a coplanar-overlap detector was used).
+- Parking brake: a real hand lever on the console of every imported car (`importedCar` 'handbrake'
+  control). Dome lamps sit under the headliner. Third person: no dots, captions or prompts.
+- Caps come off by hand (R) on jerry cans, bottles, jugs and drums before anything pours; the
+  contents show only through an open neck. The fuel filler flap is the "лючок бензобака".
+- Window winders on every car (`vehicle/winders.js`): the door glass slides down its own slope,
+  the crank turns with it; on a crank E takes hold and the mouse winds it (ratchet clicks), E or
+  LMB lets go. The Beetle's fixed source handles are cut out (`WINDER_STRIP`) and replaced. The
+  W203 keeps its electric switches (hold E). Rear windows: from the rear seats.
+- Inside the cabin the engine and the wheels are heard from the seat (`audio.js`, own seat).
+- Wipers: `car.wipers` is 0..3 (off, intermittent with a 3 s rest, steady, fast); K and the stalk
+  cycle it with a toast. Imported cars get arms of their own (`importedCar.addWipers`, from the
+  windscreen glass). Rain on glass (`gfx/glassRain.js`): beads, heavy drops running down, and per
+  car a record of seconds since a blade passed each step of the sweep (`car.wipe.uWLast`), so
+  the glass is clear right behind a blade and beads gather again until the next pass.
+- Rust per part (`car.partRust`, `car.rustU`, RUST_PARTS in car.js): doors, lids, wings, bumpers
+  and wheels each have their own material copy (`car.partMat`) with their own rust uniform; the
+  wire brush cleans what it is on (`interaction.rustTarget`), the body without its panels. A
+  detached panel carries `state.rust` and can be brushed lying loose. Hulks get varied panels.
+  Plastic trim and chrome no longer show rust colour.
+- Bolting things to a car (`items.mount/unmount`, `interaction.boltFit/boltHeld`): hold any item
+  that is not a supply, aim at the outside of a car, B bolts it (Shift+Wheel turns it); roof and
+  lids: on its underside; doors and wings: upright, back to the panel. R held unbolts it into
+  the hands. Saved with the car (`mounted` in the item record). Food, drink, liquids, weapons,
+  ammo, papers and things with their own fittings are not bolted; put inside the car they stay
+  (the existing cargo stowing).
+- build/ refresh here: `npx vite build`, then `rm -rf /home/user/wegwg4/build && cp -r
+  /home/user/wegwg4/dist /home/user/wegwg4/build` (rsync is not installed; relative rm -rf is
+  refused).
+- Next (the user's order): the interactive things (a rare trader at gas stations etc.).

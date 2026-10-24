@@ -18,6 +18,7 @@ export function applyWeathering(mat, uniforms, { rustColor = true, strength = 1 
   const own = (k) => Object.prototype.hasOwnProperty.call(mat, k);
   const prev = own('onBeforeCompile') ? mat.onBeforeCompile : null;
   const prevKey = own('customProgramCacheKey') ? mat.customProgramCacheKey : null;
+  mat.userData.weathered = true;
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev.call(mat, shader, renderer);
     Object.assign(shader.uniforms, uniforms);

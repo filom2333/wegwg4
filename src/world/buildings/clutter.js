@@ -95,7 +95,7 @@ export function planks(rnd) {
 export function fallenPlaster(rnd, ceilingY = 3.0) {
   const M = archMaterials();
   const it = new Item([1.2, 0.2, 1.2]);
-  it.add(new THREE.CircleGeometry(0.55 + rnd() * 0.25, 14).rotateX(-Math.PI / 2).translate(0, 0.003, 0), M.dust);
+  it.add(new THREE.CircleGeometry(0.55 + rnd() * 0.25, 14).rotateX(-Math.PI / 2).translate(0, 0.006, 0), M.dust);
   for (let k = 0; k < 6 + Math.floor(rnd() * 10); k++) {
     const g = new THREE.IcosahedronGeometry(0.03 + rnd() * 0.08, 0);
     g.scale(1, 0.35 + rnd() * 0.3, 0.6 + rnd() * 0.6).rotateY(rnd() * 6);
@@ -152,7 +152,7 @@ export function sandDrift(rnd, w = 1.4, d = 1.2) {
       t = (p.getZ(i) + d / 2) / d; // 0 at the back edge
     const along = 0.75 + 0.25 * Math.sin(x * 3.1 + ph);
     const y = h * Math.pow(Math.max(0, 1 - t), 1.6) * Math.max(0, 1 - x * x) * along;
-    p.setY(i, y + 0.004);
+    p.setY(i, y + 0.007);
   }
   g.computeVertexNormals();
   // uvs in metres for the grain
@@ -312,7 +312,7 @@ export function glassShards(rnd) {
     const g = new THREE.BufferGeometry().setFromPoints([V(0, 0, 0), V(s, 0, s * (rnd() - 0.5)), V(s * rnd(), 0, s)]);
     g.computeVertexNormals();
     if (g.attributes.normal.getY(0) < 0) g.scale(1, 1, -1);
-    it.add(g.rotateY(rnd() * 6.28).translate((rnd() - 0.5) * 0.9, 0.003 + rnd() * 0.002, (rnd() - 0.5) * 0.7), M.glass);
+    it.add(g.rotateY(rnd() * 6.28).translate((rnd() - 0.5) * 0.9, 0.008 + rnd() * 0.004, (rnd() - 0.5) * 0.7), M.glass);
   }
   return it;
 }
@@ -343,7 +343,7 @@ export function cinderBlocks(rnd) {
   const stack = rnd() < 0.5;
   for (let k = 0; k < n; k++) {
     const g = [[metreUV(new THREE.BoxGeometry(0.39, 0.19, 0.19)), M.concrete]];
-    for (const x of [-0.095, 0.095]) g.push([new THREE.BoxGeometry(0.13, 0.002, 0.11).translate(x, 0.096, 0), M.blackMatte]);
+    for (const x of [-0.095, 0.095]) g.push([new THREE.BoxGeometry(0.13, 0.002, 0.11).translate(x, 0.1, 0), M.blackMatte]);
     const m = new THREE.Matrix4();
     if (stack) m.makeRotationY(((k % 2) * Math.PI) / 2 + (rnd() - 0.5) * 0.2).setPosition((rnd() - 0.5) * 0.04, 0.095 + Math.floor(k / 2) * 0.19, (k % 2) * 0.1 - 0.05);
     else m.makeRotationY(rnd() * 6.28).multiply(new THREE.Matrix4().makeRotationX(rnd() < 0.3 ? Math.PI / 2 : 0)).setPosition((rnd() - 0.5) * 0.7, 0.095, (rnd() - 0.5) * 0.5);
@@ -404,13 +404,13 @@ export function floorGrime(rnd, w = 2.5, d = 2.5) {
       pts.push([Math.cos(a) * r * 1.4, Math.sin(a) * r]);
     }
     const g = new THREE.ShapeGeometry(shapeFromPoints(pts)).rotateX(-Math.PI / 2).rotateY(rnd() * 3);
-    it.add(g.translate((rnd() - 0.5) * (w - 1), 0.002 + k * 0.0004, (rnd() - 0.5) * (d - 1)), rnd() < 0.45 ? M.dust : dark);
+    it.add(g.translate((rnd() - 0.5) * (w - 1), 0.006 + k * 0.004, (rnd() - 0.5) * (d - 1)), rnd() < 0.45 ? M.dust : dark);
   }
   // leaves and grit
   for (let k = 0; k < 10 + Math.floor(rnd() * 20); k++) {
     const s2 = 0.015 + rnd() * 0.03;
     const g = new THREE.CircleGeometry(s2, 4).scale(1, 0.55, 1).rotateX(-Math.PI / 2).rotateY(rnd() * 6);
-    it.add(g.translate((rnd() - 0.5) * w, 0.004, (rnd() - 0.5) * d), rnd() < 0.6 ? M.tumbleweed : M.rubble);
+    it.add(g.translate((rnd() - 0.5) * w, 0.016, (rnd() - 0.5) * d), rnd() < 0.6 ? M.tumbleweed : M.rubble);
   }
   return it;
 }
@@ -678,7 +678,7 @@ export function oilStain(rnd) {
     const a = (k / 14) * Math.PI * 2;
     pts.push([Math.cos(a) * R * (0.6 + rnd() * 0.5), Math.sin(a) * R * (0.6 + rnd() * 0.5)]);
   }
-  it.add(new THREE.ShapeGeometry(shapeFromPoints(pts)).rotateX(-Math.PI / 2).translate(0, 0.004, 0), stdMat({ color: 0x0e0d0c, roughness: 0.25, metalness: 0.1 }));
+  it.add(new THREE.ShapeGeometry(shapeFromPoints(pts)).rotateX(-Math.PI / 2).translate(0, 0.008 + rnd() * 0.006, 0), stdMat({ color: 0x0e0d0c, roughness: 0.25, metalness: 0.1 }));
   return it;
 }
 
@@ -804,7 +804,7 @@ export function kettleGrill(rnd) {
   }
   const lid = latheY([[0, 0.3], [0.08, 0.29], [0.2, 0.22], [0.28, 0.08], [0.29, 0.0], [0.27, 0.0], [0.26, 0.07], [0.18, 0.2], [0, 0.27]], 20);
   if (rnd() < 0.6) it.add(lid.rotateX(Math.PI / 2 - 0.3).translate(0.45, 0.28, 0.2), black);
-  else it.add(lid.translate(0, 0.78, 0), black);
+  else it.add(lid.translate(0, 0.787, 0), black);
   it.col(0.6, 0.8, 0.6, 0, 0.4, 0);
   return it;
 }
@@ -836,7 +836,7 @@ export function brokenPlates(rnd) {
   }
   for (let k = 0; k < 6 + Math.floor(rnd() * 8); k++) {
     const s = 0.015 + rnd() * 0.03;
-    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.003, (rnd() - 0.5) * 0.7), M.porcelainOld);
+    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008, (rnd() - 0.5) * 0.7), M.porcelainOld);
   }
   return it;
 }

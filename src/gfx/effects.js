@@ -1033,7 +1033,6 @@ export class Effects {
     const wetGlass = g.env.snowing ? 0 : g.env.w.rain;
     GLASS_RAIN.rain.value += ((wetGlass > 0.05 ? Math.min(1, 0.35 + wetGlass) : 0) - GLASS_RAIN.rain.value) * Math.min(1, dt * (g.env.w.rain > 0.05 ? 0.25 : 0.04));
     GLASS_RAIN.speed.value = g.car ? Math.abs(g.car.dyn.speed) : 0;
-    GLASS_RAIN.wipe.value += ((g.car && g.car.wipers ? 1 : 0) - GLASS_RAIN.wipe.value) * Math.min(1, dt * 2);
     // sandstorm: billows of dust and fast streaks of sand driven along the wind, born upwind of
     // the camera so they stream through the view; dust settles on the car's glass
     const dust = g.env.w.dust;
@@ -1058,7 +1057,7 @@ export class Effects {
     }
     const coat = dust > 0.35 ? 1 : 0;
     GLASS_RAIN.dust.value += (coat - GLASS_RAIN.dust.value) * Math.min(1, dt * (coat ? 0.03 : 0.004 + g.env.w.rain * 0.2));
-    const wiping = g.car && g.car.wipers;
+    const wiping = g.car && g.car.wipers > 0;
     GLASS_RAIN.dustFront.value = wiping ? Math.max(0, GLASS_RAIN.dustFront.value - dt * 0.8) : GLASS_RAIN.dustFront.value + (GLASS_RAIN.dust.value - GLASS_RAIN.dustFront.value) * Math.min(1, dt * 0.03);
   }
 

@@ -65,7 +65,16 @@ export const HOTSPOTS = [
   { id: 'lights', label: 'Light switch', pos: V(0.0707, 1.076, 0.528), r: 0.04, part: 'body', inside: true },
   { id: 'wipers', label: 'Wiper switch', pos: V(-0.081, 1.076, 0.528), r: 0.04, part: 'body', inside: true },
   { id: 'radio', label: 'Radio', pos: V(...META.dash.radio.center), r: 0.08, part: 'body', inside: true },
+  { id: 'crankFL', label: 'Window winder', pos: V(0.535, 0.79, 0.41), r: 0.045, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'crankFR', label: 'Window winder', pos: V(-0.535, 0.79, 0.41), r: 0.045, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger'], hand: 'right' },
 ];
+
+// window winders on the door cards (where the source's fixed handles were, see WINDER_STRIP)
+export const CRANKS = { door_FL: [0.562, 0.79, 0.41], door_FR: [-0.562, 0.79, 0.41] };
+export const WINDER_STRIP = {
+  door_FL: [[0.48, 0.735, 0.37], [0.57, 0.845, 0.45]],
+  door_FR: [[-0.57, 0.735, 0.37], [-0.48, 0.845, 0.45]],
+};
 
 // Where things happen around the car (effects, sounds, reach checks).
 export const POINTS = {

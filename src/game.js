@@ -843,7 +843,10 @@ export class Game {
       if (input.wasPressed('wipers')) ia.driverReach(spot('wipers') || 'stalk');
       if ((input.wasPressed('gearUp') || input.wasPressed('gearDown')) && !car.dyn.automatic) ia.driverReach('shifter');
       if (input.wasPressed('lights')) car.lightsOn = (car.lightsOn + 1) % 3;
-      if (input.wasPressed('wipers')) car.wipers = !car.wipers;
+      if (input.wasPressed('wipers')) {
+        car.wipers = (car.wipers + 1) % 4;
+        this.hud && this.hud.toast(['Wipers off', 'Wipers: intermittent', 'Wipers: steady', 'Wipers: fast'][car.wipers]);
+      }
       if (!car.dyn.automatic) {
         if (input.wasPressed('gearUp')) car.dyn.shift(1);
         if (input.wasPressed('gearDown')) car.dyn.shift(-1);
@@ -865,6 +868,9 @@ export class Game {
     const cam = this.renderer.camera;
     cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
     cam.far = 7000;
+    // without the float reversed depth buffer, a nearer near plane costs the far depth precision
+    // that keeps close layered surfaces apart
+    cam.near = this.renderer.revZ ? 0.05 : 0.1;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;
     this.eyeCam.aspect = cam.aspect;
