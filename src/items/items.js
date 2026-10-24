@@ -13,6 +13,8 @@ import { mulberry32 } from '../core/noise.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 let NEXT_ID = 1;
 
+const _up = new THREE.Vector3();
+
 export class Item {
   constructor(sys, { id, part = null, state = {}, mesh }) {
     this.sys = sys;
@@ -398,6 +400,7 @@ export class ItemSystem {
   update(dt = 0) {
     const ph = this.game.physics;
     if (dt > 0) this.updateCargo(dt);
+    if (dt > 0) this.updateSpills(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -419,6 +422,17 @@ export class ItemSystem {
       }
     }
     void ph;
+  }
+
+  // An open container lying on its side or upside down runs out.
+  updateSpills(dt) {
+    for (const it of this.items) {
+      if (it.held || it.stowed || !it.def || !it.def.liquid || it.def.light || !it.state.capOff || !(it.state.liquid > 0)) continue;
+      const up = _up.set(0, 1, 0).applyQuaternion(it.mesh.quaternion).y;
+      if (up > 0.3) continue;
+      it.state.liquid = Math.max(0, it.state.liquid - dt * (0.12 + 0.3 * (0.3 - up)));
+      this.refreshVisual(it);
+    }
   }
 
   // ------------------------------------------------------------------ cargo
@@ -545,6 +559,9 @@ export class ItemSystem {
   refreshVisual(it) {
     if (!it.def) return;
     if (it.def.liquid) {
+      // the cap in place or off
+      const cap = it.mesh.getObjectByName('cap');
+      if (cap && !it.def.light) cap.visible = !it.state.capOff;
       const fill = it.mesh.getObjectByName('fill');
       if (fill) {
         const f = Math.max(0.001, (it.state.liquid || 0) / it.def.liquid.cap);

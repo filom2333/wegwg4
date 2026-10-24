@@ -35,6 +35,12 @@ const takeFuel = (p, l) => {
   if (p.drum) p.inst.state.drums[p.drum] = Math.max(0, pumpFuel(p) - l);
   else p.inst.state.fuel -= l;
 };
+// Containers with a cap (cans, bottles, jugs, the drum): it has to come off by hand before
+// anything pours in or out, and you see how much is inside only with it off (or through clear
+// plastic). Lamps keep their fuel behind a filler of their own.
+const capped = (def) => !!(def && def.liquid && !def.light);
+const capKey = () => (settings.data.bindings.reload || 'KeyR').replace(/^Key/, '');
+
 const REACH = 2.6;
 
 // Big things are carried out in front with both hands; long tools (guns, a fishing rod) are held
@@ -598,8 +604,11 @@ export class Interaction {
     let sub = '';
     let bar = null;
     if (def.liquid) {
-      sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
-      bar = (s.liquid || 0) / def.liquid.cap;
+      if (!capped(def) || s.capOff || def.clear) {
+        sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
+        bar = (s.liquid || 0) / def.liquid.cap;
+        if (capped(def) && s.capOff) sub += ' · cap off';
+      } else sub = 'Cap on';
     } else if (def.consume) {
       const parts = [];
       if (def.consume.food > 0) parts.push(`food +${def.consume.food}`);
@@ -639,9 +648,13 @@ export class Interaction {
     }
     if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.liquid) {
-      const tgt = this.pourTarget(it, t);
-      if (tgt) out.push(['LMB', tgt.label + ' (hold)']);
-      else if (def.drinkable || it.state.liquidType === 'water') out.push(['LMB', 'Drink (hold)']);
+      if (capped(def)) out.push([capKey(), it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
+      if (!capped(def) || it.state.capOff) {
+        const tgt = this.pourTarget(it, t);
+        if (tgt) out.push(['LMB', tgt.label + ' (hold)']);
+        else if (t && t.kind === 'item' && capped(t.item.def) && !t.item.state.capOff) out.push(['', 'Its cap is on']);
+        else if (def.drinkable || it.state.liquidType === 'water') out.push(['LMB', 'Drink (hold)']);
+      }
     }
     if (def.charges !== undefined && t && t.kind === 'hotspot') {
       // repair kits on the engine / wheels
@@ -709,7 +722,7 @@ export class Interaction {
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
     if (t.kind === 'pump' && type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : 'Fill from pump' } : null;
-    if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
+    if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type && (!capped(t.item.def) || t.item.state.capOff)) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
     return null;
   }
 
@@ -1410,12 +1423,18 @@ export class Interaction {
     if (def) {
       if (def.weapon) this.updateWeapon(it, dt);
       else if (def.liquid) {
-        const tgt = this.pourTarget(it, this.target);
-        if (input.mouseDown(0)) this.pour(it, tgt, dt);
+        // the cap: off and on by hand
+        if (capped(def) && input.wasPressed('reload')) {
+          it.state.capOff = !it.state.capOff;
+          this.game.audio && this.game.audio.play('click', { volume: 0.4, rate: it.state.capOff ? 1.25 : 0.95 });
+          this.useAnim = Math.max(this.useAnim, 0.5);
+          this.game.items.refreshVisual(it);
+        }
+        const open = !capped(def) || it.state.capOff;
+        const tgt = open ? this.pourTarget(it, this.target) : null;
+        if (open && input.mouseDown(0)) this.pour(it, tgt, dt);
         else this.pouring = 0;
-        // the cap comes off while it pours, and the liquid runs in a stream to where it goes
-        const cap = it.mesh.getObjectByName('cap');
-        if (cap) cap.visible = !(this.pouring && this.pourKind === 'pour');
+        // the liquid runs in a stream to where it goes
         if (this.pouring && this.pourKind === 'pour' && tgt && this.game.effects) this.pourStream(it, tgt);
       } else if (def.clean) {
         const car = this.game.car;
