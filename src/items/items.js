@@ -227,6 +227,7 @@ export class ItemSystem {
     this.removeBody(it);
     if (it.light) this.game.lights.remove(it.light);
     if (it.stowed) this.unstow(it, false);
+    if (it.mounted) this.unmount(it, false);
     it.mesh.parent && it.mesh.parent.remove(it.mesh);
     this.items.delete(it);
     if (it.poiKey !== null && it.spot !== null) {
@@ -273,9 +274,74 @@ export class ItemSystem {
     car.updateMass();
   }
 
+  // ------------------------------------------------------------------ bolted to a car
+  // An item bolted to a part of a car (the roof, a door, a wing): it rides on the part, swings
+  // with a door and comes off with it; a box on the car's body keeps it solid and in reach.
+  // local: its matrix in the part pivot's space.
+  mount(it, car, part, local) {
+    const mp = car.model.parts[part];
+    if (!mp) return false;
+    this.removeBody(it);
+    if (it.stowed) this.unstow(it, false);
+    mp.pivot.add(it.mesh);
+    local.decompose(it.mesh.position, it.mesh.quaternion, it.mesh.scale);
+    it.mounted = { car, part, local: local.clone(), collider: null, rest: V(0, 0, 0), openT: -1 };
+    car.attached.push(it);
+    this.mountCollider(it);
+    car.owned = true;
+    car.updateMass();
+    it.poiKey = null;
+    return true;
+  }
+
+  // The item's box on the car's body where its part holds it now.
+  mountCollider(it) {
+    const M = it.mounted,
+      car = M.car;
+    if (M.collider) this.game.physics.removeCollider(M.collider);
+    car.root.updateMatrixWorld(true);
+    const m = new THREE.Matrix4().copy(car.root.matrixWorld).invert().multiply(it.mesh.matrixWorld);
+    const p = V(0, 0, 0),
+      q = new THREE.Quaternion(),
+      sc = V(0, 0, 0);
+    m.decompose(p, q, sc);
+    if (M.openT < 0) M.rest.copy(p);
+    M.openT = car.model.parts[M.part].openT || 0;
+    const s = it.size;
+    const cd = RAPIER.ColliderDesc.cuboid(Math.max(0.012, s.x / 2), Math.max(0.012, s.y / 2), Math.max(0.012, s.z / 2))
+      .setTranslation(p.x, p.y, p.z)
+      .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+      .setDensity(0)
+      .setCollisionGroups(GROUPS.item);
+    M.collider = this.game.physics.world.createCollider(cd, car.dyn.body);
+    this.game.physics.setOwner(M.collider, it.ownerTag);
+  }
+
+  unmount(it, makeBody = true) {
+    const M = it.mounted;
+    if (M.collider) this.game.physics.removeCollider(M.collider);
+    M.car.attached = M.car.attached.filter((x) => x !== it);
+    it.mounted = null;
+    this.group.attach(it.mesh);
+    if (makeBody) this.makeBody(it, it.mesh.position, it.mesh.quaternion, false);
+    M.car.updateMass();
+  }
+
+  // Boxes of things bolted to a door or a lid follow it as it swings.
+  updateMounted() {
+    for (const c of (this.game.fleet && this.game.fleet.cars) || [this.game.car]) {
+      if (!c || !c.attached) continue;
+      for (const it of c.attached) {
+        const M = it.mounted;
+        if (M && Math.abs((c.model.parts[M.part].openT || 0) - M.openT) > 0.02) this.mountCollider(it);
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ holding
   take(it) {
     if (it.stowed) this.unstow(it, false);
+    if (it.mounted) this.unmount(it, false);
     this.removeBody(it);
     it.held = true;
     if (it.poiKey !== null && it.spot !== null) {
@@ -421,8 +487,9 @@ export class ItemSystem {
     const ph = this.game.physics;
     if (dt > 0) this.updateCargo(dt);
     if (dt > 0) this.updateSpills(dt);
+    this.updateMounted();
     for (const it of this.items) {
-      if (it.held || it.stowed || !it.body) continue;
+      if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
       // while the place was loading went to sleep before the first update ever saw them, and
       // their meshes stayed hanging where they appeared (aiming at them missed the collider)
@@ -447,7 +514,7 @@ export class ItemSystem {
   // An open container lying on its side or upside down runs out.
   updateSpills(dt) {
     for (const it of this.items) {
-      if (it.held || it.stowed || !it.def || !it.def.liquid || it.def.light || !it.state.capOff || !(it.state.liquid > 0)) continue;
+      if (it.held || it.stowed || it.mounted || !it.def || !it.def.liquid || it.def.light || !it.state.capOff || !(it.state.liquid > 0)) continue;
       const up = _up.set(0, 1, 0).applyQuaternion(it.mesh.quaternion).y;
       if (up > 0.3) continue;
       it.state.liquid = Math.max(0, it.state.liquid - dt * (0.12 + 0.3 * (0.3 - up)));
@@ -608,7 +675,7 @@ export class ItemSystem {
   rebase(dx, dz) {
     // bodies were shifted with all others; meshes of resting items follow their (sleeping) bodies
     for (const it of this.items) {
-      if (it.held || it.stowed) continue;
+      if (it.held || it.stowed || it.mounted) continue;
       it.mesh.position.x -= dx;
       it.mesh.position.z -= dz;
     }
@@ -624,7 +691,7 @@ export class ItemSystem {
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);
       it.mesh.getWorldQuaternion(q);
-      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, poi: it.poiKey, spot: it.spot });
+      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, mounted: it.mounted ? { car: it.mounted.car.id || true, part: it.mounted.part, m: it.mounted.local.toArray() } : null, poi: it.poiKey, spot: it.spot });
     }
     return out;
   }

@@ -227,8 +227,9 @@ export class Car {
 
   // from: the car type the part came off (another type's part fits the same slot)
   setInstalled(id, on, from = null) {
-    // plates bolted to a part come loose with it
+    // plates and things bolted to a part come loose with it
     if (!on && this.plates) for (const p of this.plates.filter((x) => x.part === id)) this.dropPlate(p);
+    if (!on && this.attached) for (const it of this.attached.filter((x) => x.mounted && x.mounted.part === id)) this.game.items.unmount(it, true);
     const own = this.type.id;
     const src = on ? from || own : this.parts[id].from || own;
     if (on && (src !== (this.parts[id].from || own)) && id !== 'steeringWheel') setPartSource(this, id, this.game.fleet ? this.game.fleet.modelOf(src) : null, src);
@@ -413,8 +414,9 @@ export class Car {
     m += accessoryMass(this, com);
     m += plateMass(this, com);
     for (const it of this.attached || []) {
-      if (!it.stowed) continue;
-      com.addScaledVector(it.stowed.rest, it.mass);
+      const at = it.stowed ? it.stowed.rest : it.mounted ? it.mounted.rest : null;
+      if (!at) continue;
+      com.addScaledVector(at, it.mass);
       m += it.mass;
     }
     const packed = this.packedMass();

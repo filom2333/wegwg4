@@ -133,6 +133,9 @@ export function applySave(g, d) {
     if (s.stowed) {
       it.mesh.updateMatrixWorld(true);
       g.items.stow(it, carById(s.stowed));
+    } else if (s.mounted) {
+      const c = carById(s.mounted.car);
+      if (c && c.isInstalled(s.mounted.part)) g.items.mount(it, c, s.mounted.part, new THREE.Matrix4().fromArray(s.mounted.m));
     }
   }
   // player

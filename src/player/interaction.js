@@ -277,6 +277,19 @@ export class Interaction {
     // plates bolted on: in front of whatever they cover
     const pl = !seated && plateUnderRay(car, origin, dir, maxDist);
     if (pl) list.push({ id: 'plate', plate: pl.plate, d: pl.dist - 0.03, vol: 0 });
+    // things bolted on: the same
+    if (!seated)
+      for (const it of car.attached || []) {
+        if (!it.mounted) continue;
+        inv.copy(it.mesh.matrixWorld).invert();
+        tmpRay.origin.copy(origin).applyMatrix4(inv);
+        tmpRay.direction.copy(dir).transformDirection(inv);
+        const h = it.size.clone().multiplyScalar(0.5).addScalar(0.01);
+        const hitP = tmpRay.intersectBox(new THREE.Box3(h.clone().negate(), h), tmpV);
+        if (!hitP) continue;
+        const d = hitP.clone().applyMatrix4(it.mesh.matrixWorld).distanceTo(origin);
+        if (d < maxDist) list.push({ id: 'item', item: it, d: d - 0.03, vol: 0 });
+      }
     // bolt-on accessories
     if (!seated)
       for (const [mount, a] of Object.entries(car.accessories || {})) {
@@ -295,7 +308,7 @@ export class Interaction {
       pick = list[0];
       for (const c of list) if (c.d - list[0].d < 0.15 && c.vol < pick.vol) pick = c;
     }
-    let best = pick ? (pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
+    let best = pick ? (pick.item ? { kind: 'item', item: pick.item, dist: pick.d } : pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
     if (seat && (!best || seat.dist < best.dist + 0.4)) best = seat;
     if (hs && (!best || hs.dist < best.dist + 0.25)) best = hs;
     return best;
@@ -550,8 +563,14 @@ export class Interaction {
           prompts.push(['', `Take it to a car to fit it to the ${MOUNT_LABEL[ACCESSORIES[def.accessory].mount]}`]);
         }
       } else {
-        this.hideGhost();
         info = this.heldInfo(it);
+        // aimed at a car: bolt it on where the ghost shows
+        const spot = this.boltFit(it);
+        if (spot) {
+          this.showBoltGhost(it, spot);
+          prompts.push([kn('sleep'), `Bolt it to the ${this.boltPlace(spot.car, spot.part, spot.normal)}`], ['Shift+Wheel', 'Turn']);
+          if (!blocked && input.wasPressed('sleep')) this.boltHeld(it, spot);
+        } else this.hideGhost();
         // from a seat the other hand works the car's controls
         if (p.seat && t && t.kind === 'hotspot' && t.hotspot.inside) {
           const r = this.describeTarget(t);
@@ -621,7 +640,7 @@ export class Interaction {
       if (!blocked) {
         this.hotbarKeys();
         // Q on something lying about: straight into the backpack
-        if (input.wasPressed('stow') && t && t.kind === 'item' && !t.item.part) this.lootToBag(t.item);
+        if (input.wasPressed('stow') && t && t.kind === 'item' && !t.item.part && !t.item.mounted) this.lootToBag(t.item);
       }
     }
     if (ui) {
@@ -779,6 +798,12 @@ export class Interaction {
     switch (t.kind) {
       case 'item': {
         const it = t.item;
+        if (it.mounted) {
+          const host = it.mounted.car;
+          info = { title: it.name, sub: `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
+          prompts.push(['R', 'Unbolt (hold)']);
+          break;
+        }
         if (it.part) {
           info = { title: it.name, sub: `${carType(it.state.carType).short} part · ${partDefOf(it).mass} kg` };
         } else info = this.heldInfo(it);
@@ -996,6 +1021,19 @@ export class Interaction {
   handleTargetInput(t, dt) {
     const g = this.game;
     const car = g.car;
+    // something bolted to the car: R held undoes the bolts and it comes off into the hands
+    if (t.kind === 'item' && t.item.mounted) {
+      if (!input.isDown('reload')) return;
+      if (!this.removing || this.removing.item !== t.item) this.removing = { item: t.item, t: 0 };
+      this.removing.t += dt;
+      if (Math.floor((this.removing.t - dt) / 0.3) !== Math.floor(this.removing.t / 0.3)) g.audio && g.audio.play('ratchet');
+      if (this.removing.t >= 1) {
+        this.removing = null;
+        g.audio && g.audio.play('remove', { at: t.item.mesh.getWorldPosition(V(0, 0, 0)) });
+        this.pick(t.item);
+      }
+      return;
+    }
     if (t.kind === 'part' && input.isDown('reload')) {
       const id = t.part;
       if (car.canRemove(id).ok) {
@@ -1130,7 +1168,7 @@ export class Interaction {
     const viaMouse = !input.wasPressed('interact');
     switch (t.kind) {
       case 'item':
-        this.pick(t.item);
+        if (!t.item.mounted) this.pick(t.item);
         break;
       case 'part': {
         if (viaMouse) return;
@@ -1367,7 +1405,8 @@ export class Interaction {
       const qy = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), input.mouse.dy * 0.008);
       this.holdRot.premultiply(qx).premultiply(qy);
     }
-    if (input.mouse.wheel && def && def.plate && this.plateAim) {
+    if (input.mouse.wheel && this.boltAim && input.isDown('sprint')) this.boltSpin = (this.boltSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 8);
+    else if (input.mouse.wheel && def && def.plate && this.plateAim) {
       // the wheel turns the sheet on the surface; with Shift it tilts it up off it (0..90 deg)
       if (input.isDown('sprint')) this.plateTilt = clamp((this.plateTilt || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 24), 0, Math.PI / 2);
       else this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
@@ -2306,6 +2345,94 @@ export class Interaction {
     const it = g.items.spawn(plate.id, pos, q, { ...plate.state });
     g.audio && g.audio.play('remove', { at: pos });
     this.pick(it);
+  }
+
+  // ------------------------------------------------------------------ bolting things on
+  // What can be bolted to a car: things, not supplies. Food, drink and whatever holds a liquid ride
+  // inside instead (they stay where they are put); weapons, ammunition, papers and the things with
+  // fittings of their own (plates, racks, the jack, the carb kit) are left out, and so are parts
+  // too heavy to hold up.
+  boltable(it) {
+    if (it.part) return partDefOf(it).mass <= 40;
+    const d = it.def;
+    return !!d && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
+  }
+
+  // Where the held thing would go: against the surface of a car under the crosshair, standing
+  // off it on its own underside, turned by Shift+Wheel.
+  boltFit(it) {
+    const g = this.game;
+    this.boltAim = null;
+    if (g.player.seat || !this.boltable(it)) return null;
+    const origin = this.cam.position;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
+    let spot = null;
+    const cars = [g.car, ...((g.fleet && g.fleet.cars) || [])].filter((c, i, a) => c && a.indexOf(c) === i && c.root.position.distanceTo(origin) < 7);
+    for (const c of cars) {
+      const s = plateSpot(c, origin, dir, 2.4, this.boltSpin || 0, right, { w: it.size.x, l: it.size.z });
+      // (inside the cabin things are put down, not bolted)
+      if (!s || /^seat/.test(s.part) || cargoZone(c, s.point.clone().applyMatrix4(new THREE.Matrix4().copy(c.root.matrixWorld).invert())) === 'cabin') continue;
+      if (!spot || s.dist < spot.dist) spot = s;
+    }
+    this.boltAim = spot;
+    return spot;
+  }
+
+  // On a roof, a bonnet or a boot lid it sits on its underside; on a door or a wing it stands
+  // upright with its back to the panel (Shift+Wheel turns it about the panel's normal).
+  // What to call where it goes: the roof for the top of the shell, the part's own name otherwise.
+  boltPlace(car, part, n) {
+    if (part === 'body' && n.y > 0.6) return 'roof';
+    return (car.PARTS[part] || { label: part }).label.toLowerCase();
+  }
+
+  boltMatrix(it, spot) {
+    const n = spot.normal;
+    if (Math.abs(n.y) > 0.6) {
+      const p = spot.point.clone().addScaledVector(n, it.size.y / 2 + 0.003);
+      return new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromRotationMatrix(spot.basis), V(1, 1, 1));
+    }
+    const y = V(0, 1, 0).addScaledVector(n, -n.y).normalize().applyAxisAngle(n, this.boltSpin || 0);
+    const x = y.clone().cross(n);
+    const p = spot.point.clone().addScaledVector(n, it.size.z / 2 + 0.003);
+    return new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, n)), V(1, 1, 1));
+  }
+
+  showBoltGhost(it, spot) {
+    const key = 'bolt:' + it.uid;
+    if (!this.ghost || this.ghostFor !== key) {
+      this.hideGhost();
+      const gh = it.mesh.clone();
+      gh.traverse((o) => {
+        if (o.isLight) o.visible = false;
+        if (!o.isMesh) return;
+        o.material = this.ghostMat;
+        o.castShadow = false;
+        o.renderOrder = 5;
+      });
+      this.ghost = gh;
+      this.ghostFor = key;
+      this.game.worldGroup.add(gh);
+    }
+    this.boltMatrix(it, spot).decompose(this.ghost.position, this.ghost.quaternion, this.ghost.scale);
+  }
+
+  boltHeld(it, spot) {
+    const g = this.game;
+    const m = this.boltMatrix(it, spot);
+    const mp = spot.car.model.parts[spot.part];
+    mp.pivot.updateMatrixWorld(true);
+    const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(m);
+    this.hideGhost();
+    this.held = null;
+    this.floating = false;
+    g.player.carryMass = 0;
+    it.held = false;
+    g.items.mount(it, spot.car, spot.part, local);
+    this.boltSpin = 0;
+    g.audio && g.audio.play('install', { at: spot.point });
+    g.audio && g.audio.play('ratchet', { at: spot.point });
   }
 
   // ------------------------------------------------------------------ righting a car
