@@ -49,10 +49,6 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.285, -0.12), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.694, 0.85, 0.42), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.694, 0.85, 0.42), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
-  // the mirrors, aimed from the seat
-  { id: 'mirrorL', label: 'Mirror', pos: V(0.858, 0.937, 0.49), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
-  { id: 'mirrorR', label: 'Mirror', pos: V(-0.858, 0.937, 0.49), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
-  { id: 'mirrorC', label: 'Mirror', pos: V(0.0, 1.21, 0.204), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
   // window switches on the driver's armrest
   { id: 'windowFL', label: 'Window switch', pos: V(0.706, 0.8, 0.07), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'windowFR', label: 'Window switch', pos: V(0.706, 0.8, 0.02), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
@@ -165,25 +161,32 @@ export const SEDAN88 = {
     hood: { axis: [1, 0, 0], max: -0.95 },
     trunk: { axis: [1, 0, 0], max: 1.1 },
   },
+  // the source's cabin is near black: its textures brought up a little
+  interiorLift: 1.5,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
-  // our own dial over the texture's speedometer (its painted needle would never move)
-  // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
-  MIRRORS: [
-    { id: 'L', part: 'door_FL', center: [0.858, 0.937, 0.49], normal: [-0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [0.16, 0.01, -1], wide: 2.2 },
-    { id: 'R', part: 'door_FR', center: [-0.858, 0.937, 0.49], normal: [0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [-0.16, 0.01, -1], wide: 2.2 },
-    { id: 'C', part: 'body', center: [0.0, 1.21, 0.204], normal: [0.12, -0.13, -0.99], size: [0.22, 0.055], round: 0.4, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
+  // the mirrors' glass over the source's own (door mirrors and the one inside): plain silvered
+  // glass that only catches the sky
+  MIRROR_GLASS: [
+    { part: 'door_FL', center: [0.858, 0.937, 0.49], normal: [-0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2 },
+    { part: 'door_FR', center: [-0.858, 0.937, 0.49], normal: [0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2 },
+    { part: 'body', center: [0.0, 1.21, 0.204], normal: [0.12, -0.13, -0.99], size: [0.22, 0.055], round: 0.4 },
   ],
+  // our own dial over the texture's speedometer (its painted needle would never move)
   // the fuel filler flap on the left rear wing
   FILLER: { pos: [0.802, 0.86, -1.6], normal: [0.96, 0.29, -0.05], size: [0.12, 0.1], corner: 0.01, hinge: -1 },
   GAUGES: {
-    // (in front of the model's dash face, which sits nearer the driver than its painted dials)
-    // (low in the binnacle: its brow hides the top of anything higher)
-    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.055, face: true, lcd: true },
-    panel: [0.29, 0.12, 0, -0.002],
-    tacho: { offset: [-0.094, -0.002], radius: 0.041 },
+    // laid out as the model's own: the speedometer ahead of the driver, the rev counter beside it,
+    // fuel and temperature to the left, oil pressure and volts to the right, on a fascia that fills
+    // the whole recess so nothing of the painted dials behind shows round it
+    speedo: { center: [0.374, 0.846, 0.636], normal: [0, 0.25, -1], radius: 0.054, face: true, lcd: true },
+    panel: [0.56, 0.165, 0.054, 0.006],
+    curve: 0.25,
+    tacho: { offset: [0.146, 0], radius: 0.054 },
     small: [
-      { kind: 'fuel', offset: [0.09, 0.016], radius: 0.026 },
-      { kind: 'temp', offset: [0.09, -0.032], radius: 0.026 },
+      { kind: 'fuel', offset: [-0.099, 0.031], radius: 0.024 },
+      { kind: 'temp', offset: [-0.099, -0.031], radius: 0.024 },
+      { kind: 'oil', offset: [0.256, 0.031], radius: 0.024 },
+      { kind: 'volt', offset: [0.256, -0.031], radius: 0.024 },
     ],
   },
   STEREO,
@@ -248,8 +251,12 @@ export const SEDAN88 = {
     model.bay = bay.refs;
     // the scuttle panel under the windscreen: the source leaves a gap there between the glass
     // and the bonnet's back edge, and from the seat you looked through it into the engine bay
-    const cowl = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35).rotateX(-Math.PI / 2), M.black);
-    cowl.position.set(0, 0.9, 1.045);
-    model.parts.body.inner.add(cowl);
+    // (it follows the bonnet's crown a centimetre under it, so its ends stay under the bonnet and
+    // the wings instead of showing through where the bonnet falls away at the sides)
+    const cg = new THREE.PlaneGeometry(1.32, 0.29, 16, 3).rotateX(-Math.PI / 2).translate(0, 0, 1.075);
+    const cp = cg.attributes.position;
+    for (let i = 0; i < cp.count; i++) cp.setY(i, 0.905 - 0.075 * cp.getX(i) ** 2 - 0.05 * (cp.getZ(i) - 1.05));
+    cg.computeVertexNormals();
+    model.parts.body.inner.add(new THREE.Mesh(cg, M.black));
   },
 };

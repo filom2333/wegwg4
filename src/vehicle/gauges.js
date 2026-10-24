@@ -4,7 +4,7 @@
 // fuel sweeps the 70 degree arc at the top.
 export function needleAngle(name, t) {
   t = Math.min(1, Math.max(0, t));
-  if (name === 'fuel' || name === 'temp') return Math.PI * 1.5 - 0.61 + 1.22 * t;
+  if (name === 'fuel' || name === 'temp' || name === 'oil' || name === 'volt') return Math.PI * 1.5 - 0.61 + 1.22 * t;
   return Math.PI * (150 / 180) + Math.PI * (240 / 180) * t;
 }
 

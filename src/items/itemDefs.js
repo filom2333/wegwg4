@@ -33,6 +33,7 @@ export const ITEMS = {
   ammo38: { name: '.38 cartridges', model: ['ammoBox', '38'], mass: 0.15, stack: 6, ammo: { type: '38', count: 12 }, hold: 'hand', desc: 'Use to put them in your pouch.' },
   ammo12: { name: '12 ga shells', model: ['ammoBox', '12'], mass: 0.4, stack: 6, ammo: { type: '12', count: 8 }, hold: 'hand' },
   sponge: { name: 'Sponge', model: ['sponge'], mass: 0.03, clean: true, hold: 'hand', desc: 'Hold LMB on the car to wash off the dust.' },
+  wireBrush: { name: 'Wire brush', model: ['wireBrush'], mass: 0.25, derust: true, hold: 'tool', desc: 'Hold LMB on the car to scrub the rust off. Slow, dirty work.' },
   sprayPaint: { name: 'Spray paint', model: ['sprayPaint'], mass: 0.4, paint: true, charges: 5, variants: 15, hold: 'hand', desc: 'Aim at a car part and hold LMB to paint it. Enough for about five panels.' },
   cigarettes: { name: 'Cigarettes', model: ['cigarettes'], mass: 0.03, consume: { energy: 6, food: -3, water: -5, smoke: true }, charges: 5, hold: 'hand', desc: 'Calms the nerves. Makes you thirsty.' },
   coffee: { name: 'Canned coffee', model: ['coffee'], mass: 0.3, consume: { energy: 28, water: 6, food: 2 }, hold: 'hand', desc: 'Keeps you awake on long drives.' },
@@ -165,7 +166,7 @@ export const LOOT = {
     ['blanket', 0.6],
     ['plank', 0.6],
     ['plasticPanel', 0.6],
-    ['oilBottle', 3],
+    ['oilBottle', 1.5],
     ['part:fanbelt', 1.2],
     ['part:sparkplugs', 0.9],
     ['part:oilfilter', 0.9],
@@ -184,6 +185,14 @@ export const LOOT = {
     ['part:wheel_RL:offroad', 0.35],
     ['sprayPaint', 0.8],
     ['sponge', 0.8],
+    ['wireBrush', 1.1],
+    ['part:steeringWheel:sport', 0.25],
+    ['part:steeringWheel:wood', 0.2],
+    ['part:steeringWheel:dish', 0.2],
+    ['part:steeringWheel:classic', 0.15],
+    ['part:seat_FL:bucket', 0.15],
+    ['part:seat_FR:recliner', 0.15],
+    ['part:seat_FL:sheepskin', 0.15],
     ['wrench', 2],
     ['oilBottle', 2],
     ['part:alternator', 0.4],
@@ -208,7 +217,7 @@ export const LOOT = {
     ['chocolate', 3],
     ['jerky', 2],
     ['cannedBeans', 2],
-    ['oilBottle', 1.5],
+    ['oilBottle', 0.8],
     ['part:fanbelt', 0.5],
     ['part:sparkplugs', 0.4],
     ['part:oilfilter', 0.5],
@@ -289,7 +298,8 @@ export const LOOT = {
 };
 
 // spawn chance per spot kind (before difficulty multiplier)
-export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.55, tools: 0.6, shop: 0.5, drinks: 0.5, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45, gear: 0.75 };
+// (shops and stores were picked over long ago: what is left is thin)
+export const SPOT_CHANCE = { any: 0.3, kitchen: 0.45, cupboard: 0.35, fridge: 0.55, table: 0.4, small: 0.35, shelf: 0.25, medicine: 0.6, bed: 0.15, clothes: 0.2, couch: 0.15, desk: 0.35, office: 0.4, storage: 0.4, tools: 0.6, shop: 0.3, drinks: 0.35, counter: 0.6, crate: 0.7, tent: 0.6, camp: 0.6, ruin: 0.5, wreck: 0.45, gear: 0.75 };
 
 export function initialState(id, rnd) {
   const d = ITEMS[id];

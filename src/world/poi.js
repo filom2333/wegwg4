@@ -14,8 +14,10 @@ import { applyWeathering, weatheringUniforms } from '../vehicle/weathering.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-// wrecks per type (car bodies placed by the manager)
-const WRECKS = { junkyard: 7, wreck: 1, homestead: 0, trailers: 1, ranch: 1, houses: 1, house: 0, gasStation: 1, motel: 1, diner: 2, outpost: 1, ruins: 0, camp: 1 };
+// abandoned cars (real cars of the game's types, put there by the fleet: see Fleet.placeHulk):
+// how many a place may hold and the chance of each being there. A scrapyard keeps one or two, a
+// roadside wreck is always its car, elsewhere one now and then.
+const WRECKS = { junkyard: [2, 0.6], wreck: [1, 1], homestead: [0, 0], trailers: [1, 0.15], ranch: [1, 0.15], houses: [1, 0.1], house: [0, 0], gasStation: [1, 0.12], motel: [1, 0.15], diner: [1, 0.15], outpost: [1, 0.15], ruins: [0, 0], camp: [1, 0.1] };
 
 // ------------------------------------------------------------------ manager
 export class POIManager {
@@ -202,8 +204,8 @@ export class POIManager {
       this.addFootings(inst, b, em);
     }
     // wrecks
-    const nW = WRECKS[poi.type] ?? 0;
-    for (let i = 0; i < nW && this.wreckProtos.length; i++) this.addWreck(inst, rnd, i, poi.type);
+    const [nW, pW] = WRECKS[poi.type] ?? [0, 0];
+    for (let i = 0; i < nW; i++) if (rnd() < pW) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
     this.loaded.set(k, inst);
     for (const p of inst.propList) placeProp(this.game, inst, p);
@@ -272,13 +274,13 @@ export class POIManager {
     inst.root.add(m);
   }
 
+  // Where an abandoned car stands (in the place's own frame): the fleet puts a real one there,
+  // stripped, rusted and every part of it still to be had.
   addWreck(inst, rnd, i, type) {
-    const proto = this.wreckProtos[Math.floor(rnd() * this.wreckProtos.length)];
-    const w = proto.group.clone();
     let x, z, rot;
     if (type === 'junkyard') {
-      x = -8 + (i % 4) * 5.2;
-      z = -2 + Math.floor(i / 4) * 6 + (rnd() - 0.5);
+      x = -8 + (i % 3) * 7;
+      z = -2 + Math.floor(i / 3) * 7 + (rnd() - 0.5);
       rot = (rnd() - 0.5) * 0.6 + Math.PI / 2;
     } else if (type === 'wreck') {
       x = 0;
@@ -289,35 +291,9 @@ export class POIManager {
       z = 10 + rnd() * 4;
       rot = rnd() * 6;
     }
-    const tilt = type === 'wreck' && rnd() < 0.5 ? Math.PI / 2 : (rnd() - 0.5) * 0.08;
-    // rest on the ground where it actually is (the pad fades out away from the centre)
-    const wp = V(x, 0, z).applyMatrix4(inst.root.matrixWorld);
-    const o = this.game.origin;
-    const gy = this.game.gen.height(wp.x + o.x, wp.z + o.z) - inst.poi.y;
-    const H = proto.half;
-    // on its side the car rests on its half width
-    w.position.set(x, gy + (tilt > 1 ? H.x : -0.04), z);
-    w.rotation.set(0, rot, tilt);
-    // random paint per wreck
-    const paints = [0x6d7a7f, 0x7a2e24, 0x2f4a5c, 0xb9b2a0, 0x4b5a3a, 0x8b6d3c];
-    // (clone() deep-copies userData through JSON, so the shared material comes from the prototype)
-    const base = proto.group.wreckPaint;
-    const hex = paints[Math.floor(rnd() * paints.length)];
-    if (base) {
-      const pm = base.userData.make ? base.userData.make(hex) : base.clone();
-      pm.color.setHex(hex);
-      w.traverse((o) => {
-        if (o.isMesh && o.material === base) o.material = pm;
-      });
-    }
-    inst.root.add(w);
-    // collider (box)
-    const c = V(x, gy + (tilt > 1 ? H.x : proto.cy + 0.05), z);
-    const qq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot, tilt, 'YXZ'));
-    const desc = RAPIER.ColliderDesc.cuboid(H.x * 0.92, H.y * 0.8, H.z * 0.95).setTranslation(c.x, c.y, c.z).setRotation({ x: qq.x, y: qq.y, z: qq.z, w: qq.w }).setCollisionGroups(GROUPS.world);
-    const col = this.game.physics.world.createCollider(desc, inst.body);
-    this.game.physics.setOwner(col, { kind: 'wreck', surface: 'metal', poi: inst });
-    inst.loot.push({ pos: V(x, gy + 0.6, z), kind: 'wreck', wreck: true });
+    // a roadside wreck is now and then on its side or its roof
+    const roll = type === 'wreck' && rnd() < 0.5 ? (rnd() < 0.7 ? Math.PI / 2 : Math.PI) : 0;
+    (inst.hulkSpots = inst.hulkSpots || []).push({ x, z, rot, roll, i });
   }
 
   makeDoor(inst, d, em, e, i) {

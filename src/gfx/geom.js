@@ -73,6 +73,23 @@ export function roundedBox(w, h, d, r = 0.01, seg = 3) {
   return g;
 }
 
+// A soft cushion: a rounded block whose faces swell out by `puff`, its top pressed in by `sag`.
+export function cushionBox(w, h, d, { r = 0.04, puff = 0.02, sag = 0, seg = 3 } = {}) {
+  const g = roundedBox(w, h, d, r, seg);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) / (w / 2),
+      y = p.getY(i) / (h / 2),
+      z = p.getZ(i) / (d / 2);
+    const fx = Math.max(0, 1 - x * x),
+      fy = Math.max(0, 1 - y * y),
+      fz = Math.max(0, 1 - z * z);
+    p.setXYZ(i, p.getX(i) + x * puff * 0.5 * fy * fz, p.getY(i) + y * puff * fx * fz - (y > 0 ? sag * fx * fz : 0), p.getZ(i) + z * puff * 0.5 * fx * fy);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 // Extrude a 2D shape (THREE.Shape) along +Z with bevel; centered on z.
 export function extrudeShape(shape, depth, bevel = 0.003, curveSegments = 12, bevelSegments = 2) {
   const g = new THREE.ExtrudeGeometry(shape, {

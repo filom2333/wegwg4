@@ -37,7 +37,7 @@ const FRONT = ['driver', 'passenger'];
 // Inside ones are worked from a seat (seats) with one hand (hand; none for the parking brake
 // pedal); door handles ride on their doors. Each sits on the control itself.
 const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(-0.826, 0.84, -1.62), r: 0.08, part: 'fueltank' },
+  { id: 'fuel', label: 'Fuel filler', pos: V(-0.841, 0.804, -1.572), r: 0.1, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.0, 0.84, 1.3), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.3, 0.74, 1.72), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(-0.48, 0.66, -1.95), r: 0.13, part: 'battery', lid: 'trunk' },
@@ -52,10 +52,6 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.283, 0.06), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.728, 0.797, 0.235), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.728, 0.797, 0.235), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
-  // the mirrors, aimed from the seat
-  { id: 'mirrorL', label: 'Mirror', pos: V(0.914, 0.895, 0.482), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
-  { id: 'mirrorR', label: 'Mirror', pos: V(-0.914, 0.895, 0.482), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
-  { id: 'mirrorC', label: 'Mirror', pos: V(0.015, 1.205, 0.212), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
   // window switches on the driver's armrest (his own in front, the passenger's behind it)
   { id: 'windowFL', label: 'Window switch', pos: V(0.712, 0.826, 0.0), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'windowFR', label: 'Window switch', pos: V(0.712, 0.826, -0.045), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
@@ -186,27 +182,40 @@ export const W203 = {
     hood: { axis: [1, 0, 0], max: -1.0 },
     trunk: { axis: [1, 0, 0], max: 1.15 },
   },
+  // the cabin's textures a little lighter than the source's
+  interiorLift: 1.1,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
+  // the mirrors' glass over the source's own (door mirrors and the one inside): plain silvered
+  // glass that only catches the sky
+  MIRROR_GLASS: [
+    { part: 'door_FL', center: [0.914, 0.895, 0.482], normal: [-0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35 },
+    { part: 'door_FR', center: [-0.914, 0.895, 0.482], normal: [0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35 },
+    { part: 'body', center: [0.015, 1.205, 0.212], normal: [0.12, -0.02, -1], size: [0.23, 0.058], round: 0.45 },
+  ],
   // a dark panel across the hood's opening: rev counter left, speedometer (with the speed in
   // figures) in the middle, fuel over coolant on the right
-  // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
-  MIRRORS: [
-    { id: 'L', part: 'door_FL', center: [0.914, 0.895, 0.482], normal: [-0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35, look: [0.16, 0.01, -1], wide: 2.2 },
-    { id: 'R', part: 'door_FR', center: [-0.914, 0.895, 0.482], normal: [0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35, look: [-0.16, 0.01, -1], wide: 2.2 },
-    { id: 'C', part: 'body', center: [0.015, 1.205, 0.212], normal: [0.12, -0.02, -1], size: [0.23, 0.058], round: 0.45, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
-  ],
   // the fuel filler flap on the right rear wing
-  FILLER: { pos: [-0.824, 0.84, -1.62], normal: [-0.92, 0.38, -0.09], size: [0.115, 0.105], corner: 0.03, hinge: 1 },
+  // (exactly over the model's own flap, its groove inside the cut, so there is one flap, not two)
+  FILLER: { pos: [-0.839, 0.8042, -1.5717], normal: [-0.962, 0.254, -0.095], size: [0.216, 0.147], corner: 0.03, hinge: 1 },
   GAUGES: {
-    speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.052, face: true, lcd: true },
-    panel: [0.27, 0.118, 0, -0.004],
-    tacho: { offset: [-0.088, -0.004], radius: 0.04 },
+    // (spaced so no two bezels touch: each bezel reaches about 1.09 of its dial's radius)
+    speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.048, face: true, lcd: true },
+    panel: [0.29, 0.118, -0.008, -0.002],
+    tacho: { offset: [-0.096, -0.002], radius: 0.036 },
     small: [
-      { kind: 'fuel', offset: [0.086, 0.018], radius: 0.026 },
-      { kind: 'temp', offset: [0.086, -0.032], radius: 0.026 },
+      { kind: 'fuel', offset: [0.081, 0.026], radius: 0.022 },
+      { kind: 'temp', offset: [0.081, -0.026], radius: 0.022 },
     ],
   },
   STEREO,
+  // the rear bench came merged into the cabin's trim: its cushion and back (cut out of the tub by
+  // where they are) and its three headrests go to seat_R, so the bench comes out whole
+  PIECES: [
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.64, 0.36, -1.36], [0.64, 1.08, -0.58]], tris: true },
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.64, 0.28, -1.0], [0.64, 0.36, -0.6]], tris: true, steep: true },
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.73, 0.36, -1.0], [0.73, 0.62, -0.6]], tris: true },
+    { from: 'body', to: 'seat_R', box: [[-0.6, 0.93, -1.5], [0.6, 1.25, -1.2]] },
+  ],
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_FR'],
   fuelCap: 62,
   oilCap: 5.5,
@@ -263,5 +272,6 @@ export const W203 = {
     const bay = PP.bayDetails(M, { coolant: V(0.45, 0.6, 1.58), brake: V(0.48, 0.65, 1.0), washer: V(-0.5, 0.55, 1.72), fuses: V(0.5, 0.6, 1.28), dipstick: V(0.1, 0.63, 1.32) });
     model.parts.body.inner.add(bay.group);
     model.bay = bay.refs;
+    model.parts.body.inner.add(PP.seatPan(M, { w: 1.24, y: 0.4, z0: -0.72, z1: -1.3, top: [1.0, -1.42] }));
   },
 };

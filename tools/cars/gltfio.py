@@ -8,6 +8,15 @@ NCOMP = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4, 'MAT4': 16}
 
 
 def load(path):
+    if path.endswith('.glb'):
+        # binary glTF: the JSON chunk, then the one BIN chunk that buffer 0 refers to
+        f = open(path, 'rb').read()
+        jl = struct.unpack('<I', f[12:16])[0]
+        j = json.loads(f[20:20 + jl])
+        j['_dir'] = os.path.dirname(os.path.abspath(path))
+        o = 20 + jl
+        bl = struct.unpack('<I', f[o:o + 4])[0]
+        return j, [f[o + 8:o + 8 + bl]]
     j = json.load(open(path))
     j['_dir'] = os.path.dirname(os.path.abspath(path))
     bufs = []

@@ -6,6 +6,7 @@ import { Builder } from './builder.js';
 import { archMaterials } from './materials.js';
 import * as FUR from './furniture.js';
 import { place } from './furniture.js';
+import { clutterRoom, clutterYard } from './clutter.js';
 
 const WALL_H = 3.0;
 const EXT_T = 0.24;
@@ -171,13 +172,15 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
       }
     }
     const info = b.wall(w.a, w.b, floorY, WALL_H, EXT_T, { outMat: S.ext, inMat: M.plaster, openings, outSide: 1, surface: 'wood' });
-    for (const o of openings) allOpenings.push({ x: w.a[0] + ux * o.at, z: w.a[1] + uz * o.at, w: o.w, type: o.type, low: o.bottom });
+    for (const o of openings) allOpenings.push({ x: w.a[0] + ux * o.at, z: w.a[1] + uz * o.at, w: o.w, type: o.type, low: o.bottom, ext: true });
     // per-room inner finish: overlay thin interior panels per room segment
     for (const o of openings) {
       if (o.type === 'window') {
         const broken = abandoned * (0.3 + rnd() * 0.5);
         b.window(info, w.a, floorY, o, EXT_T, { frameMat: S.trim, glassMat: rnd() < 0.5 ? M.glassDirty : M.glass, broken, sillMat: S.trim, rnd });
         windows.push({ w, o, info });
+        // boarded up from outside: planks nailed across, an X of two, or a sheet of ply
+        if (rnd() < abandoned * 0.35) boardUp(b, w.a, ux, uz, o, floorY, rnd, M);
       } else {
         const missing = rnd() < abandoned * 0.25;
         b.doorway(info, w.a, floorY, o, EXT_T, { frameMat: S.trim, leafMat: rnd() < 0.5 ? M.woodDark : M.trimWhite, leaf: !missing, open: rnd() < abandoned * 0.4 ? 0.7 : 0, hingeSide: 1 });
@@ -331,21 +334,36 @@ export function buildHouse(rnd, { style = null, abandoned = 0.7, garage = false 
       }
   }
   // ---------------------------------------------------------- furniture
-  for (const r of rooms) furnishRoom(b, r, rnd, floorY, allOpenings);
-  // debris: sand drifts inside near doors, scattered boards
-  if (abandoned > 0.3) {
-    for (let i = 0; i < 2; i++) {
-      const r = rooms[Math.floor(rnd() * rooms.length)];
-      const x = r.x0 + 0.5 + rnd() * (r.x1 - r.x0 - 1),
-        z = r.z0 + 0.5 + rnd() * (r.z1 - r.z0 - 1);
-      const g = new THREE.BoxGeometry(0.1 + rnd() * 0.1, 0.02, 0.8 + rnd() * 0.8);
-      g.rotateY(rnd() * Math.PI);
-      g.translate(x, floorY + 0.03, z);
-      b.add(g, M.wood);
-    }
-  }
+  // the junk of years (inside and round the house), as much as the house is gone to ruin
+  for (const r of rooms) furnishRoom(b, r, rnd, floorY, allOpenings, abandoned);
+  if (abandoned > 0.3) clutterYard(b, plan, rnd, { amount: abandoned * 1.4 });
   const footprint = { w: plan.W + 1, d: plan.D + 3.2 };
   return { builder: b, plan, footprint, floorY };
+}
+
+// Boards over a window, outside (the wall from `a` along (ux, uz), its outside to the left).
+function boardUp(b, a, ux, uz, o, floorY, rnd, M) {
+  const nx = -uz,
+    nz = ux;
+  const cx = a[0] + ux * o.at + nx * (EXT_T / 2 + 0.02),
+    cz = a[1] + uz * o.at + nz * (EXT_T / 2 + 0.02);
+  const cy = floorY + (o.bottom + o.top) / 2;
+  const w = o.w + 0.16,
+    h = o.top - o.bottom + 0.14;
+  const yaw = Math.atan2(ux, uz) - Math.PI / 2;
+  const at = (g, x, y, roll, out = 0) => {
+    g.rotateZ(roll).rotateY(yaw);
+    g.translate(cx + nx * out + ux * x, cy + y, cz + nz * out + uz * x);
+    b.add(g, M.wood);
+  };
+  const kind = rnd();
+  if (kind < 0.45) {
+    const n = 3 + Math.floor(rnd() * 2);
+    for (let k = 0; k < n; k++) at(new THREE.BoxGeometry(w + rnd() * 0.15, 0.13 + rnd() * 0.05, 0.022), (rnd() - 0.5) * 0.08, -h / 2 + ((k + 0.5) * h) / n, (rnd() - 0.5) * 0.12);
+  } else if (kind < 0.75) {
+    const d = Math.hypot(w, h);
+    for (const s2 of [-1, 1]) at(new THREE.BoxGeometry(d, 0.15, 0.022), 0, 0, s2 * Math.atan2(h, w), s2 > 0 ? 0.023 : 0);
+  } else at(new THREE.BoxGeometry(w, h, 0.014), 0, 0, (rnd() - 0.5) * 0.04);
 }
 
 // ---------------------------------------------------------------- furnishing
@@ -438,7 +456,7 @@ class RoomPlacer {
   }
 }
 
-function furnishRoom(b, r, rnd, y, openings) {
+function furnishRoom(b, r, rnd, y, openings, abandoned = 0.7) {
   const W = r.x1 - r.x0,
     D = r.z1 - r.z0;
   const cx = (r.x0 + r.x1) / 2,
@@ -520,6 +538,7 @@ function furnishRoom(b, r, rnd, y, openings) {
       break;
     }
   }
+  if (abandoned > 0.3) clutterRoom(b, P, r, rnd, y, openings, { amount: abandoned * 1.3, ceilingY: y + WALL_H });
 }
 
 export { WALL_H, EXT_T, INT_T };

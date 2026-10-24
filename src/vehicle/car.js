@@ -69,6 +69,8 @@ export class Car {
     this.fire = 0;
     this.smoke = 0;
     this.dirt = 0.35;
+    // rust on the paint (0..1): creeps on with rain and years, comes off under a wire brush
+    this.rust = 0.04;
     this.horn = false;
     this.wipers = false;
     this.wiperPhase = 0;
@@ -190,9 +192,10 @@ export class Car {
     if (id === 'engine') this.dyn.engineInstalled = on;
     if (id === 'steeringWheel') this.dyn.steeringInstalled = on;
     if ((id === 'engine' || id === 'battery' || id === 'fueltank') && !on) this.setIgnition(false);
-    // a tune leaves with its part (the remover copies it onto the item first)
+    // a tune leaves with its part (the remover copies it onto the item first), and its looks with it
+    const hadTune = !!this.parts[id].tune;
     if (!on) this.parts[id].tune = null;
-    if (this.parts[id].tune || id === 'engine' || id === 'exhaust' || w) {
+    if (hadTune || this.parts[id].tune || id === 'engine' || id === 'exhaust' || w) {
       refreshTuneVisual(this, id);
       applyTune(this);
     }
@@ -993,8 +996,9 @@ export class Car {
     const surf = (d.wheels[0] && d.wheels[0].surface) || 'asphalt';
     if (spd > 2) this.dirt = Math.min(1, this.dirt + dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
     if (env2 && env2.w.rain > 0.3) this.dirt = Math.max(0.05, this.dirt - dt * 0.004 * env2.w.rain);
-    const wu = this.model.mats && this.model.mats.weather;
-    if (wu && wu.uDirt) wu.uDirt.value = this.dirt;
+    // rust creeps on: faster in the wet, faster where it has already got a hold
+    this.rust = Math.min(1, this.rust + dt * (0.0000004 + (env2 ? env2.w.rain : 0) * 0.000004) * (0.5 + this.rust));
+    this.applyWeather();
     // wipers
     if (this.wipers && this.isInstalled('battery') && this.battery > 0.03) this.wiperPhase += dt * 2.4;
     else if (this.wiperPhase % (Math.PI * 2) > 0.05) this.wiperPhase += dt * 2.4;
@@ -1203,6 +1207,11 @@ export class Car {
       setNeedle(needles, 'fuel', powered ? this.fuel / this.fuelCap : 0);
       setNeedle(needles, 'rpm', powered ? this.dyn.engine.rpm / 8000 : 0);
       setNeedle(needles, 'temp', powered && this.ignition ? (this.engineTemp - 50) / 80 : 0);
+      // oil pressure rises with the revs, and falls away when the oil is low; the volts read the
+      // battery, a little higher with the alternator charging
+      const run = this.dyn.engine.running;
+      setNeedle(needles, 'oil', powered && run ? (0.3 + 0.5 * Math.min(1, this.dyn.engine.rpm / 5000)) * Math.min(1, this.oil / (this.type.oilCap * 0.5)) : 0);
+      setNeedle(needles, 'volt', powered ? (11.4 + this.battery * 1.3 + (this.charging ? 1.4 : 0) - 8) / 8 : 0);
       // the speed in figures (redrawn when the whole number changes)
       const lcd = this.model.cluster.userData.lcd;
       if (lcd) {
@@ -1258,6 +1267,14 @@ export class Car {
     const want = 0.8 * (n / 4);
     sh.material.opacity += (want - sh.material.opacity) * 0.2;
     sh.visible = sh.material.opacity > 0.02;
+  }
+
+  // Dirt and rust onto the paint's weathering.
+  applyWeather() {
+    const wu = this.model.mats && this.model.mats.weather;
+    if (!wu) return;
+    if (wu.uDirt) wu.uDirt.value = this.dirt;
+    if (wu.uRust) wu.uRust.value = this.rust;
   }
 
   dispose() {

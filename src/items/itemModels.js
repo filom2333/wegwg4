@@ -2,7 +2,10 @@
 // item's centre of mass; models are detailed but compact (they are seen up close in the hand).
 
 import * as THREE from 'three';
-import { latheY, roundedBox, tubeAlong, loftSections, superSection } from '../gfx/geom.js';
+import { latheY, roundedBox, tubeAlong, loftSections, superSection, shapeFromPoints } from '../gfx/geom.js';
+import { crtTV } from '../world/buildings/furniture.js';
+import { mulberry32 } from '../core/noise.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
@@ -104,6 +107,17 @@ export function jerryCan(color = 'red') {
   }
   body.computeVertexNormals();
   g.add(mesh(body, mat));
+  // the pressed X and the frame round it on both faces, the weld seam round the edge
+  for (const sx of [-1, 1]) {
+    const x = sx * 0.0835;
+    for (const a of [0.69, -0.69]) g.add(mesh(roundedBox(0.007, 0.43, 0.02, 0.003, 1).rotateX(a).translate(x, 0, 0), mat));
+    for (const y of [-0.172, 0.172]) g.add(mesh(roundedBox(0.007, 0.018, 0.3, 0.003, 1).translate(x, y, 0), mat));
+    for (const z of [-0.142, 0.142]) g.add(mesh(roundedBox(0.007, 0.36, 0.018, 0.003, 1).translate(x, 0, z), mat));
+  }
+  g.add(mesh(roundedBox(0.012, 0.007, 0.3, 0.003, 1).translate(0, 0.212, 0), mat));
+  g.add(mesh(roundedBox(0.012, 0.007, 0.3, 0.003, 1).translate(0, -0.212, 0), mat));
+  g.add(mesh(roundedBox(0.012, 0.37, 0.007, 0.003, 1).translate(0, 0, 0.172), mat));
+  g.add(mesh(roundedBox(0.012, 0.37, 0.007, 0.003, 1).translate(0, 0, -0.172), mat));
   // three-bar handle
   for (const z of [-0.07, 0, 0.07]) g.add(mesh(roundedBox(0.03, 0.06, 0.018, 0.008, 2).translate(0, 0.24, z - 0.05), mat));
   g.add(mesh(roundedBox(0.035, 0.022, 0.2, 0.01, 2).translate(0, 0.28, -0.05), mat));
@@ -248,6 +262,23 @@ export function sponge() {
   return centered(g);
 }
 
+// A wire brush: a walnut handle with a steel ferrule, rows of crimped steel bristles under the
+// head, and a scraper blade at the nose.
+export function wireBrush() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  g.add(mesh(roundedBox(0.2, 0.022, 0.034, 0.008, 2).translate(-0.02, 0.011, 0), M.walnut));
+  g.add(mesh(roundedBox(0.03, 0.024, 0.036, 0.003, 1).translate(0.075, 0.012, 0), M.steel));
+  const bristle = cached('bristleMat', () => new THREE.MeshStandardMaterial({ color: 0x8d8f91, roughness: 0.55, metalness: 0.8 }));
+  // the bristle tufts: little boxes in rows under the head
+  const tufts = [];
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 3; j++) tufts.push(new THREE.BoxGeometry(0.008, 0.024, 0.006).translate(-0.085 + i * 0.019, -0.012, -0.011 + j * 0.011));
+  g.add(mesh(mergeGeometries(tufts), bristle));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.002, 0.03).translate(0.105, 0.004, 0), M.steel));
+  grip(g, 'tool', 'wrap12', V(-0.06, 0.011, 0), RIGHT, UP);
+  return centered(g);
+}
+
 export function sprayPaint(variant = 0) {
   const M = itemMats();
   const g = new THREE.Group();
@@ -377,24 +408,39 @@ export function campfireKit() {
   return centered(g);
 }
 
-// A piece of meat: raw (dark red, glistening) or cooked over a fire (browned, charred edges).
+// A piece of meat: a steak with its fat cap down one side, raw (dark red, glistening) or cooked
+// over a fire (browned, the grill bars burnt across it).
 export function meatChunk(cooked = false) {
   const g = new THREE.Group();
   const mat = cached('meat' + (cooked ? 'C' : 'R'), () =>
     addSurfaceDetail(new THREE.MeshStandardMaterial({ color: cooked ? 0x6a3a1e : 0x8a2420, roughness: cooked ? 0.75 : 0.35 }), 'grain', 0.35)
   );
-  const geo = new THREE.IcosahedronGeometry(0.06, 2);
-  const p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i),
-      y = p.getY(i),
-      z = p.getZ(i);
-    const w = 1 + 0.18 * Math.sin(x * 60 + z * 40) + 0.12 * Math.sin(y * 70);
-    p.setXYZ(i, x * 1.6 * w, y * 0.55 * w, z * 1.05 * w);
+  const fat = cached('fat' + (cooked ? 'C' : 'R'), () => new THREE.MeshStandardMaterial({ color: cooked ? 0x9a6a3a : 0xe6d6bc, roughness: cooked ? 0.6 : 0.4 }));
+  const r = (a) => 1 + 0.12 * Math.sin(3 * a + 1) + 0.07 * Math.sin(5 * a + 0.4);
+  const N = 36;
+  const outline = [];
+  for (let k = 0; k < N; k++) {
+    const a = (k / N) * Math.PI * 2;
+    outline.push([Math.cos(a) * 0.09 * r(a), Math.sin(a) * 0.062 * r(a)]);
   }
-  geo.computeVertexNormals();
-  g.add(mesh(geo, mat));
-  grip(g, 'palm', 'palm', V(0, -0.03, 0), RIGHT, DOWN);
+  const slab = (pts, t, bevel) => {
+    const geo = new THREE.ExtrudeGeometry(shapeFromPoints(pts), { depth: t - 2 * bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 4 });
+    return geo.translate(0, 0, bevel).rotateX(-Math.PI / 2);
+  };
+  g.add(mesh(slab(outline, 0.024, 0.007), mat));
+  // the fat: a band along the long curved side, a little proud of the meat
+  const band = [];
+  for (let k = 0; k <= 12; k++) {
+    const a = 1.1 + (k / 12) * 1.7;
+    band.push([Math.cos(a) * 0.096 * r(a), Math.sin(a) * 0.067 * r(a)]);
+  }
+  for (let k = 12; k >= 0; k--) {
+    const a = 1.1 + (k / 12) * 1.7;
+    band.push([Math.cos(a) * 0.075 * r(a), Math.sin(a) * 0.05 * r(a)]);
+  }
+  g.add(mesh(slab(band, 0.026, 0.006).translate(0, -0.001, 0), fat));
+  if (cooked) for (let k = -1; k <= 1; k++) g.add(mesh(new THREE.BoxGeometry(0.15, 0.002, 0.008).rotateY(0.6).translate(k * 0.03, 0.0245, k * 0.012), cached('char', () => new THREE.MeshStandardMaterial({ color: 0x1a120c, roughness: 0.9 }))));
+  grip(g, 'palm', 'palm', V(0, 0, 0), RIGHT, DOWN);
   return centered(g);
 }
 
@@ -577,11 +623,59 @@ export function medkit() {
   return centered(g);
 }
 
+// An elastic bandage: a tight tan roll with the weave showing and the layers at its ends, a few
+// turns let go and hanging, held by the two little toothed clips.
 export function bandage() {
   const g = new THREE.Group();
   const M = itemMats();
-  g.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 20).rotateZ(Math.PI / 2), M.white));
-  g.add(mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.072, 12).rotateZ(Math.PI / 2), M.cardboard));
+  const crepe = cached('crepe', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xc4a07a, roughness: 0.95, side: THREE.DoubleSide }), 'weave', 0.8));
+  const ends = labelMat('crepeEnds', 128, 128, (c, w, h) => {
+    c.fillStyle = '#c09c76';
+    c.fillRect(0, 0, w, h);
+    for (let k = 0; k < 16; k++) {
+      c.strokeStyle = k % 2 ? 'rgba(110,80,50,0.55)' : 'rgba(225,200,170,0.5)';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(w / 2, h / 2, 10 + k * 3.4, 0, Math.PI * 2);
+      c.stroke();
+    }
+    c.fillStyle = '#6a4c30';
+    c.beginPath();
+    c.arc(w / 2, h / 2, 9, 0, Math.PI * 2);
+    c.fill();
+  });
+  const R = 0.026,
+    L = 0.075;
+  const side = new THREE.CylinderGeometry(R, R, L, 28, 6, true);
+  // the weave stands out in bands across the width, the edges a shade thicker
+  const p = side.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const k = 1 + 0.03 * Math.abs(p.getY(i) / (L / 2)) ** 4;
+    p.setX(i, p.getX(i) * k);
+    p.setZ(i, p.getZ(i) * k);
+  }
+  side.computeVertexNormals();
+  g.add(mesh(side.rotateZ(Math.PI / 2), crepe));
+  for (const s of [-1, 1]) g.add(mesh(new THREE.CircleGeometry(R, 28).rotateY((s * Math.PI) / 2).translate((s * L) / 2, 0, 0), ends));
+  // the loose end: a short tail curling off the roll
+  const tail = new THREE.PlaneGeometry(L * 0.96, 0.05, 1, 8);
+  const tp = tail.attributes.position;
+  for (let i = 0; i < tp.count; i++) {
+    const t = (tp.getY(i) + 0.025) / 0.05;
+    const a = t * 1.1;
+    tp.setXYZ(i, tp.getX(i), (R + 0.0015) * Math.cos(a) - t * t * 0.012, (R + 0.0015) * Math.sin(a) + t * 0.004);
+  }
+  tail.computeVertexNormals();
+  g.add(mesh(tail, crepe));
+  // two butterfly clips over the end, their teeth biting the weave
+  for (const x of [-0.018, 0.018]) {
+    const clip = new THREE.Group();
+    clip.add(mesh(roundedBox(0.016, 0.0015, 0.012, 0.0006, 1), M.steel));
+    for (const z of [-0.008, 0.008]) clip.add(mesh(new THREE.BoxGeometry(0.012, 0.0012, 0.006).translate(0, -0.0006, z), M.steel));
+    clip.position.set(x, R * Math.cos(1.0) + 0.002, R * Math.sin(1.0));
+    clip.rotation.x = 1.0;
+    g.add(clip);
+  }
   grip(g, 'wrap', 'wrap33', V(0, 0, 0), RIGHT, UP);
   return centered(g);
 }
@@ -651,26 +745,47 @@ export function repairKit() {
   return centered(g);
 }
 
+// A combination spanner: a box end with twelve points and an open end at 15 degrees, on a shaft
+// that thins in the middle.
 export function wrench() {
   const M = itemMats();
   const g = new THREE.Group();
-  const shaft = roundedBox(0.3, 0.012, 0.028, 0.005, 2);
-  g.add(mesh(shaft, M.steel));
-  // open end
-  const head = new THREE.Shape();
-  head.absarc(0, 0, 0.032, 0, Math.PI * 2, false);
-  const jaw = new THREE.Path();
-  jaw.moveTo(0.04, -0.012);
-  jaw.lineTo(0.0, -0.012);
-  jaw.lineTo(0.0, 0.012);
-  jaw.lineTo(0.04, 0.012);
-  head.holes.push(jaw);
-  const hg = new THREE.ExtrudeGeometry(head, { depth: 0.012, bevelEnabled: true, bevelSize: 0.002, bevelThickness: 0.002, bevelSegments: 1 });
-  hg.rotateX(Math.PI / 2);
-  hg.translate(0.17, 0.006, 0);
-  g.add(mesh(hg, M.steel));
-  const ring = new THREE.TorusGeometry(0.024, 0.009, 8, 20).rotateX(Math.PI / 2).translate(-0.17, 0, 0);
-  g.add(mesh(ring, M.steel));
+  const flat = (shape, t) => {
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: t - 0.002, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.001, bevelSegments: 1, curveSegments: 16 });
+    return geo.translate(0, 0, -(t - 0.002) / 2).rotateX(-Math.PI / 2);
+  };
+  // shaft
+  const secs = [];
+  for (let k = 0; k <= 8; k++) {
+    const t = k / 8,
+      x = -0.13 + t * 0.26;
+    const a = 0.0095 - 0.002 * Math.sin(t * Math.PI);
+    secs.push(superSection(V(x, 0, 0), V(0, 0, 1), V(0, 1, 0), a, 0.0035, 4, 16));
+  }
+  g.add(mesh(loftSections(secs, { capStart: true, capEnd: true }), M.steel));
+  // the box end: a ring round a twelve-point hole
+  const box = new THREE.Shape();
+  box.absarc(0, 0, 0.019, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2,
+      r = k % 2 ? 0.0118 : 0.0102;
+    if (k) hole.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    else hole.moveTo(r, 0);
+  }
+  hole.closePath();
+  box.holes.push(hole);
+  g.add(mesh(flat(box, 0.0085).rotateZ(0.26).translate(-0.15, 0.002, 0), M.steel));
+  // the open end
+  const a0 = 0.62,
+    R = 0.023;
+  const jaw = [];
+  for (let k = 0; k <= 20; k++) {
+    const a = a0 + (k / 20) * (Math.PI * 2 - 2 * a0);
+    jaw.push([Math.cos(a) * R, Math.sin(a) * R]);
+  }
+  jaw.push([Math.cos(a0) * R, -0.0083], [-0.004, -0.0083], [-0.004, 0.0083], [Math.cos(a0) * R, 0.0083]);
+  g.add(mesh(flat(shapeFromPoints(jaw), 0.0075).rotateY(0.26).translate(0.152, 0, 0), M.steel));
   grip(g, 'tool', 'wrap12', V(-0.075, 0, 0), RIGHT, UP);
   return centered(g);
 }
@@ -703,47 +818,71 @@ export function lantern() {
 }
 
 // ------------------------------------------------------------------ weapons
+// A flat part cut to an outline seen from the side (u = z forward, v = y up), t thick, centred on
+// x = 0, its edges rounded.
+function sidePlate(pts, t, bevel = 0.0012, holes = []) {
+  const s = shapeFromPoints(pts);
+  for (const h of holes) s.holes.push(new THREE.Path(h.map(([u, v]) => new THREE.Vector2(u, v))));
+  const geo = new THREE.ExtrudeGeometry(s, { depth: Math.max(1e-4, t - 2 * bevel), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+  geo.translate(0, 0, -(t - 2 * bevel) / 2);
+  return geo.rotateY(-Math.PI / 2);
+}
+
+// A .38 service revolver: the frame with its top strap round the cylinder window, a four-inch
+// barrel with rib, sight and ejector rod, the fluted cylinder (turning on its own axis as it is
+// fired), hammer, trigger in its guard, walnut stocks on a round butt.
 export function revolver() {
   const M = itemMats();
   const g = new THREE.Group();
-  // barrel along +z (muzzle forward)
-  g.add(mesh(new THREE.CylinderGeometry(0.0085, 0.0085, 0.15, 16).rotateX(Math.PI / 2).translate(0, 0.045, 0.1), M.blued));
-  g.add(mesh(roundedBox(0.018, 0.012, 0.15, 0.004, 1).translate(0, 0.057, 0.1), M.blued));
-  g.add(mesh(roundedBox(0.004, 0.012, 0.01, 0.001, 1).translate(0, 0.066, 0.17), M.blued));
-  g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 12).rotateX(Math.PI / 2).translate(0, 0.031, 0.09), M.blued));
-  // cylinder with flutes
-  const cyl = new THREE.CylinderGeometry(0.02, 0.02, 0.042, 6 * 4).rotateX(Math.PI / 2);
+  const by = 0.045; // bore axis
+  // barrel: tapered tube, rib, ramp sight, the bore, ejector rod under it
+  g.add(mesh(new THREE.CylinderGeometry(0.0078, 0.0086, 0.154, 18).rotateX(Math.PI / 2).translate(0, by, 0.101), M.blued));
+  g.add(mesh(roundedBox(0.009, 0.007, 0.148, 0.003, 1).translate(0, by + 0.0085, 0.1), M.blued));
+  g.add(mesh(sidePlate([[0.158, 0.0], [0.176, 0.0], [0.176, 0.009], [0.171, 0.009]], 0.004, 0.0006).translate(0, by + 0.011, 0), M.blued));
+  g.add(mesh(new THREE.CircleGeometry(0.0042, 12).translate(0, by, 0.1785), M.rubber));
+  g.add(mesh(new THREE.CylinderGeometry(0.0042, 0.0042, 0.09, 10).rotateX(Math.PI / 2).translate(0, by - 0.0135, 0.07), M.blued));
+  g.add(mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.012, 12).rotateX(Math.PI / 2).translate(0, by - 0.0135, 0.118), M.blued));
+  // frame, with the window the cylinder sits in
+  const frame = [
+    [0.031, 0.063], [-0.026, 0.063], [-0.032, 0.058], [-0.036, 0.048], [-0.04, 0.04], [-0.046, 0.033], [-0.056, 0.014], [-0.066, -0.016], [-0.074, -0.045],
+    [-0.078, -0.062], [-0.072, -0.068], [-0.048, -0.068], [-0.044, -0.062], [-0.04, -0.035], [-0.034, -0.008], [-0.03, 0.002], [-0.02, 0.004], [0.022, 0.004],
+    [0.028, 0.009], [0.031, 0.024], [0.032, 0.04],
+  ];
+  const window_ = [[-0.0215, 0.0135], [0.0215, 0.0135], [0.0215, 0.0555], [-0.0215, 0.0555]];
+  g.add(mesh(sidePlate(frame, 0.017, 0.0015, [window_]), M.blued));
+  // walnut stocks either side of the grip frame, a medallion in each
+  const stocks = [[-0.043, 0.03], [-0.054, 0.012], [-0.064, -0.016], [-0.071, -0.046], [-0.073, -0.06], [-0.05, -0.062], [-0.046, -0.056], [-0.042, -0.032], [-0.037, -0.006], [-0.034, 0.012], [-0.036, 0.026]];
+  g.add(mesh(sidePlate(stocks, 0.029, 0.005), M.walnut));
+  for (const s of [-1, 1]) g.add(mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.001, 12).rotateZ(Math.PI / 2).translate(s * 0.0146, -0.008, -0.052), M.brass));
+  // cylinder: fluted, six chambers at the front; built round its own axis
+  const cy = by - 0.0115;
+  const cyl = new THREE.CylinderGeometry(0.0195, 0.0195, 0.04, 36, 1).rotateX(Math.PI / 2);
   const p = cyl.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i),
       y = p.getY(i);
-    const a = Math.atan2(y, x);
     const r = Math.hypot(x, y);
     if (r > 0.015) {
-      const f = 1 - 0.12 * Math.max(0, Math.cos(a * 6));
+      const f = 1 - 0.14 * Math.max(0, Math.cos(Math.atan2(y, x) * 6 + Math.PI / 6)) ** 3;
       p.setX(i, x * f);
       p.setY(i, y * f);
     }
   }
   cyl.computeVertexNormals();
-  const cylMesh = mesh(cyl.translate(0, 0.04, 0.0), M.blued);
+  const cylMesh = mesh(cyl, M.blued);
+  for (let k = 0; k < 6; k++) {
+    const a = Math.PI / 2 + (k * Math.PI) / 3;
+    cylMesh.add(mesh(new THREE.CircleGeometry(0.0045, 10).translate(Math.cos(a) * 0.0115, Math.sin(a) * 0.0115, 0.0201), M.rubber));
+  }
+  cylMesh.position.set(0, cy, 0);
   cylMesh.name = 'cylinder';
   g.add(cylMesh);
-  // frame
-  g.add(mesh(roundedBox(0.016, 0.05, 0.07, 0.006, 2).translate(0, 0.035, -0.005), M.blued));
-  // hammer
-  g.add(mesh(roundedBox(0.006, 0.026, 0.012, 0.002, 1).translate(0, 0.062, -0.04), M.blued));
-  // trigger guard + trigger
-  g.add(mesh(new THREE.TorusGeometry(0.016, 0.003, 6, 16, Math.PI * 1.3).rotateY(Math.PI / 2).translate(0, 0.006, 0.0), M.blued));
-  g.add(mesh(roundedBox(0.004, 0.018, 0.005, 0.0015, 1).translate(0, 0.008, -0.002), M.steel));
-  // grip (walnut) angled back
-  const stocks = roundedBox(0.026, 0.085, 0.034, 0.01, 3);
-  stocks.rotateX(0.35);
-  stocks.translate(0, -0.024, -0.052);
-  g.add(mesh(stocks, M.walnut));
-  // butt cap
-  g.add(mesh(roundedBox(0.027, 0.006, 0.036, 0.002, 1).rotateX(0.35).translate(0, -0.064, -0.067), M.blued));
-  g.userData.muzzle = V(0, 0.045, 0.18);
+  // hammer, trigger, the guard round it, the cylinder latch
+  g.add(mesh(sidePlate([[-0.03, 0.05], [-0.034, 0.066], [-0.046, 0.074], [-0.051, 0.071], [-0.041, 0.062], [-0.037, 0.05]], 0.007, 0.0008), M.blued));
+  g.add(mesh(sidePlate([[-0.006, 0.006], [-0.004, -0.004], [-0.007, -0.016], [-0.012, -0.022], [-0.014, -0.019], [-0.011, -0.012], [-0.011, -0.002], [-0.012, 0.006]], 0.006, 0.0008), M.steel));
+  g.add(mesh(tubeAlong([V(0, 0.004, 0.008), V(0, -0.012, 0.002), V(0, -0.021, -0.013), V(0, -0.018, -0.026), V(0, -0.006, -0.033)], 0.0028, 6), M.blued));
+  g.add(mesh(roundedBox(0.003, 0.008, 0.014, 0.001, 1).translate(0.009, 0.042, -0.03), M.blued));
+  g.userData.muzzle = V(0, by, 0.18);
   grip(g, 'pistol', 'pistol', V(0, -0.022, -0.054), V(0, Math.cos(0.35), Math.sin(0.35)), V(-1, 0, 0.35));
   // support hand cupped round the shooting hand (aimed only)
   grip(g, 'pistol', 'wrap33', V(0.028, -0.04, -0.045), V(0, Math.cos(0.35), Math.sin(0.35)), V(1, -0.5, 0.35), 'grip2');
@@ -751,24 +890,51 @@ export function revolver() {
   return g;
 }
 
+// A side-by-side double: two barrels with the rib between them and a bead at the muzzle, the
+// action with its top lever, two triggers in the guard, a splinter forend and a straight English
+// stock ending in a rubber pad.
 export function shotgun() {
   const M = itemMats();
   const g = new THREE.Group();
-  for (const x of [-0.011, 0.011]) g.add(mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.6, 14).rotateX(Math.PI / 2).translate(x, 0.04, 0.32), M.blued));
-  g.add(mesh(roundedBox(0.016, 0.006, 0.6, 0.002, 1).translate(0, 0.053, 0.32), M.blued));
-  g.add(mesh(roundedBox(0.04, 0.03, 0.22, 0.008, 2).translate(0, 0.022, 0.24), M.walnut));
-  g.add(mesh(roundedBox(0.044, 0.05, 0.1, 0.006, 2).translate(0, 0.035, -0.0), M.steel));
-  // stock
-  const secs = [];
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const z = -0.05 - t * 0.36;
-    const y = 0.02 - t * 0.07;
-    secs.push(superSection(V(0, y, z), V(1, 0, 0), V(0, 1, 0), 0.02 + 0.005 * t, 0.025 + 0.045 * t, 3, 16));
+  const by = 0.04;
+  for (const x of [-0.0105, 0.0105]) {
+    g.add(mesh(new THREE.CylinderGeometry(0.0102, 0.0108, 0.59, 16).rotateX(Math.PI / 2).translate(x, by, 0.335), M.blued));
+    g.add(mesh(new THREE.CircleGeometry(0.0085, 12).translate(x, by, 0.6305), M.rubber));
   }
-  g.add(mesh(loftSections(secs, { capStart: true, capEnd: true }), M.walnut));
-  g.add(mesh(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI * 1.3).rotateY(Math.PI / 2).translate(0, -0.005, 0.02), M.blued));
-  g.userData.muzzle = V(0, 0.04, 0.63);
+  g.add(mesh(roundedBox(0.009, 0.006, 0.59, 0.002, 1).translate(0, by + 0.0105, 0.335), M.blued));
+  g.add(mesh(roundedBox(0.008, 0.006, 0.5, 0.002, 1).translate(0, by - 0.0105, 0.29), M.blued));
+  g.add(mesh(new THREE.SphereGeometry(0.0022, 8, 6).translate(0, by + 0.0145, 0.622), M.brass));
+  // the action
+  const act = [[0.045, 0.055], [-0.015, 0.055], [-0.03, 0.05], [-0.045, 0.035], [-0.05, 0.012], [-0.04, -0.002], [0.015, -0.002], [0.04, 0.012], [0.045, 0.025]];
+  g.add(mesh(sidePlate(act, 0.042, 0.003), M.steel));
+  g.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.043, 12).rotateZ(Math.PI / 2).translate(0, 0.006, 0.04), M.steel));
+  g.add(mesh(roundedBox(0.008, 0.006, 0.045, 0.002, 1).rotateY(0.35).translate(0.006, 0.058, -0.03), M.blued));
+  g.add(mesh(roundedBox(0.006, 0.004, 0.012, 0.0015, 1).translate(0, 0.057, -0.055), M.steel));
+  // guard and two triggers
+  g.add(mesh(tubeAlong([V(0, -0.002, 0.012), V(0, -0.024, 0.0), V(0, -0.03, -0.03), V(0, -0.018, -0.06), V(0, -0.006, -0.075)], 0.0028, 6), M.blued));
+  for (const z of [-0.012, -0.03]) g.add(mesh(sidePlate([[z + 0.003, -0.002], [z + 0.004, -0.012], [z, -0.022], [z - 0.003, -0.02], [z - 0.0005, -0.012], [z - 0.001, -0.002]], 0.005, 0.0007), M.steel));
+  // splinter forend under the barrels
+  const fsecs = [];
+  for (let k = 0; k <= 6; k++) {
+    const t = k / 6,
+      z = 0.055 + t * 0.25;
+    fsecs.push(superSection(V(0, 0.024 - 0.003 * t, z), V(1, 0, 0), V(0, 1, 0), 0.02 - 0.004 * t, 0.013 - 0.003 * t, 2.6, 18));
+  }
+  g.add(mesh(loftSections(fsecs, { capStart: true, capEnd: true }), M.walnut));
+  // stock: thin at the wrist, deepening to the butt, dropping away from the line of the barrels
+  const ssecs = [];
+  for (let k = 0; k <= 10; k++) {
+    const t = k / 10,
+      z = -0.045 - t * 0.37;
+    const top = 0.05 - 0.03 * t,
+      bot = 0.004 - 0.105 * t ** 1.1;
+    ssecs.push(superSection(V(0, (top + bot) / 2, z), V(1, 0, 0), V(0, 1, 0), 0.016 + 0.007 * t, (top - bot) / 2, 2.4, 20));
+  }
+  g.add(mesh(loftSections(ssecs, { capStart: true, capEnd: true }), M.walnut));
+  const last = ssecs[ssecs.length - 1];
+  const pad = last.map((q) => q.clone().add(V(0, 0, -0.014)));
+  g.add(mesh(loftSections([last.map((q) => q.clone().add(V(0, 0, 0.001))), pad], { capStart: true, capEnd: true }), M.rubber));
+  g.userData.muzzle = V(0, by, 0.63);
   grip(g, 'rifle', 'pistol', V(0, -0.004, -0.08), V(0, 0.9, -0.42), V(-1, 0, 0.35));
   grip(g, 'rifle', 'wrap24', V(0, 0.012, 0.27), V(0, 0, 1), V(0.15, -1, 0), 'grip2');
   return g;
@@ -997,34 +1163,12 @@ export function sandbag() {
 }
 
 // ------------------------------------------------------------------ big things to carry
-// A CRT television in a wood cabinet: the bezel and a bulging screen, the channel and volume
-// knobs, the speaker slots, rabbit ears on top. Carried in both arms.
+// A CRT television (the same set as stands in the houses): wood or plastic case tapering back,
+// the bulging screen, dials and grille, rabbit ears. Carried in both arms.
 export function tv() {
-  const M = itemMats();
-  if (!M.tvBezel) {
-    M.tvBezel = new THREE.MeshStandardMaterial({ color: 0x1c1b1a, roughness: 0.55 });
-    M.tvGlass = new THREE.MeshPhysicalMaterial({ color: 0x1e2522, roughness: 0.12, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 });
-  }
   const g = new THREE.Group();
-  // cabinet: wood sides and top, the tube's housing tapering to the back
-  g.add(mesh(roundedBox(0.56, 0.44, 0.3, 0.02, 3).translate(0, 0.22, 0.03), M.walnut));
-  g.add(mesh(new THREE.CylinderGeometry(0.12, 0.2, 0.16, 4, 1).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0.23, -0.19), M.tvBezel));
-  // front: bezel, screen (a shallow dome), control panel on the right
-  g.add(mesh(roundedBox(0.52, 0.4, 0.02, 0.012, 2).translate(0, 0.22, 0.185), M.tvBezel));
-  const scr = new THREE.SphereGeometry(0.5, 24, 16, Math.PI / 2 - 0.36, 0.72, Math.PI / 2 - 0.3, 0.6);
-  scr.translate(0, 0, -0.5 + 0.012);
-  scr.scale(1, 1, 1);
-  g.add(mesh(scr.translate(-0.06, 0.225, 0.195), M.tvGlass));
-  for (let k = 0; k < 2; k++) {
-    const knob = latheY([[0.022, 0], [0.022, 0.016], [0.017, 0.022], [0, 0.022]], 16);
-    knob.rotateX(Math.PI / 2).translate(0.2, 0.32 - k * 0.075, 0.195);
-    g.add(mesh(knob, M.darkSteel));
-  }
-  for (let k = 0; k < 6; k++) g.add(mesh(new THREE.BoxGeometry(0.06, 0.006, 0.004).translate(0.2, 0.16 - k * 0.014, 0.197), M.rubber));
-  // rabbit ears
-  g.add(mesh(new THREE.SphereGeometry(0.03, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.44, 0.02), M.tvBezel));
-  for (const s of [-1, 1]) g.add(mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.36, 6).translate(0, 0.18, 0).rotateZ(s * 0.5).translate(0, 0.45, 0.02), M.steel));
-  grip(g, 'side', 'wrap12', V(0, 0.44, 0.03), RIGHT, V(0, 0, 1));
+  for (const [geo, m] of crtTV(mulberry32(5), { broken: false, aerial: true })) g.add(mesh(geo, m));
+  grip(g, 'side', 'wrap12', V(0, 0.5, 0.0), RIGHT, V(0, 0, 1));
   return centered(g);
 }
 
@@ -1059,6 +1203,7 @@ export const MODEL_BUILDERS = {
   plate: (id, variant) => plateModel(id, variant),
   note,
   sponge,
+  wireBrush,
   sprayPaint,
   cigarettes,
   coffee,

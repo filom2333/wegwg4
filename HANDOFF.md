@@ -708,14 +708,52 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
   The hotspot had been 5-6 cm off the body. `fuelTank` is detailed.
 - Power windows: armrest switches (`windowFL`/`windowFR`), door glass meshes slide down
   (`findWindows`, `Car.toggleWindow`).
-- Mirrors (`vehicle/mirrors.js`): door mirrors and the inside one show a render from the eye's
-  reflection (off-axis frustum clipped at the glass), one mirror per frame, only in the car you
-  sit in; aimed from the driver's eye at build (`look`), door mirrors convex (`wide`); E on a
-  mirror then the mouse aims it; Custom setting `mirrors` (off on Low).
+- Mirrors: the live car mirrors (render from the eye's reflection, aimed with the mouse, a
+  Custom setting) were removed at the player's request (24.10): the mirror housings and glass are
+  just part of the car models now.
 - Engine bay (`bayDetails`): coolant tank (level follows coolant), brake fluid, washer, fuse box,
   dipstick. `wear.js`: parts darken and rust with their condition.
 - HUD: painted big type (gradient + sheet grain, drop-shadow) and worn plates with a yellow edge
   behind the objective and the target card.
+
+### Session of 24.10 (same branch, PR #11) — the user's long list
+- **Main car is now the '86 Kiri** (`src/vehicle/kiri86`, converter `tools/cars/kiri86.py`;
+  "Kiri '86 - Low poly model" by Daniel Zhabotinsky, CC-BY-4.0, same author/build as the '88
+  sedan). The user rejected the W203's model (poor cabin, rear bench merged into the trim); the
+  W203 stays in CAR_TYPES for old saves but is out of CAR_TYPE_LIST and the defaults (main.js,
+  game.js, ui.js trip sheet, items.js). The converter reads .glb now (`gltfio.load`).
+  Source found via Objaverse (Hugging Face, `allenai/objaverse` object-paths.json.gz maps
+  Sketchfab uids to glbs; Sketchfab's search API works without a token but downloads don't).
+  Same author, same structure, also downloaded and checked: Fairheaven SW '84 (wagon), Negotiator
+  '80, Fairheaven LT '80, Lasley '67, Doutrive '78 (uids in the scratch search; easy next cars).
+  Kiri: seats whole (cushion+back+headrest per front seat, whole rear bench), source pedals and
+  gear lever, source battery and air box are the battery/airfilter parts; cluster laid out as its
+  binnacle (face z = 0.513); everything procedural checked under the bonnet (rays up from each
+  vertex against the bonnet's underside — the user saw plug leads through it once).
+- `type.PIECES` + `imported/pieces.js`: move connected pieces / triangles between parts at load.
+- Sedan88: cluster fills its whole binnacle (oil/volt small dials added: `gauges.js`, `car.js`);
+  cowl follows the bonnet crown. W203: filler cut over the model's own flap.
+- Selection outline thinner; interaction card and objective smaller, two-tone.
+- **Abandoned cars are real cars** (`Fleet.placeHulk`, `poi.js addWreck` now only records spots):
+  random type, stripped in assembly order with keep 0.12-0.4 (one in twenty nearly whole: 0.9),
+  rust 0.55-0.95, saved per `poiKey:spot` in `fleet.hulkRecords` (serialized as `hulks`). One
+  placed per frame. Cluster faces/lamp textures shared per type (`cluster.js FACES`).
+- **Rust**: `Car.rust` → paint weathering `uRust` (paint takes rust colour now), grows slowly
+  (more in rain), saved; new runs start at 0.16-0.28. **Wire brush** item (`wireBrush`, def
+  `derust`): hold LMB on the car to scrub it off; in the starter garage and tool loot.
+- **Swappable steering wheels** (tunes `steeringWheel`: sport, wood, dish, classic — same rim
+  radius as the car's own) and **front seats** (tunes `seat`: bucket, recliner, sheepskin, made
+  to the seat slot's box). Loot ids `part:steeringWheel:<t>`, `part:seat_FL:<t>`. A tuned part's
+  looks now come off with it (`Car.setInstalled` refreshes when it had a tune).
+- Shop cooler: doors are frames round clear glass (the solid door panel was the "boards" the
+  user saw), shelves mostly empty; what's on them is real loot.
+- Vagrants: arms modelled in an A-pose and lowered by an `armRoot` bone after binding
+  (`characters.js humanJoints`), so sleeves/hands no longer fuse with the coat and pockets.
+- Title screen: nightpass, overlook, winterdusk, fogroad (`tools/promo/lobbyScenes.mjs`, with the
+  Kiri). How to play: game-style tips carousel (`ui.showHowTo`) with in-game shots per language
+  (`tools/promo/howtoShots.mjs` → public/howto/<lang>/). Trip-sheet photo `car_kiri86.webp`
+  (`tools/promo/carPhotos.mjs`).
+- The user will send pictures of the procedural props they dislike (toilet etc.) — redo those.
 
 ### Still open from the user's lists
 1. More detailed props (the mailbox is redone; other low-detail props remain).
@@ -742,3 +780,17 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
 4. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
    this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
    or remove by absolute path).
+
+### Later on 24.10: models, mirrors, abandonment
+- Procedural furniture rebuilt (`world/buildings/furniture.js`): real shapes (lofted toilet,
+  pedestal basin, claw-foot tub, hollow kitchen cabinets with a real sink, enamel range, open
+  fridge, cushioned sofas, CRT TV, beds, wardrobes, chests, desks, shop shelving picked bare).
+  No more painted-on shop products (the goods atlas is gone); shop/drinks/storage loot rarer.
+- Weak items rebuilt (`items/itemModels.js`): jerry can, revolver (cylinder turns on its own
+  axis now), shotgun, spanner, steak, elastic bandage, jack, carried TV. Car seat swaps rebuilt.
+- Live car mirrors removed at the player's request; static silvered glass in their place.
+- Junk (`world/buildings/clutter.js`): `clutterRoom` (houses, per room type, sand drifts and glass
+  at outside doors/windows, floor grime, ceiling holes), `clutterYard` (round houses),
+  `clutterArea` + `JUNK` sets for garages, gas stations (shop, forecourt `lot`, back lot), motels
+  (rooms, walkway, office), diners, barns, trailers. Houses also get boarded windows (`boardUp`).
+- Next: outposts/ruins/camps/ranches sets, the rare trader at gas stations, more yard features.

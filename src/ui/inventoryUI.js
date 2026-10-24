@@ -25,7 +25,7 @@ export function describeEntry(id, state = {}, ammo = {}) {
   const def = ITEMS[id];
   if (!def) return { title: id, lines: [] };
   const lines = [];
-  if (def.liquid) lines.push(`${(state.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${state.liquidType === 'fuel' ? 'fuel' : state.liquidType || def.liquid.type}`);
+  if (def.liquid) lines.push(`${(state.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${state.liquidType || def.liquid.type}`);
   if (def.consume) {
     const c = def.consume;
     const parts = [];

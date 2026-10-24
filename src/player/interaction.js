@@ -303,13 +303,6 @@ export class Interaction {
     this.driverReach(hs);
     if (h === 'ignition') return this.turnKey(car);
     if (h === 'fuel') return car.useFiller();
-    if (h === 'mirrorL' || h === 'mirrorR' || h === 'mirrorC') {
-      // the mouse aims the mirror until E again
-      this.aimingMirror = h.slice(6);
-      g.player.lookFrozen = true;
-      g.hud && g.hud.toast('Move the mouse to aim the mirror · E when done');
-      return;
-    }
     if (h === 'windowFL' || h === 'windowFR') return car.toggleWindow(h === 'windowFL' ? 'door_FL' : 'door_FR');
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
@@ -409,21 +402,6 @@ export class Interaction {
     }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.updateKey(dt);
-    // aiming a mirror: the mouse turns it, E (or getting out) ends it
-    if (this.aimingMirror) {
-      if (!p.seat || !g.car || blocked) {
-        this.aimingMirror = null;
-        p.lookFrozen = false;
-      } else {
-        g.mirrors && g.mirrors.aim(g.car, this.aimingMirror, -input.mouse.dx * 0.0025, -input.mouse.dy * 0.0025);
-        g.hud && g.hud.setPrompts && g.hud.setPrompts([['Mouse', 'Aim the mirror'], ['E', 'Done']]);
-        if (input.wasPressed('interact') || input.mousePressed(0)) {
-          this.aimingMirror = null;
-          p.lookFrozen = false;
-        }
-        return;
-      }
-    }
     // pulling a trailer by its drawbar for as long as E is held
     if (this.pullingTrailer) {
       const tr = this.pullingTrailer;
@@ -616,7 +594,7 @@ export class Interaction {
     let sub = '';
     let bar = null;
     if (def.liquid) {
-      sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType === 'fuel' ? 'fuel' : s.liquidType}`;
+      sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
       bar = (s.liquid || 0) / def.liquid.cap;
     } else if (def.consume) {
       const parts = [];
@@ -648,6 +626,7 @@ export class Interaction {
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
+    if (def.derust) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Scrub off the rust (hold)' : 'Look at the car to scrub it']);
     if (def.paint) {
       const car = this.game.car;
       if (t && t.kind === 'part' && car && car.paintable(t.part)) out.push(['LMB', `Paint the ${car.PARTS[t.part].label.toLowerCase()} (hold)`]);
@@ -842,8 +821,6 @@ export class Interaction {
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
           prompts.push(['E', open ? 'Close the door' : 'Open the door']);
-        } else if (h.id === 'mirrorL' || h.id === 'mirrorR' || h.id === 'mirrorC') {
-          prompts.push(['E', 'Aim it']);
         } else if (h.id === 'windowFL' || h.id === 'windowFR') {
           const door = h.id === 'windowFL' ? 'door_FL' : 'door_FR';
           info.sub = h.id === 'windowFL' ? 'Driver' : 'Passenger';
@@ -1449,6 +1426,22 @@ export class Interaction {
             this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
           }
         }
+      } else if (def.derust) {
+        // a wire brush: slow, loud, and the rust comes off a little at a time
+        const car = this.game.car;
+        const t = this.target;
+        const onCar = t && (t.kind === 'part' || t.kind === 'hotspot');
+        if (input.mouseDown(0) && onCar && car && car.rust > 0) {
+          car.rust = Math.max(0, car.rust - dt * 0.012);
+          car.applyWeather();
+          this.useAnim = Math.max(this.useAnim, 0.6 + 0.35 * Math.sin(this.game.time * 22));
+          this.cleanSnd = (this.cleanSnd || 0) - dt;
+          if (this.cleanSnd <= 0) {
+            this.cleanSnd = 0.22;
+            // (a dry scratch each stroke)
+            this.game.audio && this.game.audio.play('step', { surface: 'gravel', volume: 0.22 });
+          }
+        }
       } else if (def.paint) this.updateSpray(it, dt);
       else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
@@ -1498,7 +1491,7 @@ export class Interaction {
     let kind = '';
     if (def.weapon) kind = '';
     else if (def.melee) kind = 'swing';
-    else if (def.clean) kind = 'wipe';
+    else if (def.clean || def.derust) kind = 'wipe';
     else if (def.paint) kind = 'spray';
     else if (def.liquid) kind = this.pourKind || 'drink';
     else if (def.consume) kind = def.consume.food > 0 ? 'eat' : def.consume.water > 0 && !def.consume.smoke ? 'drink' : 'use';

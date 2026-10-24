@@ -4,7 +4,6 @@
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
 import { distance } from './core/gfx.js';
-import { Mirrors } from './vehicle/mirrors.js';
 import { LightPool } from './gfx/lightPool.js';
 import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
@@ -61,7 +60,6 @@ export class Game {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new Renderer(canvas, settings.data.quality);
-    this.mirrors = new Mirrors(this);
     this.scene = new THREE.Scene();
     this.worldGroup = new THREE.Group();
     this.worldGroup.name = 'world';
@@ -102,7 +100,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
-  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'w203', trailer = false, onProgress = () => {} } = {}) {
+  async init({ seed = 1234, difficulty = 'normal', start = 'assembled', time = 8.5, weather = 'clear', startZ = 0, load = null, attract = false, car: carChoice = 'kiri86', trailer = false, onProgress = () => {} } = {}) {
     if (load) {
       seed = load.seed;
       difficulty = load.difficulty;
@@ -186,7 +184,8 @@ export class Game {
     onProgress('Building the cars', 0.35);
     await tick();
     this.fleet = new Fleet(this);
-    const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [];
+    // (a retired type a save holds, or one asked for by name, is loaded too)
+    const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [carChoice];
     await this.fleet.preload(this.renderer.renderer, saved);
     this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
     // spawn
@@ -216,6 +215,9 @@ export class Game {
         })(),
         state: load ? load.car : null,
       });
+      // a new run's car has stood a while: a little rust about the sills and arches
+      if (!load) car.rust = 0.16 + mulberry32((this.seed | 0) * 17 + 3)() * 0.12;
+      car.applyWeather();
       this.fleet.setCurrent(car);
     }
     // a trailer stands beside the homestead garage; restored ones come back where they were left
@@ -677,6 +679,7 @@ export class Game {
       ['cannedBeans', gx - 3.7, 1.62, gz - 1.2, null],
       ['lantern', gx + 3.48, 1.08, gz + 2.38, null],
       ['sprayPaint', gx - 3.7, 1.62, gz - 0.2, null],
+      ['wireBrush', gx - 2.6, 0.95, gz - 3.9, null],
       ['drum', gx + 3.2, 0.05, gz - 3.6, { liquid: 18, liquidType: 'fuel' }],
       ['tv', gx + 1.6, 0.05, gz - 3.75, null],
     ];
@@ -916,8 +919,6 @@ export class Game {
       gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
     }
     this.lights.update(cam);
-    // the mirrors of the car you sit in see the frame before it is drawn
-    if (this.mirrors) this.mirrors.update();
     this.renderer.render(dt);
   }
 
