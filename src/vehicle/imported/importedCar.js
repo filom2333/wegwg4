@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { roundedBox } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { applyWeathering, weatheringUniforms } from '../weathering.js';
-import { drawSpeedoFace, drawSmallFace } from '../gauges.js';
+import { buildCluster } from '../cluster.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/';
@@ -494,149 +494,11 @@ export class ImportedCarModel {
 
   // Needles laid over the dashboard texture's own dials (type.GAUGES), optionally on a painted
   // face, plus generator / oil lamps.
-  // The instrument cluster, built over the model's own (painted, still) one: a dark panel with
-  // the speedometer in the middle (with the speed in figures on a small display), the rev
-  // counter beside it, fuel and coolant gauges on the other side, and the warning lamps; lit
-  // from behind with the ignition. GAUGES gives the speedometer's centre, facing and size; the
-  // other dials sit by offsets in its plane (+x toward the driver's right).
+  // The instrument cluster (cluster.js), in the hood of the source's dash.
   addGauges() {
-    const G = this.type.GAUGES;
-    if (!G) return;
-    const M = this.mats;
-    const g = new THREE.Group();
-    g.name = 'cluster';
-    const s = G.speedo;
-    g.position.copy(V(...s.center)).addScaledVector(V(...s.normal), 0.003);
-    g.quaternion.copy(faceQuat(V(...s.normal)));
-    const R = s.radius;
-    const faces = [];
-    const faceMat = (draw) => {
-      const c = makeCanvas(512, 512);
-      draw(c.getContext('2d'), 512);
-      const tex = canvasTexture(c, { wrap: false });
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const m = M.gauge.clone();
-      m.map = tex;
-      m.emissiveMap = tex;
-      faces.push(m);
-      return m;
-    };
-    // the panel behind the dials (hides the model's painted cluster) and a chrome ring per dial
-    if (G.panel) {
-      const [pw, ph, px = 0, py = 0] = G.panel;
-      const shape = new THREE.Shape();
-      const r = ph * 0.32;
-      shape.moveTo(-pw / 2 + r, -ph / 2);
-      shape.lineTo(pw / 2 - r, -ph / 2);
-      shape.quadraticCurveTo(pw / 2, -ph / 2, pw / 2, -ph / 2 + r);
-      shape.lineTo(pw / 2, ph / 2 - r);
-      shape.quadraticCurveTo(pw / 2, ph / 2, pw / 2 - r, ph / 2);
-      shape.lineTo(-pw / 2 + r, ph / 2);
-      shape.quadraticCurveTo(-pw / 2, ph / 2, -pw / 2, ph / 2 - r);
-      shape.lineTo(-pw / 2, -ph / 2 + r);
-      shape.quadraticCurveTo(-pw / 2, -ph / 2, -pw / 2 + r, -ph / 2);
-      const panel = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), M.black);
-      panel.position.set(px, py, -0.0008);
-      g.add(panel);
-    }
-    const ring = (x, y, r) => {
-      const m = new THREE.Mesh(new THREE.RingGeometry(r, r * 1.07, 48), M.chrome);
-      m.position.set(x, y, 0.0006);
-      g.add(m);
-    };
-    const needles = {};
-    const needle = (name, len, w, at = [0, 0], tail = 0.12) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(at[0], at[1], 0.0015);
-      const geo = new THREE.PlaneGeometry(w, len).translate(0, len / 2 - len * tail, 0);
-      pivot.add(new THREE.Mesh(geo, M.needle));
-      const cap = new THREE.Mesh(new THREE.CircleGeometry(w * 1.4, 16), M.black);
-      cap.position.z = 0.0008;
-      pivot.add(cap);
-      g.add(pivot);
-      needles[name] = pivot;
-      return pivot;
-    };
-    // speedometer
-    const small = G.small || [];
-    const ownFuel = small.some((d) => d.kind === 'fuel');
-    if (s.face) {
-      const big = this.type.SPEEDO_MAX > 160;
-      g.add(new THREE.Mesh(new THREE.CircleGeometry(R, 48), faceMat((ctx, S) => drawSpeedoFace(ctx, S, this.type.SPEEDO_MAX, s.lcd ? null : s.odo ?? '0 4 1 2 7 3', { major: big ? 40 : 20, minor: big ? 10 : 5, fuel: !ownFuel }))));
-      ring(0, 0, R);
-    }
-    needle('speed', R * 0.86, R * 0.05);
-    if (G.fuel && !ownFuel) needle('fuel', G.fuel.radius * 0.8, G.fuel.radius * 0.08, G.fuel.offset);
-    // the speed in figures, low in the dial
-    if (s.lcd) {
-      const c = makeCanvas(256, 96);
-      const tex = canvasTexture(c, { wrap: false });
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const mat = new THREE.MeshStandardMaterial({ color: 0x050805, map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0, roughness: 0.3 });
-      const lcd = new THREE.Mesh(new THREE.PlaneGeometry(R * 0.62, R * 0.233), mat);
-      lcd.position.set(0, -R * 0.42, 0.001);
-      g.add(lcd);
-      g.userData.lcd = { canvas: c, tex, mat, shown: null };
-    }
-    // rev counter
-    if (G.tacho) {
-      const t = G.tacho;
-      const red = this.type.DYNAMICS.redline / 1000;
-      const face = new THREE.Mesh(new THREE.CircleGeometry(t.radius, 48), faceMat((ctx, S) => drawSpeedoFace(ctx, S, 8, null, { minor: 0.5, major: 1, unit: 'x1000 rpm', fuel: false, red })));
-      face.position.set(t.offset[0], t.offset[1], 0);
-      g.add(face);
-      ring(t.offset[0], t.offset[1], t.radius);
-      needle('rpm', t.radius * 0.86, t.radius * 0.05, t.offset);
-    }
-    // fuel and coolant temperature
-    for (const d of small) {
-      const face = new THREE.Mesh(new THREE.CircleGeometry(d.radius, 40), faceMat((ctx, S) => drawSmallFace(ctx, S, d.kind)));
-      face.position.set(d.offset[0], d.offset[1], 0);
-      g.add(face);
-      ring(d.offset[0], d.offset[1], d.radius);
-      // the pivot sits low in the dial (the arc is across its top)
-      needle(d.kind, d.radius * 0.62, d.radius * 0.07, [d.offset[0], d.offset[1] - d.radius * 0.28], 0.08);
-    }
-    this.tachoFace = faces[1] || null;
-    // warning lamps: red for charge, oil, parking brake and heat, amber for fuel and the engine,
-    // green turn arrows, blue for the high beam
-    const lamps = {};
-    const L = G.lamps || {};
-    const lampAt = (name, col, at, geo) => {
-      const mat = M.lamp.clone();
-      mat.emissive.setHex(col);
-      mat.color.setHex(col).multiplyScalar(0.05);
-      mat.transparent = true;
-      mat.opacity = 0.9;
-      const l = new THREE.Mesh(geo, mat);
-      l.position.set(at[0], at[1], 0.0012);
-      g.add(l);
-      lamps[name] = mat;
-    };
-    lampAt('gen', 0xff2a10, L.gen || [-0.36 * R, -0.5 * R], new THREE.CircleGeometry(R * 0.06, 16));
-    lampAt('oil', 0xff3a10, L.oil || [0.36 * R, -0.5 * R], new THREE.CircleGeometry(R * 0.06, 16));
-    lampAt('park', 0xff2a10, L.park || [0, -0.72 * R], new THREE.RingGeometry(R * 0.045, R * 0.065, 16));
-    lampAt('hot', 0xff2a10, L.hot || [-0.62 * R, -0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
-    lampAt('lowFuel', 0xffa010, L.lowFuel || [0.62 * R, -0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
-    lampAt('beam', 0x3070ff, L.beam || [0, 0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
-    for (const [name, sg] of [
-      ['turnL', -1],
-      ['turnR', 1],
-    ]) {
-      const a = R * 0.1;
-      const sh = new THREE.Shape();
-      sh.moveTo(sg * a, 0);
-      sh.lineTo(-sg * a * 0.4, a * 0.75);
-      sh.lineTo(-sg * a * 0.4, -a * 0.75);
-      sh.closePath();
-      lampAt(name, 0x30ff60, [sg * 0.32 * R, 0.4 * R], new THREE.ShapeGeometry(sh));
-      lamps[name].color.setHex(0x0a2a12);
-    }
-    g.userData.needles = needles;
-    g.userData.lamps = lamps;
-    g.userData.faces = faces;
-    this.parts.body.inner.add(g);
-    this.cluster = g;
+    if (!this.type.GAUGES) return;
+    this.cluster = buildCluster(this, this.type.GAUGES, this.mats, this.type);
+    this.tachoFace = null;
   }
 
   // Each door's glass (its own mesh in the source) and how far it winds down into the door.

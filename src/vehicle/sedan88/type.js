@@ -182,8 +182,8 @@ export const SEDAN88 = {
     panel: [0.29, 0.12, 0, -0.002],
     tacho: { offset: [-0.094, -0.002], radius: 0.041 },
     small: [
-      { kind: 'fuel', offset: [0.09, 0.016], radius: 0.026 },
-      { kind: 'temp', offset: [0.09, -0.032], radius: 0.026 },
+      { kind: 'fuel', offset: [0.09, 0.02], radius: 0.025 },
+      { kind: 'temp', offset: [0.09, -0.036], radius: 0.025 },
     ],
   },
   STEREO,

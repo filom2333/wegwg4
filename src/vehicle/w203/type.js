@@ -202,8 +202,8 @@ export const W203 = {
     panel: [0.27, 0.118, 0, -0.004],
     tacho: { offset: [-0.088, -0.004], radius: 0.04 },
     small: [
-      { kind: 'fuel', offset: [0.086, 0.018], radius: 0.026 },
-      { kind: 'temp', offset: [0.086, -0.032], radius: 0.026 },
+      { kind: 'fuel', offset: [0.086, 0.021], radius: 0.025 },
+      { kind: 'temp', offset: [0.086, -0.035], radius: 0.025 },
     ],
   },
   STEREO,
