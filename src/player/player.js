@@ -188,7 +188,7 @@ export class Player {
     const inv = settings.data.invertY ? -1 : 1;
     const look = !this.game.ui || !this.game.ui.blocksLook;
     const rotating = this.game.interaction && this.game.interaction.rotating;
-    if (look && !rotating) {
+    if (look && !rotating && !this.lookFrozen) {
       if (this.lying) {
         this.lieYaw = clamp(this.lieYaw - input.mouse.dx * sens, -1.4, 1.4);
         this.liePitch = clamp(this.liePitch - input.mouse.dy * sens * inv, -0.1, 1.5);

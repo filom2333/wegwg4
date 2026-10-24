@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { roundedBox } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { applyWeathering, weatheringUniforms } from '../weathering.js';
-import { drawSpeedoFace } from '../gauges.js';
+import { drawSpeedoFace, drawSmallFace } from '../gauges.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/';
@@ -210,6 +210,8 @@ export class ImportedCarModel {
     this.addSteeringWheel();
     this.addWheels();
     this.addGauges();
+    this.addFiller();
+    this.findWindows();
     this.addStereo();
     this.addDomeLamp();
     if (type.extras) type.extras(this, mats);
@@ -492,6 +494,11 @@ export class ImportedCarModel {
 
   // Needles laid over the dashboard texture's own dials (type.GAUGES), optionally on a painted
   // face, plus generator / oil lamps.
+  // The instrument cluster, built over the model's own (painted, still) one: a dark panel with
+  // the speedometer in the middle (with the speed in figures on a small display), the rev
+  // counter beside it, fuel and coolant gauges on the other side, and the warning lamps; lit
+  // from behind with the ignition. GAUGES gives the speedometer's centre, facing and size; the
+  // other dials sit by offsets in its plane (+x toward the driver's right).
   addGauges() {
     const G = this.type.GAUGES;
     if (!G) return;
@@ -502,108 +509,209 @@ export class ImportedCarModel {
     g.position.copy(V(...s.center)).addScaledVector(V(...s.normal), 0.003);
     g.quaternion.copy(faceQuat(V(...s.normal)));
     const R = s.radius;
-    if (s.face) {
+    const faces = [];
+    const faceMat = (draw) => {
       const c = makeCanvas(512, 512);
-      drawSpeedoFace(c.getContext('2d'), 512, this.type.SPEEDO_MAX, s.odo ?? '0 4 1 2 7 3', { major: this.type.SPEEDO_MAX > 160 ? 20 : 20, minor: this.type.SPEEDO_MAX > 160 ? 10 : 5 });
+      draw(c.getContext('2d'), 512);
       const tex = canvasTexture(c, { wrap: false });
       tex.colorSpace = THREE.SRGBColorSpace;
-      M.gauge.map = tex;
-      M.gauge.emissiveMap = tex;
-      g.add(new THREE.Mesh(new THREE.CircleGeometry(R, 48), M.gauge));
+      const m = M.gauge.clone();
+      m.map = tex;
+      m.emissiveMap = tex;
+      faces.push(m);
+      return m;
+    };
+    // the panel behind the dials (hides the model's painted cluster) and a chrome ring per dial
+    if (G.panel) {
+      const [pw, ph, px = 0, py = 0] = G.panel;
+      const shape = new THREE.Shape();
+      const r = ph * 0.32;
+      shape.moveTo(-pw / 2 + r, -ph / 2);
+      shape.lineTo(pw / 2 - r, -ph / 2);
+      shape.quadraticCurveTo(pw / 2, -ph / 2, pw / 2, -ph / 2 + r);
+      shape.lineTo(pw / 2, ph / 2 - r);
+      shape.quadraticCurveTo(pw / 2, ph / 2, pw / 2 - r, ph / 2);
+      shape.lineTo(-pw / 2 + r, ph / 2);
+      shape.quadraticCurveTo(-pw / 2, ph / 2, -pw / 2, ph / 2 - r);
+      shape.lineTo(-pw / 2, -ph / 2 + r);
+      shape.quadraticCurveTo(-pw / 2, -ph / 2, -pw / 2 + r, -ph / 2);
+      const panel = new THREE.Mesh(new THREE.ShapeGeometry(shape, 6), M.black);
+      panel.position.set(px, py, -0.0008);
+      g.add(panel);
     }
+    const ring = (x, y, r) => {
+      const m = new THREE.Mesh(new THREE.RingGeometry(r, r * 1.07, 48), M.chrome);
+      m.position.set(x, y, 0.0006);
+      g.add(m);
+    };
     const needles = {};
-    const needle = (name, len, w, z, at = null) => {
+    const needle = (name, len, w, at = [0, 0], tail = 0.12) => {
       const pivot = new THREE.Group();
-      pivot.position.z = z;
-      if (at) pivot.position.set(at[0], at[1], z);
-      const geo = new THREE.PlaneGeometry(w, len).translate(0, len / 2 - len * 0.12, 0);
+      pivot.position.set(at[0], at[1], 0.0015);
+      const geo = new THREE.PlaneGeometry(w, len).translate(0, len / 2 - len * tail, 0);
       pivot.add(new THREE.Mesh(geo, M.needle));
+      const cap = new THREE.Mesh(new THREE.CircleGeometry(w * 1.4, 16), M.black);
+      cap.position.z = 0.0008;
+      pivot.add(cap);
       g.add(pivot);
       needles[name] = pivot;
       return pivot;
     };
-    needle('speed', R * 0.86, R * 0.05, 0.0015);
-    if (G.fuel) {
-      // fuel gauge: its own dial somewhere else on the panel, in the cluster's plane
-      const f = G.fuel;
-      needle('fuel', f.radius * 0.8, f.radius * 0.08, 0.0012, f.offset);
+    // speedometer
+    const small = G.small || [];
+    const ownFuel = small.some((d) => d.kind === 'fuel');
+    if (s.face) {
+      const big = this.type.SPEEDO_MAX > 160;
+      g.add(new THREE.Mesh(new THREE.CircleGeometry(R, 48), faceMat((ctx, S) => drawSpeedoFace(ctx, S, this.type.SPEEDO_MAX, s.lcd ? null : s.odo ?? '0 4 1 2 7 3', { major: big ? 40 : 20, minor: big ? 10 : 5, fuel: !ownFuel }))));
+      ring(0, 0, R);
     }
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(R * 0.07, 16), M.black);
-    cap.position.z = 0.0022;
-    g.add(cap);
-    if (G.tacho) {
-      // rev counter beside it, in the same plane
-      const t = G.tacho;
-      const tg = new THREE.Group();
-      tg.position.set(t.offset[0], t.offset[1], 0);
-      const c = makeCanvas(512, 512);
-      const red = this.type.DYNAMICS.redline / 1000;
-      drawSpeedoFace(c.getContext('2d'), 512, 8, null, { minor: 0.5, major: 1, unit: 'x1000 rpm', fuel: false, red });
+    needle('speed', R * 0.86, R * 0.05);
+    if (G.fuel && !ownFuel) needle('fuel', G.fuel.radius * 0.8, G.fuel.radius * 0.08, G.fuel.offset);
+    // the speed in figures, low in the dial
+    if (s.lcd) {
+      const c = makeCanvas(256, 96);
       const tex = canvasTexture(c, { wrap: false });
       tex.colorSpace = THREE.SRGBColorSpace;
-      const fm = M.gauge.clone();
-      fm.map = tex;
-      fm.emissiveMap = tex;
-      this.tachoFace = fm;
-      tg.add(new THREE.Mesh(new THREE.CircleGeometry(t.radius, 48), fm));
-      const pv = new THREE.Group();
-      pv.position.z = 0.0015;
-      pv.add(new THREE.Mesh(new THREE.PlaneGeometry(t.radius * 0.05, t.radius * 0.86).translate(0, t.radius * 0.86 * 0.38, 0), M.needle));
-      tg.add(pv);
-      g.add(tg);
-      needles.rpm = pv;
+      const mat = new THREE.MeshStandardMaterial({ color: 0x050805, map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0, roughness: 0.3 });
+      const lcd = new THREE.Mesh(new THREE.PlaneGeometry(R * 0.62, R * 0.233), mat);
+      lcd.position.set(0, -R * 0.42, 0.001);
+      g.add(lcd);
+      g.userData.lcd = { canvas: c, tex, mat, shown: null };
     }
+    // rev counter
+    if (G.tacho) {
+      const t = G.tacho;
+      const red = this.type.DYNAMICS.redline / 1000;
+      const face = new THREE.Mesh(new THREE.CircleGeometry(t.radius, 48), faceMat((ctx, S) => drawSpeedoFace(ctx, S, 8, null, { minor: 0.5, major: 1, unit: 'x1000 rpm', fuel: false, red })));
+      face.position.set(t.offset[0], t.offset[1], 0);
+      g.add(face);
+      ring(t.offset[0], t.offset[1], t.radius);
+      needle('rpm', t.radius * 0.86, t.radius * 0.05, t.offset);
+    }
+    // fuel and coolant temperature
+    for (const d of small) {
+      const face = new THREE.Mesh(new THREE.CircleGeometry(d.radius, 40), faceMat((ctx, S) => drawSmallFace(ctx, S, d.kind)));
+      face.position.set(d.offset[0], d.offset[1], 0);
+      g.add(face);
+      ring(d.offset[0], d.offset[1], d.radius);
+      // the pivot sits low in the dial (the arc is across its top)
+      needle(d.kind, d.radius * 0.62, d.radius * 0.07, [d.offset[0], d.offset[1] - d.radius * 0.28], 0.08);
+    }
+    this.tachoFace = faces[1] || null;
+    // warning lamps: red for charge, oil, parking brake and heat, amber for fuel and the engine,
+    // green turn arrows, blue for the high beam
     const lamps = {};
-    for (const [name, col, at] of [
-      ['gen', 0xff2a10, G.lamps ? G.lamps.gen : [-0.36 * R, -0.5 * R]],
-      ['oil', 0xff3a10, G.lamps ? G.lamps.oil : [0.36 * R, -0.5 * R]],
-    ]) {
+    const L = G.lamps || {};
+    const lampAt = (name, col, at, geo) => {
       const mat = M.lamp.clone();
       mat.emissive.setHex(col);
       mat.color.setHex(col).multiplyScalar(0.05);
       mat.transparent = true;
       mat.opacity = 0.9;
-      const l = new THREE.Mesh(new THREE.CircleGeometry(R * 0.06, 16), mat);
+      const l = new THREE.Mesh(geo, mat);
       l.position.set(at[0], at[1], 0.0012);
       g.add(l);
       lamps[name] = mat;
-    }
-    // green turn arrows high on the dial, the red parking brake lamp low between the others
+    };
+    lampAt('gen', 0xff2a10, L.gen || [-0.36 * R, -0.5 * R], new THREE.CircleGeometry(R * 0.06, 16));
+    lampAt('oil', 0xff3a10, L.oil || [0.36 * R, -0.5 * R], new THREE.CircleGeometry(R * 0.06, 16));
+    lampAt('park', 0xff2a10, L.park || [0, -0.72 * R], new THREE.RingGeometry(R * 0.045, R * 0.065, 16));
+    lampAt('hot', 0xff2a10, L.hot || [-0.62 * R, -0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
+    lampAt('lowFuel', 0xffa010, L.lowFuel || [0.62 * R, -0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
+    lampAt('beam', 0x3070ff, L.beam || [0, 0.62 * R], new THREE.CircleGeometry(R * 0.05, 16));
     for (const [name, sg] of [
       ['turnL', -1],
       ['turnR', 1],
     ]) {
-      const mat = M.lamp.clone();
-      mat.emissive.setHex(0x30ff60);
-      mat.color.setHex(0x0a2a12);
-      mat.transparent = true;
-      mat.opacity = 0.9;
       const a = R * 0.1;
       const sh = new THREE.Shape();
       sh.moveTo(sg * a, 0);
       sh.lineTo(-sg * a * 0.4, a * 0.75);
       sh.lineTo(-sg * a * 0.4, -a * 0.75);
       sh.closePath();
-      const l = new THREE.Mesh(new THREE.ShapeGeometry(sh), mat);
-      l.position.set(sg * 0.32 * R, 0.4 * R, 0.0012);
-      g.add(l);
-      lamps[name] = mat;
-    }
-    {
-      const mat = M.lamp.clone();
-      mat.emissive.setHex(0xff2a10);
-      mat.color.setHex(0xff2a10).multiplyScalar(0.05);
-      mat.transparent = true;
-      mat.opacity = 0.9;
-      const l = new THREE.Mesh(new THREE.RingGeometry(R * 0.045, R * 0.065, 16), mat);
-      l.position.set(0, -0.72 * R, 0.0012);
-      g.add(l);
-      lamps.park = mat;
+      lampAt(name, 0x30ff60, [sg * 0.32 * R, 0.4 * R], new THREE.ShapeGeometry(sh));
+      lamps[name].color.setHex(0x0a2a12);
     }
     g.userData.needles = needles;
     g.userData.lamps = lamps;
+    g.userData.faces = faces;
     this.parts.body.inner.add(g);
     this.cluster = g;
+  }
+
+  // Each door's glass (its own mesh in the source) and how far it winds down into the door.
+  findWindows() {
+    this.windows = {};
+    for (const id of ['door_FL', 'door_FR', 'door_RL', 'door_RR']) {
+      const part = this.parts[id];
+      const glass = part && part.inner.children.find((m) => m.name === id + ':glass');
+      if (!glass) continue;
+      glass.geometry.computeBoundingBox();
+      const b = glass.geometry.boundingBox;
+      this.windows[id] = { mesh: glass, drop: (b.max.y - b.min.y) * 0.95 };
+    }
+  }
+
+  // The fuel filler: a flap in the body's paint over a dark recess, hinged at its front edge,
+  // and in the recess the neck with its screw cap (FILLER: where on the body, the outward
+  // normal, the flap's size and corner radius, which side the hinge is: +1 toward the car's front
+  // in the flap's plane, -1 the other).
+  addFiller() {
+    const F = this.type.FILLER;
+    if (!F) return;
+    const M = this.mats;
+    const n = V(...F.normal).normalize();
+    const g = new THREE.Group();
+    g.name = 'filler';
+    g.position.copy(V(...F.pos)).addScaledVector(n, 0.002);
+    g.quaternion.copy(faceQuat(n));
+    const rr = (w, h, r) => {
+      const s = new THREE.Shape();
+      s.moveTo(-w / 2 + r, -h / 2);
+      s.lineTo(w / 2 - r, -h / 2);
+      s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+      s.lineTo(w / 2, h / 2 - r);
+      s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+      s.lineTo(-w / 2 + r, h / 2);
+      s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+      s.lineTo(-w / 2, -h / 2 + r);
+      s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+      return new THREE.ShapeGeometry(s, 6);
+    };
+    const [w, h] = F.size;
+    const r = F.corner ?? 0.02;
+    // the recess, the neck's steel ring and the dark mouth (seen with the cap off)
+    const pan = new THREE.Mesh(rr(w - 0.006, h - 0.006, Math.max(0.002, r - 0.003)), M.black);
+    pan.position.z = 0.0004;
+    g.add(pan);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.024, 0.033, 28), M.steel);
+    ring.position.z = 0.0009;
+    g.add(ring);
+    const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.0242, 24), new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 }));
+    mouth.position.z = 0.001;
+    g.add(mouth);
+    // the cap: a black disc with a grip bar across it
+    const cap = new THREE.Group();
+    const capMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.55 });
+    cap.add(new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.014, 28).rotateX(Math.PI / 2).translate(0, 0, 0.008), capMat));
+    cap.add(new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.009, 0.012).translate(0, 0, 0.019), capMat));
+    g.add(cap);
+    // the flap, turning about its hinge edge
+    const side = F.hinge ?? 1;
+    const hinge = new THREE.Group();
+    hinge.position.set((side * w) / 2, 0, 0.0024);
+    // (the body's paint without its texture: the flap's own UVs would pick a stray patch of the
+    // atlas; the colour object is the shared one, so a respray covers the flap too)
+    const paint = M.paint.clone();
+    paint.map = null;
+    paint.color = M.paint.color;
+    const flap = new THREE.Mesh(rr(w, h, r).translate((-side * w) / 2, 0, 0), paint);
+    flap.castShadow = true;
+    hinge.add(flap);
+    g.add(hinge);
+    this.parts.body.inner.add(g);
+    // what lies behind the flap shows only while it is open (the cap stands proud of the body)
+    this.filler = { group: g, hinge, side, cap, mouth, inside: [pan, ring] };
   }
 
   addStereo() {

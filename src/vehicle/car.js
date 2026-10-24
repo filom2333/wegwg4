@@ -7,7 +7,8 @@ import { STATIONS } from '../audio/stations.js';
 import { VehicleDynamics } from '../physics/vehicleDynamics.js';
 import { RAPIER, GROUPS, G, groups } from '../physics/physics.js';
 import { dependentsOf, lidOf } from './partUtils.js';
-import { setNeedle } from './gauges.js';
+import { setNeedle, drawSpeedLcd } from './gauges.js';
+import { showWear } from './wear.js';
 import { setPartSource, applyEngine } from './swap.js';
 import { applyTune, refreshTuneVisual, tunedLabel, isSport } from './tuning.js';
 import { accessoryMass, ACCESSORIES } from './accessories.js';
@@ -76,6 +77,13 @@ export class Car {
     this.heater = false;
     this.indicator = 0; // turn signal: -1 left, 1 right
     this.parkBrake = false;
+    // the fuel filler: flap open, cap off (fuel goes in, and the level shows, only with both)
+    this.fillerOpen = false;
+    this.fillerCapOff = false;
+    this.fillerT = 0;
+    // door windows: wound down (1) or up (0), and where each is now
+    this.windowDown = {};
+    this.windowT = {};
     this.handlePull = {}; // door -> seconds left of an inside handle being pulled
     // physics
     const pos = opts.position || V(0, 0.5, 0);
@@ -404,6 +412,31 @@ export class Car {
   }
 
   // ---------------------------------------------------------------- doors etc.
+  // E on the fuel filler: open the flap, unscrew the cap, then cap on and flap shut.
+  useFiller() {
+    const a = this.game.audio;
+    const at = this.model.filler ? this.model.filler.group.getWorldPosition(new THREE.Vector3()) : null;
+    if (!this.fillerOpen) {
+      this.fillerOpen = true;
+      a && a.play('click', { volume: 0.5, rate: 0.7, at });
+    } else if (!this.fillerCapOff) {
+      this.fillerCapOff = true;
+      a && a.play('click', { volume: 0.35, rate: 1.3, at });
+    } else {
+      this.fillerCapOff = false;
+      this.fillerOpen = false;
+      a && a.play('clunk', { volume: 0.35, rate: 1.4, at });
+    }
+  }
+
+  // A window switch: the glass runs down, or back up.
+  toggleWindow(door) {
+    const w = this.model.windows && this.model.windows[door];
+    if (!w || !this.isInstalled(door)) return;
+    this.windowDown[door] = !this.windowDown[door];
+    this.game.audio && this.game.audio.play('click', { volume: 0.3, rate: 0.9 });
+  }
+
   toggleOpen(id) {
     const p = this.model.parts[id];
     if (!p || !p.hinge || !this.isInstalled(id)) return;
@@ -565,6 +598,7 @@ export class Car {
       dome: M.domeLens,
       signal: M.signal || null,
       lamps: this.model.cluster ? this.model.cluster.userData.lamps : {},
+      faces: (this.model.cluster && this.model.cluster.userData.faces) || [],
     };
   }
 
@@ -614,7 +648,9 @@ export class Car {
     this.reverseLight.intensity = powered && reversing ? 12 : 0;
     // instrument lighting and warning lamps
     const ign = powered && this.ignition;
+    // dials lit from behind with the ignition, brighter with the lights on
     e.gauge.emissiveIntensity = ign ? (on ? 0.9 : 0.35) : 0.04;
+    for (const f of e.faces) f.emissiveIntensity = ign ? (on ? 1.0 : 0.6) : 0.05;
     e.needle.emissiveIntensity = ign && on ? 0.9 : 0;
     const running = this.dyn.engine.running;
     const charging = this.charging;
@@ -623,6 +659,9 @@ export class Car {
     if (e.lamps.turnL) e.lamps.turnL.emissiveIntensity = bl ? 2.6 : 0;
     if (e.lamps.turnR) e.lamps.turnR.emissiveIntensity = br ? 2.6 : 0;
     if (e.lamps.park) e.lamps.park.emissiveIntensity = ign && this.parkBrake ? 2.4 : 0;
+    if (e.lamps.hot) e.lamps.hot.emissiveIntensity = ign && this.engineTemp > 112 ? 2.4 : 0;
+    if (e.lamps.lowFuel) e.lamps.lowFuel.emissiveIntensity = ign && this.fuel < this.fuelCap * 0.12 ? 2.2 : 0;
+    if (e.lamps.beam) e.lamps.beam.emissiveIntensity = powered && this.lightsOn === 2 ? 2.4 : 0;
     e.display.emissiveIntensity = powered && this.radioOn ? 1.6 : 0;
     if (powered && this.radioOn) this.drawStereo(e.display);
     else if (this._stereoKey && this._stereoKey !== 'off') {
@@ -1119,6 +1158,42 @@ export class Car {
         wg.position.copy(off);
       }
     }
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this._fillerAt || now)) / 1000);
+    this._fillerAt = now;
+    // windows wind down and up in about three seconds (only with power)
+    const powered = this.isInstalled('battery') && this.battery > 0.03;
+    for (const [door, w] of Object.entries(this.model.windows || {})) {
+      const t = this.windowT[door] || 0;
+      const to = this.windowDown[door] ? 1 : 0;
+      if (t === to) continue;
+      const nt = powered ? (to > t ? Math.min(to, t + dt / 3) : Math.max(to, t - dt / 3)) : t;
+      this.windowT[door] = nt;
+      w.mesh.position.y = -w.drop * nt;
+    }
+    // worn parts look it (checked now and then)
+    this._wearT = (this._wearT || 0) - dt;
+    if (this._wearT <= 0) {
+      this._wearT = 1.5;
+      showWear(this);
+    }
+    // the coolant in the expansion tank stands at the circuit's level
+    const bay = this.model.bay;
+    if (bay && bay.coolant && this.coolantCap) {
+      const lv = Math.max(0.02, Math.min(1, this.coolant / this.coolantCap));
+      bay.coolant.mesh.scale.y = lv;
+    }
+    // the fuel filler flap swings open and shut; the cap is in the neck or off
+    const F = this.model.filler;
+    if (F) {
+      this.fillerT = Math.max(0, Math.min(1, this.fillerT + (this.fillerOpen ? dt : -dt) * 3.5));
+      const e = this.fillerT * this.fillerT * (3 - 2 * this.fillerT);
+      F.hinge.rotation.y = F.side * 1.95 * e;
+      const seen = this.fillerT > 0.02;
+      F.cap.visible = seen && !this.fillerCapOff;
+      F.mouth.visible = seen && this.fillerCapOff;
+      for (const m of F.inside) m.visible = seen;
+    }
     // gauges
     const needles = this.model.cluster && this.model.cluster.userData.needles;
     if (needles) {
@@ -1127,6 +1202,24 @@ export class Car {
       setNeedle(needles, 'speed', spd / this.type.SPEEDO_MAX);
       setNeedle(needles, 'fuel', powered ? this.fuel / this.fuelCap : 0);
       setNeedle(needles, 'rpm', powered ? this.dyn.engine.rpm / 8000 : 0);
+      setNeedle(needles, 'temp', powered && this.ignition ? (this.engineTemp - 50) / 80 : 0);
+      // the speed in figures (redrawn when the whole number changes)
+      const lcd = this.model.cluster.userData.lcd;
+      if (lcd) {
+        const on = powered && this.ignition;
+        lcd.mat.emissiveIntensity = on ? 1.1 : 0;
+        const shown = on ? Math.round(spd) : -1;
+        if (shown !== lcd.shown) {
+          lcd.shown = shown;
+          const ctx = lcd.canvas.getContext('2d');
+          if (on) drawSpeedLcd(ctx, lcd.canvas.width, lcd.canvas.height, spd);
+          else {
+            ctx.fillStyle = '#050805';
+            ctx.fillRect(0, 0, lcd.canvas.width, lcd.canvas.height);
+          }
+          lcd.tex.needsUpdate = true;
+        }
+      }
     }
     // pedals (floor hinged: pressing tips the pad forward)
     if (this.model.pedals) {

@@ -4,7 +4,7 @@
 // fuel sweeps the 70 degree arc at the top.
 export function needleAngle(name, t) {
   t = Math.min(1, Math.max(0, t));
-  if (name === 'fuel') return Math.PI * 1.5 - 0.61 + 1.22 * t;
+  if (name === 'fuel' || name === 'temp') return Math.PI * 1.5 - 0.61 + 1.22 * t;
   return Math.PI * (150 / 180) + Math.PI * (240 / 180) * t;
 }
 
@@ -91,4 +91,89 @@ function drawFuelArc(ctx, S, c) {
   ctx.font = `bold ${Math.round(S * 0.045)}px Arial`;
   ctx.fillText('R', c + Math.cos(needleAngle('fuel', 0)) * S * 0.16, fy + Math.sin(needleAngle('fuel', 0)) * S * 0.16);
   ctx.fillText('1/1', c + Math.cos(needleAngle('fuel', 1)) * S * 0.165, fy + Math.sin(needleAngle('fuel', 1)) * S * 0.165);
+}
+
+// A small gauge (fuel or coolant temperature): a 70 degree arc across the top with its ends
+// marked, the low fuel or the hot end in red, and a symbol under the pivot.
+export function drawSmallFace(ctx, S, kind = 'fuel') {
+  const c = S / 2;
+  const grd = ctx.createRadialGradient(c, c, S * 0.1, c, c, S * 0.5);
+  grd.addColorStop(0, '#1b1b19');
+  grd.addColorStop(1, '#090909');
+  ctx.fillStyle = '#0d0d0c';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(c, c, S * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  const cy = c + S * 0.14;
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    const a = needleAngle(kind, t);
+    const major = i % 4 === 0;
+    const red = kind === 'fuel' ? t < 0.13 : t > 0.8;
+    ctx.strokeStyle = red ? '#d8402a' : '#e9e4d6';
+    ctx.lineWidth = S * (major ? 0.022 : 0.012);
+    const r0 = S * (major ? 0.3 : 0.33),
+      r1 = S * 0.39;
+    ctx.beginPath();
+    ctx.moveTo(c + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(c + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#e9e4d6';
+  ctx.font = `bold ${Math.round(S * 0.11)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const [lo, hi] = kind === 'fuel' ? ['E', 'F'] : ['C', 'H'];
+  const la = needleAngle(kind, 0),
+    ha = needleAngle(kind, 1);
+  ctx.fillText(lo, c + Math.cos(la) * S * 0.25, cy + Math.sin(la) * S * 0.25 + S * 0.03);
+  ctx.fillStyle = kind === 'fuel' ? '#e9e4d6' : '#d8402a';
+  ctx.fillText(hi, c + Math.cos(ha) * S * 0.25, cy + Math.sin(ha) * S * 0.25 + S * 0.03);
+  // the symbol: a pump, or a thermometer in waves
+  ctx.strokeStyle = '#bdb7a8';
+  ctx.fillStyle = '#bdb7a8';
+  ctx.lineWidth = S * 0.018;
+  const sx = c,
+    sy = c + S * 0.3;
+  if (kind === 'fuel') {
+    ctx.fillRect(sx - S * 0.05, sy - S * 0.07, S * 0.07, S * 0.11);
+    ctx.beginPath();
+    ctx.moveTo(sx + S * 0.02, sy - S * 0.04);
+    ctx.lineTo(sx + S * 0.06, sy - S * 0.02);
+    ctx.lineTo(sx + S * 0.06, sy + S * 0.03);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - S * 0.08);
+    ctx.lineTo(sx, sy + S * 0.02);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx, sy + S * 0.03, S * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+    for (const dy of [0.0, 0.05]) {
+      ctx.beginPath();
+      ctx.moveTo(sx - S * 0.09, sy + S * dy);
+      ctx.quadraticCurveTo(sx - S * 0.065, sy + S * (dy - 0.02), sx - S * 0.04, sy + S * dy);
+      ctx.moveTo(sx + S * 0.04, sy + S * dy);
+      ctx.quadraticCurveTo(sx + S * 0.065, sy + S * (dy - 0.02), sx + S * 0.09, sy + S * dy);
+      ctx.stroke();
+    }
+  }
+}
+
+// The speed in figures on the small display in the speedometer (redrawn when it changes).
+export function drawSpeedLcd(ctx, W, H, kmh, unit = 'km/h') {
+  ctx.fillStyle = '#071008';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#d6f5c8';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  ctx.font = `bold ${Math.round(H * 0.78)}px "Overpass Mono", monospace`;
+  ctx.fillText(String(Math.round(kmh)), W * 0.62, H * 0.54);
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${Math.round(H * 0.34)}px Arial`;
+  ctx.fillStyle = '#9fc493';
+  ctx.fillText(unit, W * 0.66, H * 0.62);
 }

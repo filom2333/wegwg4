@@ -11,7 +11,9 @@ export { POSES, WRIST, gripCenter, PALM_CONTACT };
 // Arm segment lengths (wrist to elbow, elbow to shoulder) and the wrist's range of motion.
 export const FOREARM = 0.255;
 export const UPPER = 0.29;
-const MAX_BEND = 1.3;
+// (past about 45 degrees the forearm follows the hand instead: an elbow out of place is off
+// screen, a wrist bent too far is in the middle of it)
+const MAX_BEND = 0.8;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 

@@ -155,11 +155,43 @@ export function inlineFour(M, at, { len = 0.5, rot = 0 } = {}) {
   return bake(g);
 }
 
-export function fuelTank(at, { w = 0.7, h = 0.2, d = 0.42 } = {}) {
+// Fuel tank: a pressed steel tank with its seam flange, stiffening ribs pressed into the top,
+// two straps over it, the sender unit (a ring of screws round the plate, the gauge's plug and the
+// feed and return lines leaving it), the filler hose rising toward the filler on one side and a
+// breather beside it.
+export function fuelTank(at, { w = 0.7, h = 0.2, d = 0.42, filler = 1 } = {}) {
   const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x2d2f2c, metalness: 0.55, roughness: 0.55 });
-  mesh(g, roundedBox(w, h, d, 0.05, 3), mat);
-  mesh(g, roundedBox(w + 0.02, 0.012, d + 0.015, 0.005, 1), mat, false);
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3a3c38, metalness: 0.6, roughness: 0.5 });
+  const strap = new THREE.MeshStandardMaterial({ color: 0x1f2020, metalness: 0.5, roughness: 0.6 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.85 });
+  const line = new THREE.MeshStandardMaterial({ color: 0x8c8f92, metalness: 0.8, roughness: 0.35 });
+  mesh(g, roundedBox(w, h, d, 0.05, 3), steel);
+  // the seam all round, at half height
+  mesh(g, roundedBox(w + 0.022, 0.012, d + 0.018, 0.006, 1), steel, false);
+  // ribs pressed into the top: two across, one along
+  for (const x of [-w * 0.22, w * 0.22]) mesh(g, roundedBox(0.03, 0.008, d * 0.78, 0.004, 1).translate(x, h / 2, 0), steel, false);
+  mesh(g, roundedBox(w * 0.7, 0.008, 0.03, 0.004, 1).translate(0, h / 2, -d * 0.22), steel, false);
+  // straps over the top and down the sides
+  for (const z of [-d * 0.32, d * 0.32]) {
+    mesh(g, new THREE.BoxGeometry(w + 0.03, 0.006, 0.04).translate(0, h / 2 + 0.006, z), strap, false);
+    for (const sx of [-1, 1]) mesh(g, new THREE.BoxGeometry(0.006, h * 0.9, 0.04).translate(sx * (w / 2 + 0.014), 0, z), strap, false);
+  }
+  // the sender unit
+  const sx = -w * 0.18,
+    sz = d * 0.12;
+  mesh(g, new THREE.CylinderGeometry(0.055, 0.055, 0.012, 28).translate(sx, h / 2 + 0.006, sz), line);
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    mesh(g, new THREE.CylinderGeometry(0.005, 0.005, 0.008, 6).translate(sx + Math.cos(a) * 0.046, h / 2 + 0.014, sz + Math.sin(a) * 0.046), steel, false);
+  }
+  mesh(g, roundedBox(0.03, 0.018, 0.02, 0.004, 1).translate(sx, h / 2 + 0.022, sz), CASE_BLACK, false);
+  for (const dx of [0.018, 0.03]) mesh(g, tubeAlong([V(sx + dx, h / 2 + 0.014, sz - 0.02), V(sx + dx, h / 2 + 0.03, sz - 0.07), V(sx + dx, h / 2 + 0.02, -d / 2 - 0.05)], 0.0045, 6), line, false);
+  // the filler hose: from the tank's side up toward the filler, with its clamp, and the breather
+  const fx = filler * (w / 2 - 0.06);
+  const hose = [V(fx, h * 0.2, d * 0.28), V(fx + filler * 0.06, h * 0.55, d * 0.3), V(fx + filler * 0.12, h * 0.95, d * 0.34)];
+  mesh(g, tubeAlong(hose, 0.03, 12), rubber);
+  mesh(g, new THREE.TorusGeometry(0.031, 0.004, 6, 18).rotateX(Math.PI / 2).translate(hose[2].x, hose[2].y - 0.02, hose[2].z), line, false);
+  mesh(g, tubeAlong([V(fx - filler * 0.05, h / 2, d * 0.2), V(fx, h * 0.8, d * 0.24), V(fx + filler * 0.1, h * 1.05, d * 0.3)], 0.006, 6), rubber, false);
   g.position.copy(at);
   return g;
 }
@@ -280,7 +312,8 @@ export function oilFilter(M, at, { r = 0.042, h = 0.11, tilt = 0 } = {}) {
 
 // Spark plugs with their leads: a boot on each plug point, leads looping to `to` where a
 // distributor cap sits (or, `coils`: a coil on each plug and a loom along the top).
-export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}) {
+// arch: how much higher a lead rises per metre of its length (kept low under a flat bonnet)
+export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03, arch = 0.12 } = {}) {
   const g = new THREE.Group();
   const boot = new THREE.MeshStandardMaterial({ color: coils ? 0x3a3c3f : 0x8a1c14, roughness: coils ? 0.45 : 0.55 });
   const plugTop = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.5 });
@@ -305,7 +338,7 @@ export function plugLeads(M, plugs, { to = null, coils = false, up = 0.03 } = {}
       const a = V(p.x, p.y + 0.065, p.z);
       const b = to.clone().add(V(Math.cos((i / plugs.length) * Math.PI * 2) * 0.022, 0.03, Math.sin((i / plugs.length) * Math.PI * 2) * 0.022));
       // longer leads arch higher over what lies between
-      const mid = a.clone().lerp(b, 0.5).add(V(0, up + 0.12 * a.distanceTo(b), 0));
+      const mid = a.clone().lerp(b, 0.5).add(V(0, up + arch * a.distanceTo(b), 0));
       mesh(g, tubeAlong([a, a.clone().add(V(0, 0.03, 0)), mid, b.clone().add(V(0, 0.03, 0)), b], 0.0045, 6), lead, false);
     }
     // distributor: cap and body on the head
@@ -344,4 +377,52 @@ export function beltLoop(pulleys, { plane = 'x' } = {}) {
   const g = new THREE.Group();
   mesh(g, tubeAlong(pts, 0.006, 6, { closedEnds: false }), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.8 }));
   return g;
+}
+
+// The rest of an engine bay, fixed to the body: the coolant expansion tank (translucent, its
+// fluid at the level the car's coolant is at, the pressure cap on top), the brake fluid
+// reservoir with its yellow cap, the washer bottle with blue fluid, the fuse box and the
+// dipstick's yellow ring. spots: car-space centres { coolant, brake, washer, fuses, dipstick }.
+export function bayDetails(M, spots) {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.35, transparent: true, opacity: 0.55, depthWrite: false });
+  const capBlack = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.5 });
+  const capYellow = new THREE.MeshStandardMaterial({ color: 0xd9a619, roughness: 0.45 });
+  const capBlue = new THREE.MeshStandardMaterial({ color: 0x2456a8, roughness: 0.45 });
+  const refs = {};
+  // a translucent tank with a fluid block inside; returns the fluid mesh (scaled to the level)
+  const tank = (at, [w, h, d], fluidColor, cap, capR = 0.022) => {
+    const t = new THREE.Mesh(roundedBox(w, h, d, 0.012, 2), shell);
+    t.position.copy(at).add(V(0, h / 2, 0));
+    t.renderOrder = 2;
+    g.add(t);
+    const fluidMat = new THREE.MeshStandardMaterial({ color: fluidColor, roughness: 0.2, transparent: true, opacity: 0.85 });
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(w - 0.012, h - 0.014, d - 0.012).translate(0, (h - 0.014) / 2, 0), fluidMat);
+    fl.position.copy(at).add(V(0, 0.007, 0));
+    g.add(fl);
+    // MIN and MAX marks on the side
+    for (const k of [0.3, 0.75]) mesh(g, new THREE.BoxGeometry(0.003, 0.002, d * 0.4).translate(at.x + w / 2 + 0.001, at.y + h * k, at.z), capBlack, false);
+    mesh(g, new THREE.CylinderGeometry(capR, capR, 0.022, 20).translate(at.x, at.y + h + 0.011, at.z), cap);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      mesh(g, new THREE.BoxGeometry(0.004, 0.02, 0.004).translate(at.x + Math.cos(a) * capR, at.y + h + 0.011, at.z + Math.sin(a) * capR), cap, false);
+    }
+    return { mesh: fl, h: h - 0.014 };
+  };
+  if (spots.coolant) refs.coolant = tank(spots.coolant, [0.12, 0.13, 0.16], 0xd8508c, capBlack, 0.026);
+  if (spots.brake) refs.brake = tank(spots.brake, [0.08, 0.07, 0.065], 0xc8a24a, capYellow, 0.018);
+  if (spots.washer) refs.washer = tank(spots.washer, [0.14, 0.15, 0.12], 0x3a7fd0, capBlue, 0.02);
+  if (spots.fuses) {
+    const f = spots.fuses;
+    mesh(g, roundedBox(0.16, 0.07, 0.1, 0.008, 2).translate(f.x, f.y + 0.035, f.z), capBlack);
+    mesh(g, roundedBox(0.165, 0.012, 0.105, 0.005, 1).translate(f.x, f.y + 0.072, f.z), capBlack, false);
+    for (const dx of [-0.07, 0.07]) mesh(g, new THREE.BoxGeometry(0.012, 0.012, 0.03).translate(f.x + dx, f.y + 0.06, f.z + 0.055), capBlack, false);
+    mesh(g, tubeAlong([V(f.x - 0.05, f.y + 0.02, f.z - 0.05), V(f.x - 0.06, f.y + 0.0, f.z - 0.12), V(f.x - 0.02, f.y - 0.04, f.z - 0.2)], 0.008, 6), capBlack, false);
+  }
+  if (spots.dipstick) {
+    const p = spots.dipstick;
+    mesh(g, new THREE.CylinderGeometry(0.004, 0.004, 0.12, 6).translate(p.x, p.y - 0.06, p.z), M.steel, false);
+    mesh(g, new THREE.TorusGeometry(0.016, 0.005, 6, 16).translate(p.x, p.y + 0.016, p.z), capYellow);
+  }
+  return { group: g, refs };
 }

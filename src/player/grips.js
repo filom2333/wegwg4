@@ -4,7 +4,7 @@
 // derived from it, so the fingers always close on the handle whatever the item's shape.
 
 import * as THREE from 'three';
-import { POSES, gripCenter, PALM_CONTACT } from './hands.js';
+import { POSES, gripCenter, PALM_CONTACT, FOREARM, UPPER } from './hands.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -66,16 +66,49 @@ export function anchorQFor(side, thumb, wrist) {
   return frameQ(t, wrist.clone().normalize().cross(t));
 }
 
+// A free hand (nothing in it) at `p`: the arm from the shoulder bends toward `pole` the way the
+// arm solver will bend it, and the hand continues the forearm with a straight wrist, turned about
+// it so the thumb side faces `thumb` as near as it can. Set by hand, a free hand's turn had to
+// guess where the elbow ends up, and a wrong guess bent the wrist past what a wrist can.
+// keep: how much of the thumb's lean along the forearm to keep (a cocked wrist, 0..1).
+export function naturalQ(side, p, thumb, shoulder, pole, keep = 0) {
+  const toElbow = elbowDir(p, shoulder, pole);
+  const t = thumb.clone().addScaledVector(toElbow, -thumb.dot(toElbow) * (1 - keep));
+  if (t.lengthSq() < 1e-6) t.set(0, 1, 0).addScaledVector(toElbow, -toElbow.y);
+  return anchorQFor(side, t.normalize(), toElbow);
+}
+
+// The direction from a wrist at `p` to its elbow, for an arm from `shoulder` bent toward `pole`
+// (the same two-bone solution the hands' arm solver finds).
+export function elbowDir(p, shoulder, pole) {
+  const a = UPPER,
+    b = FOREARM;
+  const u = p.clone().sub(shoulder);
+  let d = u.length();
+  u.multiplyScalar(1 / Math.max(d, 1e-6));
+  d = Math.min(Math.max(d, Math.abs(a - b) + 0.02), a + b - 0.002);
+  const x = (a * a - b * b + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  const v = pole.clone().addScaledVector(u, -pole.dot(u));
+  if (v.lengthSq() < 1e-8) v.set(0, -1, 0);
+  v.normalize();
+  return shoulder.clone().addScaledVector(u, x).addScaledVector(v, h).sub(p).normalize();
+}
+
 // Where the right hand holds each kind of item in view (camera space: +X right, +Y up, -Z ahead).
 // wrap: bottles and cans upright; palm: flat things lying on the open palm; side: carried by a
 // handle, hanging from the fist; tool: a handle held upright like a torch.
+// (wrap and tool: turned on the forearm as the arm comes up to them, the wrist cocked half as far
+// as an upright hold would need)
+const RS = V(0.19, -0.25, 0.06),
+  RP = V(0.3, -1, 0.15);
 export const ANCHORS = {
-  wrap: { p: V(0.15, -0.19, -0.4), q: anchorQ(V(-0.12, 1, 0.2), V(0.45, -0.25, 0.85)) },
+  wrap: { p: V(0.15, -0.19, -0.4), q: naturalQ('right', V(0.15, -0.19, -0.4), V(-0.12, 1, 0.25), RS, RP, 0.5) },
   palm: { p: V(0.1, -0.2, -0.4), q: anchorQ(V(1, 0.15, 0), V(0.25, -0.45, 0.85)) },
   // held up a little so the can or lantern hanging from the fist stays in view
   // (the wrist leaves the fist down and back toward the elbow, so it does not bend over the handle)
   side: { p: V(0.19, -0.17, -0.47), q: anchorQ(V(-1, 0, 0.1), V(0.22, -0.42, 0.88)) },
-  tool: { p: V(0.18, -0.21, -0.38), q: anchorQ(V(-0.15, 0.95, -0.25), V(0.4, -0.05, 0.9)) },
+  tool: { p: V(0.18, -0.21, -0.38), q: naturalQ('right', V(0.18, -0.21, -0.38), V(-0.15, 0.95, -0.1), RS, RP, 0.5) },
 };
 
 // Weapon placements (item transforms, camera space): from the hip and aimed down the sights.

@@ -690,20 +690,38 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
 - New items: `tv` (CRT in a wood cabinet, 14 kg) and `drum` (60 l fuel drum, 3 paints); one of
   each in the homestead garage.
 
-### User's list from 23.10 not done yet (they asked for all of it; do these next)
-1. Hands: arms look twisted in ordinary interactions (check `player/grips.js` poses first person).
-2. Dashboards: in both imported cars the speedometer is hard/impossible to see from the seat;
-   make real clusters (speed, rpm, fuel, temperature, warning lamps) readable from the eye point.
-3. Seen through the bonnet from the seat: engine parts show through it; wires stick out under
-   the bonnet of the second car. Check part bboxes against the bonnet's inner surface.
-4. Fuel filler flap and tank: the flap opening looks wrong (the interactive bit appears from
-   nowhere); a more detailed tank with a cap to open and a look inside showing the level; the
-   same "look at it to read the level" for other containers.
-5. More engine-bay items (antifreeze reservoir etc.), wear that shows on parts.
-6. In the car: windows that wind down, mirrors that move, take items while driving, in every car.
-7. Models: the mailbox and other low-detail props; a TV in houses (the item exists now), barrels
-   to pick up in the world (item exists; spawn more at farms and gas stations).
-8. HUD and UI text still looks plain to the user ("mechanical yellow and white"): more texture.
+### User's list from 23.10, part 3 (same branch) — done
+- Hands (`grips.js`, `hands.js`): free hands (reach, fists, idle) are turned by `naturalQ` (the hand
+  continues the forearm toward the elbow the arm solver will find); wrap/tool anchors too (wrist
+  cocked half way); steering hands turn about the rim toward the elbow; MAX_BEND 0.8 (the forearm
+  follows the hand past it). Check with numbers: the wrist bend per case
+  (`arm.quaternion` angle; 0.8 = at the limit).
+- Clusters (`importedCar.addGauges`, `gauges.js`): panel, speedo with an LCD of the speed, tacho,
+  fuel and coolant dials, lamps (gen, oil, park, hot, lowFuel, beam, turns), lit with the
+  ignition. Layout in `GAUGES` per type. The sedan's cluster had been behind its dash face.
+- Seen through the bonnet: the sedan had no scuttle panel (a gap under the windscreen into the
+  bay) — a black plate now; its plug leads (`plugLeads` arch) and alternator, and the W203 oil
+  filter, were lowered under the bonnet. Probes used: rays from the driver's eye listing the first
+  part seen; downward rays comparing part tops with the bonnet's underside.
+- Fuel filler (`addFiller`, `Car.useFiller`): flap in body paint over a recess, cap, mouth; E opens
+  the flap, unscrews the cap, closes both; fuel goes in and the level shows only with the cap off.
+  The hotspot had been 5-6 cm off the body. `fuelTank` is detailed.
+- Power windows: armrest switches (`windowFL`/`windowFR`), door glass meshes slide down
+  (`findWindows`, `Car.toggleWindow`).
+- Mirrors (`vehicle/mirrors.js`): door mirrors and the inside one show a render from the eye's
+  reflection (off-axis frustum clipped at the glass), one mirror per frame, only in the car you
+  sit in; aimed from the driver's eye at build (`look`), door mirrors convex (`wide`); E on a
+  mirror then the mouse aims it; Custom setting `mirrors` (off on Low).
+- Engine bay (`bayDetails`): coolant tank (level follows coolant), brake fluid, washer, fuse box,
+  dipstick. `wear.js`: parts darken and rust with their condition.
+- HUD: painted big type (gradient + sheet grain, drop-shadow) and worn plates with a yellow edge
+  behind the objective and the target card.
+
+### Still open from the user's lists
+1. More detailed props (the mailbox is redone; other low-detail props remain).
+2. Picture examples for shadows, glow, sun rays and heat haze (scenes showed no difference).
+3. Interior: taking items while driving works one-handed already; more in-car interactions could
+   follow (glovebox, sun visors, seat adjustment).
 
 ### Still to do (in the user's priority order)
 1. More real models (only npm and raw.githubusercontent.com reachable; see "Network for

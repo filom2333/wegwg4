@@ -13,7 +13,7 @@ import { fitMatrix } from '../vehicle/swap.js';
 import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate, worldSpot, tiltSpot } from '../vehicle/plates.js';
 import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
-import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms } from './grips.js';
+import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms, naturalQ, elbowDir } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { STATIONS } from '../audio/stations.js';
 import { ALBUMS, trackOn } from '../audio/music/albums.js';
@@ -302,6 +302,15 @@ export class Interaction {
     const h = hs.id;
     this.driverReach(hs);
     if (h === 'ignition') return this.turnKey(car);
+    if (h === 'fuel') return car.useFiller();
+    if (h === 'mirrorL' || h === 'mirrorR' || h === 'mirrorC') {
+      // the mouse aims the mirror until E again
+      this.aimingMirror = h.slice(6);
+      g.player.lookFrozen = true;
+      g.hud && g.hud.toast('Move the mouse to aim the mirror · E when done');
+      return;
+    }
+    if (h === 'windowFL' || h === 'windowFR') return car.toggleWindow(h === 'windowFL' ? 'door_FL' : 'door_FR');
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
       g.audio && g.audio.play(car.parkBrake ? 'parkBrake' : 'clunk', { volume: car.parkBrake ? 0.8 : 0.45, rate: car.parkBrake ? 1 : 1.1, pitchVar: 0.05 });
@@ -400,6 +409,21 @@ export class Interaction {
     }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.updateKey(dt);
+    // aiming a mirror: the mouse turns it, E (or getting out) ends it
+    if (this.aimingMirror) {
+      if (!p.seat || !g.car || blocked) {
+        this.aimingMirror = null;
+        p.lookFrozen = false;
+      } else {
+        g.mirrors && g.mirrors.aim(g.car, this.aimingMirror, -input.mouse.dx * 0.0025, -input.mouse.dy * 0.0025);
+        g.hud && g.hud.setPrompts && g.hud.setPrompts([['Mouse', 'Aim the mirror'], ['E', 'Done']]);
+        if (input.wasPressed('interact') || input.mousePressed(0)) {
+          this.aimingMirror = null;
+          p.lookFrozen = false;
+        }
+        return;
+      }
+    }
     // pulling a trailer by its drawbar for as long as E is held
     if (this.pullingTrailer) {
       const tr = this.pullingTrailer;
@@ -504,6 +528,12 @@ export class Interaction {
         if (p.seat && t && t.kind === 'hotspot' && t.hotspot.inside) {
           const r = this.describeTarget(t);
           this.dotLabel = r.info;
+          for (const pr of r.prompts) if (pr[0] === 'E') prompts.push(pr);
+          if (!blocked && input.wasPressed('interact')) this.useHotspot(t.hotspot);
+        }
+        // with a can in the hand, the other hand opens the fuel filler
+        if (!p.seat && t && t.kind === 'hotspot' && t.hotspot.id === 'fuel') {
+          const r = this.describeTarget(t);
           for (const pr of r.prompts) if (pr[0] === 'E') prompts.push(pr);
           if (!blocked && input.wasPressed('interact')) this.useHotspot(t.hotspot);
         }
@@ -691,7 +721,7 @@ export class Interaction {
     const car = this.game.car;
     if (t.kind === 'hotspot') {
       const h = t.hotspot.id;
-      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank')) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
+      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
@@ -776,8 +806,18 @@ export class Interaction {
         const h = t.hotspot;
         info = { title: h.label };
         if (h.id === 'fuel') {
-          info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
-          info.bar = car.fuel / car.fuelCap;
+          // the level shows once the cap is off and you can look in
+          if (!car.fillerOpen) {
+            info.sub = 'Flap shut';
+            prompts.push(['E', 'Open the flap']);
+          } else if (!car.fillerCapOff) {
+            info.sub = 'Cap on';
+            prompts.push(['E', 'Unscrew the cap']);
+          } else {
+            info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
+            info.bar = car.fuel / car.fuelCap;
+            prompts.push(['E', 'Cap on, flap shut']);
+          }
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
           info.bar = car.oil / car.oilCap;
@@ -802,6 +842,12 @@ export class Interaction {
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
           prompts.push(['E', open ? 'Close the door' : 'Open the door']);
+        } else if (h.id === 'mirrorL' || h.id === 'mirrorR' || h.id === 'mirrorC') {
+          prompts.push(['E', 'Aim it']);
+        } else if (h.id === 'windowFL' || h.id === 'windowFR') {
+          const door = h.id === 'windowFL' ? 'door_FL' : 'door_FR';
+          info.sub = h.id === 'windowFL' ? 'Driver' : 'Passenger';
+          prompts.push(['E', car.windowDown[door] ? 'Wind it up' : 'Wind it down']);
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
           prompts.push(['E', ['Low beam', 'High beam', 'Off'][car.lightsOn]]);
@@ -2399,13 +2445,11 @@ export class Interaction {
       const a = (side === 'left' ? Math.PI - 0.5 : 0.5) + turn;
       const rimW = V(Math.cos(a) * R, Math.sin(a) * R, 0).applyMatrix4(pivotW);
       const tanW = V(-Math.sin(a), Math.cos(a), 0).transformDirection(pivotW);
-      const radW = V(Math.cos(a), Math.sin(a), 0).transformDirection(pivotW);
-      const nW = V(0, 0, 1).transformDirection(pivotW);
-      // fist round the rim: thumb side toward 12 o'clock, back of the hand outward and a little
-      // toward the driver, so the wrist points back at the elbow
+      // fist round the rim, thumb side toward 12 o'clock; turned about the rim (which keeps it
+      // inside the fist) so the wrist runs on toward the elbow as straight as it can
       const thumb = side === 'left' ? tanW.clone().negate() : tanW.clone();
-      const back = radW.clone().multiplyScalar(0.9).addScaledVector(nW, 0.4);
-      const anchor = { p: toCam(rimW), q: inv.clone().multiply(frameQ(thumb, back)) };
+      const pC = toCam(rimW);
+      const anchor = { p: pC, q: anchorQFor(side, thumb.applyQuaternion(inv), elbowDir(pC, arms[side].shoulder, arms[side].pole)) };
       const placed = handFromAnchor(side, 'grip', anchor);
       let pose = 'grip';
       let posC = placed.p,
@@ -2538,8 +2582,8 @@ export class Interaction {
         // (a closed hand: the grip pose with nothing in it reads as a fist)
         const guard = V(0.13 * sg, -0.135 + bob, side === 'left' ? -0.4 : -0.37);
         const pos = guard.lerp(V(0.03 * sg, -0.08, -0.6), k);
-        const wrist = V(0.25 * sg, -0.3, 0.92).lerp(V(0.08 * sg, -0.12, 1), k);
-        const anchor = { p: pos, q: anchorQFor(side, V(-0.35 * sg, 1, -0.15), wrist) };
+        // knuckles forward, thumb up and a little in, the wrist straight with the forearm
+        const anchor = { p: pos, q: naturalQ(side, pos, V(-0.35 * sg, 1, 0), arms[side].shoulder, arms[side].pole) };
         const placed = handFromAnchor(side, 'grip', anchor);
         h.setPose(side, 'grip');
         h.place(side, placed.p, placed.q);
@@ -2555,11 +2599,13 @@ export class Interaction {
       const k = this.reachT;
       const pos = V(0.22, -0.3, -0.36).lerp(V(0.13, -0.2, -0.46), k * 0.7);
       pos.y += Math.sin(p.bob * 2) * p.bobAmp * 0.012;
-      const anchor = { p: pos, q: anchorQ(V(-0.35, 0.3 + k * 0.4, -0.9), V(0.4, -0.35, 0.85)) };
+      // the hand carries on from the forearm, thumb up and in (palm toward the middle, turning
+      // down a little as it reaches)
+      const arms = defaultArms();
+      const anchor = { p: pos, q: naturalQ('right', pos, V(-0.5 - k * 0.3, 1 - k * 0.3, 0), arms.right.shoulder, arms.right.pole) };
       const placed = handFromAnchor('right', 'relax', anchor);
       h.setPose('right', k > 0.5 ? 'pinch' : 'relax');
       h.place('right', placed.p, placed.q);
-      const arms = defaultArms();
       h.solveArm('right', arms.right.shoulder, arms.right.pole);
       h.right.visible = k > 0.15;
     }

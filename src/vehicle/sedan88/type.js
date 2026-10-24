@@ -34,7 +34,7 @@ const FRONT = ['driver', 'passenger'];
 // The low-poly source has no switches to speak of: the key, stalk, knobs, buttons, door handles
 // and the parking brake pedal are made here (MOVING), each hotspot on its control.
 const HOTSPOTS = [
-  { id: 'fuel', label: 'Fuel filler', pos: V(0.86, 0.86, -1.6), r: 0.12, part: 'fueltank' },
+  { id: 'fuel', label: 'Fuel filler', pos: V(0.804, 0.86, -1.6), r: 0.08, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.2, 0.86, 1.35), r: 0.1, part: 'engine', lid: 'hood' },
   { id: 'coolant', label: 'Radiator cap', pos: V(0.33, 0.76, 1.95), r: 0.1, part: 'radiator', lid: 'hood' },
   { id: 'battery', label: 'Battery', pos: V(0.5, 0.78, 1.74), r: 0.13, part: 'battery', lid: 'hood' },
@@ -49,6 +49,13 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.285, -0.12), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.694, 0.85, 0.42), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.694, 0.85, 0.42), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
+  // the mirrors, aimed from the seat
+  { id: 'mirrorL', label: 'Mirror', pos: V(0.858, 0.937, 0.49), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'mirrorR', label: 'Mirror', pos: V(-0.858, 0.937, 0.49), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
+  { id: 'mirrorC', label: 'Mirror', pos: V(0.0, 1.21, 0.204), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
+  // window switches on the driver's armrest
+  { id: 'windowFL', label: 'Window switch', pos: V(0.706, 0.8, 0.07), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'windowFR', label: 'Window switch', pos: V(0.706, 0.8, 0.02), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
 ];
 const MOVING = {
   key: { make: 'key', pivot: V(0.25, 0.69, 0.676), axis: V(0, 0.1, 1), angles: [0, 0.9, 1.35] },
@@ -160,7 +167,25 @@ export const SEDAN88 = {
   },
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
   // our own dial over the texture's speedometer (its painted needle would never move)
-  GAUGES: { speedo: { center: [0.376, 0.848, 0.668], normal: [0, 0.25, -1], radius: 0.066, face: true, odo: '0 9 8 6 4 2' } },
+  // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
+  MIRRORS: [
+    { id: 'L', part: 'door_FL', center: [0.858, 0.937, 0.49], normal: [-0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [0.16, 0.01, -1], wide: 2.2 },
+    { id: 'R', part: 'door_FR', center: [-0.858, 0.937, 0.49], normal: [0.4, 0.09, -0.91], size: [0.15, 0.09], round: 0.2, look: [-0.16, 0.01, -1], wide: 2.2 },
+    { id: 'C', part: 'body', center: [0.0, 1.21, 0.204], normal: [0.12, -0.13, -0.99], size: [0.22, 0.055], round: 0.4, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
+  ],
+  // the fuel filler flap on the left rear wing
+  FILLER: { pos: [0.802, 0.86, -1.6], normal: [0.96, 0.29, -0.05], size: [0.12, 0.1], corner: 0.01, hinge: -1 },
+  GAUGES: {
+    // (in front of the model's dash face, which sits nearer the driver than its painted dials)
+    // (low in the binnacle: its brow hides the top of anything higher)
+    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.055, face: true, lcd: true },
+    panel: [0.29, 0.12, 0, -0.002],
+    tacho: { offset: [-0.094, -0.002], radius: 0.041 },
+    small: [
+      { kind: 'fuel', offset: [0.09, 0.016], radius: 0.026 },
+      { kind: 'temp', offset: [0.09, -0.032], radius: 0.026 },
+    ],
+  },
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'seat_FL', 'seat_R', 'engine'],
   fuelCap: 60,
@@ -205,16 +230,26 @@ export const SEDAN88 = {
     // the V6's left end: crank, water pump behind it, alternator ahead, one belt; the starter on
     // the gearbox end, six plugs with leads to the distributor
     model.addPart('waterpump', PP.waterPump(M, V(0.495, 0.73, 1.28), { face: 'x' }));
-    model.addPart('alternator', PP.alternator(M, V(0.473, 0.8, 1.53), { face: 'x', pulleyR: 0.04 }));
-    model.addPart('fanbelt', PP.beltLoop([{ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.73, 1.28), r: 0.05 }, { c: V(0.58, 0.8, 1.53), r: 0.04 }], { plane: 'x' }));
+    model.addPart('alternator', PP.alternator(M, V(0.473, 0.772, 1.53), { face: 'x', pulleyR: 0.04 }));
+    model.addPart('fanbelt', PP.beltLoop([{ c: V(0.58, 0.62, 1.42), r: 0.07 }, { c: V(0.58, 0.73, 1.28), r: 0.05 }, { c: V(0.58, 0.772, 1.53), r: 0.04 }], { plane: 'x' }));
     model.addPart('starter', PP.starter(M, V(-0.32, 0.6, 1.12), { face: '-x' }));
     model.addPart('oilfilter', PP.oilFilter(M, V(-0.42, 0.63, 1.76)));
     // rear bank behind the plenum, front bank between it and the manifold, the distributor at
     // the back of the head
     const plugs = [...[-0.2, 0, 0.2].map((x) => V(x, 0.8, 1.2)), ...[-0.04, 0.12, 0.28].map((x) => V(x, 0.77, 1.56))];
-    model.addPart('sparkplugs', PP.plugLeads(M, plugs, { to: V(-0.12, 0.83, 1.07) }));
+    // (the leads lie low: the bonnet comes down close over the plenum at the back)
+    model.addPart('sparkplugs', PP.plugLeads(M, plugs, { to: V(-0.12, 0.8, 1.12), up: 0, arch: 0.03 }));
     model.addPart('airfilter', PP.airFilter(M, V(-0.3, 0.78, 1.55), { h: 0.08 }));
     model.addPart('fueltank', PP.fuelTank(V(0, 0.27, -0.65), { w: 0.85, h: 0.2, d: 0.5 }));
     model.addPart('spare', PP.spareWheel(model, V(0, 0.55, -1.85)));
+    // the reservoirs, fuse box and dipstick round the engine
+    const bay = PP.bayDetails(M, { coolant: V(-0.55, 0.66, 1.3), brake: V(0.42, 0.72, 1.12), washer: V(-0.55, 0.6, 1.82), fuses: V(0.6, 0.68, 1.2), dipstick: V(0.15, 0.74, 1.35) });
+    model.parts.body.inner.add(bay.group);
+    model.bay = bay.refs;
+    // the scuttle panel under the windscreen: the source leaves a gap there between the glass
+    // and the bonnet's back edge, and from the seat you looked through it into the engine bay
+    const cowl = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35).rotateX(-Math.PI / 2), M.black);
+    cowl.position.set(0, 0.9, 1.045);
+    model.parts.body.inner.add(cowl);
   },
 };
