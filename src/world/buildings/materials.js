@@ -115,6 +115,40 @@ const P = {
       hctx.fillRect(x, 0, 2, S);
     }
   },
+  // furniture veneer: long fine grain, no board seams (tiles both ways)
+  veneer: (ctx, hctx, S) => {
+    const r = mulberry32(17);
+    ctx.fillStyle = 'rgb(150,112,78)';
+    ctx.fillRect(0, 0, S, S);
+    hctx.fillStyle = '#909090';
+    hctx.fillRect(0, 0, S, S);
+    for (let k = 0; k < 150; k++) {
+      const x0 = r() * S,
+        amp = 2 + r() * 7,
+        ph = r() * 6.28,
+        f = 1 + Math.floor(r() * 2);
+      const dark = r() < 0.55;
+      const style = dark ? `rgba(70,45,25,${0.1 + r() * 0.22})` : `rgba(205,165,118,${0.08 + r() * 0.14})`;
+      const lw = 0.6 + r() * 1.8;
+      for (const ox of [-S, 0, S]) {
+        for (const [c, st] of [
+          [ctx, style],
+          [hctx, dark ? 'rgba(40,40,40,0.25)' : 'rgba(200,200,200,0.15)'],
+        ]) {
+          c.strokeStyle = st;
+          c.lineWidth = lw;
+          c.beginPath();
+          for (let y = 0; y <= S; y += 4) {
+            const x = ox + x0 + Math.sin((y / S) * Math.PI * 2 * f + ph) * amp;
+            if (y) c.lineTo(x, y);
+            else c.moveTo(x, y);
+          }
+          c.stroke();
+        }
+      }
+    }
+    noiseFill(ctx, S, S, 23, null, 0.12, 0.05);
+  },
   floorboards: (ctx, hctx, S) => {
     const r = mulberry32(9);
     const n = 8;
@@ -350,6 +384,7 @@ const TEX_METRES = {
   plaster: 2,
   siding: 2,
   planks: 2,
+  veneer: 1,
   floorboards: 2,
   linoleum: 1.2,
   tiles: 1.2,
@@ -396,88 +431,6 @@ export function stdMat(params, physical = false) {
 }
 
 // Small landscape paintings for picture frames (a handful, shared).
-// Shop goods: one 8x8 atlas of packaging (cans, cereal boxes, crisp bags, drinks, motor oil,
-// candy, household odds), each cell a made-up brand. Products map their uvs into one cell.
-export const GOODS_GRID = 8;
-function goodsMaterial() {
-  const S = 1024,
-    C = S / GOODS_GRID;
-  const c = makeCanvas(S, S);
-  const x = c.getContext('2d');
-  const r = mulberry32(4242);
-  const rows = [
-    // [label colours, words]
-    [['#b8352a', '#e8d9b0', '#2f5b2f', '#d6a03a', '#3a4f7a', '#f0e6cc', '#7a2a1a', '#4a7a3a'], ['BEANS', 'SOUP', 'CORN', 'PEACHES', 'CHILI', 'TUNA', 'STEW', 'PEAS']],
-    [['#d8b13a', '#a33a2a', '#2a6a8a', '#e07a2a', '#5a3a7a', '#3a8a5a', '#c8c0b0', '#8a5a2a'], ['HASH', 'RAVIOLI', 'SARDINES', 'CARROTS', 'BEETS', 'SPINACH', 'MILK', 'COFFEE']],
-    [['#e0c040', '#c84a2a', '#3a6ab0', '#e6e0d0', '#7a4a2a', '#d07a2a', '#4a8a4a', '#b03a5a'], ['FLAKES', 'CRUNCH', 'OATS', 'RICE', 'BRAN', 'HONEY O', 'CRACKERS', 'COOKIES']],
-    [['#e8b030', '#c8302a', '#3a5ab0', '#2a8a4a', '#e07020', '#8a2a8a', '#d8d0b8', '#4a4a4a'], ['CHIPS', 'NACHO', 'SALT', 'PRETZEL', 'CHEESE', 'BBQ', 'POPCORN', 'JERKY']],
-    [['#b0201a', '#4a2a1a', '#e8d84a', '#6a2a8a', '#2a7ab0', '#e07a2a', '#f0f0e8', '#1a4a2a'], ['COLA', 'ROOT BEER', 'LEMON', 'GRAPE', 'SPRING', 'ORANGE', 'SODA', 'GINGER']],
-    [['#1a1a1a', '#d0b030', '#2a6a3a', '#3a6ad0', '#b02a1a', '#e0e0d8', '#4a4a4a', '#c87020'], ['10W-40', 'MOTOR OIL', 'COOLANT', 'WASHER', 'BRAKE', 'STARTER', 'GREASE', 'FIX-A-FLAT']],
-    [['#5a2a1a', '#c8302a', '#e0b040', '#2a2a6a', '#e8e0d0', '#8a1a3a', '#3a7a3a', '#d06a2a'], ['CHOCO', 'NUTS', 'TOFFEE', 'MINT', 'GUM', 'CHERRY', 'MINT', 'CARAMEL']],
-    [['#e8e4da', '#c8a040', '#3a3a3a', '#b02a2a', '#2a5a8a', '#d8d0c0', '#6a8a3a', '#e0c070'], ['TISSUE', 'MATCHES', 'BATTERY', 'RANGER', 'SOAP', 'BANDAGE', 'BUG OFF', 'CANDLES']],
-  ];
-  rows.forEach(([cols, words], j) => {
-    for (let i = 0; i < GOODS_GRID; i++) {
-      const X = i * C,
-        Y = j * C;
-      const bg = cols[i];
-      x.fillStyle = bg;
-      x.fillRect(X, Y, C, C);
-      // a band, a stripe or a panel per row style
-      x.fillStyle = 'rgba(255,255,255,0.85)';
-      if (j < 2) x.fillRect(X, Y + C * 0.32, C, C * 0.36);
-      else if (j === 2) {
-        x.fillStyle = 'rgba(255,255,255,0.25)';
-        x.beginPath();
-        x.arc(X + C * 0.5, Y + C * 0.68, C * 0.26, 0, Math.PI * 2);
-        x.fill();
-      } else if (j === 3) {
-        const g = x.createLinearGradient(X, Y, X, Y + C);
-        g.addColorStop(0, 'rgba(255,255,255,0.35)');
-        g.addColorStop(0.5, 'rgba(255,255,255,0)');
-        g.addColorStop(1, 'rgba(0,0,0,0.25)');
-        x.fillStyle = g;
-        x.fillRect(X, Y, C, C);
-      } else if (j === 4) {
-        x.fillStyle = 'rgba(255,255,255,0.75)';
-        x.beginPath();
-        x.ellipse(X + C * 0.5, Y + C * 0.5, C * 0.36, C * 0.22, -0.2, 0, Math.PI * 2);
-        x.fill();
-      } else if (j === 5) {
-        x.fillStyle = 'rgba(0,0,0,0.35)';
-        x.fillRect(X, Y + C * 0.72, C, C * 0.1);
-      } else {
-        x.fillStyle = 'rgba(255,255,255,0.18)';
-        x.fillRect(X + C * 0.08, Y + C * 0.08, C * 0.84, C * 0.84);
-      }
-      // brand word
-      const w = words[i];
-      const dark = j < 2 || j === 4;
-      x.fillStyle = dark ? '#1c1a18' : '#f6f1e6';
-      x.textAlign = 'center';
-      x.textBaseline = 'middle';
-      let size = C * 0.24;
-      x.font = `bold ${size}px Impact, 'Arial Black', sans-serif`;
-      const tw = x.measureText(w).width;
-      if (tw > C * 0.88) {
-        size *= (C * 0.88) / tw;
-        x.font = `bold ${size}px Impact, 'Arial Black', sans-serif`;
-      }
-      x.fillText(w, X + C / 2, Y + C * 0.5);
-      // fine print and a little wear
-      x.fillStyle = dark ? 'rgba(30,26,24,0.6)' : 'rgba(255,250,240,0.6)';
-      x.font = `${C * 0.07}px Arial, sans-serif`;
-      x.fillText(['NET WT 15 OZ', 'FAMILY SIZE', 'NEW!', '12 FL OZ', 'EST. 1952'][(i + j) % 5], X + C / 2, Y + C * 0.84);
-      for (let k = 0; k < 18; k++) {
-        x.fillStyle = `rgba(${120 + r() * 80},${100 + r() * 60},${80 + r() * 40},${0.1 + r() * 0.2})`;
-        x.fillRect(X + r() * C, Y + r() * C, 2 + r() * 6, 1 + r() * 3);
-      }
-    }
-  });
-  const t = canvasTexture(c, { wrap: false });
-  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.55, metalness: 0.05 });
-}
-
 function paintingMaterial(i) {
   const c = makeCanvas(64, 48);
   const ctx = c.getContext('2d');
@@ -569,14 +522,22 @@ export function archMaterials() {
     rooftiles: std('rooftiles', { roughness: 0.8, ns: 1.0 }, true),
     adobe: std('adobe', { roughness: 0.98 }, true),
     rug: std('rug', { roughness: 1, ns: 0.3 }),
-    fabric: std('fabric', { roughness: 1, ns: 0.4 }),
-    fabricRed: std('fabric', { roughness: 1, ns: 0.4, color: 0xd08070 }),
-    fabricBlue: std('fabric', { roughness: 1, ns: 0.4, color: 0x8090c0 }),
-    fabricBrown: std('fabric', { roughness: 1, ns: 0.4, color: 0xb09070 }),
+    fabric: std('fabric', { roughness: 1, ns: 0.4 }, true),
+    fabricRed: std('fabric', { roughness: 1, ns: 0.4, color: 0xd08070 }, true),
+    fabricBlue: std('fabric', { roughness: 1, ns: 0.4, color: 0x8090c0 }, true),
+    fabricBrown: std('fabric', { roughness: 1, ns: 0.4, color: 0xb09070 }, true),
     trimWhite: new THREE.MeshStandardMaterial({ color: 0xd8d3c8, roughness: 0.7 }),
     trimDark: new THREE.MeshStandardMaterial({ color: 0x3b3430, roughness: 0.7 }),
     wood: std('planks', { roughness: 0.8, color: 0xc89a6a, ns: 0.5 }),
     woodDark: std('planks', { roughness: 0.75, color: 0x7d5c40, ns: 0.4 }),
+    veneer: std('veneer', { roughness: 0.62, color: 0xd8b088, ns: 0.25 }, true),
+    veneerDark: std('veneer', { roughness: 0.55, color: 0x8a6446, ns: 0.25 }, true),
+    fabricGreen: std('fabric', { roughness: 1, ns: 0.4, color: 0x8a9a5a }, true),
+    fabricOrange: std('fabric', { roughness: 1, ns: 0.4, color: 0xc8823c }, true),
+    vinylRed: new THREE.MeshPhysicalMaterial({ color: 0x8e2a22, roughness: 0.45, clearcoat: 0.3 }),
+    vinylTeal: new THREE.MeshPhysicalMaterial({ color: 0x3f7a78, roughness: 0.45, clearcoat: 0.3 }),
+    vinylYellow: new THREE.MeshPhysicalMaterial({ color: 0xc9a63a, roughness: 0.45, clearcoat: 0.3 }),
+    paper: new THREE.MeshStandardMaterial({ color: 0xd9d1bb, roughness: 0.95, side: THREE.DoubleSide }),
     metal: new THREE.MeshStandardMaterial({ color: 0x8c8f92, roughness: 0.45, metalness: 0.8 }),
     metalPainted: new THREE.MeshStandardMaterial({ color: 0xb8b2a4, roughness: 0.6, metalness: 0.3 }),
     metalRed: new THREE.MeshStandardMaterial({ color: 0x9a2b22, roughness: 0.55, metalness: 0.3 }),
@@ -586,9 +547,51 @@ export function archMaterials() {
     plastic: new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.55 }),
     plasticDark: new THREE.MeshStandardMaterial({ color: 0x2c2c2e, roughness: 0.6 }),
     porcelain: new THREE.MeshPhysicalMaterial({ color: 0xeeeeea, roughness: 0.2, clearcoat: 0.6 }),
+    // the same left for years: yellowed, a tide line of grime low down, dust on the tops
+    porcelainOld: (() => {
+      const m = new THREE.MeshPhysicalMaterial({ color: 0xe6e1d2, roughness: 0.32, clearcoat: 0.35 });
+      applyWeathering(m, wthr, { rustColor: false, strength: 0.85 });
+      return m;
+    })(),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xc2c5c8, roughness: 0.26, metalness: 1 }),
+    chromeOld: (() => {
+      const m = new THREE.MeshStandardMaterial({ color: 0xb3b2ad, roughness: 0.36, metalness: 0.92 });
+      applyWeathering(m, weatheringUniforms({ dirt: 0.06, dust: 0.3, rust: 0, fade: 0 }), { rustColor: false, strength: 0.6 });
+      return m;
+    })(),
+    // standing water gone brown, and the stain it leaves when it dries
+    waterMurky: new THREE.MeshStandardMaterial({ color: 0x3a3020, roughness: 0.04, metalness: 0.1 }),
+    stain: new THREE.MeshStandardMaterial({ color: 0x8c6c40, roughness: 0.85 }),
+    enamelBlack: new THREE.MeshStandardMaterial({ color: 0x23211f, roughness: 0.5, metalness: 0.2 }),
+    // oil drums: paint over steel, rusting through where it chipped
+    ...Object.fromEntries(
+      [
+        ['drumRed', 0x8e2b20],
+        ['drumBlue', 0x2a4a72],
+        ['drumGreen', 0x3f5a36],
+      ].map(([k, c]) => {
+        const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.35 });
+        applyWeathering(m, weatheringUniforms({ dirt: 0.5, dust: 0.4, rust: 0.55, fade: 0.3 }), { rustColor: true, strength: 0.9 });
+        return [k, m];
+      })
+    ),
+    // kitchen appliance enamels of the sixties and seventies, gone dull with grease and dust
+    ...Object.fromEntries(
+      [
+        ['applianceWhite', 0xe4e0d4],
+        ['applianceAlmond', 0xd8c9a6],
+        ['applianceAvocado', 0x8b8d4c],
+        ['applianceGold', 0xc29233],
+        ['applianceCopper', 0x8a5232],
+      ].map(([k, c]) => {
+        const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.38, metalness: 0.12 });
+        applyWeathering(m, wthr, { rustColor: false, strength: 0.7 });
+        return [k, m];
+      })
+    ),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x9fb0b0, roughness: 0.08, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }),
     glassDirty: new THREE.MeshPhysicalMaterial({ color: 0xb6ad95, roughness: 0.4, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
-    mattress: std('fabric', { roughness: 1, color: 0xd8d2c0, ns: 0.3 }),
+    mattress: std('fabric', { roughness: 1, color: 0xd8d2c0, ns: 0.3 }, true),
     blackMatte: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.8 }),
     screen: new THREE.MeshStandardMaterial({ color: 0x101214, roughness: 0.15, metalness: 0.2 }),
     emissiveWarm: new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a0, emissiveIntensity: 0.0, roughness: 0.5 }),
@@ -599,7 +602,6 @@ export function archMaterials() {
     canvasOrange: std('fabric', { roughness: 1, color: 0xd88850, ns: 0.6 }),
     cardboard: new THREE.MeshStandardMaterial({ color: 0xa88458, roughness: 0.95 }),
     asphalt: std('concrete', { roughness: 0.95, color: 0x55524e }),
-    goods: goodsMaterial(),
   };
   for (let i = 0; i < 6; i++) MATS['painting' + i] = paintingMaterial(i);
   return MATS;

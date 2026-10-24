@@ -16,6 +16,7 @@ function mats() {
   MATS = {
     paint: new THREE.MeshStandardMaterial({ color: 0x9a2a1e, metalness: 0.3, roughness: 0.55 }),
     rod: new THREE.MeshStandardMaterial({ color: 0xb8bcc0, metalness: 0.95, roughness: 0.25 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 }),
   };
   return MATS;
 }
@@ -31,16 +32,54 @@ export function jackModel() {
     g.add(x);
     return x;
   };
-  mesh(new THREE.BoxGeometry(0.3, 0.02, 0.1).translate(0, 0.01, 0), M.paint);
-  const pad = mesh(new THREE.BoxGeometry(0.12, 0.025, 0.09), M.paint);
+  // the base: a pressed plate with its edges turned up, the bottom pivots on it
+  mesh(new THREE.BoxGeometry(0.3, 0.006, 0.11).translate(0, 0.003, 0), M.paint);
+  for (const z of [-0.052, 0.052]) mesh(new THREE.BoxGeometry(0.3, 0.026, 0.005).translate(0, 0.013, z), M.paint);
+  for (const x of [-0.145, 0.145]) mesh(new THREE.BoxGeometry(0.008, 0.016, 0.1).translate(x, 0.008, 0), M.paint);
+  mesh(new THREE.BoxGeometry(0.06, 0.02, 0.07).translate(0, 0.016, 0), M.paint);
+  // a group whose meshes move together (the pad, an arm)
+  const part = (list) => {
+    const o = new THREE.Group();
+    for (const [geo, m] of list) {
+      const x = new THREE.Mesh(geo, m);
+      x.castShadow = x.receiveShadow = true;
+      o.add(x);
+    }
+    g.add(o);
+    return o;
+  };
+  // the saddle: a channel with a notch for the sill seam, rubber in it
+  const pad = part([
+    [new THREE.BoxGeometry(0.12, 0.008, 0.07).translate(0, -0.008, 0), M.paint],
+    [new THREE.BoxGeometry(0.12, 0.022, 0.006).translate(0, 0.0, -0.032), M.paint],
+    [new THREE.BoxGeometry(0.12, 0.022, 0.006).translate(0, 0.0, 0.032), M.paint],
+    [new THREE.BoxGeometry(0.11, 0.008, 0.05).translate(0, 0.0, 0), M.rubber],
+    [new THREE.BoxGeometry(0.06, 0.016, 0.07).translate(0, -0.016, 0), M.paint],
+  ]);
+  // arms: pressed channels (a web and two flanges), a pin through each end
   const arms = [];
   for (const sx of [-1, 1])
     for (const lower of [true, false]) {
-      const a = mesh(new THREE.BoxGeometry(ARM, 0.018, 0.05).translate(ARM / 2, 0, 0), M.paint);
+      const a = part([
+        [new THREE.BoxGeometry(ARM, 0.004, 0.04).translate(ARM / 2, lower ? -0.008 : 0.008, 0), M.paint],
+        [new THREE.BoxGeometry(ARM, 0.02, 0.004).translate(ARM / 2, 0, -0.02), M.paint],
+        [new THREE.BoxGeometry(ARM, 0.02, 0.004).translate(ARM / 2, 0, 0.02), M.paint],
+        [new THREE.CylinderGeometry(0.006, 0.006, 0.05, 10).rotateX(Math.PI / 2), M.rod],
+        [new THREE.CylinderGeometry(0.006, 0.006, 0.05, 10).rotateX(Math.PI / 2).translate(ARM, 0, 0), M.rod],
+      ]);
       a.userData = { sx, lower };
       arms.push(a);
     }
-  const rod = mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.38, 8).rotateZ(Math.PI / 2).translate(0.03, 0, 0), M.rod);
+  // the screw: a threaded rod through the side pivots, a crank eye at one end
+  const thread = new THREE.CylinderGeometry(0.0065, 0.0065, 0.38, 10, 120).rotateZ(Math.PI / 2);
+  const tp = thread.attributes.position;
+  for (let i = 0; i < tp.count; i++) {
+    const k = 1 + 0.16 * Math.sin((tp.getX(i) / 0.0035) * Math.PI * 2);
+    tp.setY(i, tp.getY(i) * k);
+    tp.setZ(i, tp.getZ(i) * k);
+  }
+  thread.computeVertexNormals();
+  const rod = mesh(thread.translate(0.03, 0, 0), M.rod);
   const eye = mesh(new THREE.TorusGeometry(0.022, 0.005, 6, 14).rotateY(Math.PI / 2).translate(0.23, 0, 0), M.rod);
   const pose = (h) => {
     const y0 = 0.02,

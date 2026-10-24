@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { roundedBox } from '../gfx/geom.js';
+import { roundedBox, cushionBox } from '../gfx/geom.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -351,7 +351,9 @@ function steeringWheelModel(kind, R) {
 }
 
 // Another front seat in car space, made to the box of the car's own (min/max): runners on the floor,
-// a cushion, a back leaning a little, and what makes each kind itself.
+// a cushion, a back raked on its pivot, and what makes each kind itself: a racing bucket with
+// bolsters and harness slots, a pleated velour recliner of the seventies with its headrest, a
+// stock seat under a fleece cover.
 let SEAT_MATS = null;
 function seatModel(kind, mn, mx) {
   const g = new THREE.Group();
@@ -361,54 +363,85 @@ function seatModel(kind, mn, mx) {
     cloth: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 0.92 }), 'weave', 0.5),
     stripe: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x8e1d17, roughness: 0.9 }), 'weave', 0.5),
     velour: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x5b3a22, roughness: 0.97 }), 'weave', 0.6),
-    wool: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xe2d6bc, roughness: 1 }), 'grain', 0.9),
+    velourDark: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x3e2716, roughness: 0.97 }), 'weave', 0.6),
+    wool: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xb3a07c, roughness: 1 }), 'grain', 0.9),
+    frame: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.7, metalness: 0.3 }),
   });
   const w = mx.x - mn.x,
     d = mx.z - mn.z,
     H = mx.y - mn.y;
   const cx = (mn.x + mx.x) / 2;
   const y0 = mn.y;
-  const add = (geo, m, x, y, z, rx = 0) => {
+  const put = (parent, geo, m, x, y, z, rx = 0, ry = 0) => {
     const o = new THREE.Mesh(geo, m);
     o.position.set(x, y, z);
-    o.rotation.x = rx;
+    o.rotation.set(rx, ry, 0);
     o.castShadow = true;
     o.receiveShadow = true;
-    g.add(o);
+    parent.add(o);
     return o;
   };
-  // runners
-  for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.03, 0.03, d * 0.7), M.alloy, cx + s * w * 0.3, y0 + 0.015, mn.z + d * 0.55);
   const cushY = y0 + Math.min(0.28, H * 0.32);
+  const cushD = d * 0.64;
   const cushZ = mn.z + d * 0.6;
-  const backZ = mn.z + d * 0.16;
   const backH = mx.y - cushY - 0.02;
-  const lean = -0.22;
-  const backY = cushY + backH / 2;
+  // runners, the frame under the cushion
+  for (const s of [-1, 1]) {
+    put(g, new THREE.BoxGeometry(0.03, 0.025, d * 0.75), M.alloy, cx + s * w * 0.3, y0 + 0.012, mn.z + d * 0.55);
+    put(g, new THREE.BoxGeometry(0.02, cushY - y0 - 0.06, 0.03), S.frame, cx + s * w * 0.3, (y0 + cushY - 0.06) / 2 + 0.012, cushZ + cushD * 0.3);
+    put(g, new THREE.BoxGeometry(0.02, cushY - y0 - 0.06, 0.03), S.frame, cx + s * w * 0.3, (y0 + cushY - 0.06) / 2 + 0.012, cushZ - cushD * 0.35);
+  }
+  put(g, roundedBox(w * 0.8, 0.05, cushD * 0.9, 0.01, 1), S.frame, cx, cushY - 0.06, cushZ);
+  // the back, built upright from its pivot at the rear of the cushion and raked back
+  const back = new THREE.Group();
+  back.position.set(cx, cushY + 0.01, cushZ - cushD / 2 + 0.04);
+  back.rotation.x = -0.24;
+  g.add(back);
   if (kind === 'bucket') {
-    add(roundedBox(w * 0.66, 0.09, d * 0.6, 0.03, 3), S.cloth, cx, cushY, cushZ);
-    add(roundedBox(w * 0.2, 0.07, d * 0.58, 0.02, 2), S.stripe, cx, cushY + 0.012, cushZ);
-    for (const s of [-1, 1]) add(roundedBox(w * 0.14, 0.17, d * 0.62, 0.04, 3), S.shell, cx + s * w * 0.39, cushY + 0.03, cushZ);
-    add(roundedBox(w * 0.66, backH, 0.07, 0.03, 3), S.cloth, cx, backY, backZ + 0.02, lean);
-    add(roundedBox(w * 0.2, backH * 0.92, 0.075, 0.02, 2), S.stripe, cx, backY, backZ + 0.024, lean);
-    for (const s of [-1, 1]) add(roundedBox(w * 0.14, backH * 0.8, 0.16, 0.04, 3), S.shell, cx + s * w * 0.39, backY - backH * 0.06, backZ + 0.04, lean);
-    add(roundedBox(w * 0.86, backH + 0.04, 0.03, 0.015, 2), S.shell, cx, backY, backZ - 0.03, lean);
-    // the harness slots high in the back
-    for (const s of [-1, 1]) add(roundedBox(0.05, 0.022, 0.08, 0.008, 1), M.soot, cx + s * 0.07, backY + backH * 0.33, backZ - 0.02, lean);
-  } else {
-    const cloth = kind === 'recliner' ? S.velour : S.wool;
-    const fat = kind === 'sheepskin' ? 1.25 : 1;
-    add(roundedBox(w * 0.88, 0.12 * fat, d * 0.62, 0.05, 4), cloth, cx, cushY, cushZ);
-    add(roundedBox(w * 0.86, backH * 0.82, 0.12 * fat, 0.05, 4), cloth, cx, cushY + backH * 0.41 + 0.03, backZ + 0.04, lean);
-    // the headrest on its two posts
-    const hy = cushY + backH * 0.88 + 0.05;
-    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 8), M.chrome, cx + s * 0.06, hy - 0.06, backZ - 0.02, lean);
-    add(roundedBox(w * 0.56, 0.15, 0.1 * fat, 0.045, 4), cloth, cx, hy, backZ - 0.01, lean);
-    if (kind === 'recliner') {
-      // pleats across cushion and back
-      for (let i = 0; i < 4; i++) add(roundedBox(w * 0.8, 0.014, 0.022, 0.006, 1), cloth, cx, cushY + 0.06, cushZ - d * 0.24 + i * d * 0.16);
-      for (let i = 0; i < 5; i++) add(roundedBox(w * 0.8, 0.022, 0.016, 0.006, 1), cloth, cx, cushY + 0.1 + i * backH * 0.15, backZ + 0.1 - i * 0.022, lean);
+    put(g, cushionBox(w * 0.6, 0.08, cushD * 0.92, { r: 0.03, puff: 0.012, sag: 0.008 }), S.cloth, cx, cushY, cushZ, -0.05);
+    put(g, cushionBox(w * 0.16, 0.07, cushD * 0.9, { r: 0.02, puff: 0.01 }), S.stripe, cx, cushY + 0.006, cushZ, -0.05);
+    for (const s of [-1, 1]) put(g, cushionBox(w * 0.17, 0.15, cushD * 0.98, { r: 0.05, puff: 0.02 }), S.shell, cx + s * w * 0.385, cushY + 0.035, cushZ, -0.05);
+    put(g, roundedBox(w * 0.94, 0.04, cushD, 0.015, 2), S.shell, cx, cushY - 0.045, cushZ);
+    put(back, cushionBox(w * 0.56, backH * 0.82, 0.07, { r: 0.03, puff: 0.012 }), S.cloth, 0, backH * 0.43, 0.02);
+    put(back, cushionBox(w * 0.16, backH * 0.8, 0.075, { r: 0.02, puff: 0.01 }), S.stripe, 0, backH * 0.43, 0.026);
+    for (const s of [-1, 1]) {
+      put(back, cushionBox(w * 0.17, backH * 0.6, 0.16, { r: 0.05, puff: 0.02 }), S.shell, s * w * 0.36, backH * 0.32, 0.045, 0, -s * 0.25);
+      put(back, cushionBox(w * 0.16, backH * 0.26, 0.12, { r: 0.045, puff: 0.02 }), S.shell, s * w * 0.31, backH * 0.76, 0.035, 0, -s * 0.2);
     }
+    put(back, roundedBox(w * 0.9, backH * 1.02, 0.03, 0.015, 2), S.shell, 0, backH * 0.5, -0.035);
+    // harness slots high in the back
+    for (const s of [-1, 1]) put(back, roundedBox(0.05, 0.022, 0.09, 0.008, 1), M.soot, s * 0.07, backH * 0.84, 0.0);
+  } else if (kind === 'recliner') {
+    // a seat of four plump rolls, a back of five, piped sides
+    for (let k = 0; k < 4; k++) put(g, cushionBox(w * 0.82, 0.11, cushD / 4 + 0.005, { r: 0.045, puff: 0.02 }), S.velour, cx, cushY + 0.01, cushZ - cushD / 2 + (k + 0.5) * (cushD / 4), -0.04);
+    for (const s of [-1, 1]) put(g, cushionBox(w * 0.08, 0.13, cushD, { r: 0.03, puff: 0.01 }), S.velourDark, cx + s * w * 0.45, cushY + 0.01, cushZ, -0.04);
+    const rh = (backH * 0.8) / 5;
+    for (let k = 0; k < 5; k++) put(back, cushionBox(w * 0.8, rh + 0.006, 0.1, { r: 0.04, puff: 0.022 }), S.velour, 0, 0.03 + (k + 0.5) * rh, 0.01);
+    for (const s of [-1, 1]) put(back, cushionBox(w * 0.08, backH * 0.84, 0.13, { r: 0.03, puff: 0.01 }), S.velourDark, s * w * 0.44, backH * 0.42, 0.0);
+    put(back, roundedBox(w * 0.96, backH * 0.86, 0.04, 0.015, 2), S.velourDark, 0, backH * 0.43, -0.06);
+    // headrest on chrome posts, the recline lever by the pivot
+    const hy = backH * 0.86 + 0.13;
+    for (const s of [-1, 1]) put(back, new THREE.CylinderGeometry(0.006, 0.006, 0.14, 8), M.chrome, s * 0.06, hy - 0.08, -0.01);
+    put(back, cushionBox(w * 0.52, 0.16, 0.1, { r: 0.05, puff: 0.02 }), S.velour, 0, hy, 0.0);
+    put(g, roundedBox(0.02, 0.02, 0.12, 0.006, 1), M.chrome, cx + w * 0.48, cushY - 0.02, cushZ - cushD * 0.3, -0.3);
+  } else {
+    // the stock shape under a fleece: lumpy, overhanging the sides
+    const fuzz = (geo, amt) => {
+      const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const h = Math.sin(p.getX(i) * 431.7 + p.getY(i) * 217.3 + p.getZ(i) * 311.9) * 43758.5453;
+        const k = 1 + (h - Math.floor(h) - 0.5) * amt;
+        p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, p.getZ(i) * k);
+      }
+      geo.computeVertexNormals();
+      return geo;
+    };
+    put(g, fuzz(cushionBox(w * 0.92, 0.14, cushD * 1.02, { r: 0.055, puff: 0.04, sag: 0.01, seg: 4 }), 0.06), S.wool, cx, cushY + 0.01, cushZ);
+    for (const s of [-1, 1]) put(g, fuzz(cushionBox(0.03, 0.1, cushD * 0.9, { r: 0.012, puff: 0.01 }), 0.15), S.wool, cx + s * w * 0.47, cushY - 0.05, cushZ);
+    put(back, fuzz(cushionBox(w * 0.9, backH * 0.84, 0.14, { r: 0.06, puff: 0.04, seg: 4 }), 0.05), S.wool, 0, backH * 0.43, 0.0);
+    const hy = backH * 0.86 + 0.12;
+    for (const s of [-1, 1]) put(back, new THREE.CylinderGeometry(0.006, 0.006, 0.12, 8), M.chrome, s * 0.06, hy - 0.08, -0.02);
+    put(back, fuzz(cushionBox(w * 0.58, 0.16, 0.11, { r: 0.05, puff: 0.03 }), 0.06), S.wool, 0, hy, 0.0);
   }
   return mark(g);
 }
