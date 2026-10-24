@@ -414,6 +414,32 @@ export class ImportedCarModel {
       cup.position.copy(d.at).add(V(Math.sign(d.at.x) * 0.007, 0, 0));
       cup.quaternion.copy(q);
       parent.add(cup);
+    } else if (d.make === 'handbrake') {
+      // a hand lever on a console between the front seats: the console stands on the tunnel, the
+      // lever is hinged at its back end, the grip and its release button forward
+      const along = d.at.clone().sub(d.pivot);
+      const L = along.length();
+      const dir = along.clone().normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), dir);
+      const h = d.pivot.y - d.floor - 0.015;
+      const box = new THREE.Mesh(roundedBox(0.1, h, L + 0.16, 0.012, 2), M.black);
+      box.position.set(d.pivot.x, d.floor + h / 2, d.pivot.z + dir.z * (L / 2) - 0.02);
+      parent.add(box);
+      const slot = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.006, L * 0.7), M.rubber);
+      slot.position.set(d.pivot.x, d.floor + h + 0.002, d.pivot.z + dir.z * (L * 0.45));
+      parent.add(slot);
+      const lever = new THREE.Group();
+      lever.position.copy(d.pivot);
+      lever.quaternion.copy(q);
+      const bar = new THREE.Mesh(roundedBox(0.022, 0.026, L, 0.006, 2), M.black);
+      bar.position.set(0, 0.006, L / 2);
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.016, 0.11, 14).rotateX(Math.PI / 2), M.rubber);
+      grip.position.set(0, 0.008, L - 0.05);
+      const button = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.012, 10).rotateX(Math.PI / 2), M.chrome);
+      button.position.set(0, 0.008, L + 0.008);
+      const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 12).rotateZ(Math.PI / 2), M.steel);
+      lever.add(bar, grip, button, knuckle);
+      holder.add(lever);
     } else if (d.make === 'pedal') {
       // hung from the pivot, the pad facing the driver's foot
       const pad = new THREE.Mesh(roundedBox(0.052, 0.062, 0.012, 0.004, 1), M.rubber);

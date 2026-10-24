@@ -19,7 +19,7 @@ const CONTROLS = {
   key: V(0.25, 0.695, 0.655),
   stalk: V(0.48, 0.795, 0.525),
   shifter: V(sw.center[0] - 0.13, 0.84, 0.47), // column selector
-  handbrake: V(0.535, 0.43, 0.83), // foot-operated parking brake
+  handbrake: V(0.0, 0.565, 0.17), // the grip of the hand lever between the front seats
   horn: V(...sw.center).addScaledVector(COLUMN, 0.04),
 };
 const SEATS = {
@@ -32,7 +32,7 @@ const SEATS = {
 const STEREO = { center: [0, 0.75, 0.651], normal: [0, 0, -1], w: 0.08, h: 0.018 };
 const FRONT = ['driver', 'passenger'];
 // The low-poly source has no switches to speak of: the key, stalk, knobs, buttons, door handles
-// and the parking brake pedal are made here (MOVING), each hotspot on its control.
+// and the parking brake lever are made here (MOVING), each hotspot on its control.
 const HOTSPOTS = [
   { id: 'fuel', label: 'Fuel filler', pos: V(0.804, 0.86, -1.6), r: 0.08, part: 'fueltank' },
   { id: 'oil', label: 'Oil filler', pos: V(0.2, 0.86, 1.35), r: 0.1, part: 'engine', lid: 'hood' },
@@ -42,11 +42,11 @@ const HOTSPOTS = [
   { id: 'indicator', label: 'Turn signal', pos: CONTROLS.stalk.clone(), r: 0.035, part: 'body', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'lights', label: 'Headlights', pos: V(0.6, 0.8, 0.638), r: 0.03, part: 'body', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'wipers', label: 'Wipers', pos: V(0.13, 0.8, 0.62), r: 0.03, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
-  { id: 'handbrake', label: 'Parking brake', pos: CONTROLS.handbrake.clone(), r: 0.035, part: 'body', inside: true, seats: ['driver'] },
+  { id: 'handbrake', label: 'Parking brake', pos: CONTROLS.handbrake.clone(), r: 0.045, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
   { id: 'radio', label: 'Stereo', pos: V(0, 0.75, 0.648), r: 0.05, part: 'body', inside: true, seats: FRONT, hand: 'right' },
   { id: 'hazard', label: 'Hazard lights', pos: V(0, 0.83, 0.646), r: 0.022, part: 'body', inside: true, seats: FRONT, hand: 'right' },
   { id: 'heater', label: 'Heater', pos: V(0.06, 0.7, 0.656), r: 0.025, part: 'body', inside: true, seats: FRONT, hand: 'right' },
-  { id: 'dome', label: 'Cabin light', pos: V(0, 1.285, -0.12), r: 0.04, part: 'body', inside: true, hand: 'right' },
+  { id: 'dome', label: 'Cabin light', pos: V(0, 1.27, -0.12), r: 0.045, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.694, 0.85, 0.42), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.694, 0.85, 0.42), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
   // window switches on the driver's armrest
@@ -62,7 +62,7 @@ const MOVING = {
   hazard: { make: 'button', pivot: V(0, 0.83, 0.653), axis: V(0, 0, 1), push: 0.004 },
   handleFL: { make: 'handle', pivot: V(0.696, 0.85, 0.463), at: V(0.696, 0.85, 0.42), axis: V(0, 1, 0), angle: 0.35, door: 'door_FL' },
   handleFR: { make: 'handle', pivot: V(-0.696, 0.85, 0.463), at: V(-0.696, 0.85, 0.42), axis: V(0, -1, 0), angle: 0.35, door: 'door_FR' },
-  park: { make: 'pedal', pivot: V(0.535, 0.53, 0.92), at: CONTROLS.handbrake.clone(), axis: V(-1, 0, 0), angle: 0.3 },
+  park: { make: 'handbrake', pivot: V(0.0, 0.545, -0.1), at: V(0.0, 0.56, 0.17), floor: 0.398, axis: V(-1, 0, 0), angle: 0.42 },
 };
 const POINTS = {
   exhaust: V(...META.exhaust),
@@ -73,7 +73,7 @@ const POINTS = {
   frontTrunk: V(0, 0.85, -2.5), // stand behind the car to reach into the boot
   tailLights: V(0, 0.71, -2.25),
   cabin: V(0, 1.0, -0.3),
-  dome: V(0, 1.295, -0.12),
+  dome: V(0, 1.277, -0.12), // just under the headliner
 };
 const BOXES = autoBoxes(META, { floorY: 0.3, trunkFloorY: 0.5 });
 

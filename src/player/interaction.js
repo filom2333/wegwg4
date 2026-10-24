@@ -364,7 +364,7 @@ export class Interaction {
     const p = g.player;
     const out = [];
     const cam = this.cam;
-    if (car && !p.dead && !p.lying && (p.seat ? p.car === car : car.root.position.distanceTo(cam.position) < 6)) {
+    if (car && !p.dead && !p.lying && !p.thirdPerson && (p.seat ? p.car === car : car.root.position.distanceTo(cam.position) < 6)) {
       const W = window.innerWidth,
         H = window.innerHeight;
       const R = Math.min(W, H) * 0.3;
@@ -430,7 +430,10 @@ export class Interaction {
       this.updateDots(null);
       return;
     }
-    this.target = this.findTarget();
+    // from behind the body (third person) nothing is aimed at: the aim is the eye's, and its dots,
+    // rings and cards would point at things the view does not look at
+    const third = p.thirdPerson && (p.tpBlend || 0) > 0.5;
+    this.target = third ? null : this.findTarget();
     const t = this.target;
     const prompts = [];
     let info = null;
@@ -575,10 +578,11 @@ export class Interaction {
       }
     }
     if (ui) {
-      ui.setPrompts(prompts);
-      ui.setTargetInfo(info);
+      // (third person: a clean view, the cards and key lists are for the first-person one)
+      ui.setPrompts(third ? [] : prompts);
+      ui.setTargetInfo(third ? null : info);
       ui.setCardPlace && ui.setCardPlace(!!this.held, !!p.seat);
-      ui.setCrosshair(this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : p.seat === 'driver' ? 'none' : 'dot');
+      ui.setCrosshair(third ? 'none' : this.held && this.held.def && this.held.def.weapon ? 'gun' : t ? 'active' : p.seat === 'driver' ? 'none' : 'dot');
     }
     // outline highlight; dots on the car's controls
     this.updateOutline(t);
