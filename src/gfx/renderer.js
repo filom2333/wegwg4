@@ -274,8 +274,9 @@ export class Renderer {
     this.grade.uniforms.uRevZ.value = this.revZ ? 1 : 0;
     this.composer.addPass(new DepthCapturePass(this.grade.uniforms.tDepth));
     this.outline = new SelectionOutlinePass(this.camera);
-    this.outline.edgeStrength = 1.2;
-    this.outline.visibleEdgeColor.set(0xf2e6cf);
+    // (a faint hairline: it says what the hand would take, without shouting)
+    this.outline.edgeStrength = 0.7;
+    this.outline.visibleEdgeColor.set(0xe9dfcc);
     this.outline.enabled = false;
     this.composer.addPass(this.outline);
     // threshold well above sunlit diffuse surfaces (snow, salt and white sand are ~1.5 in the

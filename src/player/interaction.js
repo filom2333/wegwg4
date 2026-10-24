@@ -169,7 +169,7 @@ export class Interaction {
     }
     // poi doors, pumps
     if (hit && hit.owner && hit.distance <= reach) {
-      if (hit.owner.kind === 'door' && (!best || hit.distance < best.dist)) best = { kind: 'poiDoor', door: hit.owner.door, dist: hit.distance };
+      if (hit.owner.kind === 'door' && (!best || hit.distance < best.dist)) best = { kind: 'poiDoor', door: hit.owner.door, dist: hit.distance, point: hit.point };
     }
     if (g.pois && (!best || best.kind !== 'item')) {
       const tip = origin.clone().addScaledVector(dir, Math.min(reach, hitDist));
@@ -309,7 +309,7 @@ export class Interaction {
       pick = list[0];
       for (const c of list) if (c.d - list[0].d < 0.15 && c.vol < pick.vol) pick = c;
     }
-    let best = pick ? (pick.item ? { kind: 'item', item: pick.item, dist: pick.d } : pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
+    let best = pick ? (pick.item ? { kind: 'item', item: pick.item, dist: pick.d } : pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d, point: origin.clone().addScaledVector(dir, pick.d) }) : null;
     if (seat && (!best || seat.dist < best.dist + 0.4)) best = seat;
     if (hs && (!best || hs.dist < best.dist + 0.25)) best = hs;
     return best;
@@ -458,6 +458,8 @@ export class Interaction {
         return;
       }
     }
+    // a hand on a door, a lid or a winder, moved by the mouse
+    if (this.grab && this.updateGrab(dt, blocked)) return;
     // an electric window switch held down
     if (this.switchWindow) {
       if (!input.isDown('interact') || !g.car || !p.seat) this.switchWindow = null;
@@ -657,6 +659,148 @@ export class Interaction {
     this.dotLabel = null;
     // stow watch: items resting inside the car become attached to it
     this.updateStowing(dt);
+  }
+
+  // ------------------------------------------------------------------ taking hold of things
+  // What under the aim can be taken hold of and moved by hand: a hinged part of the car (a door,
+  // the bonnet, the boot lid; a door's inside handle), a window winder from the seat, a door of
+  // a building.
+  grabbable(t) {
+    const g = this.game;
+    const car = g.car;
+    if (!t || this.held) return null;
+    if (t.kind === 'part' && car) {
+      const mp = car.model.parts[t.part];
+      if (mp && mp.hinge && car.isInstalled(t.part)) return { kind: 'car', car, id: t.part };
+    }
+    if (t.kind === 'hotspot' && car) {
+      const h = t.hotspot;
+      if ((h.id === 'doorFL' || h.id === 'doorFR') && h.door && car.isInstalled(h.door)) return { kind: 'car', car, id: h.door, handle: true };
+      if (h.id.startsWith('crank') && g.player.seat && car.isInstalled(h.door)) return { kind: 'crank', car, door: h.door };
+    }
+    if (t.kind === 'poiDoor') return { kind: 'poiDoor', door: t.door };
+    return null;
+  }
+
+  startGrab(gd, t, via) {
+    const g = this.game;
+    const at = t.point ? V(t.point.x, t.point.y, t.point.z) : t.kind === 'hotspot' ? g.car.worldPointOf(t.hotspot.pos) : null;
+    const G = { ...gd, t, via, time: 0, moved: 0, local: null, click: 0 };
+    if (gd.kind === 'car') {
+      const mp = gd.car.model.parts[gd.id];
+      mp.inner.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(mp.inner.matrixWorld).invert();
+      // the point taken hold of, in the part's closed pose (car space)
+      G.local = at ? at.applyMatrix4(inv) : mp.bbox.getCenter(V(0, 0, 0));
+      if (gd.id.startsWith('door')) gd.car.handlePull[gd.id] = 0.3;
+    } else if (gd.kind === 'poiDoor') {
+      const d = gd.door;
+      d.pivot.updateMatrixWorld(true);
+      G.local = at ? at.applyMatrix4(new THREE.Matrix4().copy(d.pivot.matrixWorld).invert()) : V(d.w - 0.08, 1.0, 0);
+    }
+    this.grab = G;
+    g.player.lookFrozen = true;
+  }
+
+  // Where the point taken hold of is with the thing open by `u` (0 shut, 1 all the way).
+  grabWorld(G, u) {
+    if (G.kind === 'car') {
+      const h = G.car.model.parts[G.id].hinge;
+      const q = new THREE.Quaternion().setFromAxisAngle(h.axis, h.max * u);
+      return G.local.clone().sub(h.origin).applyQuaternion(q).add(h.origin).applyMatrix4(G.car.root.matrixWorld);
+    }
+    const d = G.door;
+    const m = new THREE.Matrix4().compose(d.pivot.position, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, d.baseRot + u * 1.55, 0)), V(1, 1, 1));
+    return G.local.clone().applyMatrix4(m).applyMatrix4(d.pivot.parent.matrixWorld);
+  }
+
+  grabOpen(G) {
+    return G.kind === 'car' ? G.car.model.parts[G.id].openT : G.door.open;
+  }
+
+  // Moves it to `u`, with the latch: the click as it comes off the catch, the slam onto it.
+  setGrabOpen(G, u) {
+    const g = this.game;
+    const before = this.grabOpen(G);
+    if (u < 0.006 && before >= 0.006) u = 0;
+    if (G.kind === 'car') {
+      const car = G.car;
+      const mp = car.model.parts[G.id];
+      car.model.setOpen(G.id, u);
+      mp.targetOpen = u;
+      if ((before <= 0.08) !== (u <= 0.08)) car.rebuildColliders();
+      const snd = G.id.startsWith('door') ? (u > before ? 'doorOpen' : 'doorClose') : G.id === 'hood' ? 'hood' : 'trunk';
+      const at = car.worldPointOf(mp.hinge.origin);
+      if (before === 0 && u > 0) g.audio && g.audio.play(snd, { at, volume: 0.6 });
+      else if (u === 0 && before > 0) g.audio && g.audio.play(snd, { at, volume: Math.min(1, 0.3 + Math.abs(before) * 4) });
+    } else {
+      const d = G.door;
+      d.open = d.target = u;
+      d.inst.state.doors[d.key] = u;
+      g.pois.applyDoor(d);
+      const at = d.pivot.getWorldPosition(V(0, 0, 0));
+      if (before === 0 && u > 0) g.audio && g.audio.play('doorCreak', { at, volume: 0.5 });
+      else if (u === 0 && before > 0) g.audio && g.audio.play('doorShut', { at });
+    }
+  }
+
+  // Each frame of a hold: the mouse moves the thing along its swing (the way its handle goes on
+  // screen), the view held still; letting go leaves it where it is. A quick tap without moving
+  // does what E always did. Returns false once let go.
+  updateGrab(dt, blocked) {
+    const g = this.game;
+    const G = this.grab;
+    const down = G.via === 'interact' ? input.isDown('interact') : input.mouseDown(0);
+    const gone = (G.kind === 'car' || G.kind === 'crank') && (!G.car.isInstalled(G.kind === 'car' ? G.id : G.door) || G.car !== g.car);
+    if (!down || blocked || gone || g.player.dead) {
+      this.grab = null;
+      g.player.lookFrozen = false;
+      if (!gone && G.moved < 6 && G.time < 0.4) this.grabTap(G);
+      return false;
+    }
+    G.time += dt;
+    const mx = input.mouse.dx,
+      my = input.mouse.dy;
+    G.moved += Math.hypot(mx, my);
+    const kn = G.via === 'interact' ? (settings.data.bindings.interact || 'KeyE').replace(/^Key/, '') : 'LMB';
+    if (G.kind === 'crank') {
+      const moved = G.car.windWindow(G.door, my * 0.0022);
+      G.click += Math.abs(moved);
+      if (G.click > 0.035) {
+        G.click = 0;
+        g.audio && g.audio.play('click', { volume: 0.12, rate: 1.7 + Math.random() * 0.2 });
+      }
+      if (moved) this.useAnim = Math.max(this.useAnim, 0.3);
+      g.hud && g.hud.setPrompts([['Mouse', 'Wind the window'], [kn, 'Let go']]);
+      return true;
+    }
+    if (mx || my) {
+      // the handle's way across the screen per unit of opening
+      const u = this.grabOpen(G);
+      const du = u > 0.97 ? -0.03 : 0.03;
+      const W = window.innerWidth / 2,
+        H = window.innerHeight / 2;
+      const cam = g.renderer.camera;
+      const a = this.grabWorld(G, u).project(cam),
+        b = this.grabWorld(G, u + du).project(cam);
+      const sx = ((b.x - a.x) * W) / du,
+        sy = (-(b.y - a.y) * H) / du;
+      const s2 = sx * sx + sy * sy;
+      let step = s2 > 900 ? (mx * sx + my * sy) / s2 : -my * 0.004;
+      step = clamp(step, -0.12, 0.12);
+      this.setGrabOpen(G, clamp(u + step, 0, 1));
+    }
+    g.hud && g.hud.setPrompts([['Mouse', 'Move it'], [kn, 'Let go']]);
+    return true;
+  }
+
+  // The tap: open or shut all the way, as E always did.
+  grabTap(G) {
+    const g = this.game;
+    const t = G.t;
+    if (G.kind === 'poiDoor') return g.pois.toggleDoor(G.door);
+    if (t.kind === 'hotspot') return this.useHotspot(t.hotspot);
+    G.car.toggleOpen(G.id);
   }
 
   // Aimed at the cap of a jerry can (within a hand's breadth of it on the can's surface).
@@ -871,7 +1015,7 @@ export class Interaction {
         info = { title: car.partLabel(id), sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
         void def;
         const mp = car.model.parts[id];
-        if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open']);
+        if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open'], ['Hold', 'Move by hand']);
         const rem = car.canRemove(id);
         if (rem.ok) prompts.push(['R', 'Remove (hold)']);
         else if (!mp.hinge) prompts.push(['', rem.reason]);
@@ -930,7 +1074,7 @@ export class Interaction {
           prompts.push(['E', car.parkBrake ? 'Release' : 'Set it']);
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
-          prompts.push(['E', open ? 'Close the door' : 'Open the door']);
+          prompts.push(['E', open ? 'Close the door' : 'Open the door'], ['Hold', 'Move by hand']);
         } else if (h.id.startsWith('crank')) {
           const t = car.windowT[h.door] || 0;
           info.sub = t < 0.03 ? 'Shut' : t > 0.97 ? 'All the way down' : `Open ${Math.round(t * 100)}%`;
@@ -1010,7 +1154,7 @@ export class Interaction {
         break;
       case 'poiDoor':
         info = { title: 'Door' };
-        prompts.push(['E', t.door.open > 0.5 ? 'Close' : 'Open']);
+        prompts.push(['E', t.door.open > 0.5 ? 'Close' : 'Open'], ['Hold', 'Move by hand']);
         break;
       case 'pump': {
         const st = t.pump.inst.state;
@@ -1188,6 +1332,10 @@ export class Interaction {
     }
     if (!input.wasPressed('interact') && !(input.mousePressed(0) && !this.fists)) return;
     const viaMouse = !input.wasPressed('interact');
+    // doors, lids and winders are taken hold of: the mouse moves them (a quick tap of E swings
+    // them all the way, see updateGrab)
+    const gd = this.grabbable(t);
+    if (gd) return this.startGrab(gd, t, viaMouse ? 'mouse' : 'interact');
     switch (t.kind) {
       case 'item':
         if (!viaMouse && this.onCap(t)) this.toggleCap(t.item);

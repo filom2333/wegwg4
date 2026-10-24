@@ -214,6 +214,22 @@ canvas#game {
   opacity: 1;
   transform: none;
 }
+/* what you look at: no name card, just the key or two that do something to it, small and quiet */
+.hud-card:not(.held) .hud-card-title,
+.hud-card:not(.held) .hud-card-sub,
+.hud-card:not(.held) .hud-card-bar {
+  display: none !important;
+}
+.hud-card:not(.held) .hud-prompts {
+  margin-top: 0;
+  opacity: 0.82;
+}
+.hud-card:not(.held) .hud-prompts .p {
+  font-size: 11px;
+}
+.hud-card:not(.held) .hud-prompts .p:nth-child(n + 3) {
+  display: none;
+}
 /* what you hold: in the corner, not on top of the thing in your hand */
 .hud-card.held {
   left: auto;
