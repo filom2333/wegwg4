@@ -556,6 +556,7 @@ export function clutterRoom(b, P, r, rnd, y, openings, { amount = 1, ceilingY = 
   // grime over the floor first, then the junk
   place(b, floorGrime(rnd, W - 0.4, D - 0.4), (r.x0 + r.x1) / 2, y, (r.z0 + r.z1) / 2, 0);
   const n = Math.max(3, Math.min(14, Math.round(W * D * 0.6 * amount)));
+  const lootHere = floorLoot(b, y);
   for (let k = 0; k < n; k++) {
     const make = pick(rnd, list);
     const item = make === fallenPlaster ? fallenPlaster(rnd, ceilingY - y) : make(rnd);
@@ -571,7 +572,7 @@ export function clutterRoom(b, P, r, rnd, y, openings, { amount = 1, ceilingY = 
         z = r.z0 + 0.3 + d / 2 + rnd() * Math.max(0, D - 0.6 - d);
       const half = Math.max(w, d) / 2;
       const box = [x - half, z - half, x + half, z + half];
-      if (P.overlaps(box)) continue;
+      if (P.overlaps(box) || lootHere.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1])) continue;
       place(b, item, x, y, z, rot);
       if (item.cols.length) P.placed.push(box);
       break;
@@ -871,10 +872,15 @@ export function strawLitter(rnd) {
   return it;
 }
 
+// Boxes round the loot spots on the floor at height y (things are put down there).
+const floorLoot = (b, y) => b.loot.filter((l) => Math.abs(l.pos[1] - y) < 0.3).map((l) => [l.pos[0] - 0.45, l.pos[2] - 0.45, l.pos[0] + 0.45, l.pos[2] + 0.45]);
+
 // Strew a rectangle (a shop floor, a workshop, a forecourt) with what `list` ([maker, weight])
 // holds, clear of the boxes in `keep` ([x0, z0, x1, z1]: what stands there, ways through doors).
 export function clutterArea(b, rnd, [x0, z0, x1, z1], y, list, n, keep = []) {
   const placed = [];
+  // never on top of a spot where loot lies on the floor
+  keep = [...keep, ...floorLoot(b, y)];
   for (let k = 0; k < n; k++) {
     const make = pick(rnd, list);
     const item = make(rnd);
