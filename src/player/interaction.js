@@ -616,7 +616,7 @@ export class Interaction {
     let sub = '';
     let bar = null;
     if (def.liquid) {
-      sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType === 'fuel' ? 'fuel' : s.liquidType}`;
+      sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
       bar = (s.liquid || 0) / def.liquid.cap;
     } else if (def.consume) {
       const parts = [];

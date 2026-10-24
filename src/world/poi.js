@@ -14,9 +14,10 @@ import { applyWeathering, weatheringUniforms } from '../vehicle/weathering.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-// abandoned cars per type of place (real cars of the game's types, put there by the fleet: see
-// Fleet.onPoiLoaded; a scrapyard holds five)
-const WRECKS = { junkyard: 5, wreck: 1, homestead: 0, trailers: 1, ranch: 1, houses: 1, house: 0, gasStation: 1, motel: 1, diner: 2, outpost: 1, ruins: 0, camp: 1 };
+// abandoned cars (real cars of the game's types, put there by the fleet: see Fleet.placeHulk):
+// how many a place may hold and the chance of each being there. A scrapyard keeps one or two, a
+// roadside wreck is always its car, elsewhere one now and then.
+const WRECKS = { junkyard: [2, 0.6], wreck: [1, 1], homestead: [0, 0], trailers: [1, 0.15], ranch: [1, 0.15], houses: [1, 0.1], house: [0, 0], gasStation: [1, 0.12], motel: [1, 0.15], diner: [1, 0.15], outpost: [1, 0.15], ruins: [0, 0], camp: [1, 0.1] };
 
 // ------------------------------------------------------------------ manager
 export class POIManager {
@@ -203,8 +204,8 @@ export class POIManager {
       this.addFootings(inst, b, em);
     }
     // wrecks
-    const nW = WRECKS[poi.type] ?? 0;
-    for (let i = 0; i < nW; i++) this.addWreck(inst, rnd, i, poi.type);
+    const [nW, pW] = WRECKS[poi.type] ?? [0, 0];
+    for (let i = 0; i < nW; i++) if (rnd() < pW) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
     this.loaded.set(k, inst);
     for (const p of inst.propList) placeProp(this.game, inst, p);

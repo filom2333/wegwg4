@@ -90,6 +90,9 @@ const SHOTS = {
     car.ignition = true;
     car.dyn.startEngine && car.dyn.startEngine();
     car.dyn.engine.running = true;
+    // under way: brake off, third gear
+    car.parkBrake = false;
+    car.dyn.gear = 4;
     car.dyn.body.setLinvel({ x: r.fwd.x * 19, y: 0, z: r.fwd.z * 19 }, true);
     g.player.seatYaw = 0;
     g.player.seatPitch = -0.12;

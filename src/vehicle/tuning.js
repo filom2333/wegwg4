@@ -294,6 +294,8 @@ function steeringWheelModel(kind, R) {
     suede: new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: 0.95 }),
     bakelite: new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.3 }),
     red: new THREE.MeshStandardMaterial({ color: 0xb01c14, roughness: 0.6 }),
+    // satin steel for spokes and hubs: in the shade of a cabin a mirror chrome only shows the sky
+    steel: new THREE.MeshStandardMaterial({ color: 0x9c9fa2, roughness: 0.38, metalness: 0.75, envMapIntensity: 0.35 }),
   });
   const add = (geo, m) => {
     const o = new THREE.Mesh(geo, m);
@@ -320,13 +322,13 @@ function steeringWheelModel(kind, R) {
   const hub = (r, depth, m, z = 0) => add(new THREE.CylinderGeometry(r, r * 1.05, depth, 28).rotateX(Math.PI / 2).translate(0, 0, z - depth / 2), m);
   if (kind === 'sport') {
     add(new THREE.TorusGeometry(R, 0.0155, 12, 64), mat.leather);
-    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.034, 0.006, M.alloy, 0.012, 3);
+    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.034, 0.006, mat.steel, 0.012, 3);
     hub(0.045, 0.04, mat.leather, -0.008);
-    add(new THREE.CylinderGeometry(0.018, 0.018, 0.004, 20).rotateX(Math.PI / 2).translate(0, 0, -0.006), M.chrome);
+    add(new THREE.CylinderGeometry(0.018, 0.018, 0.004, 20).rotateX(Math.PI / 2).translate(0, 0, -0.006), mat.steel);
   } else if (kind === 'wood') {
     add(new THREE.TorusGeometry(R, 0.0115, 10, 64), mat.wood);
-    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.022, 0.004, M.chrome, 0.02, 2);
-    hub(0.032, 0.03, M.chrome, -0.018);
+    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.022, 0.004, mat.steel, 0.02, 2);
+    hub(0.032, 0.03, mat.steel, -0.018);
     add(new THREE.CylinderGeometry(0.022, 0.022, 0.006, 20).rotateX(Math.PI / 2).translate(0, 0, -0.02), mat.bakelite);
   } else if (kind === 'dish') {
     add(new THREE.TorusGeometry(R, 0.015, 12, 64), mat.suede);
@@ -339,10 +341,10 @@ function steeringWheelModel(kind, R) {
     // banjo: a thin rim, four wire spokes in pairs, a chrome horn ring part way out
     add(new THREE.TorusGeometry(R, 0.0095, 10, 64), mat.bakelite);
     for (const a of [0.35, Math.PI - 0.35, Math.PI + 0.35, -0.35]) for (const d of [-0.012, 0.012]) {
-      const w = add(new THREE.CylinderGeometry(0.0022, 0.0022, R - 0.03, 6).rotateZ(Math.PI / 2).translate(0.03 + (R - 0.03) / 2, d, -0.01), M.chrome);
+      const w = add(new THREE.CylinderGeometry(0.0022, 0.0022, R - 0.03, 6).rotateZ(Math.PI / 2).translate(0.03 + (R - 0.03) / 2, d, -0.01), mat.steel);
       w.rotation.z = a;
     }
-    add(new THREE.TorusGeometry(R * 0.62, 0.004, 8, 48).translate(0, 0, 0.004), M.chrome);
+    add(new THREE.TorusGeometry(R * 0.62, 0.004, 8, 48).translate(0, 0, 0.004), mat.steel);
     hub(0.05, 0.035, mat.bakelite, -0.01);
   }
   return mark(g);
