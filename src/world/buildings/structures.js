@@ -6,6 +6,7 @@ import { Builder } from './builder.js';
 import { archMaterials, signMaterial, stdMat } from './materials.js';
 import * as FUR from './furniture.js';
 import { place } from './furniture.js';
+import { clutterArea, JUNK } from './clutter.js';
 import { latheY, tubeAlong, roundedBox, loftSections, superSection } from '../../gfx/geom.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -49,9 +50,14 @@ function room(b, x0, z0, x1, z1, y, h, { ext, inner, floor, t = 0.22, openings =
   return infos;
 }
 
+// Place a piece and remember the ground it takes (for strewing junk round it afterwards).
 function placeIt(b, item, x, y, z, rot = 0) {
   place(b, item, x, y, z, rot);
+  const [w, , d] = item.size;
+  const q = Math.abs(Math.sin(rot)) > 0.5;
+  (b.used = b.used || []).push(q ? [x - d / 2, z - w / 2, x + d / 2, z + w / 2] : [x - w / 2, z - d / 2, x + w / 2, z + d / 2]);
 }
+const used = (b) => b.used || [];
 
 // Sign board on posts / wall
 function signBoard(b, x, y, z, w, h, mat, rotY = 0, { posts = 0, postMat } = {}) {
@@ -135,6 +141,13 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true, workshop = fal
   b.carSpot = { x: 0, z: 0.4, rot: 0 };
   // bigger kit leaning by the side wall: racks, bars, sandbags
   b.loot.push({ pos: [x0 + 1.3, y + 0.02, 0.2], kind: 'gear' });
+  // years of junk: clear of the car's place, the way in and the side door
+  clutterArea(b, rnd, [x0 + 0.3, z0 + 0.3, x1 - 0.3, z1 - 0.3], y, JUNK.garage, workshop ? 7 : 10, [
+    ...used(b),
+    [-1.25, -2.0, 1.25, 2.8],
+    [-1.8, z1 - 1.2, 1.8, z1 + 0.5],
+    [x0, z0 + d * 0.7 - 0.7, x0 + 1.2, z0 + d * 0.7 + 0.7],
+  ]);
   return { builder: b, footprint: { w: w + 1, d: d + 1 } };
 }
 
@@ -238,6 +251,14 @@ export function buildGasStation(rnd) {
   placeIt(b, FUR.toilet(rnd), -5.3, sy, sz0 + 0.5, 0);
   placeIt(b, FUR.washbasin(rnd), -3.2, sy, sz0 + 0.4, 0);
   b.lights.push({ pos: [0, sy + 3.2, -5], color: 0xf0f4ff, intensity: 0, distance: 10, fixture: true });
+  // the shop picked over and left: boxes torn open, paper, glass, sand in through the door
+  clutterArea(b, rnd, [sx0 + 0.3, sz0 + 0.3, sx1 - 0.3, sz1 - 0.3], sy, JUNK.shop, 11, [
+    ...used(b),
+    [-2.45, sz0, -1.95, sz0 + 2.65],
+    [sx0, sz0 + 2.2, -1.95, sz0 + 2.65],
+    [-0.4, sz1 - 1.3, 1.2, sz1],
+    [-5.0, sz0, -3.4, sz0 + 1.3],
+  ]);
   // price sign on a pole
   const px = 11,
     pz = 9;
@@ -264,6 +285,10 @@ export function buildGasStation(rnd) {
     g.translate(x * 1.2, 0.11, 10.5);
     b.add(g, M.metal);
   }
+  // the forecourt (nothing on it that would stop a car) and the lot behind the shop
+  const islands = [-1, 1].map((k) => [k * 3.6 - 0.9, cz - 3.3, k * 3.6 + 0.9, cz + 3.3]);
+  clutterArea(b, rnd, [-12, -1, 12, 11.5], 0.1, JUNK.lot, 8, [...islands, [sx0 - 0.3, sz0 - 0.3, sx1 + 0.3, sz1 + 0.3], [10, 8, 12, 10], [8.3, -7, 10.7, -5]]);
+  clutterArea(b, rnd, [sx0 - 3, sz0 - 4, sx1 + 3, sz0 - 0.6], 0.1, JUNK.garage, 6, [[8.3, -7, 10.7, -5], [-11.2, -8, -8, -5]]);
   b.fuelReserve = 60 + rnd() * 240; // litres left in the underground tanks
   return { builder: b, footprint: { w: 26, d: 20 } };
 }
@@ -310,12 +335,19 @@ export function buildMotel(rnd) {
     placeIt(b, FUR.toilet(rnd), a + 0.5, y, -rd / 2 + 0.5, 0);
     // room number plate
     signBoard(b, a + 1.6, y + 2.25, rd / 2 + 0.13, 0.32, 0.22, signMaterial([String(101 + i)], { w: 128, h: 96, bg: '#2a2a2a', fg: '#d9c9a0', border: null }));
+    // what the last guests left, and what came in after them
+    clutterArea(b, rnd, [a + 0.3, -rd / 2 + 0.3, c - 0.3, rd / 2 - 0.3], y, JUNK.motelRoom, 3 + Math.floor(rnd() * 4), [
+      ...used(b),
+      [a, -rd / 2, a + 1.75, -rd / 2 + 2.15],
+      [a + 0.35, rd / 2 - 1.3, a + 1.65, rd / 2],
+    ]);
   }
   // continuous roof with an overhang over the walkway
   b.gableRoof(x0 - 0.12, -rd / 2 - 0.12, x0 + total + 0.12, rd / 2 + 2.2, y + 2.76, 0.22, { mat: M.rooftiles, under: M.planks, fascia: M.trimWhite, overhang: 0.4, ridgeAlong: 'x', gableMat: ext });
   // walkway slab + posts
   b.box(0, y - 0.05, rd / 2 + 1.1, total, 0.2, 2.2, M.concrete, { surface: 'concrete' });
   for (let i = 0; i <= n; i++) b.box(x0 + i * rw, y + 1.35, rd / 2 + 2.0, 0.16, 2.7, 0.16, M.trimWhite, { surface: 'wood' });
+  clutterArea(b, rnd, [x0 + 0.3, rd / 2 + 0.25, x0 + total - 0.3, rd / 2 + 1.85], y + 0.05, JUNK.walkway, 3 + Math.floor(rnd() * 3), []);
   // office at the left end
   const ox1 = x0 - 0.2,
     ox0 = ox1 - 5;
@@ -333,6 +365,7 @@ export function buildMotel(rnd) {
   placeIt(b, FUR.desk(rnd), ox1 - 1.0, y, -rd / 2 + 0.6, 0);
   b.prop('leatherSofa', ox0 + 2.5, y, rd / 2 - 2.0, Math.PI);
   b.prop('pottedPlant', ox1 - 0.5, y, rd / 2 - 1.5, 0);
+  clutterArea(b, rnd, [ox0 + 0.3, -rd / 2 + 0.3, ox1 - 0.3, rd / 2 - 1.3], y, JUNK.shop, 5, [...used(b), [ox0 + 0.6, rd / 2 - 2.4, ox0 + 2.0, rd / 2 - 1], [ox0 + 1.2, rd / 2 - 3.4, ox0 + 3.8, rd / 2 - 1.2]]);
   for (let i = 0; i < 2; i++) b.prop('lampPost', x0 + total * (0.25 + i * 0.5), 0.05, rd / 2 + 4.6, Math.PI);
   // tall sign
   b.box(ox0 - 2, 3.8, rd / 2 + 4, 0.25, 7.6, 0.25, M.metal, { surface: 'metal' });
@@ -381,6 +414,14 @@ export function buildDiner(rnd) {
   placeIt(b, FUR.metalShelf(rnd, 1.2, 1.9, 0.45), 5.2, y, z0 + 0.4, 0);
   b.prop('drinksFridge', x1 - 0.65, y, -0.2, -Math.PI / 2);
   if (rnd() < 0.6) b.prop('pottedPlant', -1.6, y, z1 - 0.5, 0);
+  clutterArea(b, rnd, [x0 + 0.3, z0 + 0.3, x1 - 0.3, z1 - 0.3], y, JUNK.diner, 12, [
+    ...used(b),
+    [-4.45, -1.45, 3.45, -0.55],
+    [-1.8, z1 - 1.3, -0.2, z1],
+    [3.2, z0, 4.8, z0 + 1.3],
+    [x1 - 1.1, -0.7, x1, 0.3],
+    [-2.0, z1 - 0.9, -1.2, z1],
+  ]);
   b.lights.push({ pos: [0, y + 2.8, 1], color: 0xfff0d0, intensity: 0, distance: 12, fixture: true });
   // roof sign
   // stands on two posts above the parapet (top of the parapet is ~3.6 m above the floor)
@@ -389,6 +430,7 @@ export function buildDiner(rnd) {
   b.box(1.5, y + 3.5, z1 - 0.3, 0.1, 0.84, 0.1, M.metal, { collide: false });
   // parking lot
   b.box(0, 0.04, z1 + 5, 18, 0.08, 9, M.asphalt, { surface: 'asphalt' });
+  clutterArea(b, rnd, [-8.5, z1 + 0.8, 8.5, z1 + 9], 0.08, JUNK.lot, 5, []);
   return { builder: b, footprint: { w: 18, d: 18 } };
 }
 
@@ -422,6 +464,13 @@ export function buildBarn(rnd) {
   for (let i = 0; i < 3; i++) b.box(w / 2 - 1.6, y + 0.6, -d / 2 + 2 + i * 2.6, 3.0, 1.2, 0.08, M.planks, {});
   placeIt(b, FUR.workbench(rnd), -w / 2 + 1.2, y, 2, Math.PI / 2);
   placeIt(b, FUR.crate(rnd), 0.5, y, -3.5, 0.3);
+  clutterArea(b, rnd, [-w / 2 + 0.3, -d / 2 + 0.3, w / 2 - 0.3, d / 2 - 0.3], y, JUNK.barn, 9, [
+    ...used(b),
+    [-w / 2, -d / 2, -w / 2 + 3.7, -d / 2 + 1.2],
+    [w / 2 - 3.2, -d / 2 + 1.5, w / 2, -d / 2 + 7.6],
+    [-2.0, d / 2 - 1.2, 2.0, d / 2],
+    [-0.8, -d / 2, 0.8, -d / 2 + 1.2],
+  ]);
   return { builder: b, footprint: { w: w + 1, d: d + 1 } };
 }
 
@@ -598,6 +647,9 @@ export function buildTrailer(rnd) {
   placeIt(b, FUR.kitchenRun(rnd, 2.4, { uppers: true }), 1.4, y, -W / 2 + 0.38, 0);
   placeIt(b, FUR.sofa(rnd, { seats: 2 }), L / 2 - 0.6, y, 0, -Math.PI / 2);
   placeIt(b, FUR.fridge(rnd), 3.2, y, -W / 2 + 0.42, 0);
+  clutterArea(b, rnd, [-L / 2 + 0.25, -W / 2 + 0.25, L / 2 - 0.25, W / 2 - 0.25], y, JUNK.motelRoom, 4, [...used(b), [-1.8, W / 2 - 1.0, -0.6, W / 2]]);
+  clutterArea(b, rnd, [-L / 2, W / 2 + 0.6, L / 2, W / 2 + 4], 0, JUNK.trailerYard, 5, [[-2.2, W / 2, -0.2, W / 2 + 1.6]]);
+  clutterArea(b, rnd, [-L / 2, -W / 2 - 3.5, L / 2, -W / 2 - 0.6], 0, JUNK.trailerYard, 3, []);
   return { builder: b, footprint: { w: L + 1, d: W + 2 } };
 }
 

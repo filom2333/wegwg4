@@ -780,3 +780,17 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
 4. Refresh build/ after changes: `npx vite build` then copy dist over build (the safety check in
    this environment refuses `rm -rf` with relative paths; use `rsync -a --delete dist/ build/`
    or remove by absolute path).
+
+### Later on 24.10: models, mirrors, abandonment
+- Procedural furniture rebuilt (`world/buildings/furniture.js`): real shapes (lofted toilet,
+  pedestal basin, claw-foot tub, hollow kitchen cabinets with a real sink, enamel range, open
+  fridge, cushioned sofas, CRT TV, beds, wardrobes, chests, desks, shop shelving picked bare).
+  No more painted-on shop products (the goods atlas is gone); shop/drinks/storage loot rarer.
+- Weak items rebuilt (`items/itemModels.js`): jerry can, revolver (cylinder turns on its own
+  axis now), shotgun, spanner, steak, elastic bandage, jack, carried TV. Car seat swaps rebuilt.
+- Live car mirrors removed at the player's request; static silvered glass in their place.
+- Junk (`world/buildings/clutter.js`): `clutterRoom` (houses, per room type, sand drifts and glass
+  at outside doors/windows, floor grime, ceiling holes), `clutterYard` (round houses),
+  `clutterArea` + `JUNK` sets for garages, gas stations (shop, forecourt `lot`, back lot), motels
+  (rooms, walkway, office), diners, barns, trailers. Houses also get boarded windows (`boardUp`).
+- Next: outposts/ruins/camps/ranches sets, the rare trader at gas stations, more yard features.

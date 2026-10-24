@@ -1923,4 +1923,4 @@ export function propItem(id, size, { loot = null } = {}) {
   return it;
 }
 
-export { Item, mulberry32 };
+export { Item, mulberry32, metreUV, cushion, toppled, partsOf, moveParts, papers, cardboardBox, paintTin };
