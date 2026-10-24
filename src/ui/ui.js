@@ -119,7 +119,6 @@ const GFX_OPTIONS = [
   ['shafts', 'Sun rays', [[true, 'On'], [false, 'Off']], 'Rays of sunlight through trees and gaps.', true],
   ['heat', 'Heat haze', [[true, 'On'], [false, 'Off']], 'The air shimmers over hot ground at midday.', true],
   ['grain', 'Film grain', [[true, 'On'], [false, 'Off']], 'A light grain over the picture, like film.', true],
-  ['mirrors', 'Mirrors', [[true, 'On'], [false, 'Off']], 'The car mirrors show the road behind you. Costs a little frame rate.', true],
 ];
 
 const GFX_PICTURES = new Set(['distance', 'resolution', 'aa', 'sharpen', 'grain']);

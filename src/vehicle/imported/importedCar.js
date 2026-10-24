@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { roundedBox } from '../../gfx/geom.js';
+import { roundedBox, roundRectShape } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { applyWeathering, weatheringUniforms } from '../weathering.js';
 import { buildCluster } from '../cluster.js';
@@ -599,8 +599,31 @@ export class ImportedCarModel {
   setHandbrake() {}
 }
 
+// Plain glass over the source's mirror faces (type.MIRROR_GLASS): silvered, so it catches the sky
+// and the light; nothing is drawn into it.
+let MIRROR_MAT = null;
+function addMirrorGlass(type, m) {
+  for (const def of type.MIRROR_GLASS || []) {
+    const part = m.parts[def.part];
+    if (!part) continue;
+    const [w, h] = def.size;
+    const geo = new THREE.ShapeGeometry(roundRectShape(w, h, Math.min(w, h) * def.round), 6);
+    const n = new THREE.Vector3(...def.normal).normalize();
+    const y = new THREE.Vector3(0, 1, 0).addScaledVector(n, -n.y).normalize();
+    const x = y.clone().cross(n);
+    MIRROR_MAT = MIRROR_MAT || new THREE.MeshStandardMaterial({ color: 0x8e979c, metalness: 1, roughness: 0.1 });
+    const glass = new THREE.Mesh(geo, MIRROR_MAT);
+    glass.name = 'mirrorGlass';
+    glass.userData.shared = true;
+    glass.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, n));
+    glass.position.set(...def.center).addScaledVector(n, 0.004);
+    part.inner.add(glass);
+  }
+}
+
 export function buildImportedModel(type, asset, mats) {
   const m = new ImportedCarModel(type, asset, mats);
+  addMirrorGlass(type, m);
   m.root.updateMatrixWorld(true);
   const box = new THREE.Box3();
   const inv = new THREE.Matrix4().copy(m.root.matrixWorld).invert();

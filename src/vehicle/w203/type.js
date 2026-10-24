@@ -52,10 +52,6 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.283, 0.06), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.728, 0.797, 0.235), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.728, 0.797, 0.235), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
-  // the mirrors, aimed from the seat
-  { id: 'mirrorL', label: 'Mirror', pos: V(0.914, 0.895, 0.482), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
-  { id: 'mirrorR', label: 'Mirror', pos: V(-0.914, 0.895, 0.482), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
-  { id: 'mirrorC', label: 'Mirror', pos: V(0.015, 1.205, 0.212), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
   // window switches on the driver's armrest (his own in front, the passenger's behind it)
   { id: 'windowFL', label: 'Window switch', pos: V(0.712, 0.826, 0.0), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'windowFR', label: 'Window switch', pos: V(0.712, 0.826, -0.045), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
@@ -189,14 +185,15 @@ export const W203 = {
   // the cabin's textures a little lighter than the source's
   interiorLift: 1.1,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
+  // the mirrors' glass over the source's own (door mirrors and the one inside): plain silvered
+  // glass that only catches the sky
+  MIRROR_GLASS: [
+    { part: 'door_FL', center: [0.914, 0.895, 0.482], normal: [-0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35 },
+    { part: 'door_FR', center: [-0.914, 0.895, 0.482], normal: [0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35 },
+    { part: 'body', center: [0.015, 1.205, 0.212], normal: [0.12, -0.02, -1], size: [0.23, 0.058], round: 0.45 },
+  ],
   // a dark panel across the hood's opening: rev counter left, speedometer (with the speed in
   // figures) in the middle, fuel over coolant on the right
-  // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
-  MIRRORS: [
-    { id: 'L', part: 'door_FL', center: [0.914, 0.895, 0.482], normal: [-0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35, look: [0.16, 0.01, -1], wide: 2.2 },
-    { id: 'R', part: 'door_FR', center: [-0.914, 0.895, 0.482], normal: [0.36, 0.08, -0.925], size: [0.15, 0.1], round: 0.35, look: [-0.16, 0.01, -1], wide: 2.2 },
-    { id: 'C', part: 'body', center: [0.015, 1.205, 0.212], normal: [0.12, -0.02, -1], size: [0.23, 0.058], round: 0.45, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
-  ],
   // the fuel filler flap on the right rear wing
   // (exactly over the model's own flap, its groove inside the cut, so there is one flap, not two)
   FILLER: { pos: [-0.839, 0.8042, -1.5717], normal: [-0.962, 0.254, -0.095], size: [0.216, 0.147], corner: 0.03, hinge: 1 },

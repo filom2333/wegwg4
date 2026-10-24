@@ -995,14 +995,6 @@ export const RU = {
   Passenger: 'Пассажирское',
   'Wind it up': 'Поднять стекло',
   'Wind it down': 'Опустить стекло',
-  // mirrors
-  Mirror: 'Зеркало',
-  Mirrors: 'Зеркала',
-  'Aim it': 'Настроить',
-  'Aim the mirror': 'Наклонить зеркало',
-  Done: 'Готово',
-  'Move the mouse to aim the mirror · E when done': 'Двигайте мышью, чтобы настроить зеркало · E — готово',
-  'The car mirrors show the road behind you. Costs a little frame rate.': 'В зеркалах видна дорога позади. Немного снижает FPS.',
   // how to play, the tips
   'How to play': 'Как играть',
   'Look around and walk': 'Осмотрись и иди',

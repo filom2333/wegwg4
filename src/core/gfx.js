@@ -30,10 +30,10 @@ export const DISTANCE = {
 export const SHARPEN = { off: 0, light: 0.3, strong: 0.6 };
 
 export const PRESETS = {
-  low: { resolution: 'low', shadows: 'low', distance: 'low', aa: 'fxaa', bloom: false, shafts: false, sharpen: 'light', heat: false, grain: true, mirrors: false },
-  medium: { resolution: 'medium', shadows: 'medium', distance: 'medium', aa: 'fxaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true, mirrors: true },
-  high: { resolution: 'high', shadows: 'high', distance: 'high', aa: 'msaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true, mirrors: true },
-  ultra: { resolution: 'ultra', shadows: 'ultra', distance: 'ultra', aa: 'msaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true, mirrors: true },
+  low: { resolution: 'low', shadows: 'low', distance: 'low', aa: 'fxaa', bloom: false, shafts: false, sharpen: 'light', heat: false, grain: true },
+  medium: { resolution: 'medium', shadows: 'medium', distance: 'medium', aa: 'fxaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true },
+  high: { resolution: 'high', shadows: 'high', distance: 'high', aa: 'msaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true },
+  ultra: { resolution: 'ultra', shadows: 'ultra', distance: 'ultra', aa: 'msaa', bloom: true, shafts: true, sharpen: 'light', heat: true, grain: true },
 };
 
 // The options in effect: a preset by name, or the player's own (quality 'custom').
@@ -66,7 +66,6 @@ export function renderOptions(quality) {
     shafts: o.shafts !== false,
     heat: o.heat !== false,
     grain: o.grain !== false,
-    mirrors: o.mirrors !== false,
   };
 }
 

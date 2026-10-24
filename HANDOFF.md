@@ -708,10 +708,9 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
   The hotspot had been 5-6 cm off the body. `fuelTank` is detailed.
 - Power windows: armrest switches (`windowFL`/`windowFR`), door glass meshes slide down
   (`findWindows`, `Car.toggleWindow`).
-- Mirrors (`vehicle/mirrors.js`): door mirrors and the inside one show a render from the eye's
-  reflection (off-axis frustum clipped at the glass), one mirror per frame, only in the car you
-  sit in; aimed from the driver's eye at build (`look`), door mirrors convex (`wide`); E on a
-  mirror then the mouse aims it; Custom setting `mirrors` (off on Low).
+- Mirrors: the live car mirrors (render from the eye's reflection, aimed with the mouse, a
+  Custom setting) were removed at the player's request (24.10): the mirror housings and glass are
+  just part of the car models now.
 - Engine bay (`bayDetails`): coolant tank (level follows coolant), brake fluid, washer, fuse box,
   dipstick. `wear.js`: parts darken and rust with their condition.
 - HUD: painted big type (gradient + sheet grain, drop-shadow) and worn plates with a yellow edge

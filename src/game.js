@@ -4,7 +4,6 @@
 import * as THREE from 'three';
 import { Renderer } from './gfx/renderer.js';
 import { distance } from './core/gfx.js';
-import { Mirrors } from './vehicle/mirrors.js';
 import { LightPool } from './gfx/lightPool.js';
 import { updateFogSun } from './gfx/fogSun.js';
 import { Environment } from './gfx/environment.js';
@@ -61,7 +60,6 @@ export class Game {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new Renderer(canvas, settings.data.quality);
-    this.mirrors = new Mirrors(this);
     this.scene = new THREE.Scene();
     this.worldGroup = new THREE.Group();
     this.worldGroup.name = 'world';
@@ -921,8 +919,6 @@ export class Game {
       gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
     }
     this.lights.update(cam);
-    // the mirrors of the car you sit in see the frame before it is drawn
-    if (this.mirrors) this.mirrors.update();
     this.renderer.render(dt);
   }
 

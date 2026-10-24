@@ -51,10 +51,6 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.3, -0.35), r: 0.04, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.632, 0.8, 0.38), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.632, 0.8, 0.38), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
-  // the mirrors, aimed from the seat
-  { id: 'mirrorL', label: 'Mirror', pos: V(0.78, 0.93, 0.474), r: 0.05, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
-  { id: 'mirrorR', label: 'Mirror', pos: V(-0.78, 0.93, 0.474), r: 0.05, part: 'door_FR', door: 'door_FR', inside: true, seats: ['driver'], hand: 'right' },
-  { id: 'mirrorC', label: 'Mirror', pos: V(0.0, 1.23, 0.055), r: 0.05, part: 'body', inside: true, seats: ['driver'], hand: 'right' },
   // window switches on the driver's armrest
   { id: 'windowFL', label: 'Window switch', pos: V(0.624, 0.676, -0.02), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'windowFR', label: 'Window switch', pos: V(0.624, 0.676, -0.065), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
@@ -176,10 +172,12 @@ export const KIRI86 = {
   // the source's cabin is near black: its textures brought up a little
   interiorLift: 1.8,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', motor: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
-  MIRRORS: [
-    { id: 'L', part: 'door_FL', center: [0.78, 0.93, 0.474], normal: [-0.17, 0.0, -0.98], size: [0.14, 0.085], round: 0.2, look: [0.16, 0.01, -1], wide: 2.2 },
-    { id: 'R', part: 'door_FR', center: [-0.78, 0.93, 0.474], normal: [0.17, 0.0, -0.98], size: [0.14, 0.085], round: 0.2, look: [-0.16, 0.01, -1], wide: 2.2 },
-    { id: 'C', part: 'body', center: [0.0, 1.23, 0.057], normal: [0.1, -0.13, -0.99], size: [0.19, 0.05], round: 0.4, res: [320, 80], look: [0, -0.02, -1], wide: 1.25 },
+  // the mirrors' glass over the source's own (door mirrors and the one inside): plain silvered
+  // glass that only catches the sky
+  MIRROR_GLASS: [
+    { part: 'door_FL', center: [0.78, 0.93, 0.474], normal: [-0.17, 0.0, -0.98], size: [0.14, 0.085], round: 0.2 },
+    { part: 'door_FR', center: [-0.78, 0.93, 0.474], normal: [0.17, 0.0, -0.98], size: [0.14, 0.085], round: 0.2 },
+    { part: 'body', center: [0.0, 1.23, 0.057], normal: [0.1, -0.13, -0.99], size: [0.19, 0.05], round: 0.4 },
   ],
   // the fuel filler flap on the left rear wing
   // (on the wing's surface, which leans in a good deal here)
