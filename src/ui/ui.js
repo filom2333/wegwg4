@@ -30,7 +30,7 @@ const VERSION = '0.11';
 
 // Pictures behind the title (public/menu/): moments from the road, each with its depth map so
 // the title shows them in depth (menuBackdrop.js); the flat slideshow is the fallback.
-const MENU_SHOTS = ['roadside', 'nightpass', 'campfire', 'vista', 'fogroad', 'breakdown', 'snow', 'winterdusk', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
+const MENU_SHOTS = ['roadside', 'nightpass', 'campfire', 'overlook', 'vista', 'fogroad', 'breakdown', 'snow', 'winterdusk', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
   src: `menu/${n}.webp`,
   depth: `menu/${n}_depth.webp`,
   move: ['in', 'left', 'out', 'right'][i % 4],

@@ -43,6 +43,8 @@ export function assembleCharacter(arrays, defs, attachments = []) {
   const mesh = new THREE.SkinnedMesh(geo, sharedMaterial);
   mesh.add(sk.list[0]);
   mesh.bind(skel);
+  // arms modelled held out are lowered to hanging (see humanJoints)
+  for (const d of defs) if (d[3] && d[3].lower) sk.bones[d[0]].rotation.z = d[3].lower;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
@@ -69,7 +71,34 @@ export function buildCharacter(type, seed = 1) {
 }
 
 // ------------------------------------------------------------------ humanoid skeleton
-function humanJoints(h = 1, { hunch = 0, armLen = 1, legLen = 1 } = {}) {
+// The arms are modelled held out from the body (an A-pose, `spread` radians from hanging), so the
+// sleeves and hands are shaped apart from the coat and come out as their own surfaces: modelled
+// hanging, they fused with its sides and pockets, and those dragged along with the arm. A bone at
+// each shoulder (armRoot) lowers them to hanging once the mesh is bound; the animation turns the
+// arm bones under it as before.
+function humanJoints(h = 1, { hunch = 0, armLen = 1, legLen = 1, spread = 0.3 } = {}) {
+  const out = humanJointsHanging(h, { hunch, armLen, legLen });
+  const at = Object.fromEntries(out.map((d) => [d[0], d]));
+  for (const [side, sg] of [
+    ['L', 1],
+    ['R', -1],
+  ]) {
+    const S = at['upperArm' + side][2];
+    const a = sg * spread;
+    for (const n of ['foreArm' + side, 'hand' + side]) {
+      const p = at[n][2];
+      const dx = p[0] - S[0],
+        dy = p[1] - S[1];
+      p[0] = S[0] + dx * Math.cos(a) - dy * Math.sin(a);
+      p[1] = S[1] + dx * Math.sin(a) + dy * Math.cos(a);
+    }
+    at['upperArm' + side][1] = 'armRoot' + side;
+    out.splice(out.indexOf(at['upperArm' + side]), 0, ['armRoot' + side, 'clav' + side, S.slice(), { lower: -a }]);
+  }
+  return out;
+}
+
+function humanJointsHanging(h = 1, { hunch = 0, armLen = 1, legLen = 1 } = {}) {
   const s = (v) => v * h;
   return [
     ['hips', null, [0, s(0.98) * legLen, 0]],

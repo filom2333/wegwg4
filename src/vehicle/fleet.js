@@ -27,6 +27,8 @@ export class Fleet {
     this.cars = [];
     this.assets = {};
     this.records = new Map(); // poi key -> state of an untouched car found there
+    this.hulkRecords = new Map(); // 'poi key:spot' -> state of an abandoned car there
+    this.hulkQueue = [];
     this.nextId = 1;
   }
 
@@ -138,6 +140,8 @@ export class Fleet {
   // Simulation for cars near the player, parking (hidden, bodies off) for the far ones.
   update(dt, controls) {
     const g = this.game;
+    // abandoned cars come in one a frame (each is a whole car)
+    if (this.hulkQueue.length) this.placeHulk(this.hulkQueue.shift());
     this.wake();
     for (const car of this.cars) if (car.active) car.update(dt, car === g.car ? controls : null);
   }
@@ -207,7 +211,8 @@ export class Fleet {
   onPoiLoaded(inst) {
     const g = this.game;
     const k = inst.k;
-    if (this.cars.some((c) => c.poiKey === k)) return;
+    for (const spot of inst.hulkSpots || []) this.hulkQueue.push({ inst, spot });
+    if (this.cars.some((c) => c.poiKey === k && c.hulkKey == null)) return;
     const rec = this.records.get(k);
     const typeId = rec ? rec.type : this.carForPoi(inst.poi);
     if (!typeId || (rec && rec.gone)) return;
@@ -228,11 +233,52 @@ export class Fleet {
 
   onPoiUnloaded(inst) {
     const k = inst.k;
+    this.hulkQueue = this.hulkQueue.filter((h) => h.inst !== inst);
     for (const car of [...this.cars]) {
       if (car.poiKey !== k || car.owned || car === this.game.car) continue;
-      this.records.set(k, { type: car.type.id, state: serializeCar(car, this.game.origin) });
+      const rec = { type: car.type.id, state: serializeCar(car, this.game.origin) };
+      if (car.hulkKey != null) this.hulkRecords.set(car.hulkKey, rec);
+      else this.records.set(k, rec);
       this.remove(car);
     }
+  }
+
+  // An abandoned car at a place's wreck spot: one of the game's own types, rusted through and
+  // mostly stripped (now and then nearly whole), every part left on it there to be had. What the
+  // player takes stays taken: the car's state is kept when the place unloads.
+  placeHulk({ inst, spot }) {
+    const g = this.game;
+    const k = inst.k;
+    const key = k + ':' + spot.i;
+    if (this.cars.some((c) => c.hulkKey === key)) return;
+    const rec = this.hulkRecords.get(key);
+    if (rec && rec.gone) return;
+    const r = (i) => hash01(g.seed, k * 31 + spot.i, 1300 + i);
+    const ids = CAR_TYPE_LIST.map((t) => t.id);
+    const typeId = rec ? rec.type : ids[Math.floor(r(0) * ids.length)];
+    const type = carType(typeId);
+    inst.root.updateMatrixWorld(true);
+    const wp = V(spot.x, 0, spot.z).applyMatrix4(inst.root.matrixWorld);
+    const gy = g.gen.height(wp.x + g.origin.x, wp.z + g.origin.z);
+    const yaw = inst.poi.rot + spot.rot;
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(spot.roll || 0, yaw, 0, 'YXZ'));
+    // (on its side it rests on half its width, on its roof on its height)
+    const lift = spot.roll ? (spot.roll > 2 ? 1.45 : type.SPEC.halfWidth + 0.1) : 0.05;
+    const car = this.create(typeId, V(wp.x, gy + lift, wp.z), q, {
+      poiKey: k,
+      color: rec ? undefined : fadedColor(type, r(1)),
+      state: rec ? rec.state : null,
+      init: rec ? {} : { fuel: 0, oil: r(2) * 1.5, battery: 0.01, engineCondition: 0.08 + r(3) * 0.3, fanbeltCondition: r(4) * 0.2 },
+    });
+    car.hulkKey = key;
+    if (!rec) {
+      // one in twenty is nearly whole; the rest keep a part or two in five
+      strip(car, r, r(5) < 0.05 ? 0.9 : 0.12 + r(6) * 0.28);
+      car.dirt = 0.85 + r(7) * 0.15;
+      car.rust = 0.55 + r(8) * 0.4;
+    }
+    car.applyWeather();
+    car.syncVisual();
   }
 
   randomColor(typeId, k) {
@@ -281,9 +327,12 @@ export class Fleet {
     const o = this.game.origin;
     this.nextId = d.nextId || 1;
     for (const [k, rec] of d.records || []) this.records.set(+k, rec);
+    for (const [k, rec] of d.hulks || []) this.hulkRecords.set(k, rec);
     for (const c of d.cars || []) {
       const s = c.state;
       const car = this.create(c.type, V(s.pos[0] - o.x, s.pos[1], s.pos[2] - o.z), new THREE.Quaternion(...s.quat), { id: c.id, poiKey: c.poiKey, owned: c.owned, state: s });
+      if (c.hulkKey != null) car.hulkKey = c.hulkKey;
+      car.applyWeather();
       if (c.id === d.current) this.setCurrent(car);
     }
     if (!this.game.car && this.cars.length) this.setCurrent(this.cars[0]);
@@ -292,9 +341,11 @@ export class Fleet {
   serialize() {
     const o = this.game.origin;
     return {
-      cars: this.cars.filter((c) => c.owned || c.poiKey === null || c === this.game.car).map((c) => ({ type: c.type.id, id: c.id, poiKey: c.poiKey, owned: c.owned, state: serializeCar(c, o) })),
+      cars: this.cars.filter((c) => c.owned || c.poiKey === null || c === this.game.car).map((c) => ({ type: c.type.id, id: c.id, poiKey: c.poiKey, hulkKey: c.hulkKey ?? null, owned: c.owned, state: serializeCar(c, o) })),
       current: this.game.car ? this.game.car.id : null,
       records: [...this.records.entries()],
+      // (the abandoned cars standing about now, as they are, and those of places unloaded)
+      hulks: [...new Map([...this.hulkRecords, ...this.cars.filter((c) => c.hulkKey != null && !c.owned && c !== this.game.car).map((c) => [c.hulkKey, { type: c.type.id, state: serializeCar(c, o) }])]).entries()],
       nextId: this.nextId,
     };
   }
@@ -357,6 +408,35 @@ function neglect(car, seed, k, diff, inst, g) {
   });
 }
 
+// A colour of the type's own, gone pale and chalky in the sun.
+function fadedColor(type, r) {
+  if (!type.repaintable || !type.colors.length) return undefined;
+  const c = new THREE.Color(type.colors[Math.floor(r * type.colors.length)]);
+  c.lerp(new THREE.Color(0x9a948a), 0.35);
+  return c.getHex();
+}
+
+// Strip a car the way the years do: parts taken off in the order a person would have to take
+// them (whatever is bolted on over a part comes first), each kept with chance `keep`; what is
+// left is worn out.
+function strip(car, r, keep) {
+  const order = [...(car.type.ASSEMBLY_ORDER || Object.keys(car.PARTS))].reverse();
+  order.forEach((id, i) => {
+    if (id === 'chassis' || id === 'body' || !car.parts[id] || !car.isInstalled(id)) return;
+    if (r(100 + i) < keep) return;
+    if (dependentsOf(car.PARTS, id).some((d) => car.isInstalled(d) && !car.PARTS[d].fixed)) return;
+    car.setInstalled(id, false);
+  });
+  for (const [id, st] of Object.entries(car.parts)) if (st.installed && id !== 'chassis' && id !== 'body') st.condition = 0.05 + r(200 + id.length * 7) * 0.4;
+  car.dyn.wheels.forEach((w, i) => {
+    if (w.installed && r(300 + i) < 0.7) {
+      car.parts[w.id].condition = 0.01;
+      w.flat = true;
+    }
+  });
+  car.rebuildColliders && car.rebuildColliders();
+}
+
 // ... and some came with gear bolted on, there for the taking.
 function outfit(car, seed, k) {
   const r = (i) => hash01(seed, k, 960 + i);
@@ -388,6 +468,7 @@ export function serializeCar(car, o) {
     odometer: car.odometer,
     trip: car.trip,
     dirt: car.dirt,
+    rust: car.rust,
     lightsOn: car.lightsOn,
     parkBrake: car.parkBrake,
     paintColor: car.paintColor ?? null,
@@ -402,7 +483,7 @@ export function serializeCar(car, o) {
 }
 
 export function applyCarState(car, c, g) {
-  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'lightsOn', 'parkBrake']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
+  for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'rust', 'lightsOn', 'parkBrake']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
   const same = (c.model || 'beetle') === car.type.id;
   if (c.paintColor && car.type.repaintable) {
     car.paintColor = c.paintColor;

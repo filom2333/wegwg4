@@ -14,6 +14,9 @@ import { makeCanvas, canvasTexture } from '../gfx/textures.js';
 import { needleAngle } from './gauges.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// dial faces and lamp symbols never change: drawn once per type and shared by all its cars (a
+// scrapyard holds a dozen clusters)
+const FACES = new Map();
 const FONT = '"Overpass", "Arial Narrow", Arial, sans-serif';
 const INK = '#f3efe4';
 const RED = '#e0442c';
@@ -300,21 +303,27 @@ export function buildCluster(model, G, M, type) {
     // (the fascia curves: a dial sits on it where it is)
     d.position.set(at[0], at[1], curve * at[0] * at[0] - 0.006);
     g.add(d);
-    const c = makeCanvas(1024, 1024);
-    const tex = canvasTexture(c, { wrap: false });
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;
+    const key = type.id + ':' + name;
+    let shared = FACES.get(key);
+    if (!shared) {
+      const c = makeCanvas(1024, 1024);
+      const tex = canvasTexture(c, { wrap: false });
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      const redraw = () => {
+        draw(c.getContext('2d'), 1024);
+        tex.needsUpdate = true;
+      };
+      redraw();
+      redraws.push(redraw);
+      FACES.set(key, (shared = { tex }));
+    }
+    const tex = shared.tex;
     const fm = M.gauge.clone();
     fm.map = tex;
     fm.emissiveMap = tex;
     fm.transparent = false;
     faces.push(fm);
-    const redraw = () => {
-      draw(c.getContext('2d'), 1024);
-      tex.needsUpdate = true;
-    };
-    redraw();
-    redraws.push(redraw);
     const face = new THREE.Mesh(new THREE.CircleGeometry(r, 64), fm);
     face.position.z = 0.001;
     d.add(face);
@@ -372,12 +381,16 @@ export function buildCluster(model, G, M, type) {
   const lamps = {};
   const L = G.lamps || {};
   const lampAt = (name, at, size) => {
-    const c = makeCanvas(128, 128);
-    const x = c.getContext('2d');
-    x.fillStyle = '#000';
-    x.fillRect(0, 0, 128, 128);
-    symbol(x, name, 64, 64, 104, '#fff');
-    const tex = canvasTexture(c, { wrap: false });
+    let tex = FACES.get('lamp:' + name);
+    if (!tex) {
+      const c = makeCanvas(128, 128);
+      const x = c.getContext('2d');
+      x.fillStyle = '#000';
+      x.fillRect(0, 0, 128, 128);
+      symbol(x, name, 64, 64, 104, '#fff');
+      tex = canvasTexture(c, { wrap: false });
+      FACES.set('lamp:' + name, tex);
+    }
     const col = LAMP[name];
     const mat = new THREE.MeshStandardMaterial({ color: 0x060606, emissive: col, emissiveMap: tex, emissiveIntensity: 0, roughness: 0.35, transparent: true, alphaMap: tex, opacity: 1 });
     mat.alphaTest = 0.02;
@@ -403,7 +416,7 @@ export function buildCluster(model, G, M, type) {
   lampAt('turnR', [0.36 * R, 0.4 * R], ls);
 
   // the faces again once the typeface is in
-  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) document.fonts.load(`800 40px Overpass`).then(() => redraws.forEach((r) => r())).catch(() => {});
+  if (redraws.length && typeof document !== 'undefined' && document.fonts && document.fonts.ready) document.fonts.load(`800 40px Overpass`).then(() => redraws.forEach((r) => r())).catch(() => {});
 
   g.userData.needles = needles;
   g.userData.lamps = lamps;

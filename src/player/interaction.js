@@ -648,6 +648,7 @@ export class Interaction {
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
+    if (def.derust) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Scrub off the rust (hold)' : 'Look at the car to scrub it']);
     if (def.paint) {
       const car = this.game.car;
       if (t && t.kind === 'part' && car && car.paintable(t.part)) out.push(['LMB', `Paint the ${car.PARTS[t.part].label.toLowerCase()} (hold)`]);
@@ -1449,6 +1450,22 @@ export class Interaction {
             this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
           }
         }
+      } else if (def.derust) {
+        // a wire brush: slow, loud, and the rust comes off a little at a time
+        const car = this.game.car;
+        const t = this.target;
+        const onCar = t && (t.kind === 'part' || t.kind === 'hotspot');
+        if (input.mouseDown(0) && onCar && car && car.rust > 0) {
+          car.rust = Math.max(0, car.rust - dt * 0.012);
+          car.applyWeather();
+          this.useAnim = Math.max(this.useAnim, 0.6 + 0.35 * Math.sin(this.game.time * 22));
+          this.cleanSnd = (this.cleanSnd || 0) - dt;
+          if (this.cleanSnd <= 0) {
+            this.cleanSnd = 0.22;
+            // (a dry scratch each stroke)
+            this.game.audio && this.game.audio.play('step', { surface: 'gravel', volume: 0.22 });
+          }
+        }
       } else if (def.paint) this.updateSpray(it, dt);
       else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
@@ -1498,7 +1515,7 @@ export class Interaction {
     let kind = '';
     if (def.weapon) kind = '';
     else if (def.melee) kind = 'swing';
-    else if (def.clean) kind = 'wipe';
+    else if (def.clean || def.derust) kind = 'wipe';
     else if (def.paint) kind = 'spray';
     else if (def.liquid) kind = this.pourKind || 'drink';
     else if (def.consume) kind = def.consume.food > 0 ? 'eat' : def.consume.water > 0 && !def.consume.smoke ? 'drink' : 'use';

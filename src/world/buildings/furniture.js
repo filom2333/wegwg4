@@ -760,15 +760,20 @@ export function cooler(rnd, doors = 2) {
   it.rbox(w, 0.25, 0.78, 0, 0.125, 0, M.metalWhite, 0.01);
   for (let i = 0; i < doors; i++) {
     const x = -w / 2 + 0.375 + i * 0.75;
-    it.rbox(0.68, 1.6, 0.03, x, 1.0, 0.39, M.metal, 0.01);
-    it.rbox(0.6, 1.5, 0.01, x, 1.0, 0.405, M.glassDirty, 0.004);
+    // each door a narrow frame round its glass (not a panel: the shelves show through), a long
+    // handle on the side it opens from
+    for (const s of [-1, 1]) it.rbox(0.035, 1.6, 0.035, x + s * 0.3225, 1.0, 0.39, M.metal, 0.006);
+    for (const y of [0.215, 1.785]) it.rbox(0.68, 0.035, 0.035, x, y, 0.39, M.metal, 0.006);
+    it.rbox(0.61, 1.535, 0.006, x, 1.0, 0.39, M.glass, 0.002);
+    it.rbox(0.022, 0.5, 0.03, x + 0.27, 1.05, 0.425, M.metal, 0.008);
     for (let s = 0; s < 4; s++) {
       it.rbox(0.62, 0.015, 0.6, x, 0.4 + s * 0.38, 0, M.metal, 0.003);
+      // what is left is real (taken from the loot table, there to be picked up); now and then a
+      // couple of forgotten cans at the back of a shelf
       it.lootAt(x, 0.42 + s * 0.38, 0.1, 'drinks');
-      const brand = 32 + Math.floor(rnd() * 8);
-      for (let b = 0; b < 6; b++) {
-        if (rnd() < 0.4) continue;
-        it.add(product(b % 3 === 2 ? 32 + Math.floor(rnd() * 8) : brand, x - 0.25 + b * 0.1, 0.42 + s * 0.38, 0.1, rnd), M.goods);
+      if (rnd() < 0.25) {
+        const brand = 32 + Math.floor(rnd() * 8);
+        for (let b = 0; b < 2; b++) it.add(product(brand, x - 0.2 + rnd() * 0.4, 0.42 + s * 0.38, -0.2, rnd), M.goods);
       }
     }
   }

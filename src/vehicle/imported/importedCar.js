@@ -124,7 +124,7 @@ export function createImportedMaterials(type, asset, opts = {}) {
       // and a cabin lighter than its source (the colour multiplies the texture)
       if (type.interiorLift) m.color.multiplyScalar(type.interiorLift);
     }
-    if (WEATHER[role] || (role === 'trim' && key === 'under')) applyWeathering(m, weather, { rustColor: role !== 'paint', strength: WEATHER[role] ?? WEATHER.under });
+    if (WEATHER[role] || (role === 'trim' && key === 'under')) applyWeathering(m, weather, { rustColor: true, strength: WEATHER[role] ?? WEATHER.under });
     m.name = key;
     byName[key] = m;
   }

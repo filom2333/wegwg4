@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { latheY, roundedBox, tubeAlong, loftSections, superSection } from '../gfx/geom.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
@@ -245,6 +246,23 @@ export function sponge() {
   g.add(mesh(roundedBox(0.12, 0.035, 0.075, 0.012, 3).translate(0, 0.0175, 0), m));
   g.add(mesh(roundedBox(0.12, 0.01, 0.075, 0.004, 2).translate(0, 0.04, 0), scour));
   grip(g, 'palm', 'palm', V(0.03, 0, 0.012), RIGHT, DOWN);
+  return centered(g);
+}
+
+// A wire brush: a walnut handle with a steel ferrule, rows of crimped steel bristles under the
+// head, and a scraper blade at the nose.
+export function wireBrush() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  g.add(mesh(roundedBox(0.2, 0.022, 0.034, 0.008, 2).translate(-0.02, 0.011, 0), M.walnut));
+  g.add(mesh(roundedBox(0.03, 0.024, 0.036, 0.003, 1).translate(0.075, 0.012, 0), M.steel));
+  const bristle = cached('bristleMat', () => new THREE.MeshStandardMaterial({ color: 0x8d8f91, roughness: 0.55, metalness: 0.8 }));
+  // the bristle tufts: little boxes in rows under the head
+  const tufts = [];
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 3; j++) tufts.push(new THREE.BoxGeometry(0.008, 0.024, 0.006).translate(-0.085 + i * 0.019, -0.012, -0.011 + j * 0.011));
+  g.add(mesh(mergeGeometries(tufts), bristle));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.002, 0.03).translate(0.105, 0.004, 0), M.steel));
+  grip(g, 'tool', 'wrap12', V(-0.06, 0.011, 0), RIGHT, UP);
   return centered(g);
 }
 
@@ -1059,6 +1077,7 @@ export const MODEL_BUILDERS = {
   plate: (id, variant) => plateModel(id, variant),
   note,
   sponge,
+  wireBrush,
   sprayPaint,
   cigarettes,
   coffee,

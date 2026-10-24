@@ -82,8 +82,9 @@ const SHOTS = {
     return 10;
   },
   drive: async (g, S, THREE, aim) => {
+    // (near the start, where the world is already built)
     const car = g.car;
-    const r = S.road(300, 1.8);
+    const r = S.road(70, 1.8);
     await S.placeCar(car, r.p, r.yaw);
     g.player.enterSeat(car, 'driver');
     car.ignition = true;
@@ -104,10 +105,18 @@ const SHOTS = {
     return 10;
   },
   night: async (g, S, THREE, aim) => {
+    // the car's lamps on the road ahead, a lit lantern in hand
     g.env.time = 23.2;
-    const r = S.road(40, -10);
-    g.player.headlampOn = true;
-    aim(r.p, r.p.clone().addScaledVector(r.fwd, 8).addScaledVector(r.right, -3).setY(r.p.y + 0.6));
+    const car = g.car;
+    const r = S.road(40, -6);
+    await S.placeCar(car, r.p, r.yaw);
+    car.ignition = true;
+    car.lightsOn = 1;
+    const p = g.player.position.clone();
+    const lamp = g.items.spawn('lantern', p.clone().setY(p.y + 1), undefined, { liquid: 0.3, on: true });
+    g.interaction.pick(lamp);
+    const eye = S.on(car, -1.4, 0, -1.2);
+    aim(eye, S.on(car, 0.6, 0.5, 14));
     return 14;
   },
 };

@@ -7,9 +7,15 @@
 //                     rasp, and pops and crackles on the overrun
 //   wheel   'offroad' knobbly mud tyres: bite in sand, dirt, grass and snow, give a little on
 //                     tarmac, hum at speed
+//   steeringWheel 'sport' / 'wood' / 'dish' / 'classic': another wheel on the column, the same
+//                     size as the car's own (the hands hold it where they held that one)
+//   front seat 'bucket' / 'recliner' / 'sheepskin': another seat in the car's own seat's place,
+//                     made to its size
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { roundedBox } from '../gfx/geom.js';
+import { addSurfaceDetail } from '../gfx/triplanar.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const smooth = (a, b, x) => {
@@ -21,6 +27,17 @@ export const TUNES = {
   engine: { twin: { label: 'twin carbs', desc: 'Two carburettors breathe through chrome pancake filters: it pulls harder above mid revs, roars on the intake and drinks a fifth more.' } },
   exhaust: { sport: { label: 'Sport muffler', desc: 'Straight-through box with big chrome tips. A little more top end, a lot more noise, and it crackles when you lift off.' } },
   wheel: { offroad: { label: 'Mud tyre', desc: 'Knobbly off-road tread: grips in sand, dirt, grass and snow; a little less sure on tarmac, and it hums at speed.' } },
+  seat: {
+    bucket: { label: 'Bucket seat', desc: 'A fibreglass racing shell with deep bolsters and harness slots. Bolts into any front seat place.' },
+    recliner: { label: 'Velour recliner', desc: 'A plump seventies seat in brown velour, pleated, with its own headrest. Bolts into any front seat place.' },
+    sheepskin: { label: 'Sheepskin seat', desc: 'A seat under a thick sheepskin cover: warm in the desert night, hot in the day. Bolts into any front seat place.' },
+  },
+  steeringWheel: {
+    sport: { label: 'Sport steering wheel', desc: 'Three drilled alloy spokes and a thick leather rim. Fits any column.' },
+    wood: { label: 'Wooden steering wheel', desc: 'A varnished wood rim on three polished spokes, from some old roadster. Fits any column.' },
+    dish: { label: 'Deep-dish steering wheel', desc: 'Suede rim, spokes dished toward you, a red mark at the top. Fits any column.' },
+    classic: { label: 'Banjo steering wheel', desc: 'A thin black rim on four wire spokes, a chrome horn ring inside. Fits any column.' },
+  },
 };
 
 // Grip and rolling resistance of off-road tread on each surface, relative to a road tyre.
@@ -39,13 +56,14 @@ export const OFFROAD = {
   ice: [0.95, 1],
 };
 
-const family = (car, id) => (car.type.PART_FAMILY && car.type.PART_FAMILY[id]) || id;
+// (a tune's family: the front seats share theirs; otherwise the type's part families)
+const family = (car, id) => (id === 'seat_FL' || id === 'seat_FR' ? 'seat' : (car.type.PART_FAMILY && car.type.PART_FAMILY[id]) || id);
 export const tuneInfo = (familyId, tune) => (tune && TUNES[familyId] && TUNES[familyId][tune]) || null;
 
 // Label of a part (on a car or as an item) with its tune.
 export function tunedLabel(type, id, tune) {
   const base = (type.PARTS[id] || { label: id }).label;
-  const fam = (type.PART_FAMILY && type.PART_FAMILY[id]) || id;
+  const fam = id === 'seat_FL' || id === 'seat_FR' ? 'seat' : (type.PART_FAMILY && type.PART_FAMILY[id]) || id;
   const t = tuneInfo(fam, tune);
   if (!t) return base;
   if (fam === 'engine') return `${base} (${t.label})`;
@@ -264,9 +282,144 @@ export function carbKitModel() {
   return mark(g);
 }
 
-// Visual of a tune on a part, in car space for engine and exhaust, in spin space for a wheel.
+// Another steering wheel, in the column's spinning frame (rim in the xy plane, round the origin,
+// +z toward the driver, +y up to twelve o'clock), the rim at radius R.
+let WHEEL_MATS = null;
+function steeringWheelModel(kind, R) {
+  const g = new THREE.Group();
+  const M = mats();
+  const mat = (WHEEL_MATS = WHEEL_MATS || {
+    leather: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.62 }),
+    wood: new THREE.MeshPhysicalMaterial({ color: 0x5b2c14, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.2 }),
+    suede: new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: 0.95 }),
+    bakelite: new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.3 }),
+    red: new THREE.MeshStandardMaterial({ color: 0xb01c14, roughness: 0.6 }),
+  });
+  const add = (geo, m) => {
+    const o = new THREE.Mesh(geo, m);
+    o.castShadow = true;
+    g.add(o);
+    return o;
+  };
+  // a spoke from the hub out to the rim at angle a (0 = three o'clock), sunk `dish` toward the column at the hub
+  const spoke = (a, w, t, m, dish = 0, holes = 0) => {
+    const len = R - 0.035;
+    const geo = new THREE.BoxGeometry(len, w, t).translate(0.035 + len / 2, 0, 0);
+    // dish: the inner end lower toward the column
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) - dish * (1 - (p.getX(i) - 0.035) / len));
+    geo.computeVertexNormals();
+    const o = add(geo, m);
+    o.rotation.z = a;
+    for (let k = 0; k < holes; k++) {
+      const h = add(new THREE.CylinderGeometry(w * 0.22, w * 0.22, t + 0.002, 10).rotateX(Math.PI / 2).translate(0.07 + (k * (len - 0.07)) / holes, 0, -dish * (1 - (0.035 + (k * (len - 0.07)) / holes) / len)), mat.bakelite);
+      h.rotation.z = a;
+    }
+    return o;
+  };
+  const hub = (r, depth, m, z = 0) => add(new THREE.CylinderGeometry(r, r * 1.05, depth, 28).rotateX(Math.PI / 2).translate(0, 0, z - depth / 2), m);
+  if (kind === 'sport') {
+    add(new THREE.TorusGeometry(R, 0.0155, 12, 64), mat.leather);
+    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.034, 0.006, M.alloy, 0.012, 3);
+    hub(0.045, 0.04, mat.leather, -0.008);
+    add(new THREE.CylinderGeometry(0.018, 0.018, 0.004, 20).rotateX(Math.PI / 2).translate(0, 0, -0.006), M.chrome);
+  } else if (kind === 'wood') {
+    add(new THREE.TorusGeometry(R, 0.0115, 10, 64), mat.wood);
+    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.022, 0.004, M.chrome, 0.02, 2);
+    hub(0.032, 0.03, M.chrome, -0.018);
+    add(new THREE.CylinderGeometry(0.022, 0.022, 0.006, 20).rotateX(Math.PI / 2).translate(0, 0, -0.02), mat.bakelite);
+  } else if (kind === 'dish') {
+    add(new THREE.TorusGeometry(R, 0.015, 12, 64), mat.suede);
+    for (const a of [0, Math.PI, -Math.PI / 2]) spoke(a, 0.03, 0.005, mat.bakelite, 0.065, 3);
+    hub(0.04, 0.03, mat.bakelite, -0.06);
+    // the top-centre mark
+    const stripe = add(new THREE.TorusGeometry(R, 0.0158, 8, 6, 0.09), mat.red);
+    stripe.rotation.z = Math.PI / 2 - 0.045;
+  } else {
+    // banjo: a thin rim, four wire spokes in pairs, a chrome horn ring part way out
+    add(new THREE.TorusGeometry(R, 0.0095, 10, 64), mat.bakelite);
+    for (const a of [0.35, Math.PI - 0.35, Math.PI + 0.35, -0.35]) for (const d of [-0.012, 0.012]) {
+      const w = add(new THREE.CylinderGeometry(0.0022, 0.0022, R - 0.03, 6).rotateZ(Math.PI / 2).translate(0.03 + (R - 0.03) / 2, d, -0.01), M.chrome);
+      w.rotation.z = a;
+    }
+    add(new THREE.TorusGeometry(R * 0.62, 0.004, 8, 48).translate(0, 0, 0.004), M.chrome);
+    hub(0.05, 0.035, mat.bakelite, -0.01);
+  }
+  return mark(g);
+}
+
+// Another front seat in car space, made to the box of the car's own (min/max): runners on the floor,
+// a cushion, a back leaning a little, and what makes each kind itself.
+let SEAT_MATS = null;
+function seatModel(kind, mn, mx) {
+  const g = new THREE.Group();
+  const M = mats();
+  const S = (SEAT_MATS = SEAT_MATS || {
+    shell: new THREE.MeshPhysicalMaterial({ color: 0x141416, roughness: 0.35, clearcoat: 0.6 }),
+    cloth: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x2a2b2e, roughness: 0.92 }), 'weave', 0.5),
+    stripe: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x8e1d17, roughness: 0.9 }), 'weave', 0.5),
+    velour: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x5b3a22, roughness: 0.97 }), 'weave', 0.6),
+    wool: addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xe2d6bc, roughness: 1 }), 'grain', 0.9),
+  });
+  const w = mx.x - mn.x,
+    d = mx.z - mn.z,
+    H = mx.y - mn.y;
+  const cx = (mn.x + mx.x) / 2;
+  const y0 = mn.y;
+  const add = (geo, m, x, y, z, rx = 0) => {
+    const o = new THREE.Mesh(geo, m);
+    o.position.set(x, y, z);
+    o.rotation.x = rx;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    g.add(o);
+    return o;
+  };
+  // runners
+  for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.03, 0.03, d * 0.7), M.alloy, cx + s * w * 0.3, y0 + 0.015, mn.z + d * 0.55);
+  const cushY = y0 + Math.min(0.28, H * 0.32);
+  const cushZ = mn.z + d * 0.6;
+  const backZ = mn.z + d * 0.16;
+  const backH = mx.y - cushY - 0.02;
+  const lean = -0.22;
+  const backY = cushY + backH / 2;
+  if (kind === 'bucket') {
+    add(roundedBox(w * 0.66, 0.09, d * 0.6, 0.03, 3), S.cloth, cx, cushY, cushZ);
+    add(roundedBox(w * 0.2, 0.07, d * 0.58, 0.02, 2), S.stripe, cx, cushY + 0.012, cushZ);
+    for (const s of [-1, 1]) add(roundedBox(w * 0.14, 0.17, d * 0.62, 0.04, 3), S.shell, cx + s * w * 0.39, cushY + 0.03, cushZ);
+    add(roundedBox(w * 0.66, backH, 0.07, 0.03, 3), S.cloth, cx, backY, backZ + 0.02, lean);
+    add(roundedBox(w * 0.2, backH * 0.92, 0.075, 0.02, 2), S.stripe, cx, backY, backZ + 0.024, lean);
+    for (const s of [-1, 1]) add(roundedBox(w * 0.14, backH * 0.8, 0.16, 0.04, 3), S.shell, cx + s * w * 0.39, backY - backH * 0.06, backZ + 0.04, lean);
+    add(roundedBox(w * 0.86, backH + 0.04, 0.03, 0.015, 2), S.shell, cx, backY, backZ - 0.03, lean);
+    // the harness slots high in the back
+    for (const s of [-1, 1]) add(roundedBox(0.05, 0.022, 0.08, 0.008, 1), M.soot, cx + s * 0.07, backY + backH * 0.33, backZ - 0.02, lean);
+  } else {
+    const cloth = kind === 'recliner' ? S.velour : S.wool;
+    const fat = kind === 'sheepskin' ? 1.25 : 1;
+    add(roundedBox(w * 0.88, 0.12 * fat, d * 0.62, 0.05, 4), cloth, cx, cushY, cushZ);
+    add(roundedBox(w * 0.86, backH * 0.82, 0.12 * fat, 0.05, 4), cloth, cx, cushY + backH * 0.41 + 0.03, backZ + 0.04, lean);
+    // the headrest on its two posts
+    const hy = cushY + backH * 0.88 + 0.05;
+    for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 8), M.chrome, cx + s * 0.06, hy - 0.06, backZ - 0.02, lean);
+    add(roundedBox(w * 0.56, 0.15, 0.1 * fat, 0.045, 4), cloth, cx, hy, backZ - 0.01, lean);
+    if (kind === 'recliner') {
+      // pleats across cushion and back
+      for (let i = 0; i < 4; i++) add(roundedBox(w * 0.8, 0.014, 0.022, 0.006, 1), cloth, cx, cushY + 0.06, cushZ - d * 0.24 + i * d * 0.16);
+      for (let i = 0; i < 5; i++) add(roundedBox(w * 0.8, 0.022, 0.016, 0.006, 1), cloth, cx, cushY + 0.1 + i * backH * 0.15, backZ + 0.1 - i * 0.022, lean);
+    }
+  }
+  return mark(g);
+}
+
+// Visual of a tune on a part, in car space for engine and exhaust, in spin space for a wheel, in
+// the column's spinning frame for a steering wheel.
 export function tuneVisual(car, id, tune, spin = null) {
   const fam = family(car, id);
+  if (fam === 'steeringWheel' && TUNES.steeringWheel[tune]) return steeringWheelModel(tune, car.type.META.steeringWheel.radius - 0.012);
+  if (fam === 'seat' && TUNES.seat[tune] && car.type.META.parts[id]) {
+    const b = car.type.META.parts[id];
+    return seatModel(tune, V(...b.min), V(...b.max));
+  }
   if (fam === 'wheel' && tune === 'offroad' && spin) return treadMesh(spin);
   if (fam === 'exhaust' && tune === 'sport') return sportTips(car.type);
   if (fam === 'engine' && tune === 'twin') return twinCarbs(car.model.parts.engine.bbox);
@@ -277,6 +430,28 @@ export function tuneVisual(car, id, tune, spin = null) {
 export function refreshTuneVisual(car, id) {
   const mp = car.model.parts[id];
   if (!mp) return;
+  if (family(car, id) === 'seat') {
+    // another seat in place of the car's own
+    for (const o of [...mp.inner.children]) if (o.userData.tuneMesh) mp.inner.remove(o);
+    const tune = car.parts[id] && car.parts[id].installed ? car.parts[id].tune : null;
+    const v = tune ? tuneVisual(car, id, tune) : null;
+    mp.inner.traverse((o) => {
+      if (o.isMesh && !o.userData.tuneMesh) o.visible = !v;
+    });
+    if (v) mp.inner.add(v);
+    return;
+  }
+  if (family(car, id) === 'steeringWheel') {
+    // another wheel on the column: the car's own hidden under it
+    const spin = mp.inner.getObjectByName('steeringSpin');
+    if (!spin) return;
+    for (const o of [...spin.children]) if (o.userData.tuneMesh) spin.remove(o);
+    const tune = car.parts[id] && car.parts[id].installed ? car.parts[id].tune : null;
+    const v = tune ? tuneVisual(car, id, tune) : null;
+    for (const o of spin.children) o.visible = !v;
+    if (v) spin.add(v);
+    return;
+  }
   const wheel = car.model.wheels && car.model.wheels[id];
   const holder = wheel ? wheel.spin : mp.inner;
   for (const o of [...holder.children]) if (o.userData.tuneMesh) holder.remove(o);

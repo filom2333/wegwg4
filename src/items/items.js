@@ -116,8 +116,13 @@ export class ItemSystem {
     const savedQ = src.pivot.quaternion.clone();
     src.pivot.quaternion.identity();
     src.pivot.updateMatrixWorld(true);
+    // (another steering wheel on the column takes the place of the car's own)
+    const swapWheel = tune && (car.type.PART_FAMILY && car.type.PART_FAMILY[partId] ? car.type.PART_FAMILY[partId] : partId) === 'steeringWheel';
+    const spinner = swapWheel ? src.inner.getObjectByName('steeringSpin') : null;
+    const swapSeat = tune && (partId === 'seat_FL' || partId === 'seat_FR');
     src.inner.traverse((o) => {
       if (!o.isMesh || o.userData.tuneMesh) return;
+      if (spinner || swapSeat) return;
       const m = new THREE.Mesh(o.geometry, o.material);
       const local = rootInv.clone().multiply(o.matrixWorld);
       m.applyMatrix4(inv.clone().multiply(local));
@@ -132,7 +137,7 @@ export class ItemSystem {
       const v = tuneVisual(car, partId, tune, wheel ? wheel.spin : null);
       if (v) {
         v.updateMatrix();
-        const m = wheel ? rootInv.clone().multiply(wheel.spin.matrixWorld) : new THREE.Matrix4();
+        const m = wheel ? rootInv.clone().multiply(wheel.spin.matrixWorld) : spinner ? rootInv.clone().multiply(spinner.matrixWorld) : new THREE.Matrix4();
         v.applyMatrix4(inv.clone().multiply(m));
         g.add(v);
       }
