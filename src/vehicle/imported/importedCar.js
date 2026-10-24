@@ -10,6 +10,7 @@ import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { applyWeathering, weatheringUniforms } from '../weathering.js';
 import { buildCluster } from '../cluster.js';
 import { cutOpening, buildFiller } from '../fillerCut.js';
+import { movePieces } from './pieces.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BASE = (import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : './') + 'models/';
@@ -31,6 +32,8 @@ export function loadImportedAsset(type, renderer) {
           o.geometry.computeBoundingSphere();
           (parts[part] = parts[part] || []).push({ geometry: o.geometry, mat: o.material.name });
         });
+        // what the converter left in the wrong part (type.PIECES: see pieces.js)
+        if (type.PIECES) movePieces(parts, type.PIECES);
         return { parts, textures };
       })()
     );

@@ -431,7 +431,7 @@ export class UI {
 
   // ---------------------------------------------------------------- new game: a trip sheet
   showNewGame() {
-    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'w203', seed: String(Math.floor(Math.random() * 900000) + 100000) });
+    const cfg = this.newCfg || (this.newCfg = { difficulty: 'normal', start: 'parts', car: 'kiri86', seed: String(Math.floor(Math.random() * 900000) + 100000) });
     this.screen('newgame', (s) => {
       s.classList.add('scr-dim', 'scr-board');
       const board = el('div', 'clipboard', s);

@@ -426,3 +426,32 @@ export function bayDetails(M, spots) {
   }
   return { group: g, refs };
 }
+
+// What is under a rear bench: the floor pan raised into the seat's well, pressed ribs across it,
+// the bench's two hooks at the front, and the bulkhead behind its back with the boot beyond.
+// Hidden inside the bench while it is in; there when it is out, instead of a hole into the boot.
+// { w: across, y: the pan's height, z0 (front edge) .. z1 (rear), top: [y, z] of the bulkhead's top }
+export function seatPan(M, { w, y, z0, z1, top }) {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0x2c2d2f, metalness: 0.35, roughness: 0.72, side: THREE.DoubleSide });
+  const felt = new THREE.MeshStandardMaterial({ color: 0x1b1b1c, roughness: 0.95, side: THREE.DoubleSide });
+  const d = z0 - z1;
+  // the pan, and a riser at its front edge down to the footwell's floor
+  mesh(g, new THREE.BoxGeometry(w, 0.006, d).translate(0, y, (z0 + z1) / 2), metal, false);
+  mesh(g, new THREE.BoxGeometry(w, 0.07, 0.006).translate(0, y - 0.035, z0), metal, false);
+  for (let i = 1; i < 6; i++) mesh(g, roundedBox(w - 0.12, 0.012, 0.03, 0.005, 2).translate(0, y + 0.004, z0 - (d * i) / 6), metal, false);
+  // the bench's hooks
+  for (const s of [-1, 1]) {
+    const pts = [V(s * w * 0.28, y, z0 - 0.06), V(s * w * 0.28, y + 0.035, z0 - 0.06), V(s * w * 0.28, y + 0.035, z0 - 0.1)];
+    mesh(g, tubeAlong(pts, 0.004, 6), M.steel, false);
+  }
+  // the bulkhead from the pan's back edge up to the parcel shelf, felt over the metal
+  const [ty, tz] = top;
+  const len = Math.hypot(ty - y, tz - z1);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(w, len), felt);
+  wall.position.set(0, (y + ty) / 2, (z1 + tz) / 2);
+  wall.rotation.x = -Math.atan2(tz - z1, ty - y) - Math.PI;
+  wall.receiveShadow = true;
+  g.add(wall);
+  return g;
+}

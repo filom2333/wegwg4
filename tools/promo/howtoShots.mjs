@@ -33,17 +33,21 @@ const SHOTS = {
     return 12;
   },
   fit: async (g, S, THREE, aim) => {
-    // the battery going into its place under the boot floor, the boot open
+    // the battery going into its place, the lid over it open (the bonnet, or the boot on a car
+    // that keeps it there)
     const car = g.car;
     const r = S.road(40, -6);
     await S.placeCar(car, r.p, r.yaw);
-    S.open(car, 'trunk');
+    const spot = car.type.HOTSPOTS.find((h) => h.id === 'battery');
+    if (spot.lid) S.open(car, spot.lid);
     car.setInstalled('battery', false);
     const p = g.player.position.clone();
     const it = [...g.items.items].reverse().find((x) => x.part === 'battery') || g.items.spawnPart('battery', p.clone().setY(p.y + 1), undefined, { condition: 0.9, charge: 0.8 });
     g.interaction.pick(it);
-    const slot = car.root.localToWorld(car.type.HOTSPOTS.find((h) => h.id === 'battery').pos.clone());
-    const eye = S.on(car, -0.75, 0, -3.05);
+    const slot = car.root.localToWorld(spot.pos.clone());
+    // stand off the slot's end of the car, a step to its side
+    const lp = spot.pos;
+    const eye = S.on(car, lp.x + Math.sign(lp.x || 1) * 0.55, 0, lp.z + Math.sign(lp.z) * 1.15);
     aim(eye, slot);
     return 14;
   },
@@ -116,7 +120,7 @@ for (const [name, fn] of Object.entries(SHOTS)) {
   const logs = [];
   page.on('pageerror', (e) => logs.push('[pageerror] ' + e.message));
   await page.addInitScript((l) => localStorage.setItem('dustroad.settings.v1', JSON.stringify({ quality: 'medium', musicOn: false, showFps: false, v: 2, tutorial: false, dynamicResolution: false, language: l })), LANG);
-  await page.goto((process.env.BASE || 'http://127.0.0.1:5175/') + `?seed=1234&time=${name === 'night' ? 23 : 10.5}&z=0&manual=1&start=assembled&car=w203`, { waitUntil: 'load' });
+  await page.goto((process.env.BASE || 'http://127.0.0.1:5175/') + `?seed=1234&time=${name === 'night' ? 23 : 10.5}&z=0&manual=1&start=assembled&car=kiri86`, { waitUntil: 'load' });
   await page.waitForFunction('window.__ready === true', null, { timeout: 300000 });
   try {
     await page.evaluate(

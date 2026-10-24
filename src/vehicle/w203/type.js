@@ -211,6 +211,14 @@ export const W203 = {
     ],
   },
   STEREO,
+  // the rear bench came merged into the cabin's trim: its cushion and back (cut out of the tub by
+  // where they are) and its three headrests go to seat_R, so the bench comes out whole
+  PIECES: [
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.64, 0.36, -1.36], [0.64, 1.08, -0.58]], tris: true },
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.64, 0.28, -1.0], [0.64, 0.36, -0.6]], tris: true, steep: true },
+    { from: 'body', to: 'seat_R', mats: ['interior', 'cabin'], box: [[-0.73, 0.36, -1.0], [0.73, 0.62, -0.6]], tris: true },
+    { from: 'body', to: 'seat_R', box: [[-0.6, 0.93, -1.5], [0.6, 1.25, -1.2]] },
+  ],
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_FR'],
   fuelCap: 62,
   oilCap: 5.5,
@@ -267,5 +275,6 @@ export const W203 = {
     const bay = PP.bayDetails(M, { coolant: V(0.45, 0.6, 1.58), brake: V(0.48, 0.65, 1.0), washer: V(-0.5, 0.55, 1.72), fuses: V(0.5, 0.6, 1.28), dipstick: V(0.1, 0.63, 1.32) });
     model.parts.body.inner.add(bay.group);
     model.bay = bay.refs;
+    model.parts.body.inner.add(PP.seatPan(M, { w: 1.24, y: 0.4, z0: -0.72, z1: -1.3, top: [1.0, -1.42] }));
   },
 };

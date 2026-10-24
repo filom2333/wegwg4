@@ -28,7 +28,7 @@ for (const sc of scenes) {
   page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}\n${e.stack}`));
   await page.addInitScript((q) => localStorage.setItem('dustroad.settings.v1', JSON.stringify({ quality: q[0], dynamicResolution: false, musicOn: false, hfov: 90, showFps: false, v: 2, ...q[1] })), [sc.quality || 'ultra', sc.settings || {}]);
-  const q = `seed=${sc.seed || 1234}&time=${sc.time ?? 18}&z=${sc.z}&manual=1&weather=${sc.weather || 'clear'}&car=${sc.car || 'w203'}`;
+  const q = `seed=${sc.seed || 1234}&time=${sc.time ?? 18}&z=${sc.z}&manual=1&weather=${sc.weather || 'clear'}&car=${sc.car || 'kiri86'}`;
   await page.goto((process.env.BASE || 'http://127.0.0.1:5173/') + '?' + q, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__ready === true', null, { timeout: 600000 });
   try {
