@@ -165,6 +165,8 @@ export const SEDAN88 = {
     hood: { axis: [1, 0, 0], max: -0.95 },
     trunk: { axis: [1, 0, 0], max: 1.1 },
   },
+  // the source's cabin is near black: its textures brought up a little
+  interiorLift: 1.5,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', wheel: 'tyre', glass: 'glass', interior: 'interior', plate: 'trim', badge: 'trim' },
   // our own dial over the texture's speedometer (its painted needle would never move)
   // the mirrors' glass (found from the driver's eye): the door mirrors and the one inside
@@ -178,12 +180,13 @@ export const SEDAN88 = {
   GAUGES: {
     // (in front of the model's dash face, which sits nearer the driver than its painted dials)
     // (low in the binnacle: its brow hides the top of anything higher)
-    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.055, face: true, lcd: true },
-    panel: [0.29, 0.12, 0, -0.002],
-    tacho: { offset: [-0.094, -0.002], radius: 0.041 },
+    // (spaced so no two bezels touch)
+    speedo: { center: [0.376, 0.842, 0.638], normal: [0, 0.25, -1], radius: 0.05, face: true, lcd: true },
+    panel: [0.3, 0.12, -0.008, -0.002],
+    tacho: { offset: [-0.1, -0.002], radius: 0.037 },
     small: [
-      { kind: 'fuel', offset: [0.09, 0.02], radius: 0.025 },
-      { kind: 'temp', offset: [0.09, -0.036], radius: 0.025 },
+      { kind: 'fuel', offset: [0.084, 0.027], radius: 0.023 },
+      { kind: 'temp', offset: [0.084, -0.027], radius: 0.023 },
     ],
   },
   STEREO,

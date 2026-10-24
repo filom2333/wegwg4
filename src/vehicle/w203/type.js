@@ -186,6 +186,8 @@ export const W203 = {
     hood: { axis: [1, 0, 0], max: -1.0 },
     trunk: { axis: [1, 0, 0], max: 1.15 },
   },
+  // the cabin's textures a little lighter than the source's
+  interiorLift: 1.1,
   MATERIAL_ROLES: { paint: 'paint', under: 'trim', lens: 'lens', tail: 'tail', tyre: 'tyre', glass: 'glass', interior: 'interior', cabin: 'interior', dash: 'interior', trim: 'trim', chrome: 'trim', rim: 'trim', amber: 'trim' },
   // a dark panel across the hood's opening: rev counter left, speedometer (with the speed in
   // figures) in the middle, fuel over coolant on the right
@@ -198,12 +200,13 @@ export const W203 = {
   // the fuel filler flap on the right rear wing
   FILLER: { pos: [-0.824, 0.84, -1.62], normal: [-0.92, 0.38, -0.09], size: [0.115, 0.105], corner: 0.03, hinge: 1 },
   GAUGES: {
-    speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.052, face: true, lcd: true },
-    panel: [0.27, 0.118, 0, -0.004],
-    tacho: { offset: [-0.088, -0.004], radius: 0.04 },
+    // (spaced so no two bezels touch: each bezel reaches about 1.09 of its dial's radius)
+    speedo: { center: [0.381, 0.848, 0.5], normal: [0, 0.3, -1], radius: 0.048, face: true, lcd: true },
+    panel: [0.29, 0.118, -0.008, -0.002],
+    tacho: { offset: [-0.096, -0.002], radius: 0.036 },
     small: [
-      { kind: 'fuel', offset: [0.086, 0.021], radius: 0.025 },
-      { kind: 'temp', offset: [0.086, -0.035], radius: 0.025 },
+      { kind: 'fuel', offset: [0.081, 0.026], radius: 0.022 },
+      { kind: 'temp', offset: [0.081, -0.026], radius: 0.022 },
     ],
   },
   STEREO,
