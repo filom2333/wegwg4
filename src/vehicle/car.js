@@ -19,6 +19,12 @@ import { addGlassRain, wipeUniforms, WIPE_BINS } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
+// Every car is drawn and simulated this much larger than its source measures: next to a person
+// the cars read small at true size. The model's root carries the scale; the physics (wheels,
+// suspension, boxes, mass) works in metres, so car-space lengths are multiplied by it on the way
+// to the body (car.k, car.toBody) and wheel travel divided by it on the way back.
+export const CAR_SCALE = 1.12;
+
 // Exterior parts a crash can rip off, with the sudden change of speed (m/s) it takes. Lights and
 // bumpers go first, fenders and lids next, doors and wheels only in a heavy smash.
 const TEARABLE = {
@@ -74,6 +80,8 @@ export class Car {
     this.type = type;
     this.model = model;
     this.root = model.root;
+    this.k = type.scale || CAR_SCALE;
+    this.root.scale.setScalar(this.k);
     game.worldGroup.add(this.root);
     this.wipe = model.wipers ? wiperSweep(model.wipers) : null;
     if (model.mats) addGlassRain(model.mats.glass, this.wipe);
@@ -142,8 +150,8 @@ export class Car {
     this.dyn = new VehicleDynamics(game.physics, {
       position: pos,
       quaternion: q,
-      hardpoints: type.HARDPOINTS,
-      params: type.DYNAMICS,
+      hardpoints: type.HARDPOINTS.map((h) => ({ ...h, x: h.x * this.k, z: h.z * this.k })),
+      params: scaledDynamics(type.DYNAMICS, this.k),
     });
     this.dyn.surfaceAt = (p, collider) => {
       const owner = game.physics.ownerOf(collider);
@@ -426,7 +434,7 @@ export class Car {
     this.packed = packed.trunk + packed.roofbox;
     com.multiplyScalar(1 / Math.max(1, m));
     this.totalMass = m;
-    this.dyn.setMassProperties({ mass: Math.max(m, 120), com, size: V(...this.type.massSize) });
+    this.dyn.setMassProperties({ mass: Math.max(m, 120), com: com.multiplyScalar(this.k), size: V(...this.type.massSize).multiplyScalar(this.k) });
   }
 
   packedMass() {
@@ -446,7 +454,8 @@ export class Car {
     for (const col of dyn.colliders) this.game.physics.removeCollider(col);
     dyn.colliders = [];
     for (const b of list) {
-      let desc = RAPIER.ColliderDesc.cuboid(b.h[0], b.h[1], b.h[2]).setTranslation(b.c[0], b.c[1], b.c[2]);
+      const k = this.k;
+      let desc = RAPIER.ColliderDesc.cuboid(b.h[0] * k, b.h[1] * k, b.h[2] * k).setTranslation(b.c[0] * k, b.c[1] * k, b.c[2] * k);
       if (b.o.rotX) {
         const q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), b.o.rotX);
         desc = desc.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
@@ -600,6 +609,11 @@ export class Car {
 
   worldPointOf(local) {
     return local.clone().applyMatrix4(this.root.matrixWorld);
+  }
+
+  // A car-space point (model units) where the physics body has it (metres).
+  toBody(local) {
+    return local.clone().multiplyScalar(this.k);
   }
 
   localPointOf(world) {
@@ -1209,7 +1223,7 @@ export class Car {
       const v = mw[w.id];
       if (!v) continue;
       const vis = this.dyn.wheelVisual(w);
-      v.pivot.position.y = vis.y;
+      v.pivot.position.y = vis.y / this.k;
       v.knuckle.rotation.y = vis.steer;
       v.spin.rotation.x = v.side > 0 ? vis.spin : -vis.spin;
       if (w.flat) v.spin.scale.set(1, 0.97, 0.97);
@@ -1448,4 +1462,15 @@ function contactShade(type) {
   const zs = (type.HARDPOINTS || []).map((h) => h.z);
   if (zs.length) mesh.position.z = (Math.max(...zs) + Math.min(...zs)) / 2;
   return mesh;
+}
+
+// A type's dynamics for a car drawn k times its source size: the lengths grow with it, and the
+// final drive and brakes with the wheel's radius, so it goes, stops and reads the same.
+function scaledDynamics(D, k) {
+  const out = { ...D };
+  for (const key of ['restLength', 'maxCompression', 'wheelRadius', 'wheelbase', 'track']) if (out[key] !== undefined) out[key] *= k;
+  for (const key of ['finalDrive', 'brakeTorque', 'handbrakeTorque']) if (out[key] !== undefined) out[key] *= k;
+  if (out.wheelInertia !== undefined) out.wheelInertia *= k * k;
+  out.topOffset = (D.topOffset ?? 0.098) * k;
+  return out;
 }

@@ -38,7 +38,8 @@ const takeFuel = (p, l) => {
 // Containers with a cap (cans, bottles, jugs, the drum): it has to come off by hand before
 // anything pours in or out, and you see how much is inside only with it off (or through clear
 // plastic). Lamps keep their fuel behind a filler of their own.
-const capped = (def) => !!(def && def.liquid && !def.light);
+// only a jerry can has a screw cap to undo (bottles, jugs and tins just pour)
+const capped = (def) => !!(def && def.capped);
 const capKey = () => (settings.data.bindings.reload || 'KeyR').replace(/^Key/, '');
 
 const REACH = 2.6;
@@ -658,6 +659,22 @@ export class Interaction {
     this.updateStowing(dt);
   }
 
+  // Aimed at the cap of a jerry can (within a hand's breadth of it on the can's surface).
+  onCap(t) {
+    const it = t && t.kind === 'item' && t.item;
+    if (!it || !capped(it.def) || !t.point || it.mounted) return false;
+    const cap = it.mesh.getObjectByName('cap');
+    if (!cap) return false;
+    const c = new THREE.Box3().setFromObject(cap).getCenter(V(0, 0, 0));
+    return c.distanceTo(V(t.point.x, t.point.y, t.point.z)) < 0.1;
+  }
+
+  toggleCap(it) {
+    it.state.capOff = !it.state.capOff;
+    this.game.audio && this.game.audio.play('click', { volume: 0.4, rate: it.state.capOff ? 1.25 : 0.95, at: it.mesh.getWorldPosition(V(0, 0, 0)) });
+    this.game.items.refreshVisual(it);
+  }
+
   heldInfo(it) {
     const def = it.def;
     const s = it.state;
@@ -798,6 +815,11 @@ export class Interaction {
     switch (t.kind) {
       case 'item': {
         const it = t.item;
+        if (this.onCap(t)) {
+          info = this.heldInfo(it);
+          prompts.push(['E', it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
+          break;
+        }
         if (it.mounted) {
           const host = it.mounted.car;
           info = { title: it.name, sub: `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
@@ -1168,7 +1190,8 @@ export class Interaction {
     const viaMouse = !input.wasPressed('interact');
     switch (t.kind) {
       case 'item':
-        if (!t.item.mounted) this.pick(t.item);
+        if (!viaMouse && this.onCap(t)) this.toggleCap(t.item);
+        else if (!t.item.mounted) this.pick(t.item);
         break;
       case 'part': {
         if (viaMouse) return;
@@ -1514,10 +1537,8 @@ export class Interaction {
       else if (def.liquid) {
         // the cap: off and on by hand
         if (capped(def) && input.wasPressed('reload')) {
-          it.state.capOff = !it.state.capOff;
-          this.game.audio && this.game.audio.play('click', { volume: 0.4, rate: it.state.capOff ? 1.25 : 0.95 });
+          this.toggleCap(it);
           this.useAnim = Math.max(this.useAnim, 0.5);
-          this.game.items.refreshVisual(it);
         }
         const open = !capped(def) || it.state.capOff;
         const tgt = open ? this.pourTarget(it, this.target) : null;

@@ -248,8 +248,9 @@ export class ItemSystem {
       sc = V(0, 0, 0);
     local.decompose(p, q, sc);
     const s = it.size;
+    const bp = car.toBody(p);
     const cd = RAPIER.ColliderDesc.cuboid(Math.max(0.012, s.x / 2), Math.max(0.012, s.y / 2), Math.max(0.012, s.z / 2))
-      .setTranslation(p.x, p.y, p.z)
+      .setTranslation(bp.x, bp.y, bp.z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       .setDensity(0)
       .setCollisionGroups(GROUPS.item);
@@ -308,8 +309,9 @@ export class ItemSystem {
     if (M.openT < 0) M.rest.copy(p);
     M.openT = car.model.parts[M.part].openT || 0;
     const s = it.size;
+    const bp = car.toBody(p);
     const cd = RAPIER.ColliderDesc.cuboid(Math.max(0.012, s.x / 2), Math.max(0.012, s.y / 2), Math.max(0.012, s.z / 2))
-      .setTranslation(p.x, p.y, p.z)
+      .setTranslation(bp.x, bp.y, bp.z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       .setDensity(0)
       .setCollisionGroups(GROUPS.item);
@@ -514,11 +516,17 @@ export class ItemSystem {
   // An open container lying on its side or upside down runs out.
   updateSpills(dt) {
     for (const it of this.items) {
-      if (it.held || it.stowed || it.mounted || !it.def || !it.def.liquid || it.def.light || !it.state.capOff || !(it.state.liquid > 0)) continue;
+      if (it.held || it.stowed || it.mounted || !it.def || !it.def.capped || !it.state.capOff || !(it.state.liquid > 0)) continue;
       const up = _up.set(0, 1, 0).applyQuaternion(it.mesh.quaternion).y;
       if (up > 0.3) continue;
-      it.state.liquid = Math.max(0, it.state.liquid - dt * (0.12 + 0.3 * (0.3 - up)));
+      // glugging out of the open neck: faster the further over it is
+      it.state.liquid = Math.max(0, it.state.liquid - dt * (0.3 + 0.8 * (0.3 - up)));
       this.refreshVisual(it);
+      it.glug = (it.glug || 0) - dt;
+      if (it.glug <= 0) {
+        it.glug = 0.7 + Math.random() * 0.3;
+        this.game.audio && this.game.audio.play('pour', { at: it.mesh.position, volume: 0.35 });
+      }
     }
   }
 
@@ -631,7 +639,8 @@ export class ItemSystem {
       if (s.air || speed > 0.005 || s.spin) {
         it.mesh.position.copy(s.p);
         it.mesh.quaternion.copy(s.q);
-        s.collider.setTranslationWrtParent({ x: s.p.x, y: s.p.y, z: s.p.z });
+        const k = car.k || 1;
+        s.collider.setTranslationWrtParent({ x: s.p.x * k, y: s.p.y * k, z: s.p.z * k });
         s.collider.setRotationWrtParent({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w });
       }
     }
@@ -648,7 +657,7 @@ export class ItemSystem {
     if (it.def.liquid) {
       // the cap in place or off
       const cap = it.mesh.getObjectByName('cap');
-      if (cap && !it.def.light) cap.visible = !it.state.capOff;
+      if (cap && it.def.capped) cap.visible = !it.state.capOff;
       const fill = it.mesh.getObjectByName('fill');
       if (fill) {
         const f = Math.max(0.001, (it.state.liquid || 0) / it.def.liquid.cap);

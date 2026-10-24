@@ -125,7 +125,7 @@ export class Winches {
     if (!a || a.id !== 'winchBar') return this.release();
     const t = body.translation(),
       r = body.rotation();
-    const drum = _a.copy(a.group.userData.drum).applyQuaternion(_q.set(r.x, r.y, r.z, r.w)).add(V(t.x, t.y, t.z));
+    const drum = _a.copy(a.group.userData.drum).multiplyScalar(car.k || 1).applyQuaternion(_q.set(r.x, r.y, r.z, r.w)).add(V(t.x, t.y, t.z));
     const anchor = this.anchorPoint(_b);
     const dir = anchor.clone().sub(drum);
     const dist = dir.length();

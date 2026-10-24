@@ -332,7 +332,7 @@ export class Player {
     // a moving car shoves people aside (never carries them on the bumper)
     const moving = carSpeed > 1;
     const out = px < pz || moving ? V((Math.sign(l.x) || 1) * (px + 0.02), 0, 0) : V(0, 0, Math.sign(l.z) * (pz + 0.02));
-    out.applyQuaternion(car.root.quaternion);
+    out.multiplyScalar(car.k || 1).applyQuaternion(car.root.quaternion);
     const np = { x: pos.x + out.x, y: pos.y, z: pos.z + out.z };
     if (this.isFree(np)) this.setPosition(np);
     // carried along with the car's velocity, knocked off the ground when hit fast

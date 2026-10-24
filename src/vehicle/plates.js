@@ -306,6 +306,7 @@ export function plateColliders(car) {
       q = new THREE.Quaternion(),
       s = V(0, 0, 0);
     plateRest(car, p).decompose(pos, q, s);
+    pos.multiplyScalar(car.k || 1);
     const desc = RAPIER.ColliderDesc.cuboid(d.w / 2, Math.max(0.01, d.t / 2), d.l / 2)
       .setTranslation(pos.x, pos.y, pos.z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })

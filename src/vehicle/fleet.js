@@ -5,7 +5,7 @@
 // and parks the rest.
 
 import * as THREE from 'three';
-import { Car } from './car.js';
+import { Car, CAR_SCALE } from './car.js';
 import { CAR_TYPES, CAR_TYPE_LIST, carType } from './types.js';
 import { Container } from '../items/inventory.js';
 import { hash01 } from '../core/noise.js';
@@ -263,7 +263,7 @@ export class Fleet {
     const yaw = inst.poi.rot + spot.rot;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(spot.roll || 0, yaw, 0, 'YXZ'));
     // (on its side it rests on half its width, on its roof on its height)
-    const lift = spot.roll ? (spot.roll > 2 ? 1.45 : type.SPEC.halfWidth + 0.1) : 0.05;
+    const lift = spot.roll ? (spot.roll > 2 ? 1.45 * CAR_SCALE : type.SPEC.halfWidth * CAR_SCALE + 0.1) : 0.05;
     const car = this.create(typeId, V(wp.x, gy + lift, wp.z), q, {
       poiKey: k,
       color: rec ? undefined : fadedColor(type, r(1)),
@@ -295,7 +295,7 @@ export class Fleet {
     const g = this.game;
     inst.root.updateMatrixWorld(true);
     const m = inst.root.matrixWorld;
-    const len = type.SPEC.frontTip - type.SPEC.rearTip;
+    const len = (type.SPEC.frontTip - type.SPEC.rearTip) * CAR_SCALE;
     const cands = [];
     if (inst.carSpot) cands.push([inst.carSpot.x, inst.carSpot.z, Math.PI]);
     for (const [x, z, a] of [
@@ -309,7 +309,7 @@ export class Fleet {
     ])
       cands.push([x, z, a]);
     const ph = g.physics;
-    const shape = new RAPIER.Cuboid(type.SPEC.halfWidth + 0.15, 0.7, len / 2 + 0.2);
+    const shape = new RAPIER.Cuboid(type.SPEC.halfWidth * CAR_SCALE + 0.15, 0.7, len / 2 + 0.2);
     for (const [x, z, a] of cands) {
       const wp = V(x, 0, z).applyMatrix4(m);
       const gy = g.gen.height(wp.x + g.origin.x, wp.z + g.origin.z);

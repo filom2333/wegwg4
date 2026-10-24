@@ -5,8 +5,8 @@ import { paintOf } from '../vehicle/paints.js';
 // Liquids are tracked in litres; food values are in need points (0-100 scale).
 
 export const ITEMS = {
-  jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
-  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
+  jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, capped: true, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
+  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, capped: true, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
   waterBottle: { name: 'Water bottle', model: ['waterBottle'], mass: 0.05, liquid: { type: 'water', cap: 1.5, density: 1 }, drinkable: true, clear: true, hold: 'hand', desc: 'Drink to quench thirst.' },
   waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, clear: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable.' },
   sodaCan: { name: 'Soda', model: ['sodaCan'], mass: 0.36, consume: { water: 22, food: 6, energy: 4 }, hold: 'hand', desc: 'Sugary, fizzy, warm.', variants: 3 },

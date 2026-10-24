@@ -2,6 +2,7 @@
 // systems that tie them together. The UI layer drives it (menu -> new game / load).
 
 import * as THREE from 'three';
+import { CAR_SCALE } from './vehicle/car.js';
 import { Renderer } from './gfx/renderer.js';
 import { distance } from './core/gfx.js';
 import { LightPool } from './gfx/lightPool.js';
@@ -187,7 +188,8 @@ export class Game {
     // (a retired type a save holds, or one asked for by name, is loaded too)
     const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [carChoice];
     await this.fleet.preload(this.renderer.renderer, saved);
-    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
+    // (drawn at the cars' size)
+    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])).map((w) => (w.scale.setScalar(CAR_SCALE), w)));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ || load) {
