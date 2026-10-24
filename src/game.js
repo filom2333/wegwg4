@@ -865,6 +865,9 @@ export class Game {
     const cam = this.renderer.camera;
     cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
     cam.far = 7000;
+    // without the float reversed depth buffer, a nearer near plane costs the far depth precision
+    // that keeps close layered surfaces apart
+    cam.near = this.renderer.revZ ? 0.05 : 0.1;
     cam.updateProjectionMatrix();
     this.eyeCam.fov = cam.fov;
     this.eyeCam.aspect = cam.aspect;

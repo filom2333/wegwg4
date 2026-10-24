@@ -945,8 +945,8 @@ export function stoveUnit(rnd, w = 0.6) {
   // the oven: dark inside, its door on a bottom hinge
   it.box(w - 0.08, 0.44, 0.01, 0, 0.47, 0.285, M.blackMatte);
   const door = front(w - 0.03, 0.5, body, { frame: false, t: 0.03 });
-  door.push([roundedBox(w * 0.56, 0.2, 0.006, 0.01, 1).translate(0, 0.04, 0.031), M.screen]);
-  door.push([roundedBox(w * 0.6, 0.24, 0.004, 0.012, 1).translate(0, 0.04, 0.03), M.chromeOld]);
+  door.push([roundedBox(w * 0.56, 0.2, 0.006, 0.01, 1).translate(0, 0.04, 0.037), M.screen]);
+  door.push([roundedBox(w * 0.6, 0.24, 0.006, 0.012, 1).translate(0, 0.04, 0.033), M.chromeOld]);
   pull(door, 'bar', 0, 0.2, 0.03, M.chromeOld);
   door.push([roundedBox(w - 0.14, 0.011, 0.011, 0.005, 1).translate(0, 0.2, 0.058), M.chromeOld]);
   moveParts(it, door, swingX(0, 0.47, 0.29, 0.5, rnd() < 0.25 ? 0.15 + rnd() * 0.9 : 0));
@@ -989,7 +989,7 @@ export function fridge(rnd) {
   const shelves = [yb + 0.5, yb + 0.85];
   for (const y of shelves) {
     it.box(W - 0.08, 0.006, D - 0.1, 0, y, (z0 + zf) / 2 - 0.01, M.chromeOld);
-    for (let k = 0; k < 8; k++) it.box(0.004, 0.004, D - 0.1, -W / 2 + 0.06 + k * ((W - 0.12) / 7), y + 0.004, (z0 + zf) / 2 - 0.01, M.chromeOld);
+    for (let k = 0; k < 8; k++) it.box(0.004, 0.006, D - 0.1, -W / 2 + 0.06 + k * ((W - 0.12) / 7), y + 0.006, (z0 + zf) / 2 - 0.01, M.chromeOld);
   }
   for (const sx of [-1, 1]) {
     it.rbox(W / 2 - 0.05, 0.2, D - 0.14, sx * (W / 4 - 0.005), yb + 0.2, (z0 + zf) / 2, M.glassDirty, 0.01);
@@ -1329,7 +1329,7 @@ function papers(it, rnd, n, x, y, z, spread) {
   for (let k = 0; k < n; k++) {
     const g = new THREE.PlaneGeometry(0.21, 0.297);
     g.rotateX(-Math.PI / 2).rotateY(rnd() * 6.28);
-    it.add(g.translate(x + (rnd() - 0.5) * spread, y + 0.001 + k * 0.0006, z + (rnd() - 0.5) * spread * 0.6), M.paper);
+    it.add(g.translate(x + (rnd() - 0.5) * spread, y + 0.005 + k * 0.0015, z + (rnd() - 0.5) * spread * 0.6), M.paper);
   }
 }
 
@@ -1348,7 +1348,7 @@ function cardboardBox(it, rnd, w, h, d, x, y, z, ry = 0) {
       parts.push([new THREE.BoxGeometry(w / 2 - 0.01, 0.003, d * 0.9).translate(s * (w / 4), 0, 0).rotateZ(-s * (1.4 + rnd() * 0.3)).translate((s * w) / 2, hh, 0), M.cardboard]);
     }
     parts.push([new THREE.BoxGeometry(w - 0.01, 0.002, d - 0.01).translate(0, 0.004, 0), M.blackMatte]);
-  } else parts.push([new THREE.BoxGeometry(0.05, 0.002, d + 0.002).translate(0, hh + 0.001, 0), M.trimWhite]);
+  } else parts.push([new THREE.BoxGeometry(0.05, 0.002, d + 0.006).translate(0, hh + 0.004, 0), M.trimWhite]);
   moveParts(it, parts, new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z));
 }
 
@@ -1434,15 +1434,15 @@ export function metalShelf(rnd, w = 1.2, h = 1.9, d = 0.45) {
       const x = sx * (w / 2 - 0.02),
         z = sz * (d / 2 - 0.02);
       it.box(0.035, h, 0.003, x, h / 2, z + sz * 0.0165, paint);
-      it.box(0.003, h, 0.035, x + sx * 0.0165, h / 2, z, paint);
+      it.box(0.003, h, 0.0325, x + sx * 0.016, h / 2, z - sz * 0.00125, paint);
     }
   for (const s of [-1, 1]) it.add(tubeAlong([V(-w / 2 + 0.03, 0.12, -d / 2 + 0.01), V(w / 2 - 0.03, h - 0.1, -d / 2 + 0.01)].map((p) => (s < 0 ? V(-p.x, p.y, p.z) : p)), 0.005, 4), paint);
   const ys = [];
   for (let i = 0; i < 5; i++) {
     const y = 0.1 + (i * (h - 0.15)) / 4;
     ys.push(y);
-    it.box(w - 0.01, 0.006, d - 0.01, 0, y, 0, paint);
-    for (const s of [-1, 1]) it.box(w - 0.01, 0.03, 0.004, 0, y - 0.012, s * (d / 2 - 0.005), paint);
+    it.box(w - 0.01, 0.006, d - 0.02, 0, y, 0, paint);
+    for (const s of [-1, 1]) it.box(w - 0.01, 0.03, 0.004, 0, y - 0.012, s * (d / 2 + 0.003), paint);
     if (i < 4 && rnd() < 0.5) it.lootAt(((i % 2) - 0.5) * w * 0.4, y + 0.01, 0, 'storage');
     // what is left on it: a box or two, a paint tin
     let x = -w / 2 + 0.08;
@@ -1472,7 +1472,7 @@ function paintTin(it, rnd, x, y, z) {
   const M = archMaterials();
   it.add(latheY([[0, 0], [0.078, 0], [0.081, 0.006], [0.079, 0.012], [0.079, 0.17], [0.082, 0.176], [0.079, 0.182], [0, 0.182]], 20).translate(x, y, z), M.chromeOld);
   const col = [0xb8382a, 0x2f5f8a, 0xe8e2d0, 0x3d6b3a, 0xd8b23a][Math.floor(rnd() * 5)];
-  it.add(new THREE.CylinderGeometry(0.0795, 0.0795, 0.11, 20, 1, true).translate(x, y + 0.08, z), stdMat({ color: col, roughness: 0.7 }));
+  it.add(new THREE.CylinderGeometry(0.0815, 0.0815, 0.11, 20, 1, true).translate(x, y + 0.08, z), stdMat({ color: col, roughness: 0.7 }));
   it.add(tubeAlong([V(x - 0.08, y + 0.15, z), V(x - 0.05, y + 0.24, z + 0.02), V(x + 0.05, y + 0.24, z + 0.02), V(x + 0.08, y + 0.15, z)], 0.002, 4, { closedEnds: false }), M.chromeOld);
 }
 
@@ -1594,9 +1594,9 @@ export function gondola(rnd, len = 2.4) {
     for (let i = 0; i < 4; i++) {
       const y = 0.15 + i * 0.36;
       const down = fallen && fallen[0] === side && fallen[1] === i;
-      const shelf = [[roundedBox(len - 0.04, 0.02, 0.38, 0.004, 1), M.metalWhite], [roundedBox(len - 0.04, 0.035, 0.008, 0.002, 1).translate(0, -0.005, 0.19), M.trimWhite]];
+      const shelf = [[roundedBox(len - 0.04, 0.02, 0.38, 0.004, 1), M.metalWhite], [roundedBox(len - 0.04, 0.035, 0.008, 0.002, 1).translate(0, -0.005, 0.2), M.trimWhite]];
       // a few price tags still on the strip
-      for (let k = 0; k < 6; k++) if (rnd() < 0.4) shelf.push([new THREE.PlaneGeometry(0.04, 0.022).translate(-len / 2 + 0.1 + rnd() * (len - 0.2), -0.005, 0.195), M.paper]);
+      for (let k = 0; k < 6; k++) if (rnd() < 0.4) shelf.push([new THREE.PlaneGeometry(0.04, 0.022).translate(-len / 2 + 0.1 + rnd() * (len - 0.2), -0.005, 0.209), M.paper]);
       const m = new THREE.Matrix4().makeTranslation(0, y, side * 0.23);
       if (side < 0) m.multiply(new THREE.Matrix4().makeRotationY(Math.PI));
       if (down) m.multiply(new THREE.Matrix4().makeTranslation(len / 2, 0, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.32)).multiply(new THREE.Matrix4().makeTranslation(-len / 2, -0.03, 0));
@@ -1789,7 +1789,7 @@ export function crate(rnd, s = 0.6) {
     for (const zz of [-1, 1]) it.box(s, bh, t, 0, y, zz * (s / 2 - t / 2), w);
     for (const xx of [-1, 1]) it.box(t, bh, s - 2 * t, xx * (s / 2 - t / 2), y, 0, w);
   }
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) it.box(0.045, s, 0.045, sx * (s / 2 - 0.03), s / 2, sz * (s / 2 - 0.03), M.woodDark);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) it.box(0.045, s - t, 0.045, sx * (s / 2 - 0.03), (s - t) / 2, sz * (s / 2 - 0.03), M.woodDark);
   it.box(s - 0.02, t, s - 0.02, 0, t / 2, 0, w);
   const lidOff = rnd() < 0.35;
   const lid = [];

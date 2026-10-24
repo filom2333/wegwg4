@@ -308,13 +308,15 @@ export class Builder {
     const put = (lx, ly, sx, sy, sz, mat, lz = 0) => {
       this.pushBox(mat, cx + lx * c + lz * s, cy + ly, cz - lx * s + lz * c, sx, sy, sz, rot, faceUV(sx, sy, sz));
     };
-    // frame
+    // frame: head and sill across, the jambs between them (pieces that overlapped at the corners
+    // had their faces in one plane, and those flickered); the bars a little thinner than the frame
+    // and the cross bar thinner again, so no two faces lie level
     put(0, h / 2 - fw / 2, w, fw, t * 0.6, frameMat);
     put(0, -h / 2 + fw / 2, w, fw, t * 0.6, frameMat);
-    put(-w / 2 + fw / 2, 0, fw, h, t * 0.6, frameMat);
-    put(w / 2 - fw / 2, 0, fw, h, t * 0.6, frameMat);
-    for (let i = 1; i <= mullions; i++) put(-w / 2 + (w * i) / (mullions + 1), 0, 0.04, h - fw, t * 0.3, frameMat);
-    put(0, 0, w - fw, 0.035, t * 0.3, frameMat);
+    put(-w / 2 + fw / 2, 0, fw, h - 2 * fw, t * 0.6, frameMat);
+    put(w / 2 - fw / 2, 0, fw, h - 2 * fw, t * 0.6, frameMat);
+    for (let i = 1; i <= mullions; i++) put(-w / 2 + (w * i) / (mullions + 1), 0, 0.04, h - 2 * fw, t * 0.36, frameMat);
+    put(0, 0, w - 2 * fw, 0.035, t * 0.26, frameMat);
     // sill (outside)
     if (sillMat) put(0, -h / 2 - 0.03, w + 0.12, 0.05, 0.06, sillMat, t / 2 + 0.02);
     // glass: some panes broken
@@ -343,17 +345,21 @@ export class Builder {
     const put = (lx, ly, sx, sy, sz, mat) => {
       this.pushBox(mat, cx + lx * c, y + ly, cz - lx * s, sx, sy, sz, rot, faceUV(sx, sy, sz));
     };
-    put(0, h - fw / 2, w + fw * 2, fw, t + 0.02, frameMat);
-    put(-w / 2 - fw / 2, h / 2, fw, h, t + 0.02, frameMat);
-    put(w / 2 + fw / 2, h / 2, fw, h, t + 0.02, frameMat);
+    // the casing stands well proud of the wall (and of any finish on it), never level with it
+    // and stands 12 mm into the opening, so its inner faces cover the wall's own jambs instead of
+    // lying in their plane
+    const lap = 0.012;
+    put(0, h - fw / 2 - lap, w + fw * 2 - 2 * lap, fw, t + 0.06, frameMat);
+    put(-w / 2 - fw / 2 + lap, (h - fw - lap) / 2, fw, h - fw - lap, t + 0.06, frameMat);
+    put(w / 2 + fw / 2 - lap, (h - fw - lap) / 2, fw, h - fw - lap, t + 0.06, frameMat);
     if (!leaf) return null;
     const d = {
       kind,
       // hinge point in builder space and rotation of the closed leaf
       hinge: V(cx - ux * (w / 2) * hingeSide, y, cz - uz * (w / 2) * hingeSide),
       rot,
-      w: w - 0.02,
-      h: h - 0.02,
+      w: w - 0.026,
+      h: h - 0.025,
       t: 0.045,
       hingeSide,
       mat: leafMat,
