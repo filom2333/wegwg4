@@ -843,7 +843,10 @@ export class Game {
       if (input.wasPressed('wipers')) ia.driverReach(spot('wipers') || 'stalk');
       if ((input.wasPressed('gearUp') || input.wasPressed('gearDown')) && !car.dyn.automatic) ia.driverReach('shifter');
       if (input.wasPressed('lights')) car.lightsOn = (car.lightsOn + 1) % 3;
-      if (input.wasPressed('wipers')) car.wipers = !car.wipers;
+      if (input.wasPressed('wipers')) {
+        car.wipers = (car.wipers + 1) % 4;
+        this.hud && this.hud.toast(['Wipers off', 'Wipers: intermittent', 'Wipers: steady', 'Wipers: fast'][car.wipers]);
+      }
       if (!car.dyn.automatic) {
         if (input.wasPressed('gearUp')) car.dyn.shift(1);
         if (input.wasPressed('gearDown')) car.dyn.shift(-1);

@@ -51,10 +51,14 @@ const HOTSPOTS = [
   { id: 'dome', label: 'Cabin light', pos: V(0, 1.29, -0.42), r: 0.045, part: 'body', inside: true, hand: 'right' },
   { id: 'doorFL', label: 'Door', pos: V(0.632, 0.8, 0.38), r: 0.035, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
   { id: 'doorFR', label: 'Door', pos: V(-0.632, 0.8, 0.38), r: 0.035, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger', 'driver'], hand: 'right' },
-  // window switches on the driver's armrest
-  { id: 'windowFL', label: 'Window switch', pos: V(0.624, 0.676, -0.02), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
-  { id: 'windowFR', label: 'Window switch', pos: V(0.624, 0.676, -0.065), r: 0.02, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  // a window winder on every door, worked from the seat beside it
+  { id: 'crankFL', label: 'Window winder', pos: V(0.612, 0.74, 0.14), r: 0.045, part: 'door_FL', door: 'door_FL', inside: true, seats: ['driver'], hand: 'left' },
+  { id: 'crankFR', label: 'Window winder', pos: V(-0.612, 0.74, 0.14), r: 0.045, part: 'door_FR', door: 'door_FR', inside: true, seats: ['passenger'], hand: 'right' },
+  { id: 'crankRL', label: 'Window winder', pos: V(0.612, 0.74, -0.78), r: 0.045, part: 'door_RL', door: 'door_RL', inside: true, seats: ['rearL'], hand: 'left' },
+  { id: 'crankRR', label: 'Window winder', pos: V(-0.612, 0.74, -0.78), r: 0.045, part: 'door_RR', door: 'door_RR', inside: true, seats: ['rearR'], hand: 'right' },
 ];
+// where the winders sit on the door cards (measured)
+const CRANKS = { door_FL: [0.638, 0.74, 0.14], door_FR: [-0.638, 0.74, 0.14], door_RL: [0.638, 0.74, -0.78], door_RR: [-0.638, 0.74, -0.78] };
 const MOVING = {
   key: { make: 'key', pivot: V(0.205, 0.665, 0.548), axis: V(0, 0.33, 1), angles: [0, 0.9, 1.35] },
   stalk: { make: 'stalk', pivot: V(0.366, 0.74, 0.4), dir: V(1, 0.22, -0.1), length: 0.1, axis: COLUMN, angle: 0.14 },
@@ -153,6 +157,7 @@ export const KIRI86 = {
   SEATS,
   HOTSPOTS,
   MOVING,
+  CRANKS,
   POINTS,
   BOXES,
   DYNAMICS,

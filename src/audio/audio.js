@@ -504,6 +504,12 @@ export class AudioSystem {
       this.wheelsAt.y -= 0.25;
       // in the seat the body takes the top off and the cabin booms
       const k = ownSeat ? this.inCabin : 0;
+      // and the car is all round you: engine and tyres come through the whole shell, not from a
+      // point to one side (turning your head no longer swings them from ear to ear)
+      if (k > 0) {
+        this.engineAt.lerp(cam.position, k);
+        this.wheelsAt.lerp(cam.position, k);
+      }
       for (const cv of [this.engineVoice, this.wheelVoice]) {
         set(cv.lp.frequency, lerp(20000, cv.cut, k), now);
         set(cv.boom.gain, k * 5, now, 0.2);

@@ -309,7 +309,20 @@ export class Interaction {
     this.driverReach(hs);
     if (h === 'ignition') return this.turnKey(car);
     if (h === 'fuel') return car.useFiller();
-    if (h === 'windowFL' || h === 'windowFR') return car.toggleWindow(h === 'windowFL' ? 'door_FL' : 'door_FR');
+    if (h.startsWith('crank')) {
+      // the hand on the winder: the mouse turns it until E again
+      this.winding = { door: hs.door, click: 0 };
+      g.player.lookFrozen = true;
+      g.hud && g.hud.toast('Move the mouse to wind the window · E when done');
+      return;
+    }
+    // an electric window switch: the glass runs while it is held
+    if (h === 'windowFL' || h === 'windowFR') {
+      const door = h === 'windowFL' ? 'door_FL' : 'door_FR';
+      this.switchWindow = { door, dir: (car.windowT[door] || 0) > 0.5 ? -1 : 1 };
+      g.audio && g.audio.play('click', { volume: 0.3, rate: 0.9 });
+      return;
+    }
     if (h === 'handbrake') {
       car.parkBrake = !car.parkBrake;
       g.audio && g.audio.play(car.parkBrake ? 'parkBrake' : 'clunk', { volume: car.parkBrake ? 0.8 : 0.45, rate: car.parkBrake ? 1 : 1.1, pitchVar: 0.05 });
@@ -322,7 +335,7 @@ export class Interaction {
     }
     if (h === 'indicator') car.indicator = car.indicator < 0 ? 0 : -1;
     if (h === 'lights') car.lightsOn = (car.lightsOn + 1) % 3;
-    if (h === 'wipers') car.wipers = !car.wipers;
+    if (h === 'wipers') car.wipers = (car.wipers + 1) % 4;
     if (h === 'hazard') car.hazards = !car.hazards;
     if (h === 'heater') car.heater = !car.heater;
     if (h === 'dome') car.cabinLight = !car.cabinLight;
@@ -408,6 +421,34 @@ export class Interaction {
     }
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.updateKey(dt);
+    // a hand on a window winder: moving the mouse down winds the glass down, up winds it up; the
+    // ratchet clicks as it goes. E (or leaving the seat) lets go.
+    if (this.winding) {
+      const car = g.car;
+      if (!p.seat || !car || blocked || !car.isInstalled(this.winding.door)) {
+        this.winding = null;
+        p.lookFrozen = false;
+      } else {
+        const moved = car.windWindow(this.winding.door, input.mouse.dy * 0.0022);
+        this.winding.click += Math.abs(moved);
+        if (this.winding.click > 0.035) {
+          this.winding.click = 0;
+          g.audio && g.audio.play('click', { volume: 0.12, rate: 1.7 + Math.random() * 0.2 });
+        }
+        if (Math.abs(moved) > 0) this.useAnim = Math.max(this.useAnim, 0.3);
+        g.hud && g.hud.setPrompts && g.hud.setPrompts([['Mouse', 'Wind the window'], ['E', 'Done']]);
+        if (input.wasPressed('interact') || input.mousePressed(0)) {
+          this.winding = null;
+          p.lookFrozen = false;
+        }
+        return;
+      }
+    }
+    // an electric window switch held down
+    if (this.switchWindow) {
+      if (!input.isDown('interact') || !g.car || !p.seat) this.switchWindow = null;
+      else if (g.car.isInstalled('battery') && g.car.battery > 0.03) g.car.windWindow(this.switchWindow.door, (this.switchWindow.dir * dt) / 3);
+    }
     // pulling a trailer by its drawbar for as long as E is held
     if (this.pullingTrailer) {
       const tr = this.pullingTrailer;
@@ -639,7 +680,12 @@ export class Interaction {
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
     if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
-    if (def.derust) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Scrub off the rust (hold)' : 'Look at the car to scrub it']);
+    if (def.derust) {
+      const r = this.rustTarget();
+      if (!r) out.push(['', 'Aim at a panel or the body']);
+      else if (r.rust <= 0.005) out.push(['', `No rust left on the ${r.label}`]);
+      else out.push(['LMB', `Scrub the rust off the ${r.label} (hold)`]);
+    }
     if (def.paint) {
       const car = this.game.car;
       if (t && t.kind === 'part' && car && car.paintable(t.part)) out.push(['LMB', `Paint the ${car.PARTS[t.part].label.toLowerCase()} (hold)`]);
@@ -838,16 +884,20 @@ export class Interaction {
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
           prompts.push(['E', open ? 'Close the door' : 'Open the door']);
+        } else if (h.id.startsWith('crank')) {
+          const t = car.windowT[h.door] || 0;
+          info.sub = t < 0.03 ? 'Shut' : t > 0.97 ? 'All the way down' : `Open ${Math.round(t * 100)}%`;
+          prompts.push(['E', 'Take the handle']);
         } else if (h.id === 'windowFL' || h.id === 'windowFR') {
           const door = h.id === 'windowFL' ? 'door_FL' : 'door_FR';
           info.sub = h.id === 'windowFL' ? 'Driver' : 'Passenger';
-          prompts.push(['E', car.windowDown[door] ? 'Wind it up' : 'Wind it down']);
+          prompts.push(['E', (car.windowT[door] || 0) > 0.5 ? 'Wind it up (hold)' : 'Wind it down (hold)']);
         } else if (h.id === 'lights') {
           info.sub = ['Off', 'Low beam', 'High beam'][car.lightsOn];
           prompts.push(['E', ['Low beam', 'High beam', 'Off'][car.lightsOn]]);
         } else if (h.id === 'wipers') {
-          info.sub = car.wipers ? 'On' : '';
-          prompts.push(['E', car.wipers ? 'Off' : 'On']);
+          info.sub = ['', 'Intermittent', 'Steady', 'Fast'][car.wipers];
+          prompts.push(['E', ['Intermittent', 'Steady', 'Fast', 'Off'][car.wipers]]);
         } else if (h.id === 'hazard') {
           info.sub = car.hazards ? 'Blinking' : '';
           prompts.push(['E', car.hazards ? 'Off' : 'On']);
@@ -1450,13 +1500,13 @@ export class Interaction {
           }
         }
       } else if (def.derust) {
-        // a wire brush: slow, loud, and the rust comes off a little at a time
-        const car = this.game.car;
-        const t = this.target;
-        const onCar = t && (t.kind === 'part' || t.kind === 'hotspot');
-        if (input.mouseDown(0) && onCar && car && car.rust > 0) {
-          car.rust = Math.max(0, car.rust - dt * 0.012);
-          car.applyWeather();
+        // a wire brush: slow, loud, and the rust comes off a little at a time, off the part it is on
+        const r = this.rustTarget();
+        if (input.mouseDown(0) && r && r.rust > 0) {
+          if (r.item) {
+            r.item.state.rust = Math.max(0, r.rust - dt * 0.012);
+            r.item.rustU.value = r.item.state.rust;
+          } else this.game.car.derust(r.part, dt * 0.012);
           this.useAnim = Math.max(this.useAnim, 0.6 + 0.35 * Math.sin(this.game.time * 22));
           this.cleanSnd = (this.cleanSnd || 0) - dt;
           if (this.cleanSnd <= 0) {
@@ -1469,6 +1519,23 @@ export class Interaction {
       else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
     }
+  }
+
+  // What a wire brush is on: a panel of the car (its own rust), the body (without its panels) or a
+  // panel lying loose. { part | item, rust, label } or null.
+  rustTarget() {
+    const t = this.target;
+    const car = this.game.car;
+    if (!t) return null;
+    if (t.kind === 'item' && t.item.part && t.item.rustU) {
+      const P = carType(t.item.state.carType).PARTS || {};
+      return { item: t.item, rust: t.item.state.rust || 0, label: ((P[t.item.part] && P[t.item.part].label) || 'panel').toLowerCase() };
+    }
+    if (!car || (t.dist || 0) > 2.6) return null;
+    const part = t.kind === 'part' ? t.part : t.kind === 'hotspot' ? t.hotspot.part : null;
+    if (!part || !car.model.parts[part]) return null;
+    const own = part in car.rustU;
+    return { part, rust: car.rustOf(part), label: own ? car.PARTS[part].label.toLowerCase() : 'body' };
   }
 
   // Holding LMB on a panel with a spray can: a mist of colour, then the panel takes the paint.
@@ -2135,6 +2202,11 @@ export class Interaction {
     // a foreign panel keeps the paint of the car it came from (its own material otherwise)
     else if (car.parts[slot].from) car.paintPart(slot, carType(car.parts[slot].from).defaultColor);
     car.parts[slot].condition = cond;
+    if (slot in car.rustU) {
+      if (it.state.rust !== undefined) car.partRust[slot] = it.state.rust;
+      else delete car.partRust[slot];
+      car.applyWeather();
+    }
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
     if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
     if (slot === 'fanbelt') car.fanbeltCondition = cond;

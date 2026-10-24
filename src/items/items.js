@@ -169,6 +169,26 @@ export class ItemSystem {
     if (!state.carType) state.carType = this.game.car ? this.game.car.type.id : 'kiri86';
     const mesh = this.buildPartMesh(partId, state.carType, state.tune);
     const it = new Item(this, { id: 'part:' + partId, part: partId, state, mesh });
+    // a panel carries its own rust (a wire brush works on it lying loose too)
+    if (state.rust !== undefined) {
+      it.rustU = { value: state.rust };
+      const own = new Map();
+      mesh.traverse((o) => {
+        const base = o.isMesh && o.material;
+        if (!base || !base.userData.weathered) return;
+        if (!own.has(base)) {
+          const m = base.clone();
+          m.color = base.color;
+          m.onBeforeCompile = (shader, r) => {
+            base.onBeforeCompile(shader, r);
+            if (shader.uniforms.uRust) shader.uniforms.uRust = it.rustU;
+          };
+          m.customProgramCacheKey = base.customProgramCacheKey;
+          own.set(base, m);
+        }
+        o.material = own.get(base);
+      });
+    }
     this.group.add(mesh);
     this.items.add(it);
     mesh.position.copy(pos);

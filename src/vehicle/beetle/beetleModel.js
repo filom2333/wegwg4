@@ -11,7 +11,8 @@ import { roundedBox, tubeAlong } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadBeetleTextures, createWreckMaterials } from './beetleMaterials.js';
-import { META, SPEC, STEER_SCALE, SPEEDO_MAX, HARDPOINTS, POINTS } from './spec.js';
+import { META, SPEC, STEER_SCALE, SPEEDO_MAX, HARDPOINTS, POINTS, CRANKS, WINDER_STRIP } from './spec.js';
+import { findWindows, addCranks, stripBox } from '../winders.js';
 import { drawSpeedoFace } from '../gauges.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -87,6 +88,13 @@ export class BeetleModel {
     this.addBattery();
     this.addFuelTank();
     this.addFanBelt();
+    // the doors' glass winds down; the source's fixed handles give way to working winders
+    for (const [door, [min, max]] of Object.entries(WINDER_STRIP)) {
+      const mech = this.parts[door] && this.parts[door].inner.children.find((m) => m.name === door + ':mech');
+      if (mech) stripBox(mech, min, max);
+    }
+    findWindows(this);
+    addCranks(this, CRANKS, this.mats);
   }
 
   meshesFor(id, { shadow = true } = {}) {
