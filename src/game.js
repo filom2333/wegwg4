@@ -938,6 +938,16 @@ export class Game {
       gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
     }
     this.lights.update(cam);
+    // the shadow maps are redrawn every frame while things move fast through them (driving, the
+    // third-person body, the title drive) and every other frame on foot, when nothing in them
+    // moves more than a few centimetres a frame (a stale map keeps its own matrix, so what stands
+    // still is shadowed exactly as before)
+    const sm = this.renderer.renderer.shadowMap;
+    sm.autoUpdate = false;
+    this.shadowTick = (this.shadowTick || 0) + 1;
+    const pl = this.player;
+    const fast = !pl || this.attract || this.debugView || pl.thirdPerson || (pl.seat && this.car && Math.abs(this.car.speedKmh) > 3);
+    sm.needsUpdate = fast || this.shadowTick % 2 === 0;
     this.renderer.render(dt);
   }
 

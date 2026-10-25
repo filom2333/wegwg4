@@ -242,7 +242,9 @@ export class EnvironmentBaker {
     this.sky.uniforms.uStars.value = 0;
     if (groundColor) this.ground.material.color.copy(groundColor);
     const old = this.target;
-    this.target = this.pmrem.fromScene(this.scene, 0, 0.1, 200);
+    // (the sky is smooth: a 128 px cube lights it as well as the default 256 at a quarter of the
+    // cost; this runs every quarter game hour and with each change of weather, mid-game)
+    this.target = this.pmrem.fromScene(this.scene, 0, 0.1, 200, { size: 128 });
     if (old) old.dispose();
     return this.target.texture;
   }

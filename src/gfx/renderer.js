@@ -243,8 +243,9 @@ export class Renderer {
     this._ftAvg = this._ftAvg === undefined ? ms : this._ftAvg + (ms - this._ftAvg) * 0.05;
     this._slow = ms > 21 ? (this._slow || 0) + dt : Math.max(0, (this._slow || 0) - dt * 0.5);
     this._fast = this._ftAvg < 13.5 ? (this._fast || 0) + dt : 0;
-    if (this._slow > 1.0 && this.dynScale > 0.75) {
-      this.dynScale = Math.max(0.75, this.dynScale * 0.9);
+    // (down to 60 %: on a weak graphics chip a softer picture is better than a juddering one)
+    if (this._slow > 1.0 && this.dynScale > 0.6) {
+      this.dynScale = Math.max(0.6, this.dynScale * 0.9);
       this._slow = 0;
       this._fast = 0;
       this.applyPixelRatio();
