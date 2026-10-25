@@ -1598,3 +1598,8 @@ body.fps-on .hud-music {
 .hud-prompts .p {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
+
+/* looking through binoculars */
+.hud-bino { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.hud.bino-on > :not(.hud-bino):not(.hud-card) { opacity: 0; transition: opacity 0.25s; }
+.hud.bino-on .hud-card-title, .hud.bino-on .hud-card-sub { opacity: 0; }

@@ -869,10 +869,18 @@ export class Game {
     };
   }
 
+  // Through binoculars the view narrows by their magnification.
+  binoFov() {
+    const ia = this.interaction;
+    const k = ia && ia.held && ia.held.def && ia.held.def.binoculars ? ia.binoZoom || 0 : 0;
+    return 1 / (1 + ((ia && ia.binoMag) || 4) * k - k);
+  }
+
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
+    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0)) * this.binoFov();
     cam.far = 7000;
+    if (this.hud) this.hud.setBino(this.interaction && this.interaction.held && this.interaction.held.def && this.interaction.held.def.binoculars ? this.interaction.binoZoom || 0 : 0);
     // without the float reversed depth buffer, a nearer near plane costs the far depth precision
     // that keeps close layered surfaces apart
     cam.near = this.renderer.revZ ? 0.05 : 0.1;

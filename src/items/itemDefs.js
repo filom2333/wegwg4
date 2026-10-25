@@ -81,6 +81,14 @@ export const ITEMS = {
   gardenGnome: { name: 'Garden gnome', model: ['gardenGnome'], mass: 2.5, hold: 'side', desc: "Somebody's pride and joy, once. He would ride well on a roof (B)." },
   teddyBear: { name: 'Teddy bear', model: ['teddyBear'], mass: 0.4, dash: true, hold: 'hand', desc: 'Worn thin with hugging. He can keep you company on the dash or the seat.' },
   mug: { name: 'Mug', model: ['mug'], mass: 0.3, dash: true, variants: 3, hold: 'hand', desc: 'A chipped enamel mug.' },
+  // instruments and gear (as in The Long Drive: a compass for the dash, a clock, a spirit level)
+  compass: { name: 'Compass', model: ['compass'], mass: 0.15, dash: true, instrument: 'compass', hold: 'hand', desc: 'The needle swings round to north, and its marks glow in the dark. Stick it on the dash (B).' },
+  clock: { name: 'Alarm clock', model: ['clock'], mass: 0.35, dash: true, instrument: 'clock', variants: 3, hold: 'hand', desc: 'Still ticking. Hold LMB to turn the knob on top and set it.' },
+  spiritLevel: { name: 'Spirit level', model: ['spiritLevel'], mass: 0.4, dash: true, instrument: 'level', hold: 'hand', desc: 'Set it on something, or stick it on the dash (B): the bubbles show which way it leans.' },
+  binoculars: { name: 'Binoculars', model: ['binoculars'], mass: 0.7, binoculars: true, hold: 'hand', desc: 'Hold LMB to look through them, the wheel to zoom in and out.' },
+  flashlight: { name: 'Flashlight', model: ['flashlight'], mass: 0.4, light: 'torch', battery: true, variants: 3, hold: 'hand', desc: 'LMB to switch it on. The batteries will not last for ever.' },
+  ball: { name: 'Ball', model: ['ball'], mass: 0.35, ball: true, variants: 4, hold: 'hand', desc: 'Very bouncy. Rolls away if you set it down on a slope.' },
+  dumbbell: { name: 'Dumbbell', model: ['dumbbell'], mass: 8, hold: 'side', desc: 'Eight kilos of cast iron. Ballast, if nothing else.' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
@@ -130,6 +138,8 @@ export const LOOT = {
     ['ammo38', 0.4],
   ],
   small: [
+    ['compass', 0.35],
+    ['clock', 0.3],
     ['airFreshener', 0.8],
     ['fuzzyDice', 0.4],
     ['decoBeetle', 0.2],
@@ -143,6 +153,10 @@ export const LOOT = {
     ['revolver', 0.15],
   ],
   shelf: [
+    ['clock', 0.4],
+    ['binoculars', 0.15],
+    ['flashlight', 0.4],
+    ['ball', 0.25],
     ['decoOctopus', 0.2],
     ['decoLog', 0.2],
     ['hulaGirl', 0.15],
@@ -158,6 +172,9 @@ export const LOOT = {
     ['medkit', 1],
   ],
   bed: [
+    ['clock', 0.5],
+    ['flashlight', 0.3],
+    ['ball', 0.2],
     ['teddyBear', 0.6],
     ['blanket', 1.5],
     ['cd', 0.3],
@@ -173,11 +190,15 @@ export const LOOT = {
     ['shotgun', 0.12],
   ],
   couch: [
+    ['ball', 0.3],
     ['cd', 0.7],
     ['chips', 1],
     ['sodaCan', 1],
   ],
   desk: [
+    ['compass', 0.3],
+    ['clock', 0.4],
+    ['flashlight', 0.3],
     ['bobbleDog', 0.3],
     ['hulaGirl', 0.2],
     ['mug', 0.5],
@@ -187,12 +208,18 @@ export const LOOT = {
     ['painkillers', 1],
   ],
   office: [
+    ['binoculars', 0.25],
+    ['clock', 0.4],
     ['cd', 0.3],
     ['ammo38', 1],
     ['revolver', 0.25],
     ['bandage', 1],
   ],
   storage: [
+    ['spiritLevel', 0.5],
+    ['dumbbell', 0.35],
+    ['flashlight', 0.6],
+    ['ball', 0.3],
     ['gardenGnome', 0.3],
     ['tent', 0.4],
     ['fishingRod', 0.6],
@@ -213,6 +240,8 @@ export const LOOT = {
     ['cannedBeans', 1],
   ],
   tools: [
+    ['spiritLevel', 0.8],
+    ['flashlight', 0.9],
     ['jack', 0.7],
     ['carbKit', 0.25],
     ['part:exhaust:sport', 0.2],
@@ -239,6 +268,8 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['flashlight', 0.3],
+    ['compass', 0.2],
     ['tent', 0.25],
     ['fishingRod', 0.5],
     ['thermos', 0.6],
@@ -269,6 +300,10 @@ export const LOOT = {
     ['revolver', 0.2],
   ],
   crate: [
+    ['binoculars', 0.4],
+    ['compass', 0.6],
+    ['flashlight', 0.6],
+    ['dumbbell', 0.3],
     ['mre', 2],
     ['ammo12', 1.4],
     ['ammo38', 1.2],
@@ -277,6 +312,9 @@ export const LOOT = {
     ['waterJug', 1],
   ],
   tent: [
+    ['flashlight', 0.7],
+    ['compass', 0.4],
+    ['binoculars', 0.3],
     ['tent', 0.9],
     ['fishingRod', 0.8],
     ['campfireKit', 1.5],
@@ -287,6 +325,8 @@ export const LOOT = {
     ['jerky', 1],
   ],
   camp: [
+    ['flashlight', 0.6],
+    ['binoculars', 0.3],
     ['tent', 0.7],
     ['fishingRod', 1.2],
     ['campfireKit', 2],
@@ -307,6 +347,9 @@ export const LOOT = {
     ['waterBottle', 1],
   ],
   gear: [
+    ['binoculars', 0.5],
+    ['compass', 0.6],
+    ['flashlight', 0.8],
     ['steelPlate', 0.9],
     ['steelSheet', 0.5],
     ['plywood', 0.8],
@@ -322,6 +365,8 @@ export const LOOT = {
     ['jerryCan', 0.5],
   ],
   wreck: [
+    ['compass', 0.3],
+    ['flashlight', 0.3],
     ['airFreshener', 1.2],
     ['fuzzyDice', 0.6],
     ['reflector', 0.3],
@@ -352,6 +397,9 @@ export function initialState(id, rnd) {
   if (d.charges) s.charges = d.charges;
   if (d.weapon) s.loaded = Math.floor(rnd() * (d.weapon.mag + 1));
   if (d.variants) s.variant = Math.floor(rnd() * d.variants);
+  // a found clock shows some time or other; batteries are anywhere from flat to fresh
+  if (d.instrument === 'clock') s.offset = Math.floor(rnd() * 48) / 4;
+  if (d.battery) s.charge = Math.round((0.15 + rnd() * 0.85) * 100) / 100;
   return s;
 }
 

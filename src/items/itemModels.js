@@ -1496,8 +1496,321 @@ function mug(variant = 0) {
   return centered(g);
 }
 
+// ------------------------------------------------------------------ instruments and gear
+// (each moving part is a named direct child, turned by items.js as the thing is looked at)
+const LUME = () => decoMat(0xc8f0b0, { emissive: 0x8cff6a, emissiveIntensity: 0.9, roughness: 0.5 });
+
+function compassFace() {
+  return labelMat('compassFace', 256, 256, (ctx, w) => {
+    const c = w / 2;
+    ctx.fillStyle = '#efe9d8';
+    ctx.fillRect(0, 0, w, w);
+    ctx.strokeStyle = '#1c1c1a';
+    ctx.fillStyle = '#1c1c1a';
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2;
+      const r0 = i % 18 === 0 ? 0.62 : i % 2 === 0 ? 0.78 : 0.84;
+      ctx.lineWidth = i % 18 === 0 ? 4 : 2;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.sin(a) * c * r0, c - Math.cos(a) * c * r0);
+      ctx.lineTo(c + Math.sin(a) * c * 0.92, c - Math.cos(a) * c * 0.92);
+      ctx.stroke();
+    }
+    ctx.font = 'bold 40px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    [['N', 0], ['E', 1], ['S', 2], ['W', 3]].forEach(([l, k]) => {
+      const a = (k / 4) * Math.PI * 2;
+      ctx.fillStyle = l === 'N' ? '#a8221a' : '#1c1c1a';
+      ctx.save();
+      ctx.translate(c + Math.sin(a) * c * 0.45, c - Math.cos(a) * c * 0.45);
+      ctx.rotate(a);
+      ctx.fillText(l, 0, 0);
+      ctx.restore();
+    });
+  });
+}
+
+// A brass pocket compass lying face up: the needle (named, it swings to north) under a glass,
+// luminous marks at north and on the needle tip.
+function compass() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  g.add(mesh(latheY([[0, 0], [0.03, 0], [0.033, 0.003], [0.033, 0.013], [0.031, 0.015], [0.029, 0.015], [0.029, 0.009], [0, 0.009]], 32), M.brass));
+  g.add(mesh(new THREE.CircleGeometry(0.029, 32).rotateX(-Math.PI / 2).rotateY(Math.PI).translate(0, 0.0092, 0), compassFace()));
+  // the luminous north marker on the bezel
+  g.add(mesh(new THREE.ConeGeometry(0.0035, 0.007, 3).rotateX(Math.PI / 2).translate(0, 0.0152, 0.031), LUME(), false));
+  // the needle: a flat diamond, north half red with a luminous tip, south half white
+  const needle = new THREE.Group();
+  needle.name = 'needle';
+  const half = (len, mat) => {
+    const sh = shapeFromPoints([[0, 0.004], [len, 0], [0, -0.004]]);
+    return mesh(new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2).rotateY(-Math.PI / 2), mat, false);
+  };
+  needle.add(half(0.024, decoMat(0xb3261b, { roughness: 0.4 })));
+  needle.add(half(-0.022, decoMat(0xe8e4da)));
+  needle.add(mesh(new THREE.CircleGeometry(0.0022, 8).rotateX(-Math.PI / 2).translate(0, 0.0004, 0.019), LUME(), false));
+  needle.add(mesh(new THREE.CylinderGeometry(0.0018, 0.0018, 0.002, 10).translate(0, 0.0006, 0), M.brass, false));
+  needle.position.set(0, 0.0105, 0);
+  g.add(needle);
+  // the glass, and the hinge lug and ring
+  g.add(mesh(new THREE.CircleGeometry(0.0295, 32).rotateX(-Math.PI / 2).translate(0, 0.0138, 0), cached('compassGlass', () => new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.02, transparent: true, opacity: 0.16, depthWrite: false })), false));
+  g.add(mesh(new THREE.BoxGeometry(0.01, 0.006, 0.006).translate(0, 0.008, -0.035), M.brass));
+  g.add(mesh(new THREE.TorusGeometry(0.0055, 0.0012, 6, 14).rotateY(Math.PI / 2).translate(0, 0.008, -0.042), M.brass));
+  return centered(g);
+}
+
+function clockFace() {
+  return labelMat('clockFace', 256, 256, (ctx, w) => {
+    const c = w / 2;
+    ctx.fillStyle = '#f1ecdc';
+    ctx.fillRect(0, 0, w, w);
+    ctx.fillStyle = '#1b1a18';
+    ctx.strokeStyle = '#1b1a18';
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      ctx.lineWidth = i % 5 === 0 ? 4 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.sin(a) * c * (i % 5 === 0 ? 0.8 : 0.86), c - Math.cos(a) * c * (i % 5 === 0 ? 0.8 : 0.86));
+      ctx.lineTo(c + Math.sin(a) * c * 0.93, c - Math.cos(a) * c * 0.93);
+      ctx.stroke();
+    }
+    ctx.font = 'bold 34px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let h = 1; h <= 12; h++) {
+      const a = (h / 12) * Math.PI * 2;
+      ctx.fillText(String(h), c + Math.sin(a) * c * 0.64, c - Math.cos(a) * c * 0.64 + 1);
+    }
+    ctx.font = 'italic 16px Georgia, serif';
+    ctx.fillText('WESTCLOX', c, c + c * 0.32);
+  });
+}
+
+// A twin-bell wind-up alarm clock standing on its feet, face to +z. The hour and minute hands are
+// named; the knob on top sets it.
+function clock(variant = 0) {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const case_ = decoMat([0xb8322a, 0xe0d8c4, 0x3f6a48][variant % 3], { roughness: 0.35, metalness: 0.4 });
+  const R = 0.048,
+    D = 0.034,
+    cy = 0.062;
+  // the drum, open at the front behind its bezel
+  g.add(mesh(new THREE.CylinderGeometry(R, R, D, 32, 1, true).rotateX(Math.PI / 2).translate(0, cy, 0), case_));
+  g.add(mesh(new THREE.CircleGeometry(R, 32).rotateY(Math.PI).translate(0, cy, -D / 2), case_));
+  g.add(mesh(new THREE.TorusGeometry(R - 0.001, 0.0035, 8, 32).translate(0, cy, D / 2), M.steel));
+  g.add(mesh(new THREE.CircleGeometry(R - 0.003, 32).translate(0, cy, D / 2 - 0.004), clockFace()));
+  g.add(mesh(new THREE.CircleGeometry(R - 0.002, 32).translate(0, cy, D / 2 + 0.0015), cached('clockGlass', () => new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.03, transparent: true, opacity: 0.14, depthWrite: false })), false));
+  const hand = (name, len, wdt) => {
+    const h = new THREE.Group();
+    h.name = name;
+    const sh = shapeFromPoints([[-wdt, -0.006], [wdt, -0.006], [wdt * 0.5, len], [0, len + 0.003], [-wdt * 0.5, len]]);
+    h.add(mesh(new THREE.ShapeGeometry(sh), decoMat(0x161616, { roughness: 0.4 }), false));
+    h.position.set(0, cy, D / 2 - 0.0025 + (name === 'minHand' ? 0.0007 : 0));
+    g.add(h);
+  };
+  hand('hourHand', 0.024, 0.0022);
+  hand('minHand', 0.036, 0.0016);
+  g.add(mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.003, 8).rotateX(Math.PI / 2).translate(0, cy, D / 2 - 0.001), M.brass, false));
+  // the bells, the hammer between them, the knob and the feet
+  for (const s of [-1, 1]) {
+    const bell = new THREE.SphereGeometry(0.02, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-s * 0.55).translate(s * 0.03, cy + 0.05, -0.002);
+    g.add(mesh(bell, M.steel));
+    g.add(mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.022).rotateZ(-s * 0.55).translate(s * 0.022, cy + 0.04, -0.002), M.steel));
+    g.add(mesh(new THREE.CylinderGeometry(0.004, 0.006, 0.026).rotateZ(s * 0.5).translate(s * 0.03, cy - R - 0.004, 0), M.steel));
+  }
+  g.add(mesh(new THREE.CylinderGeometry(0.0015, 0.0015, 0.024).translate(0, cy + R + 0.01, 0.004), M.steel));
+  g.add(mesh(new THREE.TorusGeometry(0.012, 0.0022, 6, 20, Math.PI).translate(0, cy + R + 0.004, -0.008), M.steel));
+  const knob = new THREE.Group();
+  knob.name = 'knob';
+  knob.add(mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.006, 12), M.brass));
+  knob.add(mesh(new THREE.BoxGeometry(0.003, 0.004, 0.016).translate(0, 0.004, 0), M.brass));
+  knob.position.set(0.024, cy + R - 0.003, -0.01);
+  g.add(knob);
+  return centered(g);
+}
+
+// A spirit level: an aluminium beam with milled windows, the long vial across the middle and the
+// plumb vial at one end; both bubbles are named and float to the high side.
+function spiritLevel() {
+  const g = new THREE.Group();
+  const L = 0.4,
+    H = 0.044,
+    T = 0.02;
+  const beam = new THREE.Shape();
+  beam.moveTo(-L / 2, -H / 2);
+  beam.lineTo(L / 2, -H / 2);
+  beam.lineTo(L / 2, H / 2);
+  beam.lineTo(-L / 2, H / 2);
+  beam.closePath();
+  const win = (x, w, h) => {
+    const p = new THREE.Path();
+    p.moveTo(x - w / 2, -h / 2);
+    p.lineTo(x + w / 2, -h / 2);
+    p.lineTo(x + w / 2, h / 2);
+    p.lineTo(x - w / 2, h / 2);
+    p.closePath();
+    beam.holes.push(p);
+  };
+  win(0, 0.07, 0.026);
+  win(0.15, 0.03, 0.032);
+  const body = new THREE.ExtrudeGeometry(beam, { depth: T - 0.002, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.001, bevelSegments: 1 }).translate(0, 0, -(T - 0.002) / 2);
+  g.add(mesh(body, decoMat(0xd9a619, { roughness: 0.45, metalness: 0.35 })));
+  // machined edges top and bottom
+  for (const y of [-H / 2 - 0.0012, H / 2 + 0.0012]) g.add(mesh(new THREE.BoxGeometry(L, 0.0024, T * 0.9).translate(0, y, 0), decoMat(0xb8bcc0, { metalness: 0.9, roughness: 0.3 })));
+  const vialMat = cached('vialMat', () => new THREE.MeshPhysicalMaterial({ color: 0xd8f27a, roughness: 0.05, transparent: true, opacity: 0.55, depthWrite: false }));
+  const bubMat = cached('bubbleMat', () => new THREE.MeshStandardMaterial({ color: 0xfaffee, roughness: 0.1, transparent: true, opacity: 0.9 }));
+  g.add(mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.06, 16).rotateZ(Math.PI / 2), vialMat, false));
+  g.add(mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.028, 16).translate(0.15, 0, 0), vialMat, false));
+  for (const x of [-0.007, 0.007]) g.add(mesh(new THREE.TorusGeometry(0.0078, 0.0006, 4, 16).rotateY(Math.PI / 2).translate(x, 0, 0), decoMat(0x161616), false));
+  for (const y of [-0.005, 0.005]) g.add(mesh(new THREE.TorusGeometry(0.0078, 0.0006, 4, 16).rotateX(Math.PI / 2).translate(0.15, y, 0), decoMat(0x161616), false));
+  const bx = mesh(new THREE.SphereGeometry(0.0055, 12, 8).scale(1.3, 0.75, 0.75), bubMat, false);
+  bx.name = 'bubbleX';
+  bx.position.set(0, 0.0035, 0);
+  bx.userData.orig = [0, 0.0035, 0];
+  g.add(bx);
+  const by = mesh(new THREE.SphereGeometry(0.005, 12, 8).scale(0.75, 1.2, 0.75), bubMat, false);
+  by.name = 'bubbleY';
+  by.position.set(0.15 + 0.0035, 0, 0);
+  by.userData.orig = [0.15 + 0.0035, 0, 0];
+  g.add(by);
+  // end caps
+  for (const s of [-1, 1]) g.add(mesh(roundedBox(0.012, H + 0.006, T + 0.002, 0.003, 2).translate(s * (L / 2 + 0.004), 0, 0), decoMat(0x1d1d1d, { roughness: 0.8 })));
+  // it lies along the palm, the vials toward the eye
+  grip(g, 'palm', 'palm', V(-0.06, -H / 2, 0), RIGHT, DOWN);
+  return centered(g);
+}
+
+// Binoculars: two barrels on a hinged bridge, the big lenses ahead (-z), rubber eyecups behind.
+function binoculars() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const body = decoMat(0x22252a, { roughness: 0.7 });
+  const lens = cached('binoLens', () => new THREE.MeshPhysicalMaterial({ color: 0x5a7a9a, roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: 0x0a1420 }));
+  for (const s of [-1, 1]) {
+    const x = s * 0.034;
+    g.add(mesh(latheY([[0, -0.07], [0.024, -0.07], [0.025, -0.064], [0.022, -0.03], [0.02, 0.02], [0.016, 0.04], [0, 0.04]], 24).rotateX(Math.PI / 2).translate(x, 0, 0), body));
+    // knurled rubber armour band
+    g.add(mesh(new THREE.CylinderGeometry(0.0225, 0.0225, 0.04, 24).rotateX(Math.PI / 2).translate(x, 0, -0.03), decoMat(0x141414, { roughness: 0.95 })));
+    g.add(mesh(new THREE.CircleGeometry(0.02, 24).rotateY(Math.PI).translate(x, 0, -0.0705), lens, false));
+    // eyecups
+    g.add(mesh(latheY([[0.008, 0.04], [0.014, 0.04], [0.015, 0.058], [0.012, 0.06], [0.008, 0.06]], 18).rotateX(Math.PI / 2).translate(x, 0.004, 0), M.rubber));
+    g.add(mesh(new THREE.CircleGeometry(0.008, 16).translate(x, 0.004, 0.05), lens, false));
+  }
+  // the bridge and its focus wheel
+  g.add(mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.05, 12).rotateX(Math.PI / 2).translate(0, 0.012, 0.005), body));
+  for (const z of [-0.02, 0.03]) g.add(mesh(new THREE.BoxGeometry(0.05, 0.008, 0.012).translate(0, 0.008, z), body));
+  g.add(mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.012, 16).rotateZ(Math.PI / 2).translate(0, 0.014, 0.024), M.steel));
+  // the strap lugs
+  for (const s of [-1, 1]) g.add(mesh(new THREE.TorusGeometry(0.004, 0.0012, 4, 10).translate(s * 0.058, 0, 0.02), M.steel, false));
+  return centered(g);
+}
+
+// An angle-head flashlight (the army kind): held upright like a bottle, its head on top throws
+// the beam ahead (-z) through the lens (named glow); a belt clip at the back, a switch at the side.
+function flashlight(variant = 0) {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const shell = decoMat([0x4f5a3a, 0x1e1f22, 0x9a2418][variant % 3], { roughness: 0.55, metalness: 0.25 });
+  // the battery tube with a screw cap at the bottom
+  g.add(mesh(latheY([[0, -0.085], [0.014, -0.085], [0.0175, -0.081], [0.0175, -0.066], [0.0168, -0.064], [0.0168, 0.052], [0.019, 0.056], [0.019, 0.06], [0, 0.06]], 24), shell));
+  for (let i = 0; i < 4; i++) g.add(mesh(new THREE.TorusGeometry(0.0172, 0.001, 4, 18).rotateX(Math.PI / 2).translate(0, -0.08 + i * 0.004, 0), shell, false));
+  // the head: a short barrel along z, the reflector bezel and the lens at the front
+  g.add(mesh(new THREE.CylinderGeometry(0.023, 0.021, 0.05, 24).rotateX(Math.PI / 2).translate(0, 0.08, -0.008), shell));
+  g.add(mesh(new THREE.TorusGeometry(0.0225, 0.0025, 6, 24).translate(0, 0.08, -0.033), M.steel));
+  const glow = mesh(new THREE.CircleGeometry(0.02, 24).rotateY(Math.PI).translate(0, 0.08, -0.0335), new THREE.MeshStandardMaterial({ color: 0xf4f0e0, emissive: 0xfff1c8, emissiveIntensity: 0, roughness: 0.1 }), false);
+  glow.name = 'glow';
+  g.add(glow);
+  g.add(mesh(new THREE.CircleGeometry(0.021, 24).translate(0, 0.08, 0.017), shell, false));
+  // the slide switch on the side, the belt clip on the back, a lanyard ring under the cap
+  g.add(mesh(roundedBox(0.006, 0.022, 0.012, 0.002, 1).translate(0.018, 0.02, -0.002), M.rubber));
+  g.add(mesh(roundedBox(0.012, 0.07, 0.003, 0.001, 1).translate(0, 0.0, 0.019), M.steel));
+  g.add(mesh(new THREE.TorusGeometry(0.006, 0.0012, 4, 10).rotateY(Math.PI / 2).translate(0, -0.092, 0), M.steel, false));
+  g.userData.lens = V(0, 0.08, -0.036);
+  g.userData.beam = V(0, 0, -1);
+  grip(g, 'wrap', 'grip', V(0, -0.01, 0), UP, RIGHT);
+  return centered(g);
+}
+
+function ballTex(variant) {
+  return labelMat('ball' + variant, 256, 128, (ctx, w, h) => {
+    if (variant === 0) {
+      // a beach ball: six panels and a white cap
+      const cols = ['#d23a2a', '#f1ecdc', '#2f6fb8', '#f1ecdc', '#e7b525', '#f1ecdc'];
+      cols.forEach((c, i) => {
+        ctx.fillStyle = c;
+        ctx.fillRect((i * w) / 6, 0, w / 6 + 1, h);
+      });
+      ctx.fillStyle = '#f1ecdc';
+      ctx.fillRect(0, 0, w, h * 0.08);
+      ctx.fillRect(0, h * 0.92, w, h * 0.08);
+    } else if (variant === 1) {
+      // a red playground ball with a pale band
+      ctx.fillStyle = '#b5281e';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#e8d9b8';
+      ctx.fillRect(0, h * 0.44, w, h * 0.12);
+    } else if (variant === 2) {
+      // a football: dark pentagons on white (near enough, wrapped on a sphere)
+      ctx.fillStyle = '#efeee8';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#1b1b1b';
+      for (let r = 0; r < 4; r++)
+        for (let k = 0; k < 6; k++) {
+          const cx = ((k + (r % 2) * 0.5) / 6) * w,
+            cy = ((r + 0.5) / 4) * h;
+          ctx.beginPath();
+          for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2;
+            ctx.lineTo(cx + Math.sin(a) * 12, cy - Math.cos(a) * 9);
+          }
+          ctx.fill();
+        }
+    } else {
+      // a faded blue rubber ball, scuffed
+      ctx.fillStyle = '#3d6f9a';
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = `rgba(230,220,200,${Math.random() * 0.25})`;
+        ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 4, 1 + Math.random() * 2);
+      }
+    }
+  }, { roughness: 0.5 });
+}
+
+function ball(variant = 0) {
+  const g = new THREE.Group();
+  const r = variant === 2 ? 0.11 : variant === 0 ? 0.13 : 0.09;
+  g.add(mesh(new THREE.SphereGeometry(r, 32, 18), ballTex(variant % 4)));
+  return centered(g);
+}
+
+// A cast-iron dumbbell: knurled bar, two plates and a spin-lock collar each side.
+function dumbbell() {
+  const M = itemMats();
+  const g = new THREE.Group();
+  const iron = decoMat(0x2a2b2d, { roughness: 0.6, metalness: 0.6 });
+  g.add(mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 14).rotateZ(Math.PI / 2), M.steel));
+  for (let i = 0; i < 9; i++) g.add(mesh(new THREE.TorusGeometry(0.0142, 0.0009, 4, 14).rotateY(Math.PI / 2).translate(-0.05 + i * 0.0125, 0, 0), M.darkSteel, false));
+  for (const s of [-1, 1]) {
+    g.add(mesh(latheY([[0.016, 0], [0.072, 0], [0.075, 0.004], [0.075, 0.022], [0.072, 0.026], [0.016, 0.026]], 32).rotateZ(-s * Math.PI / 2).translate(s * 0.075, 0, 0), iron));
+    g.add(mesh(latheY([[0.016, 0], [0.058, 0], [0.06, 0.004], [0.06, 0.018], [0.058, 0.022], [0.016, 0.022]], 32).rotateZ(-s * Math.PI / 2).translate(s * 0.102, 0, 0), iron));
+    g.add(mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.02, 8).rotateZ(Math.PI / 2).translate(s * 0.135, 0, 0), M.steel));
+  }
+  grip(g, 'side', 'grip', V(0, 0, 0), RIGHT, V(0, 0, 1));
+  return centered(g);
+}
+
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
+  compass,
+  clock,
+  spiritLevel,
+  binoculars,
+  flashlight,
+  ball,
+  dumbbell,
   airFreshener,
   decoBeetle,
   decoOctopus,

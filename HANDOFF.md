@@ -827,3 +827,34 @@ commits ahead of `main` and never merged. This branch starts from it (plus a mer
   /home/user/wegwg4/dist /home/user/wegwg4/build` (rsync is not installed; relative rm -rf is
   refused).
 - Next (the user's order): the interactive things (a rare trader at gas stations etc.).
+
+### 25.10: the user's next long list (same branch, PR #11)
+The user said not to touch sounds (ElevenLabs refused the key through the proxy: "unusual
+activity"; the key lives only in the scratchpad, never commit it). Everything else on the list:
+- Cars 12% larger (`CAR_SCALE` in car.js): the model root carries the scale, physics stays in
+  metres (`car.toBody`, `scaledDynamics`: wheels, suspension, final drive and brakes scale so it
+  drives exactly as before). Wrecks, tow ball, winch, racks, plates, mounts follow.
+- Hold and drag (interaction.js grab: `grabbable/startGrab/updateGrab/grabTap`): car doors (and
+  inner handles), bonnet, boot, winders, building doors move with the mouse while E or LMB is
+  held; a tap swings them fully. The aimed name card is gone (just small key prompts), the
+  outline is a hairline.
+- Caps only on jerry cans (`def.capped`): aim at the neck, E (or R in hand); an open can on its
+  side glugs out (`items.updateSpills`).
+- Flicker and terrain: road clamp in terrainMesh.js, light-space shadow snap (environment.js),
+  flat decals lifted, ground snapping for yard junk (builder `snaps`, poi.js `snapToGround`).
+- Junk rebuilt (clutter.js): clothesline, top-loader, suitcases, clothes heaps, sacks, crumpled
+  paper; planks cross, tins and bottles do not overlap, leans only against walls.
+- Decorations (The Long Drive wiki): mirror charms are pendulums (`items.swing`), dash toys on
+  springs (`items.bobble`), B to hang or stick, R held to take down.
+- Fuel types: `type.fuelType` ('fuel' = petrol, 'diesel' for the W203), `car.tankMix`,
+  `addFuel/fuelPurity/tankMain`; wrong fuel costs power, misfires, below 38% stalls. Gas stations
+  have labelled PETROL and DIESEL pumps (`pump.kind`), some drums and cans hold diesel, the
+  filler says what the car takes. A removed tank keeps its mix (`state.mix`).
+- Instruments and gear from the wiki (compass, alarm clock, spirit level, binoculars,
+  flashlight, ball, dumbbell): `items.updateInstruments` swings the compass needle to north
+  (+z), runs the clock from `env.time + state.offset` (LMB held turns the knob), floats the
+  level's bubbles; the flashlight is a SpotLight proxy with a draining `state.charge`; the ball
+  has a sphere collider with Max restitution. Binoculars: LMB held narrows the FOV
+  (`game.binoFov`, wheel = ×2..×10), hides hands and item, HUD draws the two-eyepiece mask
+  (`hud.setBino`), look speed scales with it. A 'torch' hold anchor in grips.js points the
+  flashlight ahead.

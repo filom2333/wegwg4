@@ -184,7 +184,8 @@ export class Player {
   // ------------------------------------------------------------------ update
   update(dt) {
     if (this.dead) return;
-    const sens = 0.0022 * settings.data.sensitivity;
+    // (slower through binoculars, so the view moves as much on screen as without)
+    const sens = 0.0022 * settings.data.sensitivity * (this.game.binoFov ? this.game.binoFov() : 1);
     const inv = settings.data.invertY ? -1 : 1;
     const look = !this.game.ui || !this.game.ui.blocksLook;
     const rotating = this.game.interaction && this.game.interaction.rotating;

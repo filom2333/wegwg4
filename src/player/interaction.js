@@ -846,7 +846,37 @@ export class Interaction {
     } else if (def.weapon) sub = `${s.loaded || 0} / ${def.weapon.mag}  ·  pouch ${this.ammo[def.weapon.ammo] || 0}`;
     else if (def.charges !== undefined) sub = `${s.charges} use${s.charges === 1 ? '' : 's'} left`;
     else if (def.ammo) sub = `${def.ammo.count} rounds`;
+    else if (def.battery) {
+      sub = `Batteries ${Math.round((s.charge ?? 1) * 100)}%`;
+      bar = s.charge ?? 1;
+    } else if (def.instrument) sub = this.instrumentReading(it);
     return { title: it.name, sub, bar, desc: def.desc };
+  }
+
+  // What a compass, a clock or a spirit level says just now.
+  instrumentReading(it) {
+    const kind = it.def.instrument;
+    if (kind === 'clock') {
+      const h = ((((this.game.env ? this.game.env.time : 12) + (it.state.offset || 0)) % 12) + 12) % 12;
+      const m = Math.floor((h % 1) * 60);
+      return `It reads ${Math.floor(h) || 12}:${String(m).padStart(2, '0')}`;
+    }
+    const q = it.mesh.getWorldQuaternion(new THREE.Quaternion());
+    if (kind === 'compass') {
+      // held: the way you face; on the car: the way the car points; set down: nothing to go by
+      const f = it === this.held ? V(0, 0, -1).applyQuaternion(this.cam.quaternion) : it.mounted ? V(0, 0, 1).applyQuaternion(it.mounted.car.root.quaternion) : null;
+      if (!f || f.x * f.x + f.z * f.z < 0.01) return 'The needle swings to north';
+      const deg = (THREE.MathUtils.radToDeg(Math.atan2(-f.x, f.z)) + 360) % 360;
+      return `Heading ${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8]} · ${Math.round(deg)}°`;
+    }
+    if (kind === 'level') {
+      const x = V(1, 0, 0).applyQuaternion(q);
+      const off = Math.abs(THREE.MathUtils.radToDeg(Math.asin(clamp(x.y, -1, 1))));
+      // stood on end, it reads plumb on the end vial instead
+      const tilt = off > 45 ? 90 - off : off;
+      return tilt < 0.4 ? 'Dead level' : `Off level by ${tilt.toFixed(1)}°`;
+    }
+    return '';
   }
 
   useOptions(it, t) {
@@ -879,7 +909,9 @@ export class Interaction {
       else if (t && t.kind === 'plate') out.push(['LMB', `Paint the ${PLATES[t.plate.id].name.toLowerCase()} (hold)`]);
       else out.push(['', 'Aim at a body panel to paint it']);
     }
-    if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
+    if (def.light) out.push(def.battery && (it.state.charge ?? 1) <= 0.005 ? ['', 'The batteries are flat'] : ['LMB', it.state.on ? 'Switch off' : 'Switch on']);
+    if (def.binoculars) out.push(this.binoZoom > 0.5 ? ['Wheel', `Zoom ×${this.binoMag || 4}`] : ['LMB', 'Look through them (hold)']);
+    if (def.instrument === 'clock') out.push(['LMB', 'Turn the knob to set it (hold)']);
     if (def.liquid) {
       if (capped(def)) out.push([capKey(), it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
       if (!capped(def) || it.state.capOff) {
@@ -975,7 +1007,8 @@ export class Interaction {
         }
         if (it.mounted) {
           const host = it.mounted.car;
-          const sub = it.mounted.hang ? 'Hanging from the mirror' : `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`;
+          let sub = it.mounted.hang ? 'Hanging from the mirror' : `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`;
+          if (it.def && it.def.instrument) sub = this.instrumentReading(it);
           info = { title: it.name, sub, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
           prompts.push(['R', it.mounted.hang ? 'Take it down (hold)' : 'Unbolt (hold)']);
           break;
@@ -1595,7 +1628,7 @@ export class Interaction {
       if (input.isDown('sprint')) this.plateTilt = clamp((this.plateTilt || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 24), 0, Math.PI / 2);
       else this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
     }
-    else if (input.mouse.wheel && !weapon) {
+    else if (input.mouse.wheel && !weapon && !(def && def.binoculars && input.mouseDown(0))) {
       const isBig = carriedBig(it);
       if (!isBig && !this.floating) {
         // the wheel takes a small thing out of the hand: it floats in front to be turned and moved
@@ -1693,9 +1726,21 @@ export class Interaction {
     if (this.useAnim > 0) this.useAnim -= dt * 1.6;
     const blocked = this.game.ui && this.game.ui.blocksMove;
     if (blocked) return;
+    if (!def || !def.binoculars) this.binoZoom = 0;
     if (def) {
       if (def.weapon) this.updateWeapon(it, dt);
-      else if (def.liquid) {
+      else if (def.binoculars) {
+        // up to the eyes while LMB is held; the wheel turns the zoom
+        const on = input.mouseDown(0) && !this.floating;
+        this.binoZoom = clamp((this.binoZoom || 0) + (on ? dt * 5 : -dt * 6), 0, 1);
+        if (on && input.mouse.wheel) this.binoMag = clamp((this.binoMag || 4) - Math.sign(input.mouse.wheel), 2, 10);
+      } else if (def.instrument === 'clock' && input.mouseDown(0)) {
+        // the knob on top turns the hands round
+        it.state.offset = ((it.state.offset || 0) + dt * 1.2) % 12;
+        const knob = it.mesh.getObjectByName('knob');
+        if (knob) knob.rotation.y += dt * 9;
+        this.useAnim = Math.max(this.useAnim, 0.3);
+      } else if (def.liquid) {
         // the cap: off and on by hand
         if (capped(def) && input.wasPressed('reload')) {
           this.toggleCap(it);
@@ -1977,7 +2022,8 @@ export class Interaction {
       return;
     }
     if (def.light) {
-      it.state.on = !it.state.on && (it.state.liquid || 0) > 0.01;
+      it.state.on = !it.state.on && (def.battery ? (it.state.charge ?? 1) > 0.005 : (it.state.liquid || 0) > 0.01);
+      if (def.battery && !it.state.on && (it.state.charge ?? 1) <= 0.005) g.hud && g.hud.toast('The batteries are flat');
       g.items.refreshVisual(it);
       g.audio && g.audio.play('click');
       return;
@@ -2929,6 +2975,15 @@ export class Interaction {
     this.viewRoot.position.copy(cam.position);
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;
+    // looking through binoculars: they are at the eyes, hands and all out of sight
+    const looking = it && it.def && it.def.binoculars && this.binoZoom > 0.35;
+    if (looking && !this.binoHid) {
+      this.binoHid = it;
+      this.viewRoot.visible = it.mesh.visible = false;
+    } else if (!looking && this.binoHid) {
+      this.viewRoot.visible = this.binoHid.mesh.visible = true;
+      this.binoHid = null;
+    }
     const h = this.hands;
     const big = it && carriedBig(it);
     const seated = !!this.game.player.seat;

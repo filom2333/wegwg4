@@ -17,7 +17,14 @@ const _up = new THREE.Vector3();
 const _d = new THREE.Vector3(),
   _down = new THREE.Vector3(0, -1, 0),
   _yAxis = new THREE.Vector3(0, 1, 0),
-  _qs = new THREE.Quaternion();
+  _qs = new THREE.Quaternion(),
+  _qi = new THREE.Quaternion(),
+  _wp = new THREE.Vector3(),
+  _ax = new THREE.Vector3(),
+  _perp = new THREE.Vector3();
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// the vials of a spirit level: axis, centre, how far the bubble can run, and how keenly it does
+const VIALS = { bubbleX: { a: V(1, 0, 0), c: V(0, 0, 0), run: 0.021, gain: 0.32, lift: 0.0035 }, bubbleY: { a: V(0, 1, 0), c: V(0.15, 0, 0), run: 0.0075, gain: 0.2, lift: 0.0035 } };
 
 export class Item {
   constructor(sys, { id, part = null, state = {}, mesh }) {
@@ -215,8 +222,10 @@ export class ItemSystem {
     const hx = Math.max(0.012, s.x / 2),
       hy = Math.max(0.012, s.y / 2),
       hz = Math.max(0.012, s.z / 2);
-    const cd = RAPIER.ColliderDesc.cuboid(hx, hy, hz).setMass(Math.max(0.05, it.mass)).setFriction(0.75).setRestitution(0.12).setCollisionGroups(GROUPS.item);
+    // a ball is round, light on its feet and bouncy
+    const cd = (it.def && it.def.ball ? RAPIER.ColliderDesc.ball(Math.max(hx, hy, hz)).setRestitution(0.72).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max).setFriction(0.6) : RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.75).setRestitution(0.12)).setMass(Math.max(0.05, it.mass)).setCollisionGroups(GROUPS.item);
     if (it.part) cd.setFriction(0.9);
+    if (it.def && it.def.ball) it.body.setAngularDamping(0.08);
     it.collider = ph.world.createCollider(cd, it.body);
     ph.setOwner(it.collider, it.ownerTag);
   }
@@ -556,6 +565,7 @@ export class ItemSystem {
     if (dt > 0) this.updateCargo(dt);
     if (dt > 0) this.updateSpills(dt);
     this.updateMounted(dt);
+    if (dt > 0) this.updateInstruments(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -577,6 +587,87 @@ export class ItemSystem {
       }
     }
     void ph;
+  }
+
+  // Things with working insides, near the eye: the compass needle swings round to north, the
+  // clock keeps the time (plus whatever it was set wrong by), the level's bubbles float to the
+  // high side; flashlights run their batteries down.
+  updateInstruments(dt) {
+    const g = this.game;
+    const eye = g.renderer && g.renderer.camera ? g.renderer.camera.position : null;
+    for (const it of this.items) {
+      const d = it.def;
+      if (!d) continue;
+      if (d.battery && it.state.on) {
+        it.state.charge = Math.max(0, (it.state.charge ?? 1) - dt / (60 * 30));
+        if (it.state.charge <= 0) {
+          it.state.on = false;
+          this.refreshVisual(it);
+        } else if (it.light) {
+          // weak batteries: dimmer and yellower, and the bulb flickers
+          const c = it.state.charge;
+          const k = Math.min(1, c / 0.2) * (c < 0.1 && Math.random() < 0.15 ? 0.3 : 1);
+          it.light.intensity = 22 * k;
+          const glow = it.mesh.getObjectByName('glow');
+          if (glow) glow.material.emissiveIntensity = 2.5 * k;
+          // in the hand it lights where you look, a little below the middle of the view
+          if (it.held && g.renderer && g.renderer.camera) {
+            const cam = g.renderer.camera;
+            _ax.set(0, -0.06, -1).applyQuaternion(cam.quaternion).multiplyScalar(8).add(cam.position);
+            it.mesh.updateWorldMatrix(true, false);
+            it.light.target.position.copy(it.mesh.worldToLocal(_ax));
+          } else if (it.mesh.userData.beam) it.light.target.position.copy(it.mesh.userData.lens || V(0, 0, 0)).addScaledVector(it.mesh.userData.beam, 4);
+        }
+      }
+      if (!d.instrument || !eye) continue;
+      it.mesh.getWorldPosition(_wp);
+      if (_wp.distanceToSquared(eye) > 144) continue;
+      it.mesh.getWorldQuaternion(_qi).invert();
+      if (d.instrument === 'compass') {
+        const n = it.mesh.getObjectByName('needle');
+        if (!n) continue;
+        // north (+z) in the compass's own frame; edge-on, the needle just hangs where it is
+        _ax.set(0, 0, 1).applyQuaternion(_qi);
+        const st = (it.needle = it.needle || { a: Math.random() * 6.28, v: 0 });
+        if (_ax.x * _ax.x + _ax.z * _ax.z > 0.04) {
+          const want = Math.atan2(_ax.x, _ax.z);
+          st.v += (wrapPi(want - st.a) * 40 - st.v * 3.2) * Math.min(dt, 0.05);
+        } else st.v *= 1 - Math.min(1, dt * 2);
+        st.a = wrapPi(st.a + st.v * Math.min(dt, 0.05));
+        n.rotation.y = st.a;
+      } else if (d.instrument === 'clock') {
+        const h = ((((g.env ? g.env.time : 12) + (it.state.offset || 0)) % 12) + 12) % 12;
+        const hh = it.mesh.getObjectByName('hourHand'),
+          mh = it.mesh.getObjectByName('minHand');
+        if (hh) hh.rotation.z = -(h / 12) * Math.PI * 2;
+        if (mh) mh.rotation.z = -(h % 1) * Math.PI * 2;
+      } else if (d.instrument === 'level') {
+        // world up in the level's frame
+        _up.set(0, 1, 0).applyQuaternion(_qi);
+        for (const [name, v] of Object.entries(VIALS)) {
+          const b = it.mesh.getObjectByName(name);
+          if (!b) continue;
+          const t = _up.dot(v.a);
+          const along = Math.max(-v.run, Math.min(v.run, t * (v.run / v.gain) * 4.5));
+          _perp.copy(_up).addScaledVector(v.a, -t);
+          if (_perp.lengthSq() > 0.01) _perp.normalize().multiplyScalar(v.lift);
+          else _perp.set(0, 0, 0);
+          // (the model was centred after it was built: the vials moved with it)
+          if (!b.userData.shift) {
+            const o = b.userData.orig || [0, 0, 0];
+            b.userData.shift = [b.position.x - o[0], b.position.y - o[1], b.position.z - o[2]];
+          }
+          const o = b.userData.shift;
+          const tx = v.c.x + v.a.x * along + _perp.x,
+            ty = v.c.y + v.a.y * along + _perp.y,
+            tz = v.c.z + v.a.z * along + _perp.z;
+          const k = Math.min(1, dt * 7);
+          b.position.x += (tx + o[0] - b.position.x) * k;
+          b.position.y += (ty + o[1] - b.position.y) * k;
+          b.position.z += (tz + o[2] - b.position.z) * k;
+        }
+      }
+    }
   }
 
   // An open container lying on its side or upside down runs out.
@@ -731,7 +822,24 @@ export class ItemSystem {
         fill.visible = f > 0.01;
       }
     }
-    if (it.def.light) {
+    if (it.def.light === 'torch') {
+      // a flashlight throws a beam from its lens (along userData.beam)
+      const glow = it.mesh.getObjectByName('glow');
+      if (glow) glow.material.emissiveIntensity = it.state.on ? 2.5 : 0;
+      if (it.state.on && !it.light) {
+        const lens = it.mesh.userData.lens || V(0, 0, 0);
+        const beam = it.mesh.userData.beam || V(1, 0, 0);
+        it.light = new THREE.SpotLight(0xfff0d6, 22, 26, 0.36, 0.55, 1.6);
+        it.light.position.copy(lens);
+        it.light.target.position.copy(lens).addScaledVector(beam, 4);
+        it.mesh.add(it.light, it.light.target);
+        this.game.lights.add(it.light);
+      } else if (!it.state.on && it.light) {
+        it.mesh.remove(it.light, it.light.target);
+        this.game.lights.remove(it.light);
+        it.light = null;
+      }
+    } else if (it.def.light) {
       const glow = it.mesh.getObjectByName('glow');
       if (glow) glow.material.emissiveIntensity = it.state.on ? 3 : 0;
       if (it.state.on && !it.light) {
