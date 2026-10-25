@@ -278,8 +278,8 @@ export class Interaction {
     // plates bolted on: in front of whatever they cover
     const pl = !seated && plateUnderRay(car, origin, dir, maxDist);
     if (pl) list.push({ id: 'plate', plate: pl.plate, d: pl.dist - 0.03, vol: 0 });
-    // things bolted on: the same
-    if (!seated)
+    // things bolted on (or hung on the mirror): the same
+    {
       for (const it of car.attached || []) {
         if (!it.mounted) continue;
         inv.copy(it.mesh.matrixWorld).invert();
@@ -291,6 +291,7 @@ export class Interaction {
         const d = hitP.clone().applyMatrix4(it.mesh.matrixWorld).distanceTo(origin);
         if (d < maxDist) list.push({ id: 'item', item: it, d: d - 0.03, vol: 0 });
       }
+    }
     // bolt-on accessories
     if (!seated)
       for (const [mount, a] of Object.entries(car.accessories || {})) {
@@ -567,8 +568,14 @@ export class Interaction {
         }
       } else {
         info = this.heldInfo(it);
+        // a decoration aimed at a car's inside mirror: hang it there
+        const hang = def && def.hang ? this.hangFit(it) : null;
+        if (hang) {
+          prompts.push([kn('sleep'), 'Hang it on the mirror']);
+          if (!blocked && input.wasPressed('sleep')) this.hangHeld(it, hang);
+        }
         // aimed at a car: bolt it on where the ghost shows
-        const spot = this.boltFit(it);
+        const spot = hang ? null : this.boltFit(it);
         if (spot) {
           this.showBoltGhost(it, spot);
           prompts.push([kn('sleep'), `Bolt it to the ${this.boltPlace(spot.car, spot.part, spot.normal)}`], ['Shift+Wheel', 'Turn']);
@@ -966,8 +973,9 @@ export class Interaction {
         }
         if (it.mounted) {
           const host = it.mounted.car;
-          info = { title: it.name, sub: `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
-          prompts.push(['R', 'Unbolt (hold)']);
+          const sub = it.mounted.hang ? 'Hanging from the mirror' : `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`;
+          info = { title: it.name, sub, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
+          prompts.push(['R', it.mounted.hang ? 'Take it down (hold)' : 'Unbolt (hold)']);
           break;
         }
         if (it.part) {
@@ -2524,7 +2532,7 @@ export class Interaction {
   boltable(it) {
     if (it.part) return partDefOf(it).mass <= 40;
     const d = it.def;
-    return !!d && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
+    return !!d && !d.hang && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
   }
 
   // Where the held thing would go: against the surface of a car under the crosshair, standing
@@ -2532,7 +2540,8 @@ export class Interaction {
   boltFit(it) {
     const g = this.game;
     this.boltAim = null;
-    if (g.player.seat || !this.boltable(it)) return null;
+    const dash = !!(it.def && it.def.dash);
+    if ((g.player.seat && !dash) || !this.boltable(it)) return null;
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
@@ -2540,8 +2549,10 @@ export class Interaction {
     const cars = [g.car, ...((g.fleet && g.fleet.cars) || [])].filter((c, i, a) => c && a.indexOf(c) === i && c.root.position.distanceTo(origin) < 7);
     for (const c of cars) {
       const s = plateSpot(c, origin, dir, 2.4, this.boltSpin || 0, right, { w: it.size.x, l: it.size.z });
-      // (inside the cabin things are put down, not bolted)
-      if (!s || /^seat/.test(s.part) || cargoZone(c, s.point.clone().applyMatrix4(new THREE.Matrix4().copy(c.root.matrixWorld).invert())) === 'cabin') continue;
+      // (inside the cabin things are put down, not bolted; a toy for the dash stands on top of things)
+      if (!s) continue;
+      const inside = /^seat/.test(s.part) || cargoZone(c, s.point.clone().applyMatrix4(new THREE.Matrix4().copy(c.root.matrixWorld).invert())) === 'cabin';
+      if (inside && (!dash || s.normal.y < 0.5)) continue;
       if (!spot || s.dist < spot.dist) spot = s;
     }
     this.boltAim = spot;
@@ -2554,6 +2565,42 @@ export class Interaction {
   boltPlace(car, part, n) {
     if (part === 'body' && n.y > 0.6) return 'roof';
     return (car.PARTS[part] || { label: part }).label.toLowerCase();
+  }
+
+  // The inside mirror of a car in reach that the aim passes close to (seated or through a door).
+  hangFit(it) {
+    const g = this.game;
+    const origin = this.cam.position;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    let best = null;
+    for (const c of [g.car, ...((g.fleet && g.fleet.cars) || [])]) {
+      if (!c || c.root.position.distanceTo(origin) > 6 || !c.isInstalled('body')) continue;
+      const lp = c.hangPoint();
+      if (!lp) continue;
+      const w = c.worldPointOf(lp);
+      const to = w.clone().sub(origin);
+      const t = to.dot(dir);
+      if (t < 0.1 || t > 2.4) continue;
+      const off = to.addScaledVector(dir, -t).length();
+      if (off < 0.18 && (!best || off < best.off)) best = { car: c, local: lp, off };
+    }
+    return best;
+  }
+
+  hangHeld(it, h) {
+    const g = this.game;
+    const mp = h.car.model.parts.body;
+    mp.pivot.updateMatrixWorld(true);
+    const at = h.local.clone();
+    const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(new THREE.Matrix4().makeTranslation(...h.car.worldPointOf(at).toArray()));
+    this.hideGhost();
+    this.held = null;
+    this.floating = false;
+    g.player.carryMass = 0;
+    it.held = false;
+    // (the body's pivot is the car's frame: the point holds as it is)
+    g.items.mount(it, h.car, 'body', local, { hang: at });
+    g.audio && g.audio.play('pocket', { at: h.car.worldPointOf(at), volume: 0.4 });
   }
 
   boltMatrix(it, spot) {

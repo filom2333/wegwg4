@@ -66,6 +66,21 @@ export const ITEMS = {
   thermos: { name: 'Thermos of coffee', model: ['thermos'], mass: 1.1, consume: { water: 14, energy: 14, warmth: 22 }, charges: 3, hold: 'hand', desc: 'Hot coffee. Warms you up on a cold night.' },
   blanket: { name: 'Wool blanket', model: ['blanket'], mass: 1.4, wrap: 34, hold: 'side', desc: 'Wrap up in it when the night gets cold. Sleeping with one keeps you warm.' },
   tent: { name: 'Tent', model: ['tentBag'], mass: 4.6, tent: true, bulky: true, hold: 'side', variants: 4, desc: 'A canvas ridge tent in its bag. Pitch it on open, level ground (LMB), crawl in out of the wind and rain and sleep the night through. Hold R on it to pack it up again.' },
+  // decorations (as in The Long Drive: hung from the mirror, they swing with the car)
+  airFreshener: { name: 'Air freshener', model: ['airFreshener'], mass: 0.01, hang: true, variants: 7, hold: 'hand', desc: 'A cardboard pine for the mirror (B). It smells of nothing any more.' },
+  decoBeetle: { name: 'Beetle charm', model: ['decoBeetle'], mass: 0.02, hang: true, hold: 'hand', desc: 'A shiny blue beetle on a thread. Hang it on the mirror (B).' },
+  decoOctopus: { name: 'Octopus charm', model: ['decoOctopus'], mass: 0.03, hang: true, variants: 2, hold: 'hand', desc: 'A rubber octopus with big eyes. Hang it on the mirror (B).' },
+  juicePop: { name: 'Ice pop', model: ['juicePop'], mass: 0.04, hang: true, hold: 'hand', desc: 'A frozen juice tube, long since thawed. Hung on the mirror (B) it swings like the rest.' },
+  decoLog: { name: 'Little log', model: ['decoLog'], mass: 0.03, hang: true, variants: 3, hold: 'hand', desc: 'A sawn log on a string. Nobody knows why. Hang it on the mirror (B).' },
+  decoBat: { name: 'Bat charm', model: ['decoBat'], mass: 0.02, hang: true, hold: 'hand', desc: 'A little bat hanging by its feet, red eyes. Hang it on the mirror (B).' },
+  reflector: { name: 'Reflector', model: ['reflector'], mass: 0.05, hang: true, hold: 'hand', desc: "A round cat's eye on a chain. Catches the headlights. Hang it on the mirror (B)." },
+  fuzzyDice: { name: 'Fuzzy dice', model: ['fuzzyDice'], mass: 0.06, hang: true, variants: 4, hold: 'hand', desc: 'A pair of fluffy dice for the mirror (B). They swing in every bend.' },
+  bobbleDog: { name: 'Nodding dog', model: ['bobbleDog'], mass: 0.2, dash: true, bobble: 'nod', variants: 3, hold: 'hand', desc: 'Stick it on the dashboard (B): it nods at every bump.' },
+  hulaGirl: { name: 'Hula dancer', model: ['hulaGirl'], mass: 0.15, dash: true, bobble: 'sway', hold: 'hand', desc: 'Stick her on the dashboard (B): she sways through the bends.' },
+  rubberDuck: { name: 'Rubber duck', model: ['rubberDuck'], mass: 0.05, dash: true, hold: 'hand', desc: 'Squeaks no more. Looks good on a dashboard (B).' },
+  gardenGnome: { name: 'Garden gnome', model: ['gardenGnome'], mass: 2.5, hold: 'side', desc: "Somebody's pride and joy, once. He would ride well on a roof (B)." },
+  teddyBear: { name: 'Teddy bear', model: ['teddyBear'], mass: 0.4, dash: true, hold: 'hand', desc: 'Worn thin with hugging. He can keep you company on the dash or the seat.' },
+  mug: { name: 'Mug', model: ['mug'], mass: 0.3, dash: true, variants: 3, hold: 'hand', desc: 'A chipped enamel mug.' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
@@ -79,6 +94,7 @@ export const LOOT = {
     ['bandage', 1],
   ],
   kitchen: [
+    ['mug', 0.8],
     ['thermos', 0.5],
     ['coffee', 1],
     ['sponge', 0.6],
@@ -101,6 +117,9 @@ export const LOOT = {
     ['cannedPeaches', 1],
   ],
   table: [
+    ['mug', 0.8],
+    ['bobbleDog', 0.2],
+    ['juicePop', 0.2],
     ['cd', 0.6],
     ['cigarettes', 1],
     ['coffee', 0.8],
@@ -111,6 +130,12 @@ export const LOOT = {
     ['ammo38', 0.4],
   ],
   small: [
+    ['airFreshener', 0.8],
+    ['fuzzyDice', 0.4],
+    ['decoBeetle', 0.2],
+    ['decoBat', 0.2],
+    ['reflector', 0.3],
+    ['rubberDuck', 0.3],
     ['painkillers', 2],
     ['bandage', 2],
     ['chocolate', 1],
@@ -118,6 +143,10 @@ export const LOOT = {
     ['revolver', 0.15],
   ],
   shelf: [
+    ['decoOctopus', 0.2],
+    ['decoLog', 0.2],
+    ['hulaGirl', 0.15],
+    ['mug', 0.4],
     ['cd', 0.5],
     ['cannedBeans', 1],
     ['oilBottle', 1],
@@ -129,6 +158,7 @@ export const LOOT = {
     ['medkit', 1],
   ],
   bed: [
+    ['teddyBear', 0.6],
     ['blanket', 1.5],
     ['cd', 0.3],
     ['ammo38', 0.6],
@@ -148,6 +178,9 @@ export const LOOT = {
     ['sodaCan', 1],
   ],
   desk: [
+    ['bobbleDog', 0.3],
+    ['hulaGirl', 0.2],
+    ['mug', 0.5],
     ['cd', 0.5],
     ['chocolate', 1],
     ['ammo38', 0.5],
@@ -160,6 +193,7 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['gardenGnome', 0.3],
     ['tent', 0.4],
     ['fishingRod', 0.6],
     ['campfireKit', 0.8],
@@ -288,6 +322,10 @@ export const LOOT = {
     ['jerryCan', 0.5],
   ],
   wreck: [
+    ['airFreshener', 1.2],
+    ['fuzzyDice', 0.6],
+    ['reflector', 0.3],
+    ['bobbleDog', 0.2],
     ['steelPlate', 0.4],
     ['cd', 0.9],
     ['jerryCan', 1.2],

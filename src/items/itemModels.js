@@ -1208,8 +1208,310 @@ export function drum(color = 0) {
   return centered(g);
 }
 
+// ------------------------------------------------------------------ decorations
+// Things to hang from the mirror (built hanging from the origin: userData.hangTop is that point
+// once centred) and toys for the dashboard (their nodding part is the child named 'bob', pivoted
+// where it nods).
+function hanging(g) {
+  const b = new THREE.Box3().setFromObject(g);
+  const c = b.getCenter(new THREE.Vector3());
+  for (const ch of g.children) ch.position.sub(c);
+  g.userData.hangTop = c.clone().negate();
+  g.userData.size = b.getSize(new THREE.Vector3());
+  return g;
+}
+
+const decoMat = (color, o = {}) => cached('deco:' + color.toString(16) + JSON.stringify(o), () => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o }));
+
+// the cord a decoration hangs by, from the mirror's arm (y = 0) down to `y`
+function cord(g, y, x = 0) {
+  g.add(mesh(new THREE.CylinderGeometry(0.0012, 0.0012, -y, 4).translate(x * 0.5, y / 2, 0).rotateZ(Math.atan2(x, -y) * 0), decoMat(0xd8d0c0, { roughness: 1 }), false));
+}
+
+// The cardboard pine of an air freshener, one of seven colours, its scent printed on it.
+function airFreshener(variant = 0) {
+  const COLS = [0x2f6fb8, 0xe8e6e0, 0xe3c12f, 0x3f9a48, 0xc23b2f, 0xe58fb4, 0x1c1c1c];
+  const col = COLS[variant % COLS.length];
+  const g = new THREE.Group();
+  cord(g, -0.06);
+  const pts = [[0, 0], [0.016, -0.02], [0.008, -0.02], [0.026, -0.045], [0.014, -0.045], [0.034, -0.075], [0.019, -0.075], [0.04, -0.105], [0.006, -0.105], [0.006, -0.118], [-0.006, -0.118], [-0.006, -0.105], [-0.04, -0.105], [-0.019, -0.075], [-0.034, -0.075], [-0.014, -0.045], [-0.026, -0.045], [-0.008, -0.02], [-0.016, -0.02]];
+  const tree = new THREE.ExtrudeGeometry(shapeFromPoints(pts), { depth: 0.0018, bevelEnabled: false }).translate(0, -0.058, -0.0009);
+  g.add(mesh(tree, decoMat(col, { roughness: 0.95 })));
+  // the label band across it
+  const lab = labelMat('fresh' + variant, 128, 32, (c, w, h) => {
+    c.fillStyle = variant === 1 ? '#2a5a9a' : '#f4efe0';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = variant === 1 ? '#f4efe0' : '#3a2a1a';
+    c.font = 'bold 20px Arial';
+    c.textAlign = 'center';
+    c.fillText('DESERT PINE', w / 2, 23);
+  });
+  for (const z of [0.0012, -0.0012]) g.add(mesh(new THREE.PlaneGeometry(0.05, 0.012).rotateY(z < 0 ? Math.PI : 0).translate(0, -0.142, z), lab, false));
+  return hanging(g);
+}
+
+// A beetle on a thread: a shiny shell, a head and six legs.
+function decoBeetle() {
+  const g = new THREE.Group();
+  cord(g, -0.05);
+  const shell = decoMat(0x2a5ab8, { roughness: 0.25, metalness: 0.5 });
+  g.add(mesh(new THREE.SphereGeometry(0.022, 16, 10).scale(1, 0.55, 1.35).translate(0, -0.062, 0), shell));
+  g.add(mesh(new THREE.CylinderGeometry(0.0006, 0.0006, 0.06, 3).rotateX(Math.PI / 2).translate(0, -0.05, 0), decoMat(0x101010)));
+  g.add(mesh(new THREE.SphereGeometry(0.011, 10, 8).translate(0, -0.063, 0.03), decoMat(0x101010)));
+  for (const sx of [-1, 1])
+    for (const z of [-0.012, 0, 0.012]) g.add(mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 0.03, 4).rotateZ(sx * 1.0).translate(sx * 0.026, -0.072, z), decoMat(0x101010)));
+  return hanging(g);
+}
+
+// An octopus with eight curling legs and big eyes.
+function decoOctopus(variant = 0) {
+  const g = new THREE.Group();
+  cord(g, -0.035);
+  const skin = decoMat(0x4a9a52, { roughness: 0.5 });
+  g.add(mesh(new THREE.SphereGeometry(0.025, 16, 12).scale(1, 1.2, 1).translate(0, -0.062, 0), skin));
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const pts = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const r = 0.015 + t * 0.02 + Math.sin(t * 5 + k) * 0.004;
+      pts.push(V(Math.cos(a) * r, -0.075 - t * 0.04 + Math.sin(t * Math.PI) * 0.006, Math.sin(a) * r));
+    }
+    g.add(mesh(tubeAlong(pts, 0.004, 5), skin));
+  }
+  const eye = decoMat(0xf4f0e8, { roughness: 0.3 }),
+    pupil = decoMat(variant ? 0xb81a1a : 0x101010, { roughness: 0.2 });
+  for (const sx of [-1, 1]) {
+    g.add(mesh(new THREE.SphereGeometry(0.0075, 10, 8).translate(sx * 0.011, -0.058, 0.02), eye));
+    g.add(mesh(new THREE.SphereGeometry(0.0035, 8, 6).translate(sx * 0.012, -0.058, 0.027), pupil));
+  }
+  return hanging(g);
+}
+
+// A frozen-juice tube in its paper sleeve, hung up for the smell of it.
+function juicePop() {
+  const g = new THREE.Group();
+  cord(g, -0.02);
+  const sleeve = labelMat('juicepop', 128, 256, (c, w, h) => {
+    c.fillStyle = '#e8dcc0';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = '#d0502a';
+    c.fillRect(0, h * 0.18, w, h * 0.22);
+    c.fillStyle = '#f8f0e0';
+    c.font = 'bold 30px Arial';
+    c.textAlign = 'center';
+    c.fillText('KALIPO', w / 2, h * 0.34);
+    c.fillStyle = '#3a8a3a';
+    c.beginPath();
+    c.arc(w / 2, h * 0.62, 28, 0, Math.PI * 2);
+    c.fill();
+  });
+  g.add(mesh(latheY([[0, -0.02], [0.012, -0.022], [0.015, -0.03], [0.016, -0.12], [0.012, -0.128], [0, -0.13]], 16), sleeve));
+  return hanging(g);
+}
+
+// A short log on a string: bark, sawn rings at the ends.
+function decoLog(variant = 0) {
+  const g = new THREE.Group();
+  cord(g, -0.03);
+  const bark = decoMat([0x5a3a22, 0x9a7a52, 0x2e2018][variant % 3], { roughness: 1 });
+  g.add(mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.09, 10).rotateZ(Math.PI / 2).translate(0, -0.046, 0), bark));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.CircleGeometry(0.0145, 12).rotateY((sx * Math.PI) / 2).translate(sx * 0.0451, -0.046, 0), decoMat(0xc8a068, { roughness: 0.9 })));
+  return hanging(g);
+}
+
+// A bat hanging by its feet, wings folded half open.
+function decoBat() {
+  const g = new THREE.Group();
+  cord(g, -0.01);
+  const fur = decoMat(0x1a1714, { roughness: 0.9 });
+  g.add(mesh(new THREE.SphereGeometry(0.012, 10, 8).scale(1, 1.6, 0.9).translate(0, -0.035, 0), fur));
+  g.add(mesh(new THREE.SphereGeometry(0.009, 10, 8).translate(0, -0.058, 0.003), fur));
+  for (const sx of [-1, 1]) {
+    const wing = new THREE.ExtrudeGeometry(shapeFromPoints([[0, 0.012], [0.012, 0.02], [0.03, 0.01], [0.042, -0.02], [0.03, -0.012], [0.024, -0.03], [0.014, -0.02], [0.006, -0.03], [0, -0.012]]), { depth: 0.001, bevelEnabled: false });
+    g.add(mesh(wing.scale(sx, 1, 1).rotateY(sx * 0.5).translate(sx * 0.006, -0.035, 0), fur));
+    g.add(mesh(new THREE.ConeGeometry(0.003, 0.008, 4).translate(sx * 0.005, -0.051, 0.004).rotateZ(Math.PI), fur));
+  }
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.SphereGeometry(0.0016, 6, 4).translate(sx * 0.004, -0.06, 0.011), decoMat(0xc83020, { emissive: 0x401008 })));
+  return hanging(g);
+}
+
+// A round cat's-eye reflector on a chain.
+function reflector() {
+  const g = new THREE.Group();
+  for (let k = 0; k < 6; k++) g.add(mesh(new THREE.TorusGeometry(0.003, 0.0008, 4, 8).rotateY((k % 2) * Math.PI * 0.5).translate(0, -0.004 - k * 0.0055, 0), decoMat(0xb8bcc0, { metalness: 1, roughness: 0.3 }), false));
+  g.add(mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24).rotateX(Math.PI / 2).translate(0, -0.068, 0), decoMat(0x2a2a2a)));
+  const lens = new THREE.MeshPhysicalMaterial({ color: 0xd02810, roughness: 0.15, emissive: 0x501004, clearcoat: 1 });
+  for (const z of [0.0042, -0.0042]) g.add(mesh(new THREE.CircleGeometry(0.029, 6).rotateY(z < 0 ? Math.PI : 0).translate(0, -0.068, z), lens));
+  return hanging(g);
+}
+
+// A pair of fluffy dice on a cord loop.
+function fuzzyDice(variant = 0) {
+  const g = new THREE.Group();
+  const fur = decoMat([0xd8d4cc, 0xc8301f, 0x1c1c1c, 0xe58fb4][variant % 4], { roughness: 1 });
+  const pip = decoMat(variant === 0 ? 0x1a1a1a : 0xf0ece0, { roughness: 1 });
+  for (const sx of [-1, 1]) {
+    const y = sx < 0 ? -0.075 : -0.095;
+    g.add(mesh(new THREE.CylinderGeometry(0.0012, 0.0012, Math.hypot(0.022, y), 4).translate(0, y / 2, 0).rotateZ(-sx * Math.atan2(0.022, -y)), decoMat(0xd8d0c0), false));
+    const d = roundedBox(0.042, 0.042, 0.042, 0.014, 2);
+    const p = d.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const k = 1 + 0.06 * Math.sin(p.getX(i) * 300 + p.getY(i) * 260 + p.getZ(i) * 220);
+      p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, p.getZ(i) * k);
+    }
+    d.computeVertexNormals();
+    const c = V(sx * 0.024, y - 0.022, 0);
+    const rot = new THREE.Euler(0.4 * sx, 0.6, 0.2);
+    g.add(mesh(d.clone().applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rot)).translate(c.x, c.y, c.z), fur));
+    // pips on the three faces turned outward
+    const faces = [[V(0, 0, 1), 1], [V(1, 0, 0), 3], [V(0, 1, 0), 5]];
+    for (const [n, count] of faces) {
+      for (let k = 0; k < count; k++) {
+        const u = count === 1 ? 0 : ((k % 3) - 1) * 0.011,
+          v = count === 1 ? 0 : (Math.floor(k / 3) - 0.5) * 0.013 * (count > 3 ? 1 : 0) + (count === 3 ? (k - 1) * 0.011 : 0);
+        const off = Math.abs(n.z) > 0.5 ? V(u, v, 0) : Math.abs(n.x) > 0.5 ? V(0, v, u) : V(u, 0, v);
+        const q = n.clone().multiplyScalar(0.0225).add(off).applyEuler(rot).add(c);
+        g.add(mesh(new THREE.SphereGeometry(0.004, 6, 4).translate(q.x, q.y, q.z), pip, false));
+      }
+    }
+  }
+  return hanging(g);
+}
+
+// A nodding dog for the parcel shelf or the dash: its head on a spring (the 'bob' group).
+function bobbleDog(variant = 0) {
+  const g = new THREE.Group();
+  const coat = decoMat([0x8a5a32, 0xd8c8a8, 0x2a2420][variant % 3], { roughness: 0.85 });
+  const dark = decoMat(0x2a1a12, { roughness: 0.7 });
+  g.add(mesh(new THREE.CylinderGeometry(0.035, 0.038, 0.01, 18).translate(0, 0.005, 0), decoMat(0x3a3a3a)));
+  // sitting body, front legs, tail
+  g.add(mesh(new THREE.SphereGeometry(0.03, 14, 10).scale(0.9, 1.1, 1.25).translate(0, 0.045, -0.006), coat));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.CapsuleGeometry(0.008, 0.03, 3, 8).translate(sx * 0.013, 0.03, 0.022), coat));
+  g.add(mesh(new THREE.CapsuleGeometry(0.005, 0.025, 3, 6).rotateX(-0.9).translate(0, 0.03, -0.042), coat));
+  const bob = new THREE.Group();
+  bob.name = 'bob';
+  bob.position.set(0, 0.075, 0.012);
+  bob.add(mesh(new THREE.SphereGeometry(0.024, 14, 10).translate(0, 0.016, 0.006), coat));
+  bob.add(mesh(new THREE.CapsuleGeometry(0.012, 0.02, 3, 8).rotateX(Math.PI / 2).translate(0, 0.01, 0.03), coat));
+  bob.add(mesh(new THREE.SphereGeometry(0.006, 8, 6).translate(0, 0.012, 0.052), dark));
+  for (const sx of [-1, 1]) {
+    bob.add(mesh(new THREE.SphereGeometry(0.004, 8, 6).translate(sx * 0.01, 0.024, 0.026), dark));
+    bob.add(mesh(new THREE.SphereGeometry(0.014, 10, 8).scale(0.4, 1.4, 0.9).rotateZ(sx * 0.3).translate(sx * 0.022, 0.006, -0.002), dark));
+  }
+  g.add(bob);
+  return centered(g);
+}
+
+// A hula dancer on a spring: grass skirt, arms up, a flower in her hair; she sways (the 'bob').
+function hulaGirl() {
+  const g = new THREE.Group();
+  const skin = decoMat(0xc8946a, { roughness: 0.5 });
+  const grass = decoMat(0x9a8a3a, { roughness: 0.9 });
+  g.add(mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.014, 18).translate(0, 0.007, 0), decoMat(0x2a6a3a)));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.CapsuleGeometry(0.006, 0.04, 3, 6).translate(sx * 0.007, 0.036, 0), skin));
+  const bob = new THREE.Group();
+  bob.name = 'bob';
+  bob.position.set(0, 0.06, 0);
+  // the skirt: strands round the hips
+  for (let k = 0; k < 22; k++) {
+    const a = (k / 22) * Math.PI * 2;
+    bob.add(mesh(new THREE.BoxGeometry(0.004, 0.032, 0.0012).translate(0, -0.014, 0).rotateX(0.18).rotateY(-a).translate(Math.sin(a) * 0.013, 0, Math.cos(a) * 0.013), grass, false));
+  }
+  bob.add(mesh(new THREE.CapsuleGeometry(0.011, 0.028, 3, 10).translate(0, 0.02, 0), skin));
+  bob.add(mesh(new THREE.TorusGeometry(0.012, 0.004, 4, 12).rotateX(Math.PI / 2).translate(0, 0.03, 0), decoMat(0xd83a6a)));
+  bob.add(mesh(new THREE.SphereGeometry(0.011, 12, 10).translate(0, 0.054, 0), skin));
+  bob.add(mesh(new THREE.SphereGeometry(0.012, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.6).translate(0, 0.056, -0.002), decoMat(0x1a1210)));
+  bob.add(mesh(new THREE.SphereGeometry(0.005, 8, 6).translate(0.009, 0.06, 0.004), decoMat(0xe8e0d0, { emissive: 0x302820 })));
+  for (const sx of [-1, 1]) bob.add(mesh(new THREE.CapsuleGeometry(0.004, 0.03, 3, 6).rotateZ(sx * 2.4).translate(sx * 0.02, 0.05, 0), skin));
+  g.add(bob);
+  return centered(g);
+}
+
+// A garden gnome: red cap, white beard, blue coat, a lantern in hand.
+function gardenGnome() {
+  const g = new THREE.Group();
+  const coat = decoMat(0x2f5a9a, { roughness: 0.55 }),
+    cap = decoMat(0xb8281e, { roughness: 0.5 }),
+    beard = decoMat(0xe8e4da, { roughness: 0.8 }),
+    skin = decoMat(0xe0a888, { roughness: 0.5 }),
+    boot = decoMat(0x3a2418, { roughness: 0.6 });
+  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.03, 16).translate(0, 0.015, 0), decoMat(0x6a7a4a, { roughness: 1 })));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.SphereGeometry(0.035, 10, 8).scale(1, 0.6, 1.5).translate(sx * 0.04, 0.045, 0.02), boot));
+  g.add(mesh(latheY([[0, 0.04], [0.085, 0.05], [0.09, 0.12], [0.075, 0.2], [0.05, 0.25], [0, 0.26]], 18), coat));
+  g.add(mesh(new THREE.TorusGeometry(0.083, 0.008, 6, 20).rotateX(Math.PI / 2).translate(0, 0.12, 0), decoMat(0x3a2a1a)));
+  g.add(mesh(new THREE.SphereGeometry(0.055, 14, 12).translate(0, 0.3, 0.005), skin));
+  g.add(mesh(new THREE.SphereGeometry(0.014, 8, 6).translate(0, 0.295, 0.058), decoMat(0xe08070)));
+  g.add(mesh(latheY([[0, 0.02], [0.055, 0.0], [0.045, -0.06], [0.02, -0.1], [0, -0.11]], 14).translate(0, 0.29, 0.03).rotateX(0.15), beard));
+  g.add(mesh(new THREE.ConeGeometry(0.062, 0.17, 16).translate(0, 0.41, -0.01).rotateX(-0.12), cap));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.SphereGeometry(0.006, 6, 4).translate(sx * 0.02, 0.315, 0.05), decoMat(0x101010)));
+  g.add(mesh(new THREE.CapsuleGeometry(0.018, 0.08, 3, 8).rotateZ(0.6).translate(0.08, 0.17, 0.02), coat));
+  g.add(mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.04, 8).translate(0.12, 0.12, 0.03), decoMat(0xd8a83a, { emissive: 0x2a1a04 })));
+  grip(g, 'side', 'wrap12', V(0, 0.22, 0), UP, V(0, 0, 1));
+  return centered(g);
+}
+
+// A worn teddy bear sitting up: ears, snout, button eyes, a ribbon.
+function teddyBear() {
+  const g = new THREE.Group();
+  const fur = decoMat(0x9a6a3a, { roughness: 1 }),
+    light = decoMat(0xc8a070, { roughness: 1 }),
+    dark = decoMat(0x141010, { roughness: 0.3 });
+  g.add(mesh(new THREE.SphereGeometry(0.075, 14, 10).scale(1, 1.15, 0.9).translate(0, 0.09, 0), fur));
+  g.add(mesh(new THREE.SphereGeometry(0.045, 12, 8).scale(1, 1.1, 0.5).translate(0, 0.08, 0.05), light));
+  g.add(mesh(new THREE.SphereGeometry(0.06, 14, 10).translate(0, 0.21, 0.005), fur));
+  g.add(mesh(new THREE.SphereGeometry(0.026, 10, 8).scale(1, 0.8, 1).translate(0, 0.2, 0.055), light));
+  g.add(mesh(new THREE.SphereGeometry(0.009, 8, 6).translate(0, 0.207, 0.08), dark));
+  for (const sx of [-1, 1]) {
+    g.add(mesh(new THREE.SphereGeometry(0.022, 10, 8).scale(1, 1, 0.5).translate(sx * 0.045, 0.26, 0), fur));
+    g.add(mesh(new THREE.SphereGeometry(0.008, 8, 6).translate(sx * 0.022, 0.225, 0.052), dark));
+    g.add(mesh(new THREE.CapsuleGeometry(0.022, 0.05, 3, 8).rotateZ(sx * 0.7).translate(sx * 0.075, 0.12, 0.01), fur));
+    g.add(mesh(new THREE.CapsuleGeometry(0.026, 0.05, 3, 8).rotateX(Math.PI / 2).translate(sx * 0.045, 0.03, 0.05), fur));
+  }
+  g.add(mesh(new THREE.TorusGeometry(0.05, 0.008, 6, 16).rotateX(Math.PI / 2).translate(0, 0.16, 0), decoMat(0xb8283a)));
+  grip(g, 'side', 'wrap12', V(0, 0.12, 0), UP, V(0, 0, 1));
+  return centered(g);
+}
+
+// A yellow rubber duck.
+function rubberDuck() {
+  const g = new THREE.Group();
+  const y = decoMat(0xf0c818, { roughness: 0.35 });
+  g.add(mesh(new THREE.SphereGeometry(0.04, 16, 12).scale(1, 0.7, 1.3).translate(0, 0.028, 0), y));
+  g.add(mesh(new THREE.ConeGeometry(0.012, 0.03, 8).rotateX(-0.6).translate(0, 0.045, -0.05), y));
+  g.add(mesh(new THREE.SphereGeometry(0.026, 14, 10).translate(0, 0.068, 0.025), y));
+  g.add(mesh(new THREE.SphereGeometry(0.012, 10, 8).scale(1.2, 0.5, 1.6).translate(0, 0.064, 0.052), decoMat(0xe86a1a, { roughness: 0.4 })));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.SphereGeometry(0.0045, 8, 6).translate(sx * 0.012, 0.076, 0.044), decoMat(0x101010, { roughness: 0.2 })));
+  return centered(g);
+}
+
+// A chipped enamel mug with a printed band.
+function mug(variant = 0) {
+  const g = new THREE.Group();
+  const enamel = decoMat([0xe8e4da, 0x2a5a8a, 0xb8382a][variant % 3], { roughness: 0.25 });
+  g.add(mesh(latheY([[0, 0], [0.04, 0], [0.042, 0.004], [0.042, 0.095], [0.039, 0.095], [0.038, 0.008], [0, 0.008]], 20), enamel));
+  g.add(mesh(new THREE.TorusGeometry(0.0425, 0.002, 4, 24).rotateX(Math.PI / 2).translate(0, 0.095, 0), decoMat(0x1a2a3a)));
+  g.add(mesh(new THREE.TorusGeometry(0.025, 0.006, 6, 14, Math.PI).rotateZ(-Math.PI / 2).translate(0.042, 0.05, 0), enamel));
+  g.add(mesh(new THREE.CircleGeometry(0.008, 8).translate(0.02, 0.06, 0.0422), decoMat(0x1a1a1a)));
+  return centered(g);
+}
+
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
 export const MODEL_BUILDERS = {
+  airFreshener,
+  decoBeetle,
+  decoOctopus,
+  juicePop,
+  decoLog,
+  decoBat,
+  reflector,
+  fuzzyDice,
+  bobbleDog,
+  hulaGirl,
+  gardenGnome,
+  teddyBear,
+  rubberDuck,
+  mug,
   tv,
   drum,
   sandbag,

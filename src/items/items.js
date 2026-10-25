@@ -14,6 +14,10 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 let NEXT_ID = 1;
 
 const _up = new THREE.Vector3();
+const _d = new THREE.Vector3(),
+  _down = new THREE.Vector3(0, -1, 0),
+  _yAxis = new THREE.Vector3(0, 1, 0),
+  _qs = new THREE.Quaternion();
 
 export class Item {
   constructor(sys, { id, part = null, state = {}, mesh }) {
@@ -279,7 +283,8 @@ export class ItemSystem {
   // An item bolted to a part of a car (the roof, a door, a wing): it rides on the part, swings
   // with a door and comes off with it; a box on the car's body keeps it solid and in reach.
   // local: its matrix in the part pivot's space.
-  mount(it, car, part, local) {
+  // hang: a decoration on the mirror, hung from that point (part space) and left to swing.
+  mount(it, car, part, local, { hang = null } = {}) {
     const mp = car.model.parts[part];
     if (!mp) return false;
     this.removeBody(it);
@@ -287,6 +292,11 @@ export class ItemSystem {
     mp.pivot.add(it.mesh);
     local.decompose(it.mesh.position, it.mesh.quaternion, it.mesh.scale);
     it.mounted = { car, part, local: local.clone(), collider: null, rest: V(0, 0, 0), openT: -1 };
+    if (hang) {
+      const h = it.mesh.userData.hangTop || { x: 0, y: it.size.y / 2, z: 0 };
+      it.mounted.hang = { at: hang.clone(), top: V(h.x, h.y, h.z), tx: 0, tz: 0, vx: 0, vz: 0, spin: Math.random() * 6 };
+      this.swing(it, it.mounted.hang, V(0, -9.81, 0), 0);
+    }
     car.attached.push(it);
     this.mountCollider(it);
     car.owned = true;
@@ -329,15 +339,71 @@ export class ItemSystem {
     M.car.updateMass();
   }
 
-  // Boxes of things bolted to a door or a lid follow it as it swings.
-  updateMounted() {
+  // Boxes of things bolted to a door or a lid follow it as it swings; what hangs from the mirror
+  // swings with the car's every lurch, and the toys on the dash nod and sway.
+  updateMounted(dt) {
     for (const c of (this.game.fleet && this.game.fleet.cars) || [this.game.car]) {
-      if (!c || !c.attached) continue;
+      if (!c || !c.attached || !c.attached.length) continue;
+      // what the car's occupants feel: gravity less the car's acceleration, in the car's frame
+      const v = c.dyn.body.linvel();
+      const pv = c._pv || (c._pv = V(v.x, v.y, v.z));
+      if (dt > 0) {
+        const a = V((v.x - pv.x) / dt, (v.y - pv.y) / dt, (v.z - pv.z) / dt);
+        c._acc = (c._acc || V(0, 0, 0)).lerp(a.clampLength(0, 60), Math.min(1, dt * 15));
+      }
+      pv.set(v.x, v.y, v.z);
+      const feel = V(0, -9.81, 0)
+        .sub(c._acc || V(0, 0, 0))
+        .applyQuaternion(c.root.quaternion.clone().invert());
       for (const it of c.attached) {
         const M = it.mounted;
-        if (M && Math.abs((c.model.parts[M.part].openT || 0) - M.openT) > 0.02) this.mountCollider(it);
+        if (!M) continue;
+        if (Math.abs((c.model.parts[M.part].openT || 0) - M.openT) > 0.02) this.mountCollider(it);
+        if (dt <= 0) continue;
+        if (M.hang) this.swing(it, M.hang, feel, dt);
+        else if (it.def && it.def.bobble) this.bobble(it, feel, dt);
       }
     }
+  }
+
+  // A pendulum from the mirror: it leans to where the felt gravity points and swings about it.
+  swing(it, H, feel, dt) {
+    const up = Math.max(1, -feel.y);
+    const ex = THREE.MathUtils.clamp(feel.x / up, -1.5, 1.5),
+      ez = THREE.MathUtils.clamp(feel.z / up, -1.5, 1.5);
+    const L = Math.max(0.04, H.top.length());
+    const k = 9.81 / L,
+      c = 2.2;
+    for (let s = 0, n = Math.ceil(dt / 0.008); s < n; s++) {
+      const h = dt / n;
+      H.vx += (k * (ex - H.tx) - c * H.vx) * h;
+      H.vz += (k * (ez - H.tz) - c * H.vz) * h;
+      H.tx += H.vx * h;
+      H.tz += H.vz * h;
+    }
+    H.spin += dt * (H.vx * 0.6 - H.vz * 0.4);
+    const d = _d.set(H.tx, -1, H.tz).normalize();
+    const q = it.mesh.quaternion.setFromUnitVectors(_down, d).multiply(_qs.setFromAxisAngle(_yAxis, Math.sin(H.spin) * 0.6));
+    it.mesh.position.copy(H.at).sub(_d.copy(H.top).applyQuaternion(q).multiplyScalar(it.mesh.scale.x));
+  }
+
+  // A toy on a spring (its 'bob' part): nods with the bumps and braking, sways in the bends.
+  bobble(it, feel, dt) {
+    const bob = it.bob || (it.bob = it.mesh.getObjectByName('bob'));
+    if (!bob) return;
+    const B = it.bobS || (it.bobS = { x: 0, z: 0, vx: 0, vz: 0, fy: -9.81 });
+    const f = _d.copy(feel).applyQuaternion(_qs.copy(it.mesh.quaternion).invert());
+    const up = Math.max(1, -f.y);
+    // a jolt up or down sets it going; the spring and the felt lean set where it settles
+    const jolt = (f.y - B.fy) * 0.9;
+    B.fy = f.y;
+    const k = it.def.bobble === 'nod' ? 70 : 45,
+      c = 1.6;
+    B.vx += (k * (-f.z / up) * 0.5 - k * B.x - c * B.vx) * dt + jolt * (it.def.bobble === 'nod' ? 1 : 0.4);
+    B.vz += (k * (f.x / up) * 0.6 - k * B.z - c * B.vz) * dt + jolt * 0.2 * Math.sign(B.vz || 1);
+    B.x = THREE.MathUtils.clamp(B.x + B.vx * dt, -0.7, 0.7);
+    B.z = THREE.MathUtils.clamp(B.z + B.vz * dt, -0.7, 0.7);
+    bob.rotation.set(B.x, 0, B.z);
   }
 
   // ------------------------------------------------------------------ holding
@@ -489,7 +555,7 @@ export class ItemSystem {
     const ph = this.game.physics;
     if (dt > 0) this.updateCargo(dt);
     if (dt > 0) this.updateSpills(dt);
-    this.updateMounted();
+    this.updateMounted(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -700,7 +766,7 @@ export class ItemSystem {
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);
       it.mesh.getWorldQuaternion(q);
-      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, mounted: it.mounted ? { car: it.mounted.car.id || true, part: it.mounted.part, m: it.mounted.local.toArray() } : null, poi: it.poiKey, spot: it.spot });
+      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, mounted: it.mounted ? { car: it.mounted.car.id || true, part: it.mounted.part, m: it.mounted.local.toArray(), hang: it.mounted.hang ? it.mounted.hang.at.toArray() : null } : null, poi: it.poiKey, spot: it.spot });
     }
     return out;
   }

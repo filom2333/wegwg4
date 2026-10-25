@@ -611,6 +611,16 @@ export class Car {
     return local.clone().applyMatrix4(this.root.matrixWorld);
   }
 
+  // Where a decoration hangs from the inside mirror (car space): under its arm, just behind it.
+  hangPoint() {
+    const T = this.type;
+    const g = (T.MIRROR_GLASS || []).find((m) => m.part === 'body');
+    if (g) return V(g.center[0], g.center[1] - g.size[1] / 2 - 0.012, g.center[2] + 0.02);
+    const m = T.META && T.META.dash && T.META.dash.mirror;
+    if (m) return V(m.center[0], m.center[1] - m.size[1] / 2 - 0.012, m.center[2] + 0.02);
+    return null;
+  }
+
   // A car-space point (model units) where the physics body has it (metres).
   toBody(local) {
     return local.clone().multiplyScalar(this.k);
