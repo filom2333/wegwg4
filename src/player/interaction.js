@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
-import { ITEMS } from '../items/itemDefs.js';
+import { LIQUID_NAMES, ITEMS } from '../items/itemDefs.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
 import { fitMatrix } from '../vehicle/swap.js';
@@ -833,7 +833,7 @@ export class Interaction {
     let bar = null;
     if (def.liquid) {
       if (!capped(def) || s.capOff || def.clear) {
-        sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
+        sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${LIQUID_NAMES[s.liquidType || def.liquid.type] || s.liquidType}`;
         bar = (s.liquid || 0) / def.liquid.cap;
         if (capped(def) && s.capOff) sub += ' · cap off';
       } else sub = 'Cap on';
@@ -942,7 +942,7 @@ export class Interaction {
     // siphon: a can (empty or holding fuel) against another car draws fuel out of its tank
     const h = this.lookHit;
     const other = h && h.owner && h.owner.kind === 'car' && h.owner.car !== this.game.car ? h.owner.car : null;
-    if (other && it.def.liquid.cap >= 5 && (type === 'fuel' || (it.state.liquid || 0) < 0.01) && h.distance < REACH + 0.4) {
+    if (other && it.def.liquid.cap >= 5 && ((it.state.liquid || 0) < 0.01 || type === other.tankMain()) && h.distance < REACH + 0.4) {
       if (other.fuel > 0.05 && other.isInstalled('fueltank')) return { kind: 'siphon', car: other, label: `Siphon fuel · ${other.fuel.toFixed(1)} L in the tank` };
       return null;
     }
@@ -950,11 +950,13 @@ export class Interaction {
     const car = this.game.car;
     if (t.kind === 'hotspot') {
       const h = t.hotspot.id;
-      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
+      // (anything runny goes down a filler; only the right fuel does the engine any good)
+      if ((type === 'fuel' || type === 'diesel' || type === 'water') && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: type === 'fuel' ? 'Pour petrol' : type === 'diesel' ? 'Pour diesel' : 'Pour water into the tank' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
-    if (t.kind === 'pump' && type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : 'Fill from pump' } : null;
+    const pk = t.kind === 'pump' && (t.pump.pump.kind || 'fuel');
+    if (pk && (type === pk || (it.state.liquid || 0) < 0.01) && it.def.liquid.type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : pk === 'diesel' ? 'Fill from the diesel pump' : 'Fill from the petrol pump' } : null;
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type && (!capped(t.item.def) || t.item.state.capOff)) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
     return null;
   }
@@ -1058,6 +1060,9 @@ export class Interaction {
             info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
             info.bar = car.fuel / car.fuelCap;
             prompts.push(['E', 'Cap on, flap shut']);
+            // what it takes, and what it smells of in there
+            prompts.push(['', car.fuelType === 'diesel' ? 'Takes diesel' : 'Takes petrol']);
+            if (car.fuelPurity() < 0.97) prompts.push(['', car.tankMain() === car.fuelType ? 'Something else is mixed in' : 'The wrong fuel is in it']);
           }
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
@@ -1168,12 +1173,12 @@ export class Interaction {
         const st = t.pump.inst.state;
         if (t.pump.pump.drum) {
           const f = pumpFuel(t.pump.pump);
-          info = { title: 'Oil drum', sub: f > 0.5 ? `About ${Math.round(f)} l of old petrol sloshing inside` : 'Empty, rust flakes inside', bar: Math.min(1, f / 200) };
+          info = { title: 'Oil drum', sub: f > 0.5 ? (t.pump.pump.kind === 'diesel' ? `About ${Math.round(f)} l of old diesel sloshing inside` : `About ${Math.round(f)} l of old petrol sloshing inside`) : 'Empty, rust flakes inside', bar: Math.min(1, f / 200) };
           const held = this.held && this.held.def && this.held.def.liquid;
           if (f > 0.5 && !held) prompts.push(['', 'Bring a jerry can to fill']);
           break;
         }
-        info = { title: 'Fuel pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
+        info = { title: t.pump.pump.kind === 'diesel' ? 'Diesel pump' : 'Petrol pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
         const carNear = car && car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
         if (st.fuel > 0.5 && carNear) prompts.push(['E', this.game.refuel && this.game.refuel.active ? 'Stop refuelling' : 'Refuel the car']);
         else if (st.fuel > 0.5) prompts.push(['', 'Bring the car closer or use a jerry can']);
@@ -2070,7 +2075,7 @@ export class Interaction {
     if (tgt.kind === 'car') {
       if (tgt.sys === 'fuel') {
         amount = Math.min(amount, car.fuelCap - car.fuel);
-        car.fuel += amount;
+        car.addFuel(s.liquidType, amount);
       } else if (tgt.sys === 'oil') {
         amount = Math.min(amount, car.oilCap + 0.3 - car.oil);
         car.oil += amount;
@@ -2082,16 +2087,16 @@ export class Interaction {
     } else if (tgt.kind === 'siphon') {
       amount = Math.min(rate * dt, it.def.liquid.cap - (s.liquid || 0), tgt.car.fuel);
       tgt.car.fuel -= amount;
+      if ((s.liquid || 0) < 0.01) s.liquidType = tgt.car.tankMain();
       s.liquid = (s.liquid || 0) + amount;
-      s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'pump') {
       const pump = this.target.pump.pump;
       // a drum is tipped and drained slower than a pump delivers
       amount = Math.min(rate * (pump.drum ? 1 : 2) * dt, it.def.liquid.cap - s.liquid, pumpFuel(pump));
       takeFuel(pump, amount);
+      if (s.liquid < 0.01) s.liquidType = pump.kind || 'fuel';
       s.liquid += amount;
-      s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'item') {
       const o = tgt.item;
@@ -2126,13 +2131,13 @@ export class Interaction {
     // start a little toward the target from the mouth
     from.addScaledVector(to.clone().sub(from).setY(0).normalize(), 0.08);
     const type = it.state.liquidType;
-    const col = type === 'fuel' ? [0.85, 0.68, 0.32] : type === 'oil' ? [0.22, 0.14, 0.05] : type === 'coolant' ? [0.35, 0.85, 0.45] : [0.75, 0.85, 0.95];
+    const col = type === 'fuel' ? [0.85, 0.68, 0.32] : type === 'diesel' ? [0.78, 0.66, 0.3] : type === 'oil' ? [0.22, 0.14, 0.05] : type === 'coolant' ? [0.35, 0.85, 0.45] : [0.75, 0.85, 0.95];
     const sag = Math.max(0.05, from.distanceTo(to) * 0.25);
     for (let i = 0; i < 14; i++) {
       const k = (i + Math.random()) / 14;
       const p = from.clone().lerp(to, k);
       p.y -= Math.sin(k * Math.PI) * sag * 0.5 + k * k * 0.02;
-      fx.blood.emit({ pos: p, size: 0.022, grow: 0.01, life: 0.05, color: col, alpha: type === 'fuel' || type === 'water' ? 0.55 : 0.9, drag: 0 });
+      fx.blood.emit({ pos: p, size: 0.022, grow: 0.01, life: 0.05, color: col, alpha: type === 'fuel' || type === 'diesel' || type === 'water' ? 0.55 : 0.9, drag: 0 });
     }
   }
 
@@ -2424,7 +2429,10 @@ export class Interaction {
       car.applyWeather();
     }
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
-    if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
+    if (slot === 'fueltank' && it.state.fuel !== undefined) {
+      car.fuel = it.state.fuel;
+      car.tankMix = it.state.mix ? { ...it.state.mix } : { [car.fuelType]: 1 };
+    }
     if (slot === 'fanbelt') car.fanbeltCondition = cond;
     if (slot === 'engine' && it.state.oil !== undefined) car.oil = it.state.oil;
     const w = car.dyn.wheels.find((x) => x.id === slot);

@@ -346,6 +346,8 @@ export function initialState(id, rnd) {
     const t = d.liquid.type;
     s.liquid = t === 'fuel' && id === 'jerryCan' ? Math.round(d.liquid.cap * (0.15 + rnd() * 0.85) * 10) / 10 : d.liquid.cap * (0.5 + rnd() * 0.5);
     s.liquidType = t;
+    // a can or a drum of fuel may hold diesel (it is never certain until you look in)
+    if (t === 'fuel' && (id === 'jerryCan' || id === 'drum') && rnd() < (id === 'drum' ? 0.35 : 0.25)) s.liquidType = 'diesel';
   }
   if (d.charges) s.charges = d.charges;
   if (d.weapon) s.loaded = Math.floor(rnd() * (d.weapon.mag + 1));
@@ -362,6 +364,9 @@ export function itemMass(id, state) {
 }
 
 // Name shown for a particular item (discs carry their album).
+// What a liquid is called on a label.
+export const LIQUID_NAMES = { fuel: 'petrol', diesel: 'diesel', water: 'water', oil: 'oil', coolant: 'coolant' };
+
 export function itemLabel(id, state = {}) {
   const d = ITEMS[id];
   if (!d) return id;

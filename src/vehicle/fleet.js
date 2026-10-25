@@ -472,6 +472,7 @@ export function serializeCar(car, o) {
     dirt: car.dirt,
     rust: car.rust,
     partRust: car.partRust,
+    tankMix: car.tankMix,
     lightsOn: car.lightsOn,
     parkBrake: car.parkBrake,
     paintColor: car.paintColor ?? null,
@@ -501,6 +502,7 @@ export function applyCarState(car, c, g) {
   for (const [id, t] of Object.entries(same ? c.open || {} : {})) if (car.model.parts[id] && car.isInstalled(id)) car.model.setOpen(id, t);
   for (const [id, hex] of Object.entries(same ? c.partColors || {} : {})) car.paintPart(id, hex);
   car.partRust = { ...(same ? c.partRust || {} : {}) };
+  if (c.tankMix) car.tankMix = { ...c.tankMix };
   car.applyWeather();
   car.rebuildColliders();
   if (c.stereo && car.stereo) Object.assign(car.stereo, c.stereo, { pos: 0, track: c.stereo.disc >= 0 ? trackOn(c.stereo.disc, c.stereo.track || 0) : 0 });

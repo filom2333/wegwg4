@@ -218,6 +218,7 @@ export const W203 = {
   ],
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_FR'],
   fuelCap: 62,
+  fuelType: 'diesel',
   oilCap: 5.5,
   coolantCap: 8.5,
   cooling: 'water',

@@ -186,7 +186,7 @@ export class POIManager {
       // doors
       b.doors.forEach((d, i) => this.makeDoor(inst, { ...d, mat: resolve(d.mat) }, em, e, i));
       // pumps
-      for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst });
+      for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst, kind: p.kind || 'fuel' });
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
       for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });

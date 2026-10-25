@@ -205,6 +205,7 @@ export const KIRI86 = {
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'fender_FL', 'seat_FL', 'seat_R', 'engine'],
   fuelCap: 55,
+  fuelType: 'fuel',
   oilCap: 4.0,
   coolantCap: 7,
   cooling: 'water',

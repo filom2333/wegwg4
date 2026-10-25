@@ -820,7 +820,7 @@ export class Game {
     }
     const a = Math.min(dt * 0.8, st.fuel, car.fuelCap - car.fuel);
     st.fuel -= a;
-    car.fuel += a;
+    car.addFuel(r.pump.pump.kind || 'fuel', a);
   }
 
   itemName(id) {

@@ -90,7 +90,7 @@ export class Goals {
     }
     // the essentials are on: fuel, oil, water, then the key
     if (car.fuel < 2) {
-      const can = this.nearestItem((d, it) => d.liquid && d.liquid.type === 'fuel' && (it.state.liquid || 0) > 0.5 && it.state.liquidType === 'fuel');
+      const can = this.nearestItem((d, it) => d.liquid && d.liquid.type === 'fuel' && (it.state.liquid || 0) > 0.5 && it.state.liquidType === car.fuelType);
       return this.toward({ key: 'fuel', title: 'Put fuel in it', lines: [can ? (car.fillerCapOff ? 'Unscrew the can (R), hold it to the filler, LMB to pour' : 'Open the filler (E on the flap, again for the cap), unscrew the can (R), then pour, LMB') : 'Find a jerry can, or a pump at a gas station'] }, can);
     }
     if (car.oil < 1) {

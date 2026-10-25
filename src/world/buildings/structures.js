@@ -156,8 +156,12 @@ export function buildGarage(rnd, { w = 6.5, d = 7.5, open = true, workshop = fal
 }
 
 // ------------------------------------------------------------------ fuel pump & gas station
-function fuelPump(b, x, y, z, rot, brand) {
+// kind: 'fuel' (petrol, green nozzle) or 'diesel' (black nozzle, yellow label).
+function fuelPump(b, x, y, z, rot, brand, kind = 'fuel') {
   const M = archMaterials();
+  const diesel = kind === 'diesel';
+  const label = signMaterial([diesel ? 'DIESEL' : 'PETROL'], { w: 256, h: 64, bg: diesel ? '#e2b31e' : '#2f7d3b', fg: diesel ? '#16140f' : '#f1eee4', border: null, worn: 0.2 });
+  const grip = diesel ? M.blackMatte : stdMat({ color: 0x2f8a3c, roughness: 0.6 });
   const it = new FUR.Item([0.8, 1.9, 0.5]);
   it.rbox(0.8, 0.1, 0.5, 0, 0.05, 0, M.metalPainted, 0.01);
   it.rbox(0.66, 1.5, 0.42, 0, 0.85, 0, M.metalWhite, 0.03);
@@ -167,13 +171,18 @@ function fuelPump(b, x, y, z, rot, brand) {
     it.rbox(0.16, 0.1, 0.02, 0.18, 1.62, s * 0.22, M.emissiveWarm, 0.005);
     // nozzle holster + nozzle
     it.rbox(0.08, 0.18, 0.06, -0.27, 0.95, s * 0.24, M.plasticDark, 0.01);
-    it.rbox(0.05, 0.2, 0.04, -0.27, 1.0, s * 0.28, M.blackMatte, 0.01);
+    it.rbox(0.05, 0.2, 0.04, -0.27, 1.0, s * 0.28, grip, 0.01);
+    // what it pumps, on a strip above the display
+    const lg = new THREE.PlaneGeometry(0.34, 0.085);
+    if (s < 0) lg.rotateY(Math.PI);
+    lg.translate(-0.07, 1.515, s * 0.2165);
+    it.add(lg, label);
     it.add(tubeAlong([V(-0.27, 0.9, s * 0.28), V(-0.33, 0.6, s * 0.36), V(-0.3, 0.3, s * 0.3), V(-0.2, 0.6, s * 0.21)], 0.015, 6), M.rubber);
   }
   it.col(0.8, 1.9, 0.5, 0, 0.95, 0);
   place(b, it, x, y, z, rot);
   b.pumps = b.pumps || [];
-  b.pumps.push({ pos: [x, y + 1.0, z] });
+  b.pumps.push({ pos: [x, y + 1.0, z], kind });
 }
 
 export function buildGasStation(rnd) {
@@ -209,7 +218,7 @@ export function buildGasStation(rnd) {
   // pump islands
   for (const sx of [-1, 1]) {
     b.box(sx * 3.6, 0.2, cz, 1.2, 0.2, 5.8, M.concrete, { surface: 'concrete' });
-    for (const s2 of [-1.3, 1.3]) fuelPump(b, sx * 3.6, 0.3, cz + s2, Math.PI / 2, brand);
+    for (const s2 of [-1.3, 1.3]) fuelPump(b, sx * 3.6, 0.3, cz + s2, Math.PI / 2, brand, s2 > 0 ? 'diesel' : 'fuel');
     // bollards
     for (const s2 of [-2.8, 2.8]) {
       const g = new THREE.CylinderGeometry(0.1, 0.1, 0.9, 12);

@@ -93,6 +93,9 @@ export class Car {
     }
     // systems
     this.fuel = opts.fuel ?? 22; // litres
+    // what it runs on ('fuel' is petrol), and what is in the tank by share
+    this.fuelType = type.fuelType || 'fuel';
+    this.tankMix = { [this.fuelType]: 1 };
     this.fuelCap = type.fuelCap;
     this.oilCap = type.oilCap;
     this.oil = opts.oil ?? type.oilCap * 0.94; // litres
@@ -295,7 +298,9 @@ export class Car {
     if (id === 'battery') state.charge = this.battery;
     if (id === 'fueltank') {
       state.fuel = this.fuel;
+      state.mix = { ...this.tankMix };
       this.fuel = 0;
+      this.tankMix = { [this.fuelType]: 1 };
     }
     if (id === 'fanbelt') state.condition = this.fanbeltCondition;
     if (id === 'engine') state.oil = this.oil;
@@ -621,6 +626,32 @@ export class Car {
     return null;
   }
 
+  // Litres of a liquid into the tank: it mixes with what is there.
+  addFuel(kind, litres) {
+    if (litres <= 0) return;
+    const total = this.fuel + litres;
+    const mix = {};
+    for (const [k, v] of Object.entries(this.tankMix || {})) mix[k] = (v * this.fuel) / total;
+    mix[kind] = (mix[kind] || 0) + litres / total;
+    this.tankMix = mix;
+    this.fuel = total;
+  }
+
+  // The share of the tank that is what the engine runs on.
+  fuelPurity() {
+    const mix = this.tankMix || {};
+    if (this.fuel <= 0.01 || !Object.keys(mix).length) return 1;
+    return mix[this.fuelType] || 0;
+  }
+
+  // What most of the tank is.
+  tankMain() {
+    let best = this.fuelType,
+      v = -1;
+    for (const [k, x] of Object.entries(this.tankMix || {})) if (x > v) (best = k), (v = x);
+    return best;
+  }
+
   // A car-space point (model units) where the physics body has it (metres).
   toBody(local) {
     return local.clone().multiplyScalar(this.k);
@@ -817,7 +848,7 @@ export class Car {
 
   // Fuel, oil, a sound enough engine and a spark: will it fire?
   canRun() {
-    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
+    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.fuelPurity() > 0.38 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
   }
 
   // ---------------------------------------------------------------- simulation
@@ -911,9 +942,15 @@ export class Car {
     } else this._signalTurned = false;
     for (const k in this.handlePull) this.handlePull[k] -= dt;
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
-    const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
+    const fuelOk = this.isInstalled('fueltank') && this.fuel > 0 && this.fuelPurity() > 0.38;
     const plugs = this.partCond('sparkplugs');
     d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1) * (0.7 + 0.3 * plugs);
+    // the wrong fuel (or water) in the tank: less power, and it misses and coughs
+    const pure = this.fuelPurity();
+    if (pure < 0.999) {
+      d.powerScale *= Math.pow(Math.max(0, (pure - 0.35) / 0.65), 0.7);
+      if (running && pure < 0.9 && Math.random() < dt * 8 * (0.9 - pure)) d.powerScale *= 0.2;
+    }
     // fouled plugs: the engine stumbles, cylinders dropping out for a beat
     if (running && plugs < 0.3 && Math.random() < dt * 6 * (0.3 - plugs) / 0.3) d.powerScale *= 0.35;
     // no spark: plugs gone, or the battery flat with nothing charging it
