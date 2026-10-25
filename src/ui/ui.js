@@ -40,6 +40,7 @@ const SLIDE_SECONDS = 9;
 
 const TIPS = [
   'A jerry can holds 20 litres. Fill every can you have when you find a pump that works.',
+  'Look into the filler before you pour: a diesel chokes on petrol, and a petrol engine will not run on diesel.',
   'Headlights keep some things at a distance. Not all of them.',
   'Hold R on a part to unbolt it. Parts that hang on it have to come off first.',
   'Coolant and oil are cheap. Engines are not.',

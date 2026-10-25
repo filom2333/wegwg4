@@ -19,6 +19,12 @@ import { addGlassRain, wipeUniforms, WIPE_BINS } from '../gfx/glassRain.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
+// Every car is drawn and simulated this much larger than its source measures: next to a person
+// the cars read small at true size. The model's root carries the scale; the physics (wheels,
+// suspension, boxes, mass) works in metres, so car-space lengths are multiplied by it on the way
+// to the body (car.k, car.toBody) and wheel travel divided by it on the way back.
+export const CAR_SCALE = 1.12;
+
 // Exterior parts a crash can rip off, with the sudden change of speed (m/s) it takes. Lights and
 // bumpers go first, fenders and lids next, doors and wheels only in a heavy smash.
 const TEARABLE = {
@@ -74,6 +80,8 @@ export class Car {
     this.type = type;
     this.model = model;
     this.root = model.root;
+    this.k = type.scale || CAR_SCALE;
+    this.root.scale.setScalar(this.k);
     game.worldGroup.add(this.root);
     this.wipe = model.wipers ? wiperSweep(model.wipers) : null;
     if (model.mats) addGlassRain(model.mats.glass, this.wipe);
@@ -85,6 +93,9 @@ export class Car {
     }
     // systems
     this.fuel = opts.fuel ?? 22; // litres
+    // what it runs on ('fuel' is petrol), and what is in the tank by share
+    this.fuelType = type.fuelType || 'fuel';
+    this.tankMix = { [this.fuelType]: 1 };
     this.fuelCap = type.fuelCap;
     this.oilCap = type.oilCap;
     this.oil = opts.oil ?? type.oilCap * 0.94; // litres
@@ -142,8 +153,8 @@ export class Car {
     this.dyn = new VehicleDynamics(game.physics, {
       position: pos,
       quaternion: q,
-      hardpoints: type.HARDPOINTS,
-      params: type.DYNAMICS,
+      hardpoints: type.HARDPOINTS.map((h) => ({ ...h, x: h.x * this.k, z: h.z * this.k })),
+      params: scaledDynamics(type.DYNAMICS, this.k),
     });
     this.dyn.surfaceAt = (p, collider) => {
       const owner = game.physics.ownerOf(collider);
@@ -287,7 +298,9 @@ export class Car {
     if (id === 'battery') state.charge = this.battery;
     if (id === 'fueltank') {
       state.fuel = this.fuel;
+      state.mix = { ...this.tankMix };
       this.fuel = 0;
+      this.tankMix = { [this.fuelType]: 1 };
     }
     if (id === 'fanbelt') state.condition = this.fanbeltCondition;
     if (id === 'engine') state.oil = this.oil;
@@ -426,7 +439,7 @@ export class Car {
     this.packed = packed.trunk + packed.roofbox;
     com.multiplyScalar(1 / Math.max(1, m));
     this.totalMass = m;
-    this.dyn.setMassProperties({ mass: Math.max(m, 120), com, size: V(...this.type.massSize) });
+    this.dyn.setMassProperties({ mass: Math.max(m, 120), com: com.multiplyScalar(this.k), size: V(...this.type.massSize).multiplyScalar(this.k) });
   }
 
   packedMass() {
@@ -446,7 +459,8 @@ export class Car {
     for (const col of dyn.colliders) this.game.physics.removeCollider(col);
     dyn.colliders = [];
     for (const b of list) {
-      let desc = RAPIER.ColliderDesc.cuboid(b.h[0], b.h[1], b.h[2]).setTranslation(b.c[0], b.c[1], b.c[2]);
+      const k = this.k;
+      let desc = RAPIER.ColliderDesc.cuboid(b.h[0] * k, b.h[1] * k, b.h[2] * k).setTranslation(b.c[0] * k, b.c[1] * k, b.c[2] * k);
       if (b.o.rotX) {
         const q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), b.o.rotX);
         desc = desc.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
@@ -600,6 +614,47 @@ export class Car {
 
   worldPointOf(local) {
     return local.clone().applyMatrix4(this.root.matrixWorld);
+  }
+
+  // Where a decoration hangs from the inside mirror (car space): under its arm, just behind it.
+  hangPoint() {
+    const T = this.type;
+    const g = (T.MIRROR_GLASS || []).find((m) => m.part === 'body');
+    if (g) return V(g.center[0], g.center[1] - g.size[1] / 2 - 0.012, g.center[2] + 0.02);
+    const m = T.META && T.META.dash && T.META.dash.mirror;
+    if (m) return V(m.center[0], m.center[1] - m.size[1] / 2 - 0.012, m.center[2] + 0.02);
+    return null;
+  }
+
+  // Litres of a liquid into the tank: it mixes with what is there.
+  addFuel(kind, litres) {
+    if (litres <= 0) return;
+    const total = this.fuel + litres;
+    const mix = {};
+    for (const [k, v] of Object.entries(this.tankMix || {})) mix[k] = (v * this.fuel) / total;
+    mix[kind] = (mix[kind] || 0) + litres / total;
+    this.tankMix = mix;
+    this.fuel = total;
+  }
+
+  // The share of the tank that is what the engine runs on.
+  fuelPurity() {
+    const mix = this.tankMix || {};
+    if (this.fuel <= 0.01 || !Object.keys(mix).length) return 1;
+    return mix[this.fuelType] || 0;
+  }
+
+  // What most of the tank is.
+  tankMain() {
+    let best = this.fuelType,
+      v = -1;
+    for (const [k, x] of Object.entries(this.tankMix || {})) if (x > v) (best = k), (v = x);
+    return best;
+  }
+
+  // A car-space point (model units) where the physics body has it (metres).
+  toBody(local) {
+    return local.clone().multiplyScalar(this.k);
   }
 
   localPointOf(world) {
@@ -793,7 +848,7 @@ export class Car {
 
   // Fuel, oil, a sound enough engine and a spark: will it fire?
   canRun() {
-    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
+    return this.isInstalled('engine') && this.isInstalled('fueltank') && this.fuel > 0.05 && this.fuelPurity() > 0.38 && this.oil > 0.1 && this.engineCondition > 0.03 && this.partCond('sparkplugs') > 0.02;
   }
 
   // ---------------------------------------------------------------- simulation
@@ -887,9 +942,15 @@ export class Car {
     } else this._signalTurned = false;
     for (const k in this.handlePull) this.handlePull[k] -= dt;
     if (!hasDriver && slow) d.controls.brake = Math.max(d.controls.brake, 0.3);
-    const fuelOk = this.isInstalled('fueltank') && this.fuel > 0;
+    const fuelOk = this.isInstalled('fueltank') && this.fuel > 0 && this.fuelPurity() > 0.38;
     const plugs = this.partCond('sparkplugs');
     d.powerScale = (0.4 + 0.6 * this.engineCondition) * (this.isInstalled('airfilter') ? 1 : 1.03) * (this.engineTemp > 125 ? 0.6 : 1) * (0.7 + 0.3 * plugs);
+    // the wrong fuel (or water) in the tank: less power, and it misses and coughs
+    const pure = this.fuelPurity();
+    if (pure < 0.999) {
+      d.powerScale *= Math.pow(Math.max(0, (pure - 0.35) / 0.65), 0.7);
+      if (running && pure < 0.9 && Math.random() < dt * 8 * (0.9 - pure)) d.powerScale *= 0.2;
+    }
     // fouled plugs: the engine stumbles, cylinders dropping out for a beat
     if (running && plugs < 0.3 && Math.random() < dt * 6 * (0.3 - plugs) / 0.3) d.powerScale *= 0.35;
     // no spark: plugs gone, or the battery flat with nothing charging it
@@ -1209,7 +1270,7 @@ export class Car {
       const v = mw[w.id];
       if (!v) continue;
       const vis = this.dyn.wheelVisual(w);
-      v.pivot.position.y = vis.y;
+      v.pivot.position.y = vis.y / this.k;
       v.knuckle.rotation.y = vis.steer;
       v.spin.rotation.x = v.side > 0 ? vis.spin : -vis.spin;
       if (w.flat) v.spin.scale.set(1, 0.97, 0.97);
@@ -1448,4 +1509,15 @@ function contactShade(type) {
   const zs = (type.HARDPOINTS || []).map((h) => h.z);
   if (zs.length) mesh.position.z = (Math.max(...zs) + Math.min(...zs)) / 2;
   return mesh;
+}
+
+// A type's dynamics for a car drawn k times its source size: the lengths grow with it, and the
+// final drive and brakes with the wheel's radius, so it goes, stops and reads the same.
+function scaledDynamics(D, k) {
+  const out = { ...D };
+  for (const key of ['restLength', 'maxCompression', 'wheelRadius', 'wheelbase', 'track']) if (out[key] !== undefined) out[key] *= k;
+  for (const key of ['finalDrive', 'brakeTorque', 'handbrakeTorque']) if (out[key] !== undefined) out[key] *= k;
+  if (out.wheelInertia !== undefined) out.wheelInertia *= k * k;
+  out.topOffset = (D.topOffset ?? 0.098) * k;
+  return out;
 }

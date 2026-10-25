@@ -468,7 +468,8 @@ function furnishRoom(b, r, rnd, y, openings, abandoned = 0.7) {
     cz = (r.z0 + r.z1) / 2;
   const P = new RoomPlacer(b, r, y, openings, rnd);
   // ceiling lamp
-  place(b, FUR.ceilingLamp(), cx, y + WALL_H, cz, 0);
+  // (its canopy a hair below the ceiling, not in its plane)
+  place(b, FUR.ceilingLamp(), cx, y + WALL_H - 0.004, cz, 0);
   b.lights.push({ pos: [cx, y + WALL_H - 0.25, cz], color: 0xffe0b0, intensity: 0, distance: 7, fixture: true });
   const all = ['back', 'left', 'right', 'front'];
   const shuffle = (a) => a.map((v) => [rnd(), v]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);

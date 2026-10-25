@@ -175,7 +175,7 @@ export class Trailer {
 
   hitchTo(car) {
     const W = this.game.physics.world;
-    const tp = Trailer.towPoint(car);
+    const tp = car.toBody(Trailer.towPoint(car));
     const j = RAPIER.JointData.spherical({ x: tp.x, y: tp.y, z: tp.z }, { x: COUPLER.x, y: COUPLER.y, z: COUPLER.z });
     this.hitch = { car, joint: W.createImpulseJoint(j, car.dyn.body, this.body, true) };
     car.trailer = this;

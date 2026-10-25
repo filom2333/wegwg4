@@ -114,10 +114,11 @@ export class Jacks {
   // the floor pan beside that wheel. Returns { pos (ground, scene coords), yaw, wheel } or null.
   spotFor(car, worldPoint) {
     const lp = car.localPointOf(worldPoint);
+    const K = car.k || 1;
     let wheel = null,
       bd = 1.6;
     for (const w of car.dyn.wheels) {
-      const d = Math.hypot(lp.x - w.local.x, lp.z - w.local.z);
+      const d = Math.hypot(lp.x - w.local.x / K, lp.z - w.local.z / K);
       if (d < bd) {
         bd = d;
         wheel = w;
@@ -133,9 +134,10 @@ export class Jacks {
         floor = { c, h };
       }
     if (!floor) return null;
-    const sx = Math.sign(wheel.local.x) || 1;
-    const x = sx * Math.min(floor.h[0] - 0.1, Math.abs(wheel.local.x) - 0.12);
-    const z = THREE.MathUtils.clamp(wheel.local.z + (wheel.local.z > 0 ? -0.38 : 0.38), floor.c[2] - floor.h[2] + 0.1, floor.c[2] + floor.h[2] - 0.1);
+    const wl = wheel.local.clone().divideScalar(K);
+    const sx = Math.sign(wl.x) || 1;
+    const x = sx * Math.min(floor.h[0] - 0.1, Math.abs(wl.x) - 0.12);
+    const z = THREE.MathUtils.clamp(wl.z + (wl.z > 0 ? -0.38 : 0.38), floor.c[2] - floor.h[2] + 0.1, floor.c[2] + floor.h[2] - 0.1);
     const top = car.worldPointOf(V(x, floor.c[1] - floor.h[1], z));
     const hit = this.game.physics.raycast({ x: top.x, y: top.y + 0.05, z: top.z }, { x: 0, y: -1, z: 0 }, 2.5, GROUPS.ground, car.dyn.body);
     if (!hit) return null;

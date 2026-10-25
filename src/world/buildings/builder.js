@@ -99,6 +99,23 @@ export class Builder {
     this.subs = []; // { builder, pivot: [x,y,z], anim } separately transformed parts (rotors)
     this.sensors = [];
     this.props = []; // { id, pos: [x, y, z], rot } real models placed when the place is built
+    // things standing on the open ground: { x, z, y, ranges: [{ mat, start, end }], c0, c1 }, set
+    // down onto the real land when the place is put in the world (poi.js snapToGround)
+    this.snaps = [];
+    this.snapping = null;
+  }
+
+  // Everything added until snapEnd() stands on the ground at (x, z), built at height y.
+  snapStart(x, z, y) {
+    this.snapping = { x, z, y, ranges: [], c0: this.colliders.length, c1: this.colliders.length };
+  }
+
+  snapEnd() {
+    const s = this.snapping;
+    this.snapping = null;
+    if (!s) return;
+    s.c1 = this.colliders.length;
+    if (s.ranges.length || s.c1 > s.c0) this.snaps.push(s);
   }
 
   // A real model (see world/props.js) standing at (x, y, z), turned rot about y.
@@ -154,6 +171,12 @@ export class Builder {
       } else u[o2] = u[o2 + 1] = 0;
       o3 += 3;
       o2 += 2;
+    }
+    if (this.snapping) {
+      const r = this.snapping.ranges;
+      const last = r[r.length - 1];
+      if (last && last.mat === mat && last.end === acc.len) last.end = acc.len + count;
+      else r.push({ mat, start: acc.len, end: acc.len + count });
     }
     acc.len += count;
     return geo;
@@ -538,6 +561,7 @@ export class Builder {
       fuelReserve: this.fuelReserve,
       carSpot: this.carSpot ? { x: this.carSpot.x, z: this.carSpot.z } : null,
       props: this.props,
+      snaps: this.snaps,
       subs: this.subs.map((s) => ({ pivot: s.pivot, anim: s.anim, data: s.builder.serialize(transfer) })),
     };
   }
@@ -563,6 +587,7 @@ export class Builder {
     b.fuelReserve = d.fuelReserve;
     b.carSpot = d.carSpot;
     b.props = d.props || [];
+    b.snaps = d.snaps || [];
     b.subs = d.subs.map((s) => ({ pivot: s.pivot, anim: s.anim, builder: Builder.fromData(s.data) }));
     return b;
   }

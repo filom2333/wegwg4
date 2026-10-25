@@ -46,7 +46,6 @@ vec4 diffuseColor = vec4( diffuse, opacity );`
               float a = float(i) * 0.7853982;
               vec2 o = vec2(cos(a), sin(a));
               m = max(m, texture2D(tMask, vUv + o * uTexel).r);
-              m = max(m, texture2D(tMask, vUv + o * uTexel * 1.8).r * 0.3);
             }
             float e = clamp(m - c, 0.0, 1.0);
             if (e < 0.01) discard;

@@ -6,7 +6,8 @@ import * as THREE from 'three';
 import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
-import { ITEMS } from '../items/itemDefs.js';
+import { LIQUID_NAMES, ITEMS } from '../items/itemDefs.js';
+import { SHADE_TINTS } from '../items/itemModels.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
 import { fitMatrix } from '../vehicle/swap.js';
@@ -38,7 +39,8 @@ const takeFuel = (p, l) => {
 // Containers with a cap (cans, bottles, jugs, the drum): it has to come off by hand before
 // anything pours in or out, and you see how much is inside only with it off (or through clear
 // plastic). Lamps keep their fuel behind a filler of their own.
-const capped = (def) => !!(def && def.liquid && !def.light);
+// only a jerry can has a screw cap to undo (bottles, jugs and tins just pour)
+const capped = (def) => !!(def && def.capped);
 const capKey = () => (settings.data.bindings.reload || 'KeyR').replace(/^Key/, '');
 
 const REACH = 2.6;
@@ -168,7 +170,7 @@ export class Interaction {
     }
     // poi doors, pumps
     if (hit && hit.owner && hit.distance <= reach) {
-      if (hit.owner.kind === 'door' && (!best || hit.distance < best.dist)) best = { kind: 'poiDoor', door: hit.owner.door, dist: hit.distance };
+      if (hit.owner.kind === 'door' && (!best || hit.distance < best.dist)) best = { kind: 'poiDoor', door: hit.owner.door, dist: hit.distance, point: hit.point };
     }
     if (g.pois && (!best || best.kind !== 'item')) {
       const tip = origin.clone().addScaledVector(dir, Math.min(reach, hitDist));
@@ -277,8 +279,8 @@ export class Interaction {
     // plates bolted on: in front of whatever they cover
     const pl = !seated && plateUnderRay(car, origin, dir, maxDist);
     if (pl) list.push({ id: 'plate', plate: pl.plate, d: pl.dist - 0.03, vol: 0 });
-    // things bolted on: the same
-    if (!seated)
+    // things bolted on (or hung on the mirror): the same
+    {
       for (const it of car.attached || []) {
         if (!it.mounted) continue;
         inv.copy(it.mesh.matrixWorld).invert();
@@ -290,6 +292,7 @@ export class Interaction {
         const d = hitP.clone().applyMatrix4(it.mesh.matrixWorld).distanceTo(origin);
         if (d < maxDist) list.push({ id: 'item', item: it, d: d - 0.03, vol: 0 });
       }
+    }
     // bolt-on accessories
     if (!seated)
       for (const [mount, a] of Object.entries(car.accessories || {})) {
@@ -308,7 +311,7 @@ export class Interaction {
       pick = list[0];
       for (const c of list) if (c.d - list[0].d < 0.15 && c.vol < pick.vol) pick = c;
     }
-    let best = pick ? (pick.item ? { kind: 'item', item: pick.item, dist: pick.d } : pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d }) : null;
+    let best = pick ? (pick.item ? { kind: 'item', item: pick.item, dist: pick.d } : pick.plate ? { kind: 'plate', plate: pick.plate, dist: pick.d } : pick.acc ? { kind: 'accessory', mount: pick.id, dist: pick.d } : { kind: 'part', part: pick.id, dist: pick.d, point: origin.clone().addScaledVector(dir, pick.d) }) : null;
     if (seat && (!best || seat.dist < best.dist + 0.4)) best = seat;
     if (hs && (!best || hs.dist < best.dist + 0.25)) best = hs;
     return best;
@@ -457,6 +460,8 @@ export class Interaction {
         return;
       }
     }
+    // a hand on a door, a lid or a winder, moved by the mouse
+    if (this.grab && this.updateGrab(dt, blocked)) return;
     // an electric window switch held down
     if (this.switchWindow) {
       if (!input.isDown('interact') || !g.car || !p.seat) this.switchWindow = null;
@@ -564,8 +569,14 @@ export class Interaction {
         }
       } else {
         info = this.heldInfo(it);
+        // a decoration aimed at a car's inside mirror: hang it there
+        const hang = def && def.hang ? this.hangFit(it) : null;
+        if (hang) {
+          prompts.push([kn('sleep'), 'Hang it on the mirror']);
+          if (!blocked && input.wasPressed('sleep')) this.hangHeld(it, hang);
+        }
         // aimed at a car: bolt it on where the ghost shows
-        const spot = this.boltFit(it);
+        const spot = hang ? null : this.boltFit(it);
         if (spot) {
           this.showBoltGhost(it, spot);
           prompts.push([kn('sleep'), `Bolt it to the ${this.boltPlace(spot.car, spot.part, spot.normal)}`], ['Shift+Wheel', 'Turn']);
@@ -617,6 +628,16 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
+      // R held with nothing in the hands and nothing aimed at: take off what you wear
+      const worn = !t && this.wornNext();
+      if (worn) {
+        prompts.push(['R', `Take off (hold): ${worn.name}`]);
+        this.takeOffT = !blocked && input.isDown('reload') ? (this.takeOffT || 0) + dt : 0;
+        if (this.takeOffT > 0.35) {
+          this.takeOffT = 0;
+          this.takeOff(worn);
+        }
+      }
       if (this.fists && !p.seat) {
         if (!t) prompts.push(['LMB', 'Punch'], ['1', 'Lower your fists']);
         else if (!prompts.some((x) => x[0] === 'LMB')) prompts.push(['LMB', 'Punch']);
@@ -658,6 +679,164 @@ export class Interaction {
     this.updateStowing(dt);
   }
 
+  // ------------------------------------------------------------------ taking hold of things
+  // What under the aim can be taken hold of and moved by hand: a hinged part of the car (a door,
+  // the bonnet, the boot lid; a door's inside handle), a window winder from the seat, a door of
+  // a building.
+  grabbable(t) {
+    const g = this.game;
+    const car = g.car;
+    if (!t || this.held) return null;
+    if (t.kind === 'part' && car) {
+      const mp = car.model.parts[t.part];
+      if (mp && mp.hinge && car.isInstalled(t.part)) return { kind: 'car', car, id: t.part };
+    }
+    if (t.kind === 'hotspot' && car) {
+      const h = t.hotspot;
+      if ((h.id === 'doorFL' || h.id === 'doorFR') && h.door && car.isInstalled(h.door)) return { kind: 'car', car, id: h.door, handle: true };
+      if (h.id.startsWith('crank') && g.player.seat && car.isInstalled(h.door)) return { kind: 'crank', car, door: h.door };
+    }
+    if (t.kind === 'poiDoor') return { kind: 'poiDoor', door: t.door };
+    return null;
+  }
+
+  startGrab(gd, t, via) {
+    const g = this.game;
+    const at = t.point ? V(t.point.x, t.point.y, t.point.z) : t.kind === 'hotspot' ? g.car.worldPointOf(t.hotspot.pos) : null;
+    const G = { ...gd, t, via, time: 0, moved: 0, local: null, click: 0 };
+    if (gd.kind === 'car') {
+      const mp = gd.car.model.parts[gd.id];
+      mp.inner.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(mp.inner.matrixWorld).invert();
+      // the point taken hold of, in the part's closed pose (car space)
+      G.local = at ? at.applyMatrix4(inv) : mp.bbox.getCenter(V(0, 0, 0));
+      if (gd.id.startsWith('door')) gd.car.handlePull[gd.id] = 0.3;
+    } else if (gd.kind === 'poiDoor') {
+      const d = gd.door;
+      d.pivot.updateMatrixWorld(true);
+      G.local = at ? at.applyMatrix4(new THREE.Matrix4().copy(d.pivot.matrixWorld).invert()) : V(d.w - 0.08, 1.0, 0);
+    }
+    this.grab = G;
+    g.player.lookFrozen = true;
+  }
+
+  // Where the point taken hold of is with the thing open by `u` (0 shut, 1 all the way).
+  grabWorld(G, u) {
+    if (G.kind === 'car') {
+      const h = G.car.model.parts[G.id].hinge;
+      const q = new THREE.Quaternion().setFromAxisAngle(h.axis, h.max * u);
+      return G.local.clone().sub(h.origin).applyQuaternion(q).add(h.origin).applyMatrix4(G.car.root.matrixWorld);
+    }
+    const d = G.door;
+    const m = new THREE.Matrix4().compose(d.pivot.position, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, d.baseRot + u * 1.55, 0)), V(1, 1, 1));
+    return G.local.clone().applyMatrix4(m).applyMatrix4(d.pivot.parent.matrixWorld);
+  }
+
+  grabOpen(G) {
+    return G.kind === 'car' ? G.car.model.parts[G.id].openT : G.door.open;
+  }
+
+  // Moves it to `u`, with the latch: the click as it comes off the catch, the slam onto it.
+  setGrabOpen(G, u) {
+    const g = this.game;
+    const before = this.grabOpen(G);
+    if (u < 0.006 && before >= 0.006) u = 0;
+    if (G.kind === 'car') {
+      const car = G.car;
+      const mp = car.model.parts[G.id];
+      car.model.setOpen(G.id, u);
+      mp.targetOpen = u;
+      if ((before <= 0.08) !== (u <= 0.08)) car.rebuildColliders();
+      const snd = G.id.startsWith('door') ? (u > before ? 'doorOpen' : 'doorClose') : G.id === 'hood' ? 'hood' : 'trunk';
+      const at = car.worldPointOf(mp.hinge.origin);
+      if (before === 0 && u > 0) g.audio && g.audio.play(snd, { at, volume: 0.6 });
+      else if (u === 0 && before > 0) g.audio && g.audio.play(snd, { at, volume: Math.min(1, 0.3 + Math.abs(before) * 4) });
+    } else {
+      const d = G.door;
+      d.open = d.target = u;
+      d.inst.state.doors[d.key] = u;
+      g.pois.applyDoor(d);
+      const at = d.pivot.getWorldPosition(V(0, 0, 0));
+      if (before === 0 && u > 0) g.audio && g.audio.play('doorCreak', { at, volume: 0.5 });
+      else if (u === 0 && before > 0) g.audio && g.audio.play('doorShut', { at });
+    }
+  }
+
+  // Each frame of a hold: the mouse moves the thing along its swing (the way its handle goes on
+  // screen), the view held still; letting go leaves it where it is. A quick tap without moving
+  // does what E always did. Returns false once let go.
+  updateGrab(dt, blocked) {
+    const g = this.game;
+    const G = this.grab;
+    const down = G.via === 'interact' ? input.isDown('interact') : input.mouseDown(0);
+    const gone = (G.kind === 'car' || G.kind === 'crank') && (!G.car.isInstalled(G.kind === 'car' ? G.id : G.door) || G.car !== g.car);
+    if (!down || blocked || gone || g.player.dead) {
+      this.grab = null;
+      g.player.lookFrozen = false;
+      if (!gone && G.moved < 6 && G.time < 0.4) this.grabTap(G);
+      return false;
+    }
+    G.time += dt;
+    const mx = input.mouse.dx,
+      my = input.mouse.dy;
+    G.moved += Math.hypot(mx, my);
+    const kn = G.via === 'interact' ? (settings.data.bindings.interact || 'KeyE').replace(/^Key/, '') : 'LMB';
+    if (G.kind === 'crank') {
+      const moved = G.car.windWindow(G.door, my * 0.0022);
+      G.click += Math.abs(moved);
+      if (G.click > 0.035) {
+        G.click = 0;
+        g.audio && g.audio.play('click', { volume: 0.12, rate: 1.7 + Math.random() * 0.2 });
+      }
+      if (moved) this.useAnim = Math.max(this.useAnim, 0.3);
+      g.hud && g.hud.setPrompts([['Mouse', 'Wind the window'], [kn, 'Let go']]);
+      return true;
+    }
+    if (mx || my) {
+      // the handle's way across the screen per unit of opening
+      const u = this.grabOpen(G);
+      const du = u > 0.97 ? -0.03 : 0.03;
+      const W = window.innerWidth / 2,
+        H = window.innerHeight / 2;
+      const cam = g.renderer.camera;
+      const a = this.grabWorld(G, u).project(cam),
+        b = this.grabWorld(G, u + du).project(cam);
+      const sx = ((b.x - a.x) * W) / du,
+        sy = (-(b.y - a.y) * H) / du;
+      const s2 = sx * sx + sy * sy;
+      let step = s2 > 900 ? (mx * sx + my * sy) / s2 : -my * 0.004;
+      step = clamp(step, -0.12, 0.12);
+      this.setGrabOpen(G, clamp(u + step, 0, 1));
+    }
+    g.hud && g.hud.setPrompts([['Mouse', 'Move it'], [kn, 'Let go']]);
+    return true;
+  }
+
+  // The tap: open or shut all the way, as E always did.
+  grabTap(G) {
+    const g = this.game;
+    const t = G.t;
+    if (G.kind === 'poiDoor') return g.pois.toggleDoor(G.door);
+    if (t.kind === 'hotspot') return this.useHotspot(t.hotspot);
+    G.car.toggleOpen(G.id);
+  }
+
+  // Aimed at the cap of a jerry can (within a hand's breadth of it on the can's surface).
+  onCap(t) {
+    const it = t && t.kind === 'item' && t.item;
+    if (!it || !capped(it.def) || !t.point || it.mounted) return false;
+    const cap = it.mesh.getObjectByName('cap');
+    if (!cap) return false;
+    const c = new THREE.Box3().setFromObject(cap).getCenter(V(0, 0, 0));
+    return c.distanceTo(V(t.point.x, t.point.y, t.point.z)) < 0.1;
+  }
+
+  toggleCap(it) {
+    it.state.capOff = !it.state.capOff;
+    this.game.audio && this.game.audio.play('click', { volume: 0.4, rate: it.state.capOff ? 1.25 : 0.95, at: it.mesh.getWorldPosition(V(0, 0, 0)) });
+    this.game.items.refreshVisual(it);
+  }
+
   heldInfo(it) {
     const def = it.def;
     const s = it.state;
@@ -665,7 +844,7 @@ export class Interaction {
     let bar = null;
     if (def.liquid) {
       if (!capped(def) || s.capOff || def.clear) {
-        sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${s.liquidType || def.liquid.type}`;
+        sub = `${(s.liquid || 0).toFixed(1)} / ${def.liquid.cap} l ${LIQUID_NAMES[s.liquidType || def.liquid.type] || s.liquidType}`;
         bar = (s.liquid || 0) / def.liquid.cap;
         if (capped(def) && s.capOff) sub += ' · cap off';
       } else sub = 'Cap on';
@@ -678,7 +857,37 @@ export class Interaction {
     } else if (def.weapon) sub = `${s.loaded || 0} / ${def.weapon.mag}  ·  pouch ${this.ammo[def.weapon.ammo] || 0}`;
     else if (def.charges !== undefined) sub = `${s.charges} use${s.charges === 1 ? '' : 's'} left`;
     else if (def.ammo) sub = `${def.ammo.count} rounds`;
+    else if (def.battery) {
+      sub = `Batteries ${Math.round((s.charge ?? 1) * 100)}%`;
+      bar = s.charge ?? 1;
+    } else if (def.instrument) sub = this.instrumentReading(it);
     return { title: it.name, sub, bar, desc: def.desc };
+  }
+
+  // What a compass, a clock or a spirit level says just now.
+  instrumentReading(it) {
+    const kind = it.def.instrument;
+    if (kind === 'clock') {
+      const h = ((((this.game.env ? this.game.env.time : 12) + (it.state.offset || 0)) % 12) + 12) % 12;
+      const m = Math.floor((h % 1) * 60);
+      return `It reads ${Math.floor(h) || 12}:${String(m).padStart(2, '0')}`;
+    }
+    const q = it.mesh.getWorldQuaternion(new THREE.Quaternion());
+    if (kind === 'compass') {
+      // held: the way you face; on the car: the way the car points; set down: nothing to go by
+      const f = it === this.held ? V(0, 0, -1).applyQuaternion(this.cam.quaternion) : it.mounted ? V(0, 0, 1).applyQuaternion(it.mounted.car.root.quaternion) : null;
+      if (!f || f.x * f.x + f.z * f.z < 0.01) return 'The needle swings to north';
+      const deg = (THREE.MathUtils.radToDeg(Math.atan2(-f.x, f.z)) + 360) % 360;
+      return `Heading ${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8]} · ${Math.round(deg)}°`;
+    }
+    if (kind === 'level') {
+      const x = V(1, 0, 0).applyQuaternion(q);
+      const off = Math.abs(THREE.MathUtils.radToDeg(Math.asin(clamp(x.y, -1, 1))));
+      // stood on end, it reads plumb on the end vial instead
+      const tilt = off > 45 ? 90 - off : off;
+      return tilt < 0.4 ? 'Dead level' : `Off level by ${tilt.toFixed(1)}°`;
+    }
+    return '';
   }
 
   useOptions(it, t) {
@@ -711,7 +920,10 @@ export class Interaction {
       else if (t && t.kind === 'plate') out.push(['LMB', `Paint the ${PLATES[t.plate.id].name.toLowerCase()} (hold)`]);
       else out.push(['', 'Aim at a body panel to paint it']);
     }
-    if (def.light) out.push(['LMB', it.state.on ? 'Switch off' : 'Switch on']);
+    if (def.light) out.push(def.battery && (it.state.charge ?? 1) <= 0.005 ? ['', 'The batteries are flat'] : ['LMB', it.state.on ? 'Switch off' : 'Switch on']);
+    if (def.binoculars) out.push(this.binoZoom > 0.5 ? ['Wheel', `Zoom ×${this.binoMag || 4}`] : ['LMB', 'Look through them (hold)']);
+    if (def.instrument === 'clock') out.push(['LMB', 'Turn the knob to set it (hold)']);
+    if (def.wear) out.push(['LMB', def.wear === 'eyes' ? 'Put them on' : 'Put it on']);
     if (def.liquid) {
       if (capped(def)) out.push([capKey(), it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
       if (!capped(def) || it.state.capOff) {
@@ -774,7 +986,7 @@ export class Interaction {
     // siphon: a can (empty or holding fuel) against another car draws fuel out of its tank
     const h = this.lookHit;
     const other = h && h.owner && h.owner.kind === 'car' && h.owner.car !== this.game.car ? h.owner.car : null;
-    if (other && it.def.liquid.cap >= 5 && (type === 'fuel' || (it.state.liquid || 0) < 0.01) && h.distance < REACH + 0.4) {
+    if (other && it.def.liquid.cap >= 5 && ((it.state.liquid || 0) < 0.01 || type === other.tankMain()) && h.distance < REACH + 0.4) {
       if (other.fuel > 0.05 && other.isInstalled('fueltank')) return { kind: 'siphon', car: other, label: `Siphon fuel · ${other.fuel.toFixed(1)} L in the tank` };
       return null;
     }
@@ -782,11 +994,13 @@ export class Interaction {
     const car = this.game.car;
     if (t.kind === 'hotspot') {
       const h = t.hotspot.id;
-      if (type === 'fuel' && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: 'Pour fuel' };
+      // (anything runny goes down a filler; only the right fuel does the engine any good)
+      if ((type === 'fuel' || type === 'diesel' || type === 'water') && h === 'fuel' && car.isInstalled('fueltank') && car.fillerCapOff) return { kind: 'car', sys: 'fuel', label: type === 'fuel' ? 'Pour petrol' : type === 'diesel' ? 'Pour diesel' : 'Pour water into the tank' };
       if (type === 'oil' && h === 'oil') return { kind: 'car', sys: 'oil', label: 'Pour oil' };
       if (type === 'water' && h === 'coolant' && car.isInstalled('radiator')) return { kind: 'car', sys: 'coolant', label: 'Top up the radiator' };
     }
-    if (t.kind === 'pump' && type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : 'Fill from pump' } : null;
+    const pk = t.kind === 'pump' && (t.pump.pump.kind || 'fuel');
+    if (pk && (type === pk || (it.state.liquid || 0) < 0.01) && it.def.liquid.type === 'fuel') return pumpFuel(t.pump.pump) > 0.05 ? { kind: 'pump', label: t.pump.pump.drum ? 'Fill from the drum' : pk === 'diesel' ? 'Fill from the diesel pump' : 'Fill from the petrol pump' } : null;
     if (t.kind === 'item' && t.item.def && t.item.def.liquid && t.item.state.liquidType === type && (!capped(t.item.def) || t.item.state.capOff)) return { kind: 'item', item: t.item, label: 'Pour into ' + t.item.def.name.toLowerCase() };
     return null;
   }
@@ -798,10 +1012,17 @@ export class Interaction {
     switch (t.kind) {
       case 'item': {
         const it = t.item;
+        if (this.onCap(t)) {
+          info = this.heldInfo(it);
+          prompts.push(['E', it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
+          break;
+        }
         if (it.mounted) {
           const host = it.mounted.car;
-          info = { title: it.name, sub: `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
-          prompts.push(['R', 'Unbolt (hold)']);
+          let sub = it.mounted.hang ? 'Hanging from the mirror' : `Bolted to the ${this.boltPlace(host, it.mounted.part, V(0, 1, 0).applyQuaternion(it.mesh.getWorldQuaternion(new THREE.Quaternion())))}`;
+          if (it.def && it.def.instrument) sub = this.instrumentReading(it);
+          info = { title: it.name, sub, progress: this.removing && this.removing.item === it ? this.removing.t : undefined };
+          prompts.push(['R', it.mounted.hang ? 'Take it down (hold)' : 'Unbolt (hold)']);
           break;
         }
         if (it.part) {
@@ -849,7 +1070,7 @@ export class Interaction {
         info = { title: car.partLabel(id), sub: `Condition ${cond}%`, bar: st ? st.condition : 1 };
         void def;
         const mp = car.model.parts[id];
-        if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open']);
+        if (mp.hinge) prompts.push(['E', mp.openT > 0.5 ? 'Close' : 'Open'], ['Hold', 'Move by hand']);
         const rem = car.canRemove(id);
         if (rem.ok) prompts.push(['R', 'Remove (hold)']);
         else if (!mp.hinge) prompts.push(['', rem.reason]);
@@ -884,6 +1105,9 @@ export class Interaction {
             info.sub = `${car.fuel.toFixed(1)} / ${car.fuelCap} l`;
             info.bar = car.fuel / car.fuelCap;
             prompts.push(['E', 'Cap on, flap shut']);
+            // what it takes, and what it smells of in there
+            prompts.push(['', car.fuelType === 'diesel' ? 'Takes diesel' : 'Takes petrol']);
+            if (car.fuelPurity() < 0.97) prompts.push(['', car.tankMain() === car.fuelType ? 'Something else is mixed in' : 'The wrong fuel is in it']);
           }
         } else if (h.id === 'oil') {
           info.sub = `${car.oil.toFixed(2)} / ${car.oilCap} l`;
@@ -908,7 +1132,7 @@ export class Interaction {
           prompts.push(['E', car.parkBrake ? 'Release' : 'Set it']);
         } else if (h.id === 'doorFL' || h.id === 'doorFR') {
           const open = car.model.parts[h.door].openT > 0.5;
-          prompts.push(['E', open ? 'Close the door' : 'Open the door']);
+          prompts.push(['E', open ? 'Close the door' : 'Open the door'], ['Hold', 'Move by hand']);
         } else if (h.id.startsWith('crank')) {
           const t = car.windowT[h.door] || 0;
           info.sub = t < 0.03 ? 'Shut' : t > 0.97 ? 'All the way down' : `Open ${Math.round(t * 100)}%`;
@@ -988,18 +1212,18 @@ export class Interaction {
         break;
       case 'poiDoor':
         info = { title: 'Door' };
-        prompts.push(['E', t.door.open > 0.5 ? 'Close' : 'Open']);
+        prompts.push(['E', t.door.open > 0.5 ? 'Close' : 'Open'], ['Hold', 'Move by hand']);
         break;
       case 'pump': {
         const st = t.pump.inst.state;
         if (t.pump.pump.drum) {
           const f = pumpFuel(t.pump.pump);
-          info = { title: 'Oil drum', sub: f > 0.5 ? `About ${Math.round(f)} l of old petrol sloshing inside` : 'Empty, rust flakes inside', bar: Math.min(1, f / 200) };
+          info = { title: 'Oil drum', sub: f > 0.5 ? (t.pump.pump.kind === 'diesel' ? `About ${Math.round(f)} l of old diesel sloshing inside` : `About ${Math.round(f)} l of old petrol sloshing inside`) : 'Empty, rust flakes inside', bar: Math.min(1, f / 200) };
           const held = this.held && this.held.def && this.held.def.liquid;
           if (f > 0.5 && !held) prompts.push(['', 'Bring a jerry can to fill']);
           break;
         }
-        info = { title: 'Fuel pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
+        info = { title: t.pump.pump.kind === 'diesel' ? 'Diesel pump' : 'Petrol pump', sub: st.fuel > 0.5 ? `${Math.round(st.fuel)} l left in the tank` : 'Dry', bar: Math.min(1, (st.fuel || 0) / 300) };
         const carNear = car && car.worldPointOf(car.type.HOTSPOTS[0].pos).distanceTo(t.pump.world) < 5.5;
         if (st.fuel > 0.5 && carNear) prompts.push(['E', this.game.refuel && this.game.refuel.active ? 'Stop refuelling' : 'Refuel the car']);
         else if (st.fuel > 0.5) prompts.push(['', 'Bring the car closer or use a jerry can']);
@@ -1166,9 +1390,14 @@ export class Interaction {
     }
     if (!input.wasPressed('interact') && !(input.mousePressed(0) && !this.fists)) return;
     const viaMouse = !input.wasPressed('interact');
+    // doors, lids and winders are taken hold of: the mouse moves them (a quick tap of E swings
+    // them all the way, see updateGrab)
+    const gd = this.grabbable(t);
+    if (gd) return this.startGrab(gd, t, viaMouse ? 'mouse' : 'interact');
     switch (t.kind) {
       case 'item':
-        if (!t.item.mounted) this.pick(t.item);
+        if (!viaMouse && this.onCap(t)) this.toggleCap(t.item);
+        else if (!t.item.mounted) this.pick(t.item);
         break;
       case 'part': {
         if (viaMouse) return;
@@ -1411,7 +1640,7 @@ export class Interaction {
       if (input.isDown('sprint')) this.plateTilt = clamp((this.plateTilt || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 24), 0, Math.PI / 2);
       else this.plateSpin = (this.plateSpin || 0) + Math.sign(input.mouse.wheel) * (Math.PI / 12);
     }
-    else if (input.mouse.wheel && !weapon) {
+    else if (input.mouse.wheel && !weapon && !(def && def.binoculars && input.mouseDown(0))) {
       const isBig = carriedBig(it);
       if (!isBig && !this.floating) {
         // the wheel takes a small thing out of the hand: it floats in front to be turned and moved
@@ -1509,15 +1738,25 @@ export class Interaction {
     if (this.useAnim > 0) this.useAnim -= dt * 1.6;
     const blocked = this.game.ui && this.game.ui.blocksMove;
     if (blocked) return;
+    if (!def || !def.binoculars) this.binoZoom = 0;
     if (def) {
       if (def.weapon) this.updateWeapon(it, dt);
-      else if (def.liquid) {
+      else if (def.binoculars) {
+        // up to the eyes while LMB is held; the wheel turns the zoom
+        const on = input.mouseDown(0) && !this.floating;
+        this.binoZoom = clamp((this.binoZoom || 0) + (on ? dt * 5 : -dt * 6), 0, 1);
+        if (on && input.mouse.wheel) this.binoMag = clamp((this.binoMag || 4) - Math.sign(input.mouse.wheel), 2, 10);
+      } else if (def.instrument === 'clock' && input.mouseDown(0)) {
+        // the knob on top turns the hands round
+        it.state.offset = ((it.state.offset || 0) + dt * 1.2) % 12;
+        const knob = it.mesh.getObjectByName('knob');
+        if (knob) knob.rotation.y += dt * 9;
+        this.useAnim = Math.max(this.useAnim, 0.3);
+      } else if (def.liquid) {
         // the cap: off and on by hand
         if (capped(def) && input.wasPressed('reload')) {
-          it.state.capOff = !it.state.capOff;
-          this.game.audio && this.game.audio.play('click', { volume: 0.4, rate: it.state.capOff ? 1.25 : 0.95 });
+          this.toggleCap(it);
           this.useAnim = Math.max(this.useAnim, 0.5);
-          this.game.items.refreshVisual(it);
         }
         const open = !capped(def) || it.state.capOff;
         const tgt = open ? this.pourTarget(it, this.target) : null;
@@ -1794,8 +2033,10 @@ export class Interaction {
       g.audio && g.audio.play('pocket');
       return;
     }
+    if (def.wear) return this.wear(it);
     if (def.light) {
-      it.state.on = !it.state.on && (it.state.liquid || 0) > 0.01;
+      it.state.on = !it.state.on && (def.battery ? (it.state.charge ?? 1) > 0.005 : (it.state.liquid || 0) > 0.01);
+      if (def.battery && !it.state.on && (it.state.charge ?? 1) <= 0.005) g.hud && g.hud.toast('The batteries are flat');
       g.items.refreshVisual(it);
       g.audio && g.audio.play('click');
       return;
@@ -1858,6 +2099,49 @@ export class Interaction {
     if (def.melee) this.melee(it);
   }
 
+  // ------------------------------------------------------------------ things worn
+  // The one taken off first: the sunglasses, then the hat.
+  wornNext() {
+    const w = this.game.player.worn;
+    return w ? w.eyes || w.head || null : null;
+  }
+
+  // Put the held thing on; whatever was worn there before comes into the hand instead.
+  wear(it, { quiet = false } = {}) {
+    const g = this.game;
+    const p = g.player;
+    const slot = it.def.wear;
+    p.worn = p.worn || {};
+    const old = p.worn[slot];
+    if (this.held === it) {
+      this.held = null;
+      this.dragging = false;
+      p.carryMass = 0;
+    }
+    g.items.wear(it, slot);
+    p.worn[slot] = it;
+    if (old) this.takeOff(old);
+    this.refreshWorn();
+    if (!quiet) g.audio && g.audio.play('pocket');
+  }
+
+  takeOff(it) {
+    const g = this.game;
+    const w = g.player.worn || {};
+    for (const k in w) if (w[k] === it) w[k] = null;
+    g.items.unwear(it);
+    it.mesh.position.copy(this.cam.position).add(V(0, -0.3, 0));
+    if (!this.held) this.pick(it);
+    else g.items.release(it, it.mesh.position.clone(), it.mesh.quaternion.clone());
+    this.refreshWorn();
+  }
+
+  // Sunglasses on: the view through their lenses.
+  refreshWorn() {
+    const e = (this.game.player.worn || {}).eyes;
+    this.game.hud && this.game.hud.setTint && this.game.hud.setTint(e ? SHADE_TINTS[(e.state.variant || 0) % SHADE_TINTS.length] : null);
+  }
+
   consumeHeld() {
     const it = this.held;
     this.held = null;
@@ -1893,7 +2177,7 @@ export class Interaction {
     if (tgt.kind === 'car') {
       if (tgt.sys === 'fuel') {
         amount = Math.min(amount, car.fuelCap - car.fuel);
-        car.fuel += amount;
+        car.addFuel(s.liquidType, amount);
       } else if (tgt.sys === 'oil') {
         amount = Math.min(amount, car.oilCap + 0.3 - car.oil);
         car.oil += amount;
@@ -1905,16 +2189,16 @@ export class Interaction {
     } else if (tgt.kind === 'siphon') {
       amount = Math.min(rate * dt, it.def.liquid.cap - (s.liquid || 0), tgt.car.fuel);
       tgt.car.fuel -= amount;
+      if ((s.liquid || 0) < 0.01) s.liquidType = tgt.car.tankMain();
       s.liquid = (s.liquid || 0) + amount;
-      s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'pump') {
       const pump = this.target.pump.pump;
       // a drum is tipped and drained slower than a pump delivers
       amount = Math.min(rate * (pump.drum ? 1 : 2) * dt, it.def.liquid.cap - s.liquid, pumpFuel(pump));
       takeFuel(pump, amount);
+      if (s.liquid < 0.01) s.liquidType = pump.kind || 'fuel';
       s.liquid += amount;
-      s.liquidType = 'fuel';
       amount = 0;
     } else if (tgt.kind === 'item') {
       const o = tgt.item;
@@ -1949,13 +2233,13 @@ export class Interaction {
     // start a little toward the target from the mouth
     from.addScaledVector(to.clone().sub(from).setY(0).normalize(), 0.08);
     const type = it.state.liquidType;
-    const col = type === 'fuel' ? [0.85, 0.68, 0.32] : type === 'oil' ? [0.22, 0.14, 0.05] : type === 'coolant' ? [0.35, 0.85, 0.45] : [0.75, 0.85, 0.95];
+    const col = type === 'fuel' ? [0.85, 0.68, 0.32] : type === 'diesel' ? [0.78, 0.66, 0.3] : type === 'oil' ? [0.22, 0.14, 0.05] : type === 'coolant' ? [0.35, 0.85, 0.45] : [0.75, 0.85, 0.95];
     const sag = Math.max(0.05, from.distanceTo(to) * 0.25);
     for (let i = 0; i < 14; i++) {
       const k = (i + Math.random()) / 14;
       const p = from.clone().lerp(to, k);
       p.y -= Math.sin(k * Math.PI) * sag * 0.5 + k * k * 0.02;
-      fx.blood.emit({ pos: p, size: 0.022, grow: 0.01, life: 0.05, color: col, alpha: type === 'fuel' || type === 'water' ? 0.55 : 0.9, drag: 0 });
+      fx.blood.emit({ pos: p, size: 0.022, grow: 0.01, life: 0.05, color: col, alpha: type === 'fuel' || type === 'diesel' || type === 'water' ? 0.55 : 0.9, drag: 0 });
     }
   }
 
@@ -2247,7 +2531,10 @@ export class Interaction {
       car.applyWeather();
     }
     if (slot === 'battery' && it.state.charge !== undefined) car.battery = it.state.charge;
-    if (slot === 'fueltank' && it.state.fuel !== undefined) car.fuel = it.state.fuel;
+    if (slot === 'fueltank' && it.state.fuel !== undefined) {
+      car.fuel = it.state.fuel;
+      car.tankMix = it.state.mix ? { ...it.state.mix } : { [car.fuelType]: 1 };
+    }
     if (slot === 'fanbelt') car.fanbeltCondition = cond;
     if (slot === 'engine' && it.state.oil !== undefined) car.oil = it.state.oil;
     const w = car.dyn.wheels.find((x) => x.id === slot);
@@ -2355,7 +2642,7 @@ export class Interaction {
   boltable(it) {
     if (it.part) return partDefOf(it).mass <= 40;
     const d = it.def;
-    return !!d && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
+    return !!d && !d.hang && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
   }
 
   // Where the held thing would go: against the surface of a car under the crosshair, standing
@@ -2363,7 +2650,8 @@ export class Interaction {
   boltFit(it) {
     const g = this.game;
     this.boltAim = null;
-    if (g.player.seat || !this.boltable(it)) return null;
+    const dash = !!(it.def && it.def.dash);
+    if ((g.player.seat && !dash) || !this.boltable(it)) return null;
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
@@ -2371,8 +2659,10 @@ export class Interaction {
     const cars = [g.car, ...((g.fleet && g.fleet.cars) || [])].filter((c, i, a) => c && a.indexOf(c) === i && c.root.position.distanceTo(origin) < 7);
     for (const c of cars) {
       const s = plateSpot(c, origin, dir, 2.4, this.boltSpin || 0, right, { w: it.size.x, l: it.size.z });
-      // (inside the cabin things are put down, not bolted)
-      if (!s || /^seat/.test(s.part) || cargoZone(c, s.point.clone().applyMatrix4(new THREE.Matrix4().copy(c.root.matrixWorld).invert())) === 'cabin') continue;
+      // (inside the cabin things are put down, not bolted; a toy for the dash stands on top of things)
+      if (!s) continue;
+      const inside = /^seat/.test(s.part) || cargoZone(c, s.point.clone().applyMatrix4(new THREE.Matrix4().copy(c.root.matrixWorld).invert())) === 'cabin';
+      if (inside && (!dash || s.normal.y < 0.5)) continue;
       if (!spot || s.dist < spot.dist) spot = s;
     }
     this.boltAim = spot;
@@ -2385,6 +2675,42 @@ export class Interaction {
   boltPlace(car, part, n) {
     if (part === 'body' && n.y > 0.6) return 'roof';
     return (car.PARTS[part] || { label: part }).label.toLowerCase();
+  }
+
+  // The inside mirror of a car in reach that the aim passes close to (seated or through a door).
+  hangFit(it) {
+    const g = this.game;
+    const origin = this.cam.position;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    let best = null;
+    for (const c of [g.car, ...((g.fleet && g.fleet.cars) || [])]) {
+      if (!c || c.root.position.distanceTo(origin) > 6 || !c.isInstalled('body')) continue;
+      const lp = c.hangPoint();
+      if (!lp) continue;
+      const w = c.worldPointOf(lp);
+      const to = w.clone().sub(origin);
+      const t = to.dot(dir);
+      if (t < 0.1 || t > 2.4) continue;
+      const off = to.addScaledVector(dir, -t).length();
+      if (off < 0.18 && (!best || off < best.off)) best = { car: c, local: lp, off };
+    }
+    return best;
+  }
+
+  hangHeld(it, h) {
+    const g = this.game;
+    const mp = h.car.model.parts.body;
+    mp.pivot.updateMatrixWorld(true);
+    const at = h.local.clone();
+    const local = new THREE.Matrix4().copy(mp.pivot.matrixWorld).invert().multiply(new THREE.Matrix4().makeTranslation(...h.car.worldPointOf(at).toArray()));
+    this.hideGhost();
+    this.held = null;
+    this.floating = false;
+    g.player.carryMass = 0;
+    it.held = false;
+    // (the body's pivot is the car's frame: the point holds as it is)
+    g.items.mount(it, h.car, 'body', local, { hang: at });
+    g.audio && g.audio.play('pocket', { at: h.car.worldPointOf(at), volume: 0.4 });
   }
 
   boltMatrix(it, spot) {
@@ -2705,6 +3031,15 @@ export class Interaction {
     this.viewRoot.position.copy(cam.position);
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;
+    // looking through binoculars: they are at the eyes, hands and all out of sight
+    const looking = it && it.def && it.def.binoculars && this.binoZoom > 0.35;
+    if (looking && !this.binoHid) {
+      this.binoHid = it;
+      this.viewRoot.visible = it.mesh.visible = false;
+    } else if (!looking && this.binoHid) {
+      this.viewRoot.visible = this.binoHid.mesh.visible = true;
+      this.binoHid = null;
+    }
     const h = this.hands;
     const big = it && carriedBig(it);
     const seated = !!this.game.player.seat;

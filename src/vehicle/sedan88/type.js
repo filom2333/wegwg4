@@ -197,6 +197,7 @@ export const SEDAN88 = {
   STEREO,
   WRECK_PARTS: ['chassis', 'body', 'door_FR', 'door_RL', 'bumper_R', 'hood', 'trunk', 'seat_FL', 'seat_R', 'engine'],
   fuelCap: 60,
+  fuelType: 'fuel',
   oilCap: 4.3,
   coolantCap: 9,
   cooling: 'water',

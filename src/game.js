@@ -2,6 +2,7 @@
 // systems that tie them together. The UI layer drives it (menu -> new game / load).
 
 import * as THREE from 'three';
+import { CAR_SCALE } from './vehicle/car.js';
 import { Renderer } from './gfx/renderer.js';
 import { distance } from './core/gfx.js';
 import { LightPool } from './gfx/lightPool.js';
@@ -127,6 +128,9 @@ export class Game {
     this.groundTex = buildGroundTextures(seed);
     this.terrainMat = createTerrainMaterial(this.groundTex);
     this.roadMat = createRoadMaterial(this.groundTex);
+    // (three flips the slope factor of a polygon offset for a reversed depth buffer but not the
+    // constant: it would push the road behind the ground)
+    if (this.renderer.revZ) this.roadMat.polygonOffsetUnits = -this.roadMat.polygonOffsetUnits;
     onProgress('Raising the land', 0.25);
     this.env = new Environment(this.renderer.renderer, this.scene, {
       time,
@@ -187,7 +191,8 @@ export class Game {
     // (a retired type a save holds, or one asked for by name, is loaded too)
     const saved = load ? [load.startCar || 'beetle', ...((load.fleet && load.fleet.cars) || []).map((c) => c.type)] : [carChoice];
     await this.fleet.preload(this.renderer.renderer, saved);
-    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])));
+    // (drawn at the cars' size)
+    this.pois.setWreckPrototypes(CAR_TYPE_LIST.map((t) => t.wreck(this.fleet.assets[t.id])).map((w) => (w.scale.setScalar(CAR_SCALE), w)));
     // spawn
     const spawn = this.spawnPoint();
     if (this.startZ || load) {
@@ -815,7 +820,7 @@ export class Game {
     }
     const a = Math.min(dt * 0.8, st.fuel, car.fuelCap - car.fuel);
     st.fuel -= a;
-    car.fuel += a;
+    car.addFuel(r.pump.pump.kind || 'fuel', a);
   }
 
   itemName(id) {
@@ -864,10 +869,18 @@ export class Game {
     };
   }
 
+  // Through binoculars the view narrows by their magnification.
+  binoFov() {
+    const ia = this.interaction;
+    const k = ia && ia.held && ia.held.def && ia.held.def.binoculars ? ia.binoZoom || 0 : 0;
+    return 1 / (1 + ((ia && ia.binoMag) || 4) * k - k);
+  }
+
   render(dt) {
     const cam = this.renderer.camera;
-    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0));
+    cam.fov = (this.debugFov || verticalFov(settings.data.hfov, cam.aspect)) * (1 - 0.48 * ((this.player && this.player.seat && this.player.seatZoom) || 0)) * this.binoFov();
     cam.far = 7000;
+    if (this.hud) this.hud.setBino(this.interaction && this.interaction.held && this.interaction.held.def && this.interaction.held.def.binoculars ? this.interaction.binoZoom || 0 : 0);
     // without the float reversed depth buffer, a nearer near plane costs the far depth precision
     // that keeps close layered surfaces apart
     cam.near = this.renderer.revZ ? 0.05 : 0.1;
@@ -925,6 +938,16 @@ export class Game {
       gr.value += (exposed * THREE.MathUtils.smoothstep(this.env.w.dust, 0.35, 0.85) - gr.value) * Math.min(1, dt * 1.5);
     }
     this.lights.update(cam);
+    // the shadow maps are redrawn every frame while things move fast through them (driving, the
+    // third-person body, the title drive) and every other frame on foot, when nothing in them
+    // moves more than a few centimetres a frame (a stale map keeps its own matrix, so what stands
+    // still is shadowed exactly as before)
+    const sm = this.renderer.renderer.shadowMap;
+    sm.autoUpdate = false;
+    this.shadowTick = (this.shadowTick || 0) + 1;
+    const pl = this.player;
+    const fast = !pl || this.attract || this.debugView || pl.thirdPerson || (pl.seat && this.car && Math.abs(this.car.speedKmh) > 3);
+    sm.needsUpdate = fast || this.shadowTick % 2 === 0;
     this.renderer.render(dt);
   }
 

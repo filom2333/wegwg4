@@ -18,6 +18,7 @@ export const BEETLE = {
   PART_FAMILY,
   ASSEMBLY_ORDER,
   fuelCap: 40,
+  fuelType: 'fuel',
   oilCap: 3.6,
   coolantCap: 0,
   cooling: 'air',

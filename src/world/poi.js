@@ -164,6 +164,8 @@ export class POIManager {
     const tmpQ = new THREE.Quaternion();
     for (const e of layout) {
       const b = e.builder;
+      const em0 = new THREE.Matrix4().compose(V(e.x, 0, e.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), e.rot || 0), V(1, 1, 1));
+      if (b.snaps && b.snaps.length) this.snapToGround(root, b, em0);
       const g = b.build(resolve);
       g.position.set(e.x, 0, e.z);
       g.rotation.y = e.rot || 0;
@@ -184,7 +186,7 @@ export class POIManager {
       // doors
       b.doors.forEach((d, i) => this.makeDoor(inst, { ...d, mat: resolve(d.mat) }, em, e, i));
       // pumps
-      for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst });
+      for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst, kind: p.kind || 'fuel' });
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
       for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });
@@ -224,6 +226,27 @@ export class POIManager {
     ];
     if (tokens) inst.pending = hooks;
     else for (const h of hooks) h();
+  }
+
+  // Junk out in the open set down onto the land where it lies (the place is built level; the
+  // ground round it is not): its vertices and boxes go up or down by the difference.
+  snapToGround(root, b, em) {
+    const gen = this.game.gen;
+    const o = this.game.origin;
+    const baseY = root.position.y;
+    const p = V(0, 0, 0);
+    for (const s of b.snaps) {
+      p.set(s.x, 0, s.z).applyMatrix4(em).applyMatrix4(root.matrixWorld);
+      const dy = gen.height(p.x + o.x, p.z + o.z) - baseY - s.y;
+      if (Math.abs(dy) < 0.005 || Math.abs(dy) > 2.5) continue;
+      for (const r of s.ranges) {
+        const acc = b.byMat.get(r.mat);
+        if (!acc) continue;
+        for (let i = r.start; i < r.end; i++) acc.p[i * 3 + 1] += dy;
+        acc.bs = null;
+      }
+      for (let i = s.c0; i < s.c1; i++) b.colliders[i].c[1] += dy;
+    }
   }
 
   // Where the land falls away under a building (the edge of its level pad, a slope, a bank), its

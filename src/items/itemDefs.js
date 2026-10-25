@@ -5,8 +5,8 @@ import { paintOf } from '../vehicle/paints.js';
 // Liquids are tracked in litres; food values are in need points (0-100 scale).
 
 export const ITEMS = {
-  jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
-  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
+  jerryCan: { name: 'Jerry can', model: ['jerryCan', 'red'], mass: 1.6, liquid: { type: 'fuel', cap: 20, density: 0.74 }, capped: true, bulky: true, hold: 'side', desc: 'Holds 20 l of fuel. Pour into the car filler.' },
+  jerryCanGreen: { name: 'Jerry can (water)', model: ['jerryCan', 'green'], mass: 1.6, liquid: { type: 'water', cap: 20, density: 1 }, capped: true, bulky: true, hold: 'side', desc: '20 l of water. Drinkable; keep it for the long dry stretches.' },
   waterBottle: { name: 'Water bottle', model: ['waterBottle'], mass: 0.05, liquid: { type: 'water', cap: 1.5, density: 1 }, drinkable: true, clear: true, hold: 'hand', desc: 'Drink to quench thirst.' },
   waterJug: { name: 'Water jug', model: ['waterJug'], mass: 0.2, liquid: { type: 'water', cap: 5, density: 1 }, drinkable: true, clear: true, bulky: true, hold: 'side', desc: '5 l of water. Drinkable.' },
   sodaCan: { name: 'Soda', model: ['sodaCan'], mass: 0.36, consume: { water: 22, food: 6, energy: 4 }, hold: 'hand', desc: 'Sugary, fizzy, warm.', variants: 3 },
@@ -66,6 +66,34 @@ export const ITEMS = {
   thermos: { name: 'Thermos of coffee', model: ['thermos'], mass: 1.1, consume: { water: 14, energy: 14, warmth: 22 }, charges: 3, hold: 'hand', desc: 'Hot coffee. Warms you up on a cold night.' },
   blanket: { name: 'Wool blanket', model: ['blanket'], mass: 1.4, wrap: 34, hold: 'side', desc: 'Wrap up in it when the night gets cold. Sleeping with one keeps you warm.' },
   tent: { name: 'Tent', model: ['tentBag'], mass: 4.6, tent: true, bulky: true, hold: 'side', variants: 4, desc: 'A canvas ridge tent in its bag. Pitch it on open, level ground (LMB), crawl in out of the wind and rain and sleep the night through. Hold R on it to pack it up again.' },
+  // decorations (as in The Long Drive: hung from the mirror, they swing with the car)
+  airFreshener: { name: 'Air freshener', model: ['airFreshener'], mass: 0.01, hang: true, variants: 7, hold: 'hand', desc: 'A cardboard pine for the mirror (B). It smells of nothing any more.' },
+  decoBeetle: { name: 'Beetle charm', model: ['decoBeetle'], mass: 0.02, hang: true, hold: 'hand', desc: 'A shiny blue beetle on a thread. Hang it on the mirror (B).' },
+  decoOctopus: { name: 'Octopus charm', model: ['decoOctopus'], mass: 0.03, hang: true, variants: 2, hold: 'hand', desc: 'A rubber octopus with big eyes. Hang it on the mirror (B).' },
+  juicePop: { name: 'Ice pop', model: ['juicePop'], mass: 0.04, hang: true, hold: 'hand', desc: 'A frozen juice tube, long since thawed. Hung on the mirror (B) it swings like the rest.' },
+  decoLog: { name: 'Little log', model: ['decoLog'], mass: 0.03, hang: true, variants: 3, hold: 'hand', desc: 'A sawn log on a string. Nobody knows why. Hang it on the mirror (B).' },
+  decoBat: { name: 'Bat charm', model: ['decoBat'], mass: 0.02, hang: true, hold: 'hand', desc: 'A little bat hanging by its feet, red eyes. Hang it on the mirror (B).' },
+  reflector: { name: 'Reflector', model: ['reflector'], mass: 0.05, hang: true, hold: 'hand', desc: "A round cat's eye on a chain. Catches the headlights. Hang it on the mirror (B)." },
+  fuzzyDice: { name: 'Fuzzy dice', model: ['fuzzyDice'], mass: 0.06, hang: true, variants: 4, hold: 'hand', desc: 'A pair of fluffy dice for the mirror (B). They swing in every bend.' },
+  bobbleDog: { name: 'Nodding dog', model: ['bobbleDog'], mass: 0.2, dash: true, bobble: 'nod', variants: 3, hold: 'hand', desc: 'Stick it on the dashboard (B): it nods at every bump.' },
+  hulaGirl: { name: 'Hula dancer', model: ['hulaGirl'], mass: 0.15, dash: true, bobble: 'sway', hold: 'hand', desc: 'Stick her on the dashboard (B): she sways through the bends.' },
+  rubberDuck: { name: 'Rubber duck', model: ['rubberDuck'], mass: 0.05, dash: true, hold: 'hand', desc: 'Squeaks no more. Looks good on a dashboard (B).' },
+  gardenGnome: { name: 'Garden gnome', model: ['gardenGnome'], mass: 2.5, hold: 'side', desc: "Somebody's pride and joy, once. He would ride well on a roof (B)." },
+  teddyBear: { name: 'Teddy bear', model: ['teddyBear'], mass: 0.4, dash: true, hold: 'hand', desc: 'Worn thin with hugging. He can keep you company on the dash or the seat.' },
+  mug: { name: 'Mug', model: ['mug'], mass: 0.3, dash: true, variants: 3, hold: 'hand', desc: 'A chipped enamel mug.' },
+  // instruments and gear (as in The Long Drive: a compass for the dash, a clock, a spirit level)
+  compass: { name: 'Compass', model: ['compass'], mass: 0.15, dash: true, instrument: 'compass', hold: 'hand', desc: 'The needle swings round to north, and its marks glow in the dark. Stick it on the dash (B).' },
+  clock: { name: 'Alarm clock', model: ['clock'], mass: 0.35, dash: true, instrument: 'clock', variants: 3, hold: 'hand', desc: 'Still ticking. Hold LMB to turn the knob on top and set it.' },
+  spiritLevel: { name: 'Spirit level', model: ['spiritLevel'], mass: 0.4, dash: true, instrument: 'level', hold: 'hand', desc: 'Set it on something, or stick it on the dash (B): the bubbles show which way it leans.' },
+  binoculars: { name: 'Binoculars', model: ['binoculars'], mass: 0.7, binoculars: true, hold: 'hand', desc: 'Hold LMB to look through them, the wheel to zoom in and out.' },
+  flashlight: { name: 'Flashlight', model: ['flashlight'], mass: 0.4, light: 'torch', battery: true, variants: 3, hold: 'hand', desc: 'LMB to switch it on. The batteries will not last for ever.' },
+  ball: { name: 'Ball', model: ['ball'], mass: 0.35, ball: true, variants: 4, hold: 'hand', desc: 'Very bouncy. Rolls away if you set it down on a slope.' },
+  dumbbell: { name: 'Dumbbell', model: ['dumbbell'], mass: 8, hold: 'side', desc: 'Eight kilos of cast iron. Ballast, if nothing else.' },
+  // things to wear (LMB puts it on; R held with empty hands takes it off)
+  sunglasses: { name: 'Sunglasses', model: ['sunglasses'], mass: 0.04, wear: 'eyes', variants: 3, hold: 'hand', desc: 'Less glare driving into a low sun. LMB to put them on, R held with empty hands to take them off.' },
+  hat: { name: 'Hat', model: ['hat'], mass: 0.15, wear: 'head', variants: 3, hold: 'hand', desc: 'Keeps the sun off your neck. LMB to put it on.' },
+  redCap: { name: 'Red cap', model: ['redCap'], mass: 0.08, wear: 'head', hold: 'hand', desc: 'A faded red baseball cap. LMB to put it on.' },
+  trafficCone: { name: 'Traffic cone', model: ['trafficCone'], mass: 1.2, wear: 'head', hold: 'side', desc: 'Warns drivers of road hazards. It also fits on a head (LMB).' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
@@ -79,6 +107,7 @@ export const LOOT = {
     ['bandage', 1],
   ],
   kitchen: [
+    ['mug', 0.8],
     ['thermos', 0.5],
     ['coffee', 1],
     ['sponge', 0.6],
@@ -101,6 +130,9 @@ export const LOOT = {
     ['cannedPeaches', 1],
   ],
   table: [
+    ['mug', 0.8],
+    ['bobbleDog', 0.2],
+    ['juicePop', 0.2],
     ['cd', 0.6],
     ['cigarettes', 1],
     ['coffee', 0.8],
@@ -111,6 +143,15 @@ export const LOOT = {
     ['ammo38', 0.4],
   ],
   small: [
+    ['sunglasses', 0.5],
+    ['compass', 0.35],
+    ['clock', 0.3],
+    ['airFreshener', 0.8],
+    ['fuzzyDice', 0.4],
+    ['decoBeetle', 0.2],
+    ['decoBat', 0.2],
+    ['reflector', 0.3],
+    ['rubberDuck', 0.3],
     ['painkillers', 2],
     ['bandage', 2],
     ['chocolate', 1],
@@ -118,6 +159,16 @@ export const LOOT = {
     ['revolver', 0.15],
   ],
   shelf: [
+    ['hat', 0.3],
+    ['redCap', 0.25],
+    ['clock', 0.4],
+    ['binoculars', 0.15],
+    ['flashlight', 0.4],
+    ['ball', 0.25],
+    ['decoOctopus', 0.2],
+    ['decoLog', 0.2],
+    ['hulaGirl', 0.15],
+    ['mug', 0.4],
     ['cd', 0.5],
     ['cannedBeans', 1],
     ['oilBottle', 1],
@@ -129,6 +180,10 @@ export const LOOT = {
     ['medkit', 1],
   ],
   bed: [
+    ['clock', 0.5],
+    ['flashlight', 0.3],
+    ['ball', 0.2],
+    ['teddyBear', 0.6],
     ['blanket', 1.5],
     ['cd', 0.3],
     ['ammo38', 0.6],
@@ -136,6 +191,9 @@ export const LOOT = {
     ['chocolate', 1],
   ],
   clothes: [
+    ['hat', 0.9],
+    ['redCap', 0.7],
+    ['sunglasses', 0.5],
     ['fishingRod', 0.3],
     ['blanket', 1.0],
     ['bandage', 1],
@@ -143,23 +201,40 @@ export const LOOT = {
     ['shotgun', 0.12],
   ],
   couch: [
+    ['ball', 0.3],
     ['cd', 0.7],
     ['chips', 1],
     ['sodaCan', 1],
   ],
   desk: [
+    ['sunglasses', 0.3],
+    ['compass', 0.3],
+    ['clock', 0.4],
+    ['flashlight', 0.3],
+    ['bobbleDog', 0.3],
+    ['hulaGirl', 0.2],
+    ['mug', 0.5],
     ['cd', 0.5],
     ['chocolate', 1],
     ['ammo38', 0.5],
     ['painkillers', 1],
   ],
   office: [
+    ['binoculars', 0.25],
+    ['clock', 0.4],
     ['cd', 0.3],
     ['ammo38', 1],
     ['revolver', 0.25],
     ['bandage', 1],
   ],
   storage: [
+    ['trafficCone', 0.4],
+    ['hat', 0.2],
+    ['spiritLevel', 0.5],
+    ['dumbbell', 0.35],
+    ['flashlight', 0.6],
+    ['ball', 0.3],
+    ['gardenGnome', 0.3],
     ['tent', 0.4],
     ['fishingRod', 0.6],
     ['campfireKit', 0.8],
@@ -179,6 +254,9 @@ export const LOOT = {
     ['cannedBeans', 1],
   ],
   tools: [
+    ['trafficCone', 0.5],
+    ['spiritLevel', 0.8],
+    ['flashlight', 0.9],
     ['jack', 0.7],
     ['carbKit', 0.25],
     ['part:exhaust:sport', 0.2],
@@ -205,6 +283,10 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['sunglasses', 0.5],
+    ['redCap', 0.3],
+    ['flashlight', 0.3],
+    ['compass', 0.2],
     ['tent', 0.25],
     ['fishingRod', 0.5],
     ['thermos', 0.6],
@@ -235,6 +317,10 @@ export const LOOT = {
     ['revolver', 0.2],
   ],
   crate: [
+    ['binoculars', 0.4],
+    ['compass', 0.6],
+    ['flashlight', 0.6],
+    ['dumbbell', 0.3],
     ['mre', 2],
     ['ammo12', 1.4],
     ['ammo38', 1.2],
@@ -243,6 +329,9 @@ export const LOOT = {
     ['waterJug', 1],
   ],
   tent: [
+    ['flashlight', 0.7],
+    ['compass', 0.4],
+    ['binoculars', 0.3],
     ['tent', 0.9],
     ['fishingRod', 0.8],
     ['campfireKit', 1.5],
@@ -253,6 +342,9 @@ export const LOOT = {
     ['jerky', 1],
   ],
   camp: [
+    ['hat', 0.4],
+    ['flashlight', 0.6],
+    ['binoculars', 0.3],
     ['tent', 0.7],
     ['fishingRod', 1.2],
     ['campfireKit', 2],
@@ -273,6 +365,9 @@ export const LOOT = {
     ['waterBottle', 1],
   ],
   gear: [
+    ['binoculars', 0.5],
+    ['compass', 0.6],
+    ['flashlight', 0.8],
     ['steelPlate', 0.9],
     ['steelSheet', 0.5],
     ['plywood', 0.8],
@@ -288,6 +383,14 @@ export const LOOT = {
     ['jerryCan', 0.5],
   ],
   wreck: [
+    ['sunglasses', 0.6],
+    ['redCap', 0.2],
+    ['compass', 0.3],
+    ['flashlight', 0.3],
+    ['airFreshener', 1.2],
+    ['fuzzyDice', 0.6],
+    ['reflector', 0.3],
+    ['bobbleDog', 0.2],
     ['steelPlate', 0.4],
     ['cd', 0.9],
     ['jerryCan', 1.2],
@@ -308,10 +411,15 @@ export function initialState(id, rnd) {
     const t = d.liquid.type;
     s.liquid = t === 'fuel' && id === 'jerryCan' ? Math.round(d.liquid.cap * (0.15 + rnd() * 0.85) * 10) / 10 : d.liquid.cap * (0.5 + rnd() * 0.5);
     s.liquidType = t;
+    // a can or a drum of fuel may hold diesel (it is never certain until you look in)
+    if (t === 'fuel' && (id === 'jerryCan' || id === 'drum') && rnd() < (id === 'drum' ? 0.35 : 0.25)) s.liquidType = 'diesel';
   }
   if (d.charges) s.charges = d.charges;
   if (d.weapon) s.loaded = Math.floor(rnd() * (d.weapon.mag + 1));
   if (d.variants) s.variant = Math.floor(rnd() * d.variants);
+  // a found clock shows some time or other; batteries are anywhere from flat to fresh
+  if (d.instrument === 'clock') s.offset = Math.floor(rnd() * 48) / 4;
+  if (d.battery) s.charge = Math.round((0.15 + rnd() * 0.85) * 100) / 100;
   return s;
 }
 
@@ -324,6 +432,9 @@ export function itemMass(id, state) {
 }
 
 // Name shown for a particular item (discs carry their album).
+// What a liquid is called on a label.
+export const LIQUID_NAMES = { fuel: 'petrol', diesel: 'diesel', water: 'water', oil: 'oil', coolant: 'coolant' };
+
 export function itemLabel(id, state = {}) {
   const d = ITEMS[id];
   if (!d) return id;

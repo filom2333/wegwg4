@@ -14,6 +14,17 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 let NEXT_ID = 1;
 
 const _up = new THREE.Vector3();
+const _d = new THREE.Vector3(),
+  _down = new THREE.Vector3(0, -1, 0),
+  _yAxis = new THREE.Vector3(0, 1, 0),
+  _qs = new THREE.Quaternion(),
+  _qi = new THREE.Quaternion(),
+  _wp = new THREE.Vector3(),
+  _ax = new THREE.Vector3(),
+  _perp = new THREE.Vector3();
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// the vials of a spirit level: axis, centre, how far the bubble can run, and how keenly it does
+const VIALS = { bubbleX: { a: V(1, 0, 0), c: V(0, 0, 0), run: 0.021, gain: 0.32, lift: 0.0035 }, bubbleY: { a: V(0, 1, 0), c: V(0.15, 0, 0), run: 0.0075, gain: 0.2, lift: 0.0035 } };
 
 export class Item {
   constructor(sys, { id, part = null, state = {}, mesh }) {
@@ -211,8 +222,10 @@ export class ItemSystem {
     const hx = Math.max(0.012, s.x / 2),
       hy = Math.max(0.012, s.y / 2),
       hz = Math.max(0.012, s.z / 2);
-    const cd = RAPIER.ColliderDesc.cuboid(hx, hy, hz).setMass(Math.max(0.05, it.mass)).setFriction(0.75).setRestitution(0.12).setCollisionGroups(GROUPS.item);
+    // a ball is round, light on its feet and bouncy
+    const cd = (it.def && it.def.ball ? RAPIER.ColliderDesc.ball(Math.max(hx, hy, hz)).setRestitution(0.72).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max).setFriction(0.6) : RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.75).setRestitution(0.12)).setMass(Math.max(0.05, it.mass)).setCollisionGroups(GROUPS.item);
     if (it.part) cd.setFriction(0.9);
+    if (it.def && it.def.ball) it.body.setAngularDamping(0.08);
     it.collider = ph.world.createCollider(cd, it.body);
     ph.setOwner(it.collider, it.ownerTag);
   }
@@ -248,8 +261,9 @@ export class ItemSystem {
       sc = V(0, 0, 0);
     local.decompose(p, q, sc);
     const s = it.size;
+    const bp = car.toBody(p);
     const cd = RAPIER.ColliderDesc.cuboid(Math.max(0.012, s.x / 2), Math.max(0.012, s.y / 2), Math.max(0.012, s.z / 2))
-      .setTranslation(p.x, p.y, p.z)
+      .setTranslation(bp.x, bp.y, bp.z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       .setDensity(0)
       .setCollisionGroups(GROUPS.item);
@@ -278,7 +292,8 @@ export class ItemSystem {
   // An item bolted to a part of a car (the roof, a door, a wing): it rides on the part, swings
   // with a door and comes off with it; a box on the car's body keeps it solid and in reach.
   // local: its matrix in the part pivot's space.
-  mount(it, car, part, local) {
+  // hang: a decoration on the mirror, hung from that point (part space) and left to swing.
+  mount(it, car, part, local, { hang = null } = {}) {
     const mp = car.model.parts[part];
     if (!mp) return false;
     this.removeBody(it);
@@ -286,6 +301,11 @@ export class ItemSystem {
     mp.pivot.add(it.mesh);
     local.decompose(it.mesh.position, it.mesh.quaternion, it.mesh.scale);
     it.mounted = { car, part, local: local.clone(), collider: null, rest: V(0, 0, 0), openT: -1 };
+    if (hang) {
+      const h = it.mesh.userData.hangTop || { x: 0, y: it.size.y / 2, z: 0 };
+      it.mounted.hang = { at: hang.clone(), top: V(h.x, h.y, h.z), tx: 0, tz: 0, vx: 0, vz: 0, spin: Math.random() * 6 };
+      this.swing(it, it.mounted.hang, V(0, -9.81, 0), 0);
+    }
     car.attached.push(it);
     this.mountCollider(it);
     car.owned = true;
@@ -308,8 +328,9 @@ export class ItemSystem {
     if (M.openT < 0) M.rest.copy(p);
     M.openT = car.model.parts[M.part].openT || 0;
     const s = it.size;
+    const bp = car.toBody(p);
     const cd = RAPIER.ColliderDesc.cuboid(Math.max(0.012, s.x / 2), Math.max(0.012, s.y / 2), Math.max(0.012, s.z / 2))
-      .setTranslation(p.x, p.y, p.z)
+      .setTranslation(bp.x, bp.y, bp.z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       .setDensity(0)
       .setCollisionGroups(GROUPS.item);
@@ -327,15 +348,71 @@ export class ItemSystem {
     M.car.updateMass();
   }
 
-  // Boxes of things bolted to a door or a lid follow it as it swings.
-  updateMounted() {
+  // Boxes of things bolted to a door or a lid follow it as it swings; what hangs from the mirror
+  // swings with the car's every lurch, and the toys on the dash nod and sway.
+  updateMounted(dt) {
     for (const c of (this.game.fleet && this.game.fleet.cars) || [this.game.car]) {
-      if (!c || !c.attached) continue;
+      if (!c || !c.attached || !c.attached.length) continue;
+      // what the car's occupants feel: gravity less the car's acceleration, in the car's frame
+      const v = c.dyn.body.linvel();
+      const pv = c._pv || (c._pv = V(v.x, v.y, v.z));
+      if (dt > 0) {
+        const a = V((v.x - pv.x) / dt, (v.y - pv.y) / dt, (v.z - pv.z) / dt);
+        c._acc = (c._acc || V(0, 0, 0)).lerp(a.clampLength(0, 60), Math.min(1, dt * 15));
+      }
+      pv.set(v.x, v.y, v.z);
+      const feel = V(0, -9.81, 0)
+        .sub(c._acc || V(0, 0, 0))
+        .applyQuaternion(c.root.quaternion.clone().invert());
       for (const it of c.attached) {
         const M = it.mounted;
-        if (M && Math.abs((c.model.parts[M.part].openT || 0) - M.openT) > 0.02) this.mountCollider(it);
+        if (!M) continue;
+        if (Math.abs((c.model.parts[M.part].openT || 0) - M.openT) > 0.02) this.mountCollider(it);
+        if (dt <= 0) continue;
+        if (M.hang) this.swing(it, M.hang, feel, dt);
+        else if (it.def && it.def.bobble) this.bobble(it, feel, dt);
       }
     }
+  }
+
+  // A pendulum from the mirror: it leans to where the felt gravity points and swings about it.
+  swing(it, H, feel, dt) {
+    const up = Math.max(1, -feel.y);
+    const ex = THREE.MathUtils.clamp(feel.x / up, -1.5, 1.5),
+      ez = THREE.MathUtils.clamp(feel.z / up, -1.5, 1.5);
+    const L = Math.max(0.04, H.top.length());
+    const k = 9.81 / L,
+      c = 2.2;
+    for (let s = 0, n = Math.ceil(dt / 0.008); s < n; s++) {
+      const h = dt / n;
+      H.vx += (k * (ex - H.tx) - c * H.vx) * h;
+      H.vz += (k * (ez - H.tz) - c * H.vz) * h;
+      H.tx += H.vx * h;
+      H.tz += H.vz * h;
+    }
+    H.spin += dt * (H.vx * 0.6 - H.vz * 0.4);
+    const d = _d.set(H.tx, -1, H.tz).normalize();
+    const q = it.mesh.quaternion.setFromUnitVectors(_down, d).multiply(_qs.setFromAxisAngle(_yAxis, Math.sin(H.spin) * 0.6));
+    it.mesh.position.copy(H.at).sub(_d.copy(H.top).applyQuaternion(q).multiplyScalar(it.mesh.scale.x));
+  }
+
+  // A toy on a spring (its 'bob' part): nods with the bumps and braking, sways in the bends.
+  bobble(it, feel, dt) {
+    const bob = it.bob || (it.bob = it.mesh.getObjectByName('bob'));
+    if (!bob) return;
+    const B = it.bobS || (it.bobS = { x: 0, z: 0, vx: 0, vz: 0, fy: -9.81 });
+    const f = _d.copy(feel).applyQuaternion(_qs.copy(it.mesh.quaternion).invert());
+    const up = Math.max(1, -f.y);
+    // a jolt up or down sets it going; the spring and the felt lean set where it settles
+    const jolt = (f.y - B.fy) * 0.9;
+    B.fy = f.y;
+    const k = it.def.bobble === 'nod' ? 70 : 45,
+      c = 1.6;
+    B.vx += (k * (-f.z / up) * 0.5 - k * B.x - c * B.vx) * dt + jolt * (it.def.bobble === 'nod' ? 1 : 0.4);
+    B.vz += (k * (f.x / up) * 0.6 - k * B.z - c * B.vz) * dt + jolt * 0.2 * Math.sign(B.vz || 1);
+    B.x = THREE.MathUtils.clamp(B.x + B.vx * dt, -0.7, 0.7);
+    B.z = THREE.MathUtils.clamp(B.z + B.vz * dt, -0.7, 0.7);
+    bob.rotation.set(B.x, 0, B.z);
   }
 
   // ------------------------------------------------------------------ holding
@@ -350,6 +427,26 @@ export class ItemSystem {
       this.game.stats.itemsLooted++;
       it.poiKey = null;
     }
+  }
+
+  // Put on (a hat, sunglasses): no body; the mesh rides on the player's head (player.syncWorn).
+  wear(it, slot) {
+    if (it.stowed) this.unstow(it, false);
+    if (it.mounted) this.unmount(it, false);
+    this.removeBody(it);
+    it.held = false;
+    it.worn = slot;
+    it.wornOn = null;
+    it.mesh.visible = false;
+  }
+
+  // Taken off again: back among the loose things (the caller takes it into the hand).
+  unwear(it) {
+    it.worn = null;
+    it.wornOn = null;
+    this.group.attach(it.mesh);
+    it.mesh.scale.setScalar(1);
+    it.mesh.visible = true;
   }
 
   release(it, pos, quat, vel = null) {
@@ -471,7 +568,7 @@ export class ItemSystem {
     inst.root.getWorldPosition(center);
     const o = this.game.origin;
     for (const it of [...this.items]) {
-      if (it.held || it.stowed) continue;
+      if (it.held || it.stowed || it.mounted || it.worn) continue;
       const p = it.mesh.position;
       if (Math.hypot(p.x - center.x, p.z - center.z) > 60) continue;
       keep.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: it.mesh.quaternion.toArray(), spot: it.poiKey === key ? it.spot : null });
@@ -487,7 +584,8 @@ export class ItemSystem {
     const ph = this.game.physics;
     if (dt > 0) this.updateCargo(dt);
     if (dt > 0) this.updateSpills(dt);
-    this.updateMounted();
+    this.updateMounted(dt);
+    if (dt > 0) this.updateInstruments(dt);
     for (const it of this.items) {
       if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -511,14 +609,101 @@ export class ItemSystem {
     void ph;
   }
 
+  // Things with working insides, near the eye: the compass needle swings round to north, the
+  // clock keeps the time (plus whatever it was set wrong by), the level's bubbles float to the
+  // high side; flashlights run their batteries down.
+  updateInstruments(dt) {
+    const g = this.game;
+    const eye = g.renderer && g.renderer.camera ? g.renderer.camera.position : null;
+    for (const it of this.items) {
+      const d = it.def;
+      if (!d) continue;
+      if (d.battery && it.state.on) {
+        it.state.charge = Math.max(0, (it.state.charge ?? 1) - dt / (60 * 30));
+        if (it.state.charge <= 0) {
+          it.state.on = false;
+          this.refreshVisual(it);
+        } else if (it.light) {
+          // weak batteries: dimmer and yellower, and the bulb flickers
+          const c = it.state.charge;
+          const k = Math.min(1, c / 0.2) * (c < 0.1 && Math.random() < 0.15 ? 0.3 : 1);
+          it.light.intensity = 22 * k;
+          const glow = it.mesh.getObjectByName('glow');
+          if (glow) glow.material.emissiveIntensity = 2.5 * k;
+          // in the hand it lights where you look, a little below the middle of the view
+          if (it.held && g.renderer && g.renderer.camera) {
+            const cam = g.renderer.camera;
+            _ax.set(0, -0.06, -1).applyQuaternion(cam.quaternion).multiplyScalar(8).add(cam.position);
+            it.mesh.updateWorldMatrix(true, false);
+            it.light.target.position.copy(it.mesh.worldToLocal(_ax));
+          } else if (it.mesh.userData.beam) it.light.target.position.copy(it.mesh.userData.lens || V(0, 0, 0)).addScaledVector(it.mesh.userData.beam, 4);
+        }
+      }
+      if (!d.instrument || !eye) continue;
+      it.mesh.getWorldPosition(_wp);
+      if (_wp.distanceToSquared(eye) > 144) continue;
+      it.mesh.getWorldQuaternion(_qi).invert();
+      if (d.instrument === 'compass') {
+        const n = it.mesh.getObjectByName('needle');
+        if (!n) continue;
+        // north (+z) in the compass's own frame; edge-on, the needle just hangs where it is
+        _ax.set(0, 0, 1).applyQuaternion(_qi);
+        const st = (it.needle = it.needle || { a: Math.random() * 6.28, v: 0 });
+        if (_ax.x * _ax.x + _ax.z * _ax.z > 0.04) {
+          const want = Math.atan2(_ax.x, _ax.z);
+          st.v += (wrapPi(want - st.a) * 40 - st.v * 3.2) * Math.min(dt, 0.05);
+        } else st.v *= 1 - Math.min(1, dt * 2);
+        st.a = wrapPi(st.a + st.v * Math.min(dt, 0.05));
+        n.rotation.y = st.a;
+      } else if (d.instrument === 'clock') {
+        const h = ((((g.env ? g.env.time : 12) + (it.state.offset || 0)) % 12) + 12) % 12;
+        const hh = it.mesh.getObjectByName('hourHand'),
+          mh = it.mesh.getObjectByName('minHand');
+        if (hh) hh.rotation.z = -(h / 12) * Math.PI * 2;
+        if (mh) mh.rotation.z = -(h % 1) * Math.PI * 2;
+      } else if (d.instrument === 'level') {
+        // world up in the level's frame
+        _up.set(0, 1, 0).applyQuaternion(_qi);
+        for (const [name, v] of Object.entries(VIALS)) {
+          const b = it.mesh.getObjectByName(name);
+          if (!b) continue;
+          const t = _up.dot(v.a);
+          const along = Math.max(-v.run, Math.min(v.run, t * (v.run / v.gain) * 4.5));
+          _perp.copy(_up).addScaledVector(v.a, -t);
+          if (_perp.lengthSq() > 0.01) _perp.normalize().multiplyScalar(v.lift);
+          else _perp.set(0, 0, 0);
+          // (the model was centred after it was built: the vials moved with it)
+          if (!b.userData.shift) {
+            const o = b.userData.orig || [0, 0, 0];
+            b.userData.shift = [b.position.x - o[0], b.position.y - o[1], b.position.z - o[2]];
+          }
+          const o = b.userData.shift;
+          const tx = v.c.x + v.a.x * along + _perp.x,
+            ty = v.c.y + v.a.y * along + _perp.y,
+            tz = v.c.z + v.a.z * along + _perp.z;
+          const k = Math.min(1, dt * 7);
+          b.position.x += (tx + o[0] - b.position.x) * k;
+          b.position.y += (ty + o[1] - b.position.y) * k;
+          b.position.z += (tz + o[2] - b.position.z) * k;
+        }
+      }
+    }
+  }
+
   // An open container lying on its side or upside down runs out.
   updateSpills(dt) {
     for (const it of this.items) {
-      if (it.held || it.stowed || it.mounted || !it.def || !it.def.liquid || it.def.light || !it.state.capOff || !(it.state.liquid > 0)) continue;
+      if (it.held || it.stowed || it.mounted || !it.def || !it.def.capped || !it.state.capOff || !(it.state.liquid > 0)) continue;
       const up = _up.set(0, 1, 0).applyQuaternion(it.mesh.quaternion).y;
       if (up > 0.3) continue;
-      it.state.liquid = Math.max(0, it.state.liquid - dt * (0.12 + 0.3 * (0.3 - up)));
+      // glugging out of the open neck: faster the further over it is
+      it.state.liquid = Math.max(0, it.state.liquid - dt * (0.3 + 0.8 * (0.3 - up)));
       this.refreshVisual(it);
+      it.glug = (it.glug || 0) - dt;
+      if (it.glug <= 0) {
+        it.glug = 0.7 + Math.random() * 0.3;
+        this.game.audio && this.game.audio.play('pour', { at: it.mesh.position, volume: 0.35 });
+      }
     }
   }
 
@@ -631,7 +816,8 @@ export class ItemSystem {
       if (s.air || speed > 0.005 || s.spin) {
         it.mesh.position.copy(s.p);
         it.mesh.quaternion.copy(s.q);
-        s.collider.setTranslationWrtParent({ x: s.p.x, y: s.p.y, z: s.p.z });
+        const k = car.k || 1;
+        s.collider.setTranslationWrtParent({ x: s.p.x * k, y: s.p.y * k, z: s.p.z * k });
         s.collider.setRotationWrtParent({ x: s.q.x, y: s.q.y, z: s.q.z, w: s.q.w });
       }
     }
@@ -648,7 +834,7 @@ export class ItemSystem {
     if (it.def.liquid) {
       // the cap in place or off
       const cap = it.mesh.getObjectByName('cap');
-      if (cap && !it.def.light) cap.visible = !it.state.capOff;
+      if (cap && it.def.capped) cap.visible = !it.state.capOff;
       const fill = it.mesh.getObjectByName('fill');
       if (fill) {
         const f = Math.max(0.001, (it.state.liquid || 0) / it.def.liquid.cap);
@@ -656,7 +842,24 @@ export class ItemSystem {
         fill.visible = f > 0.01;
       }
     }
-    if (it.def.light) {
+    if (it.def.light === 'torch') {
+      // a flashlight throws a beam from its lens (along userData.beam)
+      const glow = it.mesh.getObjectByName('glow');
+      if (glow) glow.material.emissiveIntensity = it.state.on ? 2.5 : 0;
+      if (it.state.on && !it.light) {
+        const lens = it.mesh.userData.lens || V(0, 0, 0);
+        const beam = it.mesh.userData.beam || V(1, 0, 0);
+        it.light = new THREE.SpotLight(0xfff0d6, 22, 26, 0.36, 0.55, 1.6);
+        it.light.position.copy(lens);
+        it.light.target.position.copy(lens).addScaledVector(beam, 4);
+        it.mesh.add(it.light, it.light.target);
+        this.game.lights.add(it.light);
+      } else if (!it.state.on && it.light) {
+        it.mesh.remove(it.light, it.light.target);
+        this.game.lights.remove(it.light);
+        it.light = null;
+      }
+    } else if (it.def.light) {
       const glow = it.mesh.getObjectByName('glow');
       if (glow) glow.material.emissiveIntensity = it.state.on ? 3 : 0;
       if (it.state.on && !it.light) {
@@ -675,7 +878,7 @@ export class ItemSystem {
   rebase(dx, dz) {
     // bodies were shifted with all others; meshes of resting items follow their (sleeping) bodies
     for (const it of this.items) {
-      if (it.held || it.stowed || it.mounted) continue;
+      if (it.held || it.stowed || it.mounted || it.worn) continue;
       it.mesh.position.x -= dx;
       it.mesh.position.z -= dz;
     }
@@ -686,12 +889,13 @@ export class ItemSystem {
     const o = this.game.origin;
     const out = [];
     for (const it of this.items) {
-      if (it.held) continue;
+      // (held and worn things are saved with the player)
+      if (it.held || it.worn) continue;
       const p = new THREE.Vector3();
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);
       it.mesh.getWorldQuaternion(q);
-      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, mounted: it.mounted ? { car: it.mounted.car.id || true, part: it.mounted.part, m: it.mounted.local.toArray() } : null, poi: it.poiKey, spot: it.spot });
+      out.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: q.toArray(), stowed: it.stowed ? it.stowed.car.id || true : false, mounted: it.mounted ? { car: it.mounted.car.id || true, part: it.mounted.part, m: it.mounted.local.toArray(), hang: it.mounted.hang ? it.mounted.hang.at.toArray() : null } : null, poi: it.poiKey, spot: it.spot });
     }
     return out;
   }

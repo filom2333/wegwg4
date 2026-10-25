@@ -247,7 +247,9 @@ export function placeProp(game, inst, prop) {
         const h = hash01(inst.k, Math.round(p.pos[0] * 10), Math.round(p.pos[2] * 10), 77);
         st.drums[key] = h < 0.55 ? 0 : Math.round(4 + ((h - 0.55) / 0.45) * 36);
       }
-      inst.pumps.push({ local: new THREE.Vector3(p.pos[0], p.pos[1] + size.y + 0.04, p.pos[2]), inst, drum: key });
+      // some drums held diesel
+      const kind = hash01(inst.k, Math.round(p.pos[0] * 10), Math.round(p.pos[2] * 10), 78) < 0.35 ? 'diesel' : 'fuel';
+      inst.pumps.push({ local: new THREE.Vector3(p.pos[0], p.pos[1] + size.y + 0.04, p.pos[2]), inst, drum: key, kind });
     }
     // lamp posts light up with the place's other lights
     if (spec.light && inst.lights.length < 4) {

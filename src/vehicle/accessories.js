@@ -256,7 +256,8 @@ export function fitAccessory(car, id, { storage = null } = {}) {
   const box = new THREE.Box3().setFromObject(group);
   car.root.add(group);
   const [c, h] = group.userData.box;
-  const desc = RAPIER.ColliderDesc.cuboid(h.x, h.y, h.z).setTranslation(c.x, c.y, c.z).setDensity(0).setFriction(0.6).setRestitution(0.05).setCollisionGroups(GROUPS.car);
+  const k = car.k || 1;
+  const desc = RAPIER.ColliderDesc.cuboid(h.x * k, h.y * k, h.z * k).setTranslation(c.x * k, c.y * k, c.z * k).setDensity(0).setFriction(0.6).setRestitution(0.05).setCollisionGroups(GROUPS.car);
   const collider = car.game.physics.world.createCollider(desc, car.dyn.body);
   car.game.physics.setOwner(collider, car.ownerTag);
   car.accessories[def.mount] = { id, group, collider, box, center: c.clone() };

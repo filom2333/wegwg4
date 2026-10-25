@@ -184,7 +184,8 @@ export class Player {
   // ------------------------------------------------------------------ update
   update(dt) {
     if (this.dead) return;
-    const sens = 0.0022 * settings.data.sensitivity;
+    // (slower through binoculars, so the view moves as much on screen as without)
+    const sens = 0.0022 * settings.data.sensitivity * (this.game.binoFov ? this.game.binoFov() : 1);
     const inv = settings.data.invertY ? -1 : 1;
     const look = !this.game.ui || !this.game.ui.blocksLook;
     const rotating = this.game.interaction && this.game.interaction.rotating;
@@ -332,7 +333,7 @@ export class Player {
     // a moving car shoves people aside (never carries them on the bumper)
     const moving = carSpeed > 1;
     const out = px < pz || moving ? V((Math.sign(l.x) || 1) * (px + 0.02), 0, 0) : V(0, 0, Math.sign(l.z) * (pz + 0.02));
-    out.applyQuaternion(car.root.quaternion);
+    out.multiplyScalar(car.k || 1).applyQuaternion(car.root.quaternion);
     const np = { x: pos.x + out.x, y: pos.y, z: pos.z + out.z };
     if (this.isFree(np)) this.setPosition(np);
     // carried along with the car's velocity, knocked off the ground when hit fast
@@ -492,6 +493,38 @@ export class Player {
     this.headlamp.target.position.copy(cam.position).addScaledVector(this.lookDir, 10);
   }
 
+  // Things worn ride on the third-person body's head (in first person they are out of sight;
+  // sunglasses tint the view instead, see hud.setTint). Put on once per body: a hat's brim at the
+  // forehead over the middle of the skull, the lenses just in front of the eyes.
+  syncWorn(avatar) {
+    // the body's own hat comes off under anything worn on the head
+    if (avatar.ownHat === undefined) avatar.ownHat = avatar.root.getObjectByName('Wolf3D_Headwear') || null;
+    if (avatar.ownHat) avatar.ownHat.visible = !this.worn.head;
+    for (const slot of ['eyes', 'head']) {
+      const it = this.worn[slot];
+      if (!it || it.wornOn === avatar) continue;
+      const B = avatar.bones || {};
+      const head = B.head || avatar.root;
+      avatar.root.updateWorldMatrix(true, true);
+      const qr = avatar.root.getWorldQuaternion(new THREE.Quaternion());
+      const qri = qr.clone().invert();
+      const hw = head.getWorldPosition(new THREE.Vector3());
+      // the eyes in the body's own frame, from the head
+      const eye = B.eye ? B.eye.getWorldPosition(new THREE.Vector3()).sub(hw).applyQuaternion(qri) : new THREE.Vector3(0.03, head === avatar.root ? 1.62 : 0.09, 0.08);
+      eye.x = 0;
+      const s = it.size;
+      const at = slot === 'eyes' ? eye.clone().add(new THREE.Vector3(0, 0, 0.035 - s.z / 2 + 0.004)) : eye.clone().add(new THREE.Vector3(0, (it.id === 'redCap' ? 0.012 : 0.026) + s.y / 2, it.id === 'redCap' ? 0.0 : -0.045));
+      const corr = head.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(qr);
+      const k = head.getWorldScale(new THREE.Vector3()).x || 1;
+      head.add(it.mesh);
+      it.mesh.quaternion.copy(corr);
+      it.mesh.position.copy(at.applyQuaternion(corr)).divideScalar(k);
+      it.mesh.scale.setScalar(1 / k);
+      it.mesh.visible = true;
+      it.wornOn = avatar;
+    }
+  }
+
   // Rendered camera: first person = the eye; third person = orbit behind the body / car,
   // pulled in front of anything solid between it and the character.
   applyView(dt) {
@@ -504,6 +537,7 @@ export class Player {
     if (avatar) {
       avatar.root.visible = this.tpBlend > 0.05 || !!(g.remoteView);
       if (avatar.root.visible) avatar.sync(dt, this);
+      if (this.worn) this.syncWorn(avatar);
     }
     if (g.interaction) g.interaction.viewRoot.visible = this.tpBlend < 0.5 && !this.lying;
     if (this.tpBlend < 0.001) {

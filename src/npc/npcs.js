@@ -800,7 +800,7 @@ export class NPC {
       const px = hx - Math.abs(l.x),
         pz = hz - Math.abs(l.z);
       const out = px < pz ? new THREE.Vector3(Math.sign(l.x) * (px + 0.02), 0, 0) : new THREE.Vector3(0, 0, Math.sign(l.z) * (pz + 0.02));
-      out.applyQuaternion(car.root.quaternion);
+      out.multiplyScalar(car.k || 1).applyQuaternion(car.root.quaternion);
       this.pos.x += out.x;
       this.pos.z += out.z;
       return;

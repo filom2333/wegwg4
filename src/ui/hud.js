@@ -166,6 +166,39 @@ export class HUD {
     if (low !== G.low) G.row.classList.toggle('low', (G.low = low));
   }
 
+  // The colour of the lenses you look through (sunglasses), or null. It multiplies the picture
+  // under the HUD, so the glare of a low sun goes down with everything else.
+  setTint(css) {
+    if (!this.tintEl) {
+      this.tintEl = document.createElement('div');
+      this.tintEl.className = 'view-tint';
+      document.body.insertBefore(this.tintEl, this.root);
+    }
+    this.tintEl.style.background = css || 'transparent';
+    this.tintEl.style.display = css ? '' : 'none';
+  }
+
+  // The black round the two eyepieces of a pair of binoculars, k = how far they are raised.
+  setBino(k) {
+    if (!this.binoEl) {
+      if (!(k > 0)) return;
+      const ns = 'http://www.w3.org/2000/svg';
+      this.binoEl = document.createElementNS(ns, 'svg');
+      this.binoEl.setAttribute('class', 'hud-bino');
+      this.binoEl.setAttribute('viewBox', '0 0 1600 900');
+      this.binoEl.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+      this.binoEl.innerHTML = '<defs><filter id="binoBlur"><feGaussianBlur stdDeviation="14"/></filter><mask id="binoMask"><rect width="1600" height="900" fill="white"/><g filter="url(#binoBlur)" fill="black"><circle cx="640" cy="450" r="330"/><circle cx="960" cy="450" r="330"/></g></mask></defs><rect width="1600" height="900" fill="#050505" mask="url(#binoMask)"/>';
+      this.root.insertBefore(this.binoEl, this.root.firstChild);
+      this.binoK = -1;
+    }
+    if (Math.abs(k - this.binoK) < 0.01) return;
+    this.binoK = k;
+    this.binoEl.style.opacity = Math.min(1, k * 1.6).toFixed(2);
+    this.binoEl.style.display = k > 0.01 ? '' : 'none';
+    // everything but the keys for the binoculars goes while looking through them
+    this.root.classList.toggle('bino-on', k > 0.5);
+  }
+
   show(on) {
     this.visible = on;
     this.root.style.display = on ? '' : 'none';

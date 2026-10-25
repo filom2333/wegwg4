@@ -243,8 +243,9 @@ export class Renderer {
     this._ftAvg = this._ftAvg === undefined ? ms : this._ftAvg + (ms - this._ftAvg) * 0.05;
     this._slow = ms > 21 ? (this._slow || 0) + dt : Math.max(0, (this._slow || 0) - dt * 0.5);
     this._fast = this._ftAvg < 13.5 ? (this._fast || 0) + dt : 0;
-    if (this._slow > 1.0 && this.dynScale > 0.75) {
-      this.dynScale = Math.max(0.75, this.dynScale * 0.9);
+    // (down to 60 %: on a weak graphics chip a softer picture is better than a juddering one)
+    if (this._slow > 1.0 && this.dynScale > 0.6) {
+      this.dynScale = Math.max(0.6, this.dynScale * 0.9);
       this._slow = 0;
       this._fast = 0;
       this.applyPixelRatio();
@@ -274,8 +275,9 @@ export class Renderer {
     this.grade.uniforms.uRevZ.value = this.revZ ? 1 : 0;
     this.composer.addPass(new DepthCapturePass(this.grade.uniforms.tDepth));
     this.outline = new SelectionOutlinePass(this.camera);
-    this.outline.edgeStrength = 1.2;
-    this.outline.visibleEdgeColor.set(0xf2e6cf);
+    // (a faint hairline: it says what the hand would take, without shouting)
+    this.outline.edgeStrength = 0.7;
+    this.outline.visibleEdgeColor.set(0xe9dfcc);
     this.outline.enabled = false;
     this.composer.addPass(this.outline);
     // threshold well above sunlit diffuse surfaces (snow, salt and white sand are ~1.5 in the

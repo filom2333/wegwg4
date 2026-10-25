@@ -96,7 +96,7 @@ export class InventoryUI {
     const eye = g.interaction.cam.position;
     const list = [];
     for (const it of g.items.items) {
-      if (it.held || it.part || !it.def) continue;
+      if (it.held || it.worn || it.part || !it.def) continue;
       const d = it.mesh.getWorldPosition(V(0, 0, 0)).distanceTo(eye);
       if (d < NEARBY_R) list.push([d, it]);
     }

@@ -150,7 +150,7 @@ export class VehicleDynamics {
       vLong: 0,
       vLat: 0,
     }));
-    this.topY = this.p.restLength + this.p.wheelRadius - 0.098;
+    this.topY = this.p.restLength + this.p.wheelRadius - (this.p.topOffset ?? 0.098);
     // drivetrain state
     this.engine = { rpm: 0, running: false, omega: 0, load: 0, torqueOut: 0, stallTimer: 0 };
     this.gear = 1; // index into gears (0 = reverse, 1 = neutral)
