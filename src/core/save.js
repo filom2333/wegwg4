@@ -59,6 +59,9 @@ export function serializeGame(g) {
   const pp = p.position;
   const ia = g.interaction;
   const held = ia.held ? { id: ia.held.id, part: ia.held.part, state: ia.held.state } : null;
+  const worn = Object.values(p.worn || {})
+    .filter(Boolean)
+    .map((it) => ({ id: it.id, state: it.state }));
   return {
     v: 2,
     savedAt: Date.now(),
@@ -83,7 +86,7 @@ export function serializeGame(g) {
       seatCar: p.seat && p.car ? p.car.id : null,
       headlampOn: p.headlampOn,
     },
-    inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held },
+    inventory: { slots: g.inventory.serialize(), heldFrom: g.inventory.heldFrom, ammo: ia.ammo, held, worn },
     fleet: g.fleet.serialize(),
     trailers: g.trailers ? g.trailers.serialize() : [],
     tents: g.tents ? g.tents.serialize(o) : [],
@@ -152,6 +155,10 @@ export function applySave(g, d) {
     const it = inv.held.part ? g.items.spawnPart(inv.held.part, pos, new THREE.Quaternion(), inv.held.state) : g.items.spawn(inv.held.id, pos, new THREE.Quaternion(), inv.held.state);
     g.interaction.pick(it);
     g.inventory.heldFrom = inv.heldFrom ?? -1;
+  }
+  for (const w of inv.worn || []) {
+    const it = g.items.spawn(w.id, p.position.clone().add(new THREE.Vector3(0, 1.6, 0)), new THREE.Quaternion(), w.state);
+    if (it.def && it.def.wear) g.interaction.wear(it, { quiet: true });
   }
   if (d.player.seat) p.enterSeat(carById(d.player.seatCar ?? true), d.player.seat);
 }

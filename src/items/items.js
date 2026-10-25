@@ -429,6 +429,26 @@ export class ItemSystem {
     }
   }
 
+  // Put on (a hat, sunglasses): no body; the mesh rides on the player's head (player.syncWorn).
+  wear(it, slot) {
+    if (it.stowed) this.unstow(it, false);
+    if (it.mounted) this.unmount(it, false);
+    this.removeBody(it);
+    it.held = false;
+    it.worn = slot;
+    it.wornOn = null;
+    it.mesh.visible = false;
+  }
+
+  // Taken off again: back among the loose things (the caller takes it into the hand).
+  unwear(it) {
+    it.worn = null;
+    it.wornOn = null;
+    this.group.attach(it.mesh);
+    it.mesh.scale.setScalar(1);
+    it.mesh.visible = true;
+  }
+
   release(it, pos, quat, vel = null) {
     it.held = false;
     if (it.mesh.parent !== this.group) this.group.attach(it.mesh);
@@ -548,7 +568,7 @@ export class ItemSystem {
     inst.root.getWorldPosition(center);
     const o = this.game.origin;
     for (const it of [...this.items]) {
-      if (it.held || it.stowed) continue;
+      if (it.held || it.stowed || it.mounted || it.worn) continue;
       const p = it.mesh.position;
       if (Math.hypot(p.x - center.x, p.z - center.z) > 60) continue;
       keep.push({ id: it.id, part: it.part, state: it.state, pos: [p.x + o.x, p.y, p.z + o.z], quat: it.mesh.quaternion.toArray(), spot: it.poiKey === key ? it.spot : null });
@@ -858,7 +878,7 @@ export class ItemSystem {
   rebase(dx, dz) {
     // bodies were shifted with all others; meshes of resting items follow their (sleeping) bodies
     for (const it of this.items) {
-      if (it.held || it.stowed || it.mounted) continue;
+      if (it.held || it.stowed || it.mounted || it.worn) continue;
       it.mesh.position.x -= dx;
       it.mesh.position.z -= dz;
     }
@@ -869,7 +889,8 @@ export class ItemSystem {
     const o = this.game.origin;
     const out = [];
     for (const it of this.items) {
-      if (it.held) continue;
+      // (held and worn things are saved with the player)
+      if (it.held || it.worn) continue;
       const p = new THREE.Vector3();
       const q = new THREE.Quaternion();
       it.mesh.getWorldPosition(p);

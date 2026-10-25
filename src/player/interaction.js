@@ -7,6 +7,7 @@ import { GROUPS } from '../physics/physics.js';
 import { input } from '../core/input.js';
 import { settings } from '../core/settings.js';
 import { LIQUID_NAMES, ITEMS } from '../items/itemDefs.js';
+import { SHADE_TINTS } from '../items/itemModels.js';
 import { carType } from '../vehicle/types.js';
 import { paintOf } from '../vehicle/paints.js';
 import { fitMatrix } from '../vehicle/swap.js';
@@ -627,6 +628,16 @@ export class Interaction {
         prompts.push(...r.prompts);
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
+      // R held with nothing in the hands and nothing aimed at: take off what you wear
+      const worn = !t && this.wornNext();
+      if (worn) {
+        prompts.push(['R', `Take off (hold): ${worn.name}`]);
+        this.takeOffT = !blocked && input.isDown('reload') ? (this.takeOffT || 0) + dt : 0;
+        if (this.takeOffT > 0.35) {
+          this.takeOffT = 0;
+          this.takeOff(worn);
+        }
+      }
       if (this.fists && !p.seat) {
         if (!t) prompts.push(['LMB', 'Punch'], ['1', 'Lower your fists']);
         else if (!prompts.some((x) => x[0] === 'LMB')) prompts.push(['LMB', 'Punch']);
@@ -912,6 +923,7 @@ export class Interaction {
     if (def.light) out.push(def.battery && (it.state.charge ?? 1) <= 0.005 ? ['', 'The batteries are flat'] : ['LMB', it.state.on ? 'Switch off' : 'Switch on']);
     if (def.binoculars) out.push(this.binoZoom > 0.5 ? ['Wheel', `Zoom ×${this.binoMag || 4}`] : ['LMB', 'Look through them (hold)']);
     if (def.instrument === 'clock') out.push(['LMB', 'Turn the knob to set it (hold)']);
+    if (def.wear) out.push(['LMB', def.wear === 'eyes' ? 'Put them on' : 'Put it on']);
     if (def.liquid) {
       if (capped(def)) out.push([capKey(), it.state.capOff ? 'Screw the cap on' : 'Unscrew the cap']);
       if (!capped(def) || it.state.capOff) {
@@ -2021,6 +2033,7 @@ export class Interaction {
       g.audio && g.audio.play('pocket');
       return;
     }
+    if (def.wear) return this.wear(it);
     if (def.light) {
       it.state.on = !it.state.on && (def.battery ? (it.state.charge ?? 1) > 0.005 : (it.state.liquid || 0) > 0.01);
       if (def.battery && !it.state.on && (it.state.charge ?? 1) <= 0.005) g.hud && g.hud.toast('The batteries are flat');
@@ -2084,6 +2097,49 @@ export class Interaction {
       return;
     }
     if (def.melee) this.melee(it);
+  }
+
+  // ------------------------------------------------------------------ things worn
+  // The one taken off first: the sunglasses, then the hat.
+  wornNext() {
+    const w = this.game.player.worn;
+    return w ? w.eyes || w.head || null : null;
+  }
+
+  // Put the held thing on; whatever was worn there before comes into the hand instead.
+  wear(it, { quiet = false } = {}) {
+    const g = this.game;
+    const p = g.player;
+    const slot = it.def.wear;
+    p.worn = p.worn || {};
+    const old = p.worn[slot];
+    if (this.held === it) {
+      this.held = null;
+      this.dragging = false;
+      p.carryMass = 0;
+    }
+    g.items.wear(it, slot);
+    p.worn[slot] = it;
+    if (old) this.takeOff(old);
+    this.refreshWorn();
+    if (!quiet) g.audio && g.audio.play('pocket');
+  }
+
+  takeOff(it) {
+    const g = this.game;
+    const w = g.player.worn || {};
+    for (const k in w) if (w[k] === it) w[k] = null;
+    g.items.unwear(it);
+    it.mesh.position.copy(this.cam.position).add(V(0, -0.3, 0));
+    if (!this.held) this.pick(it);
+    else g.items.release(it, it.mesh.position.clone(), it.mesh.quaternion.clone());
+    this.refreshWorn();
+  }
+
+  // Sunglasses on: the view through their lenses.
+  refreshWorn() {
+    const e = (this.game.player.worn || {}).eyes;
+    this.game.hud && this.game.hud.setTint && this.game.hud.setTint(e ? SHADE_TINTS[(e.state.variant || 0) % SHADE_TINTS.length] : null);
   }
 
   consumeHeld() {

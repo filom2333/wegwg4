@@ -157,7 +157,7 @@ export class Goals {
       bd = 45;
     const here = this.game.player.position;
     for (const it of this.game.items.items) {
-      if (it.held || !it.def || !test(it.def, it)) continue;
+      if (it.held || it.worn || !it.def || !test(it.def, it)) continue;
       const d = it.mesh.position.distanceTo(here);
       if (d < bd) {
         bd = d;

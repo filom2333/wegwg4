@@ -166,6 +166,18 @@ export class HUD {
     if (low !== G.low) G.row.classList.toggle('low', (G.low = low));
   }
 
+  // The colour of the lenses you look through (sunglasses), or null. It multiplies the picture
+  // under the HUD, so the glare of a low sun goes down with everything else.
+  setTint(css) {
+    if (!this.tintEl) {
+      this.tintEl = document.createElement('div');
+      this.tintEl.className = 'view-tint';
+      document.body.insertBefore(this.tintEl, this.root);
+    }
+    this.tintEl.style.background = css || 'transparent';
+    this.tintEl.style.display = css ? '' : 'none';
+  }
+
   // The black round the two eyepieces of a pair of binoculars, k = how far they are raised.
   setBino(k) {
     if (!this.binoEl) {

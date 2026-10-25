@@ -1802,8 +1802,118 @@ function dumbbell() {
   return centered(g);
 }
 
+// ------------------------------------------------------------------ things to wear
+// (front to +z, as the head they go on faces; a hat's origin is at its brim)
+const SHADES = [
+  { frame: 0x141414, lens: 0x1c2620, metal: 0 },
+  { frame: 0xc8a050, lens: 0x8a5a1a, metal: 1 },
+  { frame: 0xe8e4da, lens: 0x2a4a8a, metal: 0 },
+];
+function sunglasses(variant = 0) {
+  const g = new THREE.Group();
+  const S = SHADES[variant % SHADES.length];
+  const frame = decoMat(S.frame, { roughness: S.metal ? 0.3 : 0.4, metalness: S.metal });
+  const lens = cached('shadeLens' + variant, () => new THREE.MeshPhysicalMaterial({ color: S.lens, roughness: 0.05, metalness: variant === 2 ? 0.8 : 0.2, clearcoat: 1, transparent: true, opacity: 0.88 }));
+  for (const s of [-1, 1]) {
+    const x = s * 0.034;
+    g.add(mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.003, 28).rotateX(Math.PI / 2).scale(1.12, 0.86, 1).translate(x, 0, 0), lens, false));
+    g.add(mesh(new THREE.TorusGeometry(0.0255, S.metal ? 0.0012 : 0.0028, 6, 28).scale(1.12, 0.86, 1).translate(x, 0, 0.001), frame, false));
+    // the arm, hinged at the outer corner and bent down behind the ear
+    g.add(mesh(new THREE.BoxGeometry(0.003, 0.005, 0.11).translate(s * 0.064, 0.008, -0.055), frame, false));
+    g.add(mesh(new THREE.BoxGeometry(0.003, 0.005, 0.03).rotateX(-0.6).translate(s * 0.064, -0.002, -0.118), frame, false));
+  }
+  g.add(mesh(new THREE.TorusGeometry(0.008, S.metal ? 0.0012 : 0.0022, 6, 12, Math.PI).translate(0, 0.004, 0.001), frame, false));
+  return centered(g);
+}
+
+const HATS = [
+  { col: 0x6a4a2e, kind: 'cowboy' },
+  { col: 0xa89a72, kind: 'bucket' },
+  { col: 0xd8c08a, kind: 'straw' },
+];
+function hat(variant = 0) {
+  const g = new THREE.Group();
+  const H = HATS[variant % HATS.length];
+  const felt = cached('hatMat' + variant, () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: H.col, roughness: 0.95, side: THREE.DoubleSide }), H.kind === 'straw' ? 'weave' : 'cast', 0.6));
+  const band = decoMat(H.kind === 'straw' ? 0x2a2a2a : 0x2a1c12, { roughness: 0.7 });
+  if (H.kind === 'cowboy') {
+    // the brim curls up at the sides; the crown is pinched in at the front
+    const brim = latheY([[0.07, 0.004], [0.12, 0.0], [0.17, 0.012], [0.175, 0.022]], 40);
+    const p = brim.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i),
+        z = p.getZ(i);
+      const side = Math.abs(x) / (Math.hypot(x, z) || 1);
+      p.setY(i, p.getY(i) + side * side * 0.035 * Math.min(1, Math.hypot(x, z) / 0.17));
+      p.setZ(i, z * 1.12);
+    }
+    brim.computeVertexNormals();
+    g.add(mesh(brim, felt));
+    const crown = latheY([[0.074, 0.0], [0.075, 0.06], [0.068, 0.11], [0.04, 0.125], [0, 0.118]], 32);
+    const c = crown.attributes.position;
+    for (let i = 0; i < c.count; i++) {
+      const y = c.getY(i),
+        x = c.getX(i);
+      c.setZ(i, c.getZ(i) * 1.15);
+      // the crease along the top
+      if (y > 0.09) c.setY(i, y - 0.018 * Math.exp(-(x * x) / 0.0006));
+    }
+    crown.computeVertexNormals();
+    g.add(mesh(crown, felt));
+    g.add(mesh(new THREE.CylinderGeometry(0.0755, 0.0758, 0.016, 32, 1, true).scale(1, 1, 1.15).translate(0, 0.014, 0), band));
+  } else if (H.kind === 'bucket') {
+    g.add(mesh(latheY([[0.08, 0.02], [0.105, 0.0], [0.125, -0.022]], 32), felt));
+    g.add(mesh(latheY([[0.08, 0.02], [0.082, 0.07], [0.072, 0.092], [0, 0.096]], 32), felt));
+    for (let k = 0; k < 4; k++) g.add(mesh(new THREE.TorusGeometry(0.104 + k * 0.006, 0.0007, 3, 40).rotateX(Math.PI / 2).translate(0, 0.0 - k * 0.0055, 0), decoMat(0x8a7c58), false));
+  } else {
+    g.add(mesh(latheY([[0.075, 0.006], [0.14, 0.0], [0.2, -0.018], [0.205, -0.016]], 40), felt));
+    g.add(mesh(latheY([[0.076, 0.004], [0.078, 0.07], [0.07, 0.09], [0, 0.092]], 32), felt));
+    g.add(mesh(new THREE.CylinderGeometry(0.0785, 0.078, 0.022, 32, 1, true).translate(0, 0.016, 0), decoMat(0x8a2a1c, { roughness: 0.7 })));
+  }
+  // (drawn small: grown to fit a real head, 57 cm round the crown)
+  for (const c of g.children) c.geometry.scale(1.26, 1.2, H.kind === 'cowboy' ? 1.26 : 1.4);
+  return centered(g);
+}
+
+// A baseball cap: six-panel crown, the peak out front, a button on top.
+function redCap() {
+  const g = new THREE.Group();
+  const cloth = cached('capCloth', () => addSurfaceDetail(new THREE.MeshStandardMaterial({ color: 0xa8231b, roughness: 0.9, side: THREE.DoubleSide }), 'weave', 0.5));
+  g.add(mesh(new THREE.SphereGeometry(0.092, 32, 14, 0, Math.PI * 2, 0, Math.PI / 1.85).scale(1.02, 0.9, 1.22).translate(0, 0.008, -0.008), cloth));
+  const peak = new THREE.Shape();
+  peak.moveTo(-0.08, 0);
+  peak.quadraticCurveTo(0, 0.17, 0.08, 0);
+  peak.lineTo(-0.08, 0);
+  const pg = new THREE.ExtrudeGeometry(peak, { depth: 0.005, bevelEnabled: false, curveSegments: 16 }).rotateX(Math.PI / 2);
+  const pp = pg.attributes.position;
+  for (let i = 0; i < pp.count; i++) pp.setY(i, pp.getY(i) - 0.014 * (pp.getX(i) / 0.08) ** 2 - pp.getZ(i) * 0.22);
+  pg.computeVertexNormals();
+  g.add(mesh(pg.translate(0, 0.004, 0.085), cloth));
+  g.add(mesh(new THREE.SphereGeometry(0.008, 10, 6).scale(1, 0.5, 1).translate(0, 0.078, 0), cloth));
+  for (const c of g.children) c.geometry.scale(1.1, 1.1, 1.1);
+  return centered(g);
+}
+
+// A road cone with two reflective bands on a square rubber foot. It fits on a head.
+function trafficCone() {
+  const g = new THREE.Group();
+  const orange = decoMat(0xe0561a, { roughness: 0.55 });
+  const white = decoMat(0xeeeee6, { roughness: 0.3, emissive: 0x222220 });
+  g.add(mesh(roundedBox(0.34, 0.03, 0.34, 0.012, 2).translate(0, 0.015, 0), decoMat(0x1a1a1a, { roughness: 0.9 })));
+  const R = (y) => 0.135 - (y / 0.5) * 0.105;
+  g.add(mesh(latheY([[R(0.03), 0.03], [R(0.48), 0.48], [0.022, 0.5], [0, 0.5]], 28), orange));
+  for (const [y0, y1] of [[0.22, 0.29], [0.34, 0.39]]) g.add(mesh(new THREE.CylinderGeometry(R(y1) + 0.002, R(y0) + 0.002, y1 - y0, 28, 1, true).translate(0, (y0 + y1) / 2, 0), white));
+  return centered(g);
+}
+
 // ------------------------------------------------------------------ spare battery / wheel built from car parts by the caller
+export const SHADE_TINTS = ['rgba(70, 86, 70, 0.62)', 'rgba(196, 140, 70, 0.6)', 'rgba(80, 110, 170, 0.6)'];
+
 export const MODEL_BUILDERS = {
+  sunglasses,
+  hat,
+  redCap,
+  trafficCone,
   compass,
   clock,
   spiritLevel,

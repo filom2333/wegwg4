@@ -858,3 +858,10 @@ activity"; the key lives only in the scratchpad, never commit it). Everything el
   (`game.binoFov`, wheel = ×2..×10), hides hands and item, HUD draws the two-eyepiece mask
   (`hud.setBino`), look speed scales with it. A 'torch' hold anchor in grips.js points the
   flashlight ahead.
+- Things to wear (`def.wear` 'eyes' or 'head'): sunglasses (three lens tints), a cowboy, bucket
+  or straw hat, a red cap, a traffic cone. LMB in the hand puts it on (`interaction.wear`,
+  `items.wear`: no body, the mesh goes onto the third-person body's head bone in
+  `player.syncWorn`, placed from the eye bone; the avatar's own `Wolf3D_Headwear` hides under a
+  head item). Sunglasses tint the first-person view (`hud.setTint`, a multiply layer under the
+  HUD, `SHADE_TINTS`). R held with empty hands and nothing aimed at takes off the glasses, then
+  the hat. Saved with the player (`inventory.worn` in save.js), never with the loose items.

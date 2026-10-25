@@ -89,6 +89,11 @@ export const ITEMS = {
   flashlight: { name: 'Flashlight', model: ['flashlight'], mass: 0.4, light: 'torch', battery: true, variants: 3, hold: 'hand', desc: 'LMB to switch it on. The batteries will not last for ever.' },
   ball: { name: 'Ball', model: ['ball'], mass: 0.35, ball: true, variants: 4, hold: 'hand', desc: 'Very bouncy. Rolls away if you set it down on a slope.' },
   dumbbell: { name: 'Dumbbell', model: ['dumbbell'], mass: 8, hold: 'side', desc: 'Eight kilos of cast iron. Ballast, if nothing else.' },
+  // things to wear (LMB puts it on; R held with empty hands takes it off)
+  sunglasses: { name: 'Sunglasses', model: ['sunglasses'], mass: 0.04, wear: 'eyes', variants: 3, hold: 'hand', desc: 'Less glare driving into a low sun. LMB to put them on, R held with empty hands to take them off.' },
+  hat: { name: 'Hat', model: ['hat'], mass: 0.15, wear: 'head', variants: 3, hold: 'hand', desc: 'Keeps the sun off your neck. LMB to put it on.' },
+  redCap: { name: 'Red cap', model: ['redCap'], mass: 0.08, wear: 'head', hold: 'hand', desc: 'A faded red baseball cap. LMB to put it on.' },
+  trafficCone: { name: 'Traffic cone', model: ['trafficCone'], mass: 1.2, wear: 'head', hold: 'side', desc: 'Warns drivers of road hazards. It also fits on a head (LMB).' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 
@@ -138,6 +143,7 @@ export const LOOT = {
     ['ammo38', 0.4],
   ],
   small: [
+    ['sunglasses', 0.5],
     ['compass', 0.35],
     ['clock', 0.3],
     ['airFreshener', 0.8],
@@ -153,6 +159,8 @@ export const LOOT = {
     ['revolver', 0.15],
   ],
   shelf: [
+    ['hat', 0.3],
+    ['redCap', 0.25],
     ['clock', 0.4],
     ['binoculars', 0.15],
     ['flashlight', 0.4],
@@ -183,6 +191,9 @@ export const LOOT = {
     ['chocolate', 1],
   ],
   clothes: [
+    ['hat', 0.9],
+    ['redCap', 0.7],
+    ['sunglasses', 0.5],
     ['fishingRod', 0.3],
     ['blanket', 1.0],
     ['bandage', 1],
@@ -196,6 +207,7 @@ export const LOOT = {
     ['sodaCan', 1],
   ],
   desk: [
+    ['sunglasses', 0.3],
     ['compass', 0.3],
     ['clock', 0.4],
     ['flashlight', 0.3],
@@ -216,6 +228,8 @@ export const LOOT = {
     ['bandage', 1],
   ],
   storage: [
+    ['trafficCone', 0.4],
+    ['hat', 0.2],
     ['spiritLevel', 0.5],
     ['dumbbell', 0.35],
     ['flashlight', 0.6],
@@ -240,6 +254,7 @@ export const LOOT = {
     ['cannedBeans', 1],
   ],
   tools: [
+    ['trafficCone', 0.5],
     ['spiritLevel', 0.8],
     ['flashlight', 0.9],
     ['jack', 0.7],
@@ -268,6 +283,8 @@ export const LOOT = {
     ['lantern', 0.8],
   ],
   shop: [
+    ['sunglasses', 0.5],
+    ['redCap', 0.3],
     ['flashlight', 0.3],
     ['compass', 0.2],
     ['tent', 0.25],
@@ -325,6 +342,7 @@ export const LOOT = {
     ['jerky', 1],
   ],
   camp: [
+    ['hat', 0.4],
     ['flashlight', 0.6],
     ['binoculars', 0.3],
     ['tent', 0.7],
@@ -365,6 +383,8 @@ export const LOOT = {
     ['jerryCan', 0.5],
   ],
   wreck: [
+    ['sunglasses', 0.6],
+    ['redCap', 0.2],
     ['compass', 0.3],
     ['flashlight', 0.3],
     ['airFreshener', 1.2],
