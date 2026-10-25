@@ -14,8 +14,10 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // ------------------------------------------------------------------ helpers
 function room(b, x0, z0, x1, z1, y, h, { ext, inner, floor, t = 0.22, openings = {}, trim, roof = 'flat', roofMat, pitch = 0.3, rnd = Math.random, broken = 0.4, ceiling = true, skip = [] }) {
   const M = archMaterials();
-  b.box((x0 + x1) / 2, y - 0.1, (z0 + z1) / 2, x1 - x0 + 0.2, 0.2, z1 - z0 + 0.2, M.concrete, { surface: 'concrete' });
-  b.box((x0 + x1) / 2, y + 0.005, (z0 + z1) / 2, x1 - x0 - t, 0.01, z1 - z0 - t, floor, { collide: false });
+  // (the slab stands a little proud of the walls' faces, the floor covering a little short of
+  // them: neither shares a plane with a wall)
+  b.box((x0 + x1) / 2, y - 0.1, (z0 + z1) / 2, x1 - x0 + t + 0.06, 0.2, z1 - z0 + t + 0.06, M.concrete, { surface: 'concrete' });
+  b.box((x0 + x1) / 2, y + 0.005, (z0 + z1) / 2, x1 - x0 - t - 0.006, 0.01, z1 - z0 - t - 0.006, floor, { collide: false });
   const walls = {
     front: [[x0, z1], [x1, z1]],
     back: [[x1, z0], [x0, z0]],
@@ -289,8 +291,8 @@ export function buildGasStation(rnd) {
   }
   // the forecourt (nothing on it that would stop a car) and the lot behind the shop
   const islands = [-1, 1].map((k) => [k * 3.6 - 0.9, cz - 3.3, k * 3.6 + 0.9, cz + 3.3]);
-  clutterArea(b, rnd, [-12, -1, 12, 11.5], 0.1, JUNK.lot, 8, [...islands, [sx0 - 0.3, sz0 - 0.3, sx1 + 0.3, sz1 + 0.3], [10, 8, 12, 10], [8.3, -7, 10.7, -5]]);
-  clutterArea(b, rnd, [sx0 - 3, sz0 - 4, sx1 + 3, sz0 - 0.6], 0, JUNK.garage, 6, [[8.3, -7, 10.7, -5], [-11.2, -8, -8, -5]]);
+  clutterArea(b, rnd, [-12, -1, 12, 11.5], 0.1, JUNK.lot, 8, [...islands, [sx0 - 0.3, sz0 - 0.3, sx1 + 0.3, sz1 + 0.3], [10, 8, 12, 10], [8.3, -7, 10.7, -5]], { ground: true });
+  clutterArea(b, rnd, [sx0 - 3, sz0 - 4, sx1 + 3, sz0 - 0.6], 0, JUNK.garage, 6, [[8.3, -7, 10.7, -5], [-11.2, -8, -8, -5]], { ground: true });
   b.fuelReserve = 60 + rnd() * 240; // litres left in the underground tanks
   return { builder: b, footprint: { w: 26, d: 20 } };
 }
@@ -333,8 +335,9 @@ export function buildMotel(rnd) {
     placeIt(b, FUR.nightstand(rnd), a + rw / 2 + 0.3 + 1.1, y, -rd / 2 + 0.35, 0);
     placeIt(b, FUR.tvStand(rnd), a + rw / 2 + 0.3, y, rd / 2 - 1.2, Math.PI);
     // bathroom partition at the back-left corner
-    b.wall([a + 1.6, -rd / 2 + 0.12], [a + 1.6, -rd / 2 + 2.0], y, 2.4, 0.1, { outMat: M.plaster, inMat: M.tiles, outSide: null });
-    b.wall([a + 0.12, -rd / 2 + 2.0], [a + 1.6, -rd / 2 + 2.0], y, 2.4, 0.1, { outMat: M.tiles, inMat: M.plaster, outSide: null, openings: [{ at: 0.8, w: 0.75, bottom: 0, top: 2.0, type: 'door' }] });
+    // (the two meet at the corner butted, not run into each other)
+    b.wall([a + 1.6, -rd / 2 + 0.12], [a + 1.6, -rd / 2 + 2.05], y, 2.4, 0.1, { outMat: M.plaster, inMat: M.tiles, outSide: null });
+    b.wall([a + 0.12, -rd / 2 + 2.0], [a + 1.55, -rd / 2 + 2.0], y, 2.4, 0.1, { outMat: M.tiles, inMat: M.plaster, outSide: null, openings: [{ at: 0.8, w: 0.75, bottom: 0, top: 2.0, type: 'door' }] });
     placeIt(b, FUR.toilet(rnd), a + 0.5, y, -rd / 2 + 0.5, 0);
     // room number plate
     signBoard(b, a + 1.6, y + 2.25, rd / 2 + 0.13, 0.32, 0.22, signMaterial([String(101 + i)], { w: 128, h: 96, bg: '#2a2a2a', fg: '#d9c9a0', border: null }));
@@ -433,7 +436,7 @@ export function buildDiner(rnd) {
   b.box(1.5, y + 3.5, z1 - 0.3, 0.1, 0.84, 0.1, M.metal, { collide: false });
   // parking lot
   b.box(0, 0.04, z1 + 5, 18, 0.08, 9, M.asphalt, { surface: 'asphalt' });
-  clutterArea(b, rnd, [-8.5, z1 + 0.8, 8.5, z1 + 9], 0.08, JUNK.lot, 5, []);
+  clutterArea(b, rnd, [-8.5, z1 + 0.8, 8.5, z1 + 9], 0.08, JUNK.lot, 5, [], { ground: true });
   return { builder: b, footprint: { w: 18, d: 18 } };
 }
 
@@ -651,8 +654,8 @@ export function buildTrailer(rnd) {
   placeIt(b, FUR.sofa(rnd, { seats: 2 }), L / 2 - 0.6, y, 0, -Math.PI / 2);
   placeIt(b, FUR.fridge(rnd), 3.2, y, -W / 2 + 0.42, 0);
   clutterArea(b, rnd, [-L / 2 + 0.25, -W / 2 + 0.25, L / 2 - 0.25, W / 2 - 0.25], y + 0.01, JUNK.motelRoom, 4, [...used(b), [-1.8, W / 2 - 1.0, -0.6, W / 2]]);
-  clutterArea(b, rnd, [-L / 2, W / 2 + 0.6, L / 2, W / 2 + 4], 0, JUNK.trailerYard, 5, [[-2.2, W / 2, -0.2, W / 2 + 1.6]]);
-  clutterArea(b, rnd, [-L / 2, -W / 2 - 3.5, L / 2, -W / 2 - 0.6], 0, JUNK.trailerYard, 3, []);
+  clutterArea(b, rnd, [-L / 2, W / 2 + 0.6, L / 2, W / 2 + 4], 0, JUNK.trailerYard, 5, [[-2.2, W / 2, -0.2, W / 2 + 1.6]], { ground: true });
+  clutterArea(b, rnd, [-L / 2, -W / 2 - 3.5, L / 2, -W / 2 - 0.6], 0, JUNK.trailerYard, 3, [], { ground: true });
   return { builder: b, footprint: { w: L + 1, d: W + 2 } };
 }
 

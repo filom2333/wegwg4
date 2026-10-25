@@ -1,6 +1,6 @@
 // Terrain tile mesher (pure, worker-safe). Vertices are relative to the tile origin.
 
-import { BIOMES, BIOME_INFO } from './worldGen.js';
+import { BIOMES, BIOME_INFO, ROAD } from './worldGen.js';
 import { treeCover } from './treeCover.js';
 
 export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
@@ -14,6 +14,26 @@ export function buildTerrainTile(gen, x0, z0, size, N, withSkirt = true) {
       const x = x0 + (i - 1) * step,
         z = z0 + (j - 1) * step;
       H[j * HW + i] = gen.height(x, z);
+    }
+  }
+  // The road lies on top at every distance: near it no vertex stands above the lowest road surface
+  // within a cell along it. (On a far, coarse tile the triangles across the road join points a
+  // cell apart: in a dip, or between the banks of a cutting, they would pass over the asphalt and
+  // the ground would show through it.) Coarse tiles also lower the points a cell beyond the
+  // shoulder, whose triangles reach over its edge.
+  const corridor = ROAD.halfWidth + ROAD.shoulder;
+  const reach = corridor + (step > 2 ? step : 0);
+  const ds = Math.max(1, step / 4);
+  for (let j = 0; j < HW; j++) {
+    const z = z0 + (j - 1) * step;
+    const rx = gen.roadX(z);
+    for (let i = 0; i < HW; i++) {
+      const x = x0 + (i - 1) * step;
+      if (Math.abs(x - rx) > reach) continue;
+      let lo = Infinity;
+      for (let s = -step; s <= step + 1e-6; s += ds) lo = Math.min(lo, gen.roadSurfaceY(gen.roadX(z + s), z + s));
+      const cap = lo - 0.03;
+      if (H[j * HW + i] > cap) H[j * HW + i] = cap;
     }
   }
   const vCount = W * W + (withSkirt ? 4 * W : 0);

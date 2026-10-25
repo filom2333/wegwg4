@@ -68,6 +68,23 @@ export function stepladder(rnd, pose = null) {
 
 // Boards dropped in a heap: some whole, some snapped off short with splintered ends, one end of a
 // board up on another.
+// Spots for a few things in a w x d patch that keep clear of each other: each gets its own
+// footprint radius (rad[i]); a spot is tried a few times, and one that never fits is left out.
+function spread(rnd, rad, w, d) {
+  const out = [];
+  for (const r of rad) {
+    for (let t = 0; t < 14; t++) {
+      const x = (rnd() - 0.5) * Math.max(0, w - 2 * r),
+        z = (rnd() - 0.5) * Math.max(0, d - 2 * r);
+      if (out.every((q) => Math.hypot(q.x - x, q.z - z) > q.r + r + 0.008)) {
+        out.push({ x, z, r });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export function planks(rnd) {
   const M = archMaterials();
   const it = new Item([2.0, 0.15, 1.4]);
@@ -83,8 +100,8 @@ export function planks(rnd) {
       for (let i = 0; i < p.count; i++) if (p.getZ(i) > 0) p.setZ(i, p.getZ(i) + (p.getX(i) > 0 ? 0.06 : -0.04) * rnd());
       g.computeVertexNormals();
     }
-    const tilt = k > 0 && rnd() < 0.35 ? 0.05 + rnd() * 0.08 : 0;
-    g.translate(0, t / 2, 0).rotateX(tilt).rotateY(rnd() * Math.PI).translate((rnd() - 0.5) * 0.8, tilt ? 0.02 : k * 0.0005, (rnd() - 0.5) * 0.5);
+    // a pile: each board across the ones before it, lying on them where they cross
+    g.translate(0, t / 2, 0).rotateY(rnd() * Math.PI).translate((rnd() - 0.5) * 0.3, k * (t + 0.001), (rnd() - 0.5) * 0.25);
     it.add(g, rnd() < 0.5 ? M.wood : M.woodDark);
   }
   return it;
@@ -135,6 +152,7 @@ export function fallenPlaster(rnd, ceilingY = 3.0) {
     const L = 0.2 + rnd() * 0.5;
     it.add(new THREE.BoxGeometry(0.035, 0.008, L).translate(0, 0, -L / 2).rotateX(-0.6 - rnd() * 0.7).translate(x, ceilingY - 0.01, 0.2), M.wood);
   }
+  it.flat = true;
   return it;
 }
 
@@ -208,13 +226,16 @@ export function bottles(rnd) {
   const M = archMaterials();
   const it = new Item([0.8, 0.3, 0.8]);
   const bottle = latheY([[0, 0], [0.032, 0], [0.034, 0.01], [0.034, 0.17], [0.026, 0.2], [0.013, 0.24], [0.013, 0.29], [0.015, 0.295], [0.0, 0.295]], 12);
-  for (let k = 0; k < 2 + Math.floor(rnd() * 5); k++) {
-    const x = (rnd() - 0.5) * 0.6,
-      z = (rnd() - 0.5) * 0.6;
-    if (rnd() < 0.55) {
+  const n = 2 + Math.floor(rnd() * 5);
+  // what each is: a bottle lying down, one standing, a can (crushed or dented)
+  const kinds = Array.from({ length: n }, () => (rnd() < 0.55 ? (rnd() < 0.7 ? 'lying' : 'standing') : 'can'));
+  const spots = spread(rnd, kinds.map((k) => (k === 'lying' ? 0.15 : k === 'standing' ? 0.04 : 0.065)), 0.8, 0.8);
+  for (let k = 0; k < spots.length; k++) {
+    const { x, z } = spots[k];
+    if (kinds[k] !== 'can') {
       const g = bottle.clone();
       const glass = rnd() < 0.5 ? M.bottleBrown : M.bottleGreen;
-      if (rnd() < 0.7) g.rotateZ(Math.PI / 2).rotateY(rnd() * 6.28).translate(x, 0.034, z);
+      if (kinds[k] === 'lying') g.translate(0, -0.1475, 0).rotateZ(Math.PI / 2).rotateY(rnd() * 6.28).translate(x, 0.034, z);
       else g.translate(x, 0, z);
       it.add(g, glass);
     } else {
@@ -314,6 +335,7 @@ export function glassShards(rnd) {
     if (g.attributes.normal.getY(0) < 0) g.scale(1, 1, -1);
     it.add(g.rotateY(rnd() * 6.28).translate((rnd() - 0.5) * 0.9, 0.008 + rnd() * 0.004, (rnd() - 0.5) * 0.7), M.glass);
   }
+  it.flat = true;
   return it;
 }
 
@@ -412,6 +434,7 @@ export function floorGrime(rnd, w = 2.5, d = 2.5) {
     const g = new THREE.CircleGeometry(s2, 4).scale(1, 0.55, 1).rotateX(-Math.PI / 2).rotateY(rnd() * 6);
     it.add(g.translate((rnd() - 0.5) * w, 0.016, (rnd() - 0.5) * d), rnd() < 0.6 ? M.tumbleweed : M.rubble);
   }
+  it.flat = true;
   return it;
 }
 
@@ -530,6 +553,7 @@ const ROOM_JUNK = {
 function papers0(rnd) {
   const it = new Item([1.0, 0.02, 0.8]);
   papers(it, rnd, 3 + Math.floor(rnd() * 8), 0, 0, 0, 0.8);
+  it.flat = true;
   return it;
 }
 
@@ -655,7 +679,9 @@ export function clutterYard(b, plan, rnd, { amount = 1 } = {}) {
     const half = Math.max(item.size[0], item.size[2]) / 2 + 0.1;
     if (placed.some(([px, pz, ph]) => Math.abs(px - x) < ph + half && Math.abs(pz - z) < ph + half)) continue;
     placed.push([x, z, half]);
+    b.snapStart(x, z, 0);
     place(b, item, x, 0, z, rot);
+    b.snapEnd();
   }
 }
 
@@ -679,6 +705,7 @@ export function oilStain(rnd) {
     pts.push([Math.cos(a) * R * (0.6 + rnd() * 0.5), Math.sin(a) * R * (0.6 + rnd() * 0.5)]);
   }
   it.add(new THREE.ShapeGeometry(shapeFromPoints(pts)).rotateX(-Math.PI / 2).translate(0, 0.008 + rnd() * 0.006, 0), stdMat({ color: 0x0e0d0c, roughness: 0.25, metalness: 0.1 }));
+  it.flat = true;
   return it;
 }
 
@@ -686,11 +713,13 @@ export function oilStain(rnd) {
 export function paintTins(rnd) {
   const M = archMaterials();
   const it = new Item([0.6, 0.25, 0.5]);
-  for (let k = 0; k < 2 + Math.floor(rnd() * 3); k++) {
+  const n = 2 + Math.floor(rnd() * 3);
+  const lying = Array.from({ length: n }, () => rnd() < 0.3);
+  // (one lying on its side takes the room of its length)
+  for (const s of spread(rnd, lying.map((l) => (l ? 0.105 : 0.085)), 0.6, 0.5)) {
     const g = latheY([[0, 0], [0.078, 0], [0.081, 0.006], [0.079, 0.012], [0.079, 0.17], [0.082, 0.176], [0.079, 0.182], [0, 0.182]], 16);
-    const x = (rnd() - 0.5) * 0.4,
-      z = (rnd() - 0.5) * 0.3;
-    if (rnd() < 0.3) g.rotateZ(Math.PI / 2).rotateY(rnd() * 6).translate(x, 0.08, z);
+    const { x, z } = s;
+    if (s.r > 0.1) g.translate(0, -0.091, 0).rotateZ(Math.PI / 2).rotateY(rnd() * 6).translate(x, 0.081, z);
     else g.translate(x, 0, z);
     it.add(g, rnd() < 0.5 ? M.chromeOld : stdMat({ color: [0xb8382a, 0x2f5f8a, 0xe8e2d0, 0x3d6b3a][Math.floor(rnd() * 4)], roughness: 0.6, metalness: 0.3 }));
   }
@@ -838,6 +867,7 @@ export function brokenPlates(rnd) {
     const s = 0.015 + rnd() * 0.03;
     it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008, (rnd() - 0.5) * 0.7), M.porcelainOld);
   }
+  it.flat = true;
   return it;
 }
 
@@ -869,6 +899,7 @@ export function strawLitter(rnd) {
     const g = new THREE.PlaneGeometry(0.3 + rnd() * 0.3, 0.04 + rnd() * 0.05).rotateX(-Math.PI / 2 + (rnd() - 0.5) * 0.3).rotateY(rnd() * 6);
     it.add(g.translate((rnd() - 0.5) * 2.2, 0.01 + rnd() * 0.02, (rnd() - 0.5) * 2.2), straw);
   }
+  it.flat = true;
   return it;
 }
 
@@ -877,13 +908,17 @@ const floorLoot = (b, y) => b.loot.filter((l) => Math.abs(l.pos[1] - y) < 0.3).m
 
 // Strew a rectangle (a shop floor, a workshop, a forecourt) with what `list` ([maker, weight])
 // holds, clear of the boxes in `keep` ([x0, z0, x1, z1]: what stands there, ways through doors).
-export function clutterArea(b, rnd, [x0, z0, x1, z1], y, list, n, keep = []) {
+// ground: out in the open, each piece set down on the land where it lands (not the building's
+// level).
+export function clutterArea(b, rnd, [x0, z0, x1, z1], y, list, n, keep = [], { ground = false } = {}) {
   const placed = [];
   // never on top of a spot where loot lies on the floor
   keep = [...keep, ...floorLoot(b, y)];
   for (let k = 0; k < n; k++) {
     const make = pick(rnd, list);
     const item = make(rnd);
+    // (what leans needs a wall to lean on: out here it would stand tilted on nothing)
+    if (item.leans) continue;
     const half = Math.hypot(item.size[0], item.size[2]) / 2 * 0.8;
     for (let tries = 0; tries < 10; tries++) {
       const x = x0 + half + rnd() * Math.max(0, x1 - x0 - 2 * half),
@@ -891,7 +926,9 @@ export function clutterArea(b, rnd, [x0, z0, x1, z1], y, list, n, keep = []) {
       const box = [x - half, z - half, x + half, z + half];
       const hit = (q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1];
       if (keep.some(hit) || (item.cols.length && placed.some(hit))) continue;
+      if (ground) b.snapStart(x, z, y);
       place(b, item, x, y, z, rnd() * Math.PI * 2);
+      if (ground) b.snapEnd();
       if (item.cols.length) placed.push(box);
       break;
     }

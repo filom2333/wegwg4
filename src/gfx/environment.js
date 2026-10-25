@@ -1,6 +1,10 @@
 // Day/night cycle, sun & moon, sky, fog, ambient/IBL and weather state.
 
 import * as THREE from 'three';
+
+const _lx = new THREE.Vector3(),
+  _ly = new THREE.Vector3(),
+  _lz = new THREE.Vector3();
 import { Sky, EnvironmentBaker } from './sky.js';
 import { clamp, lerp, smoothstep, mulberry32 } from '../core/noise.js';
 
@@ -357,12 +361,19 @@ export class Environment {
     const light = this.sun.castShadow ? this.sunDir : this.moonDir;
     this.sun.position.set(f.x + this.sunDir.x * 150, f.y + this.sunDir.y * 150, f.z + this.sunDir.z * 150);
     this.sun.target.position.copy(f);
-    // snap to texel grid to avoid shimmering
+    // snap to the shadow map's texel grid, in the light's own frame (the shadow camera looks down
+    // the sun's direction with world up as its up): moving about then never slides the shadow
+    // edges across the texels, so they stand still on walls and floors instead of crawling
     const texel = (this.shadowExtent * 2) / this.sun.shadow.mapSize.x;
-    this.sun.target.position.x = Math.round(f.x / texel) * texel;
-    this.sun.target.position.z = Math.round(f.z / texel) * texel;
-    this.sun.position.x = this.sun.target.position.x + this.sunDir.x * 150;
-    this.sun.position.z = this.sun.target.position.z + this.sunDir.z * 150;
+    const lz = _lz.copy(this.sunDir).normalize();
+    const lx = _lx.set(0, 1, 0).cross(lz);
+    if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0);
+    lx.normalize();
+    const ly = _ly.copy(lz).cross(lx);
+    const sx = Math.round(f.dot(lx) / texel) * texel,
+      sy = Math.round(f.dot(ly) / texel) * texel;
+    this.sun.target.position.copy(lx).multiplyScalar(sx).addScaledVector(ly, sy).addScaledVector(lz, f.dot(lz));
+    this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 150);
     this.moon.position.copy(f).addScaledVector(this.moonDir, 150);
     this.moon.target.position.copy(f);
     void light;

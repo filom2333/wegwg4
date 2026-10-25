@@ -128,6 +128,9 @@ export class Game {
     this.groundTex = buildGroundTextures(seed);
     this.terrainMat = createTerrainMaterial(this.groundTex);
     this.roadMat = createRoadMaterial(this.groundTex);
+    // (three flips the slope factor of a polygon offset for a reversed depth buffer but not the
+    // constant: it would push the road behind the ground)
+    if (this.renderer.revZ) this.roadMat.polygonOffsetUnits = -this.roadMat.polygonOffsetUnits;
     onProgress('Raising the land', 0.25);
     this.env = new Environment(this.renderer.renderer, this.scene, {
       time,

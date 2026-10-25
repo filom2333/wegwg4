@@ -1891,6 +1891,9 @@ export const FURNITURE = {
 
 // Place a furniture Item into a Builder at (x, y, z) rotated by rotY.
 export function place(builder, item, x, y, z, rotY = 0) {
+  // things that lie flat (dust, papers, stains) each a hair higher than the last, so two never
+  // share a plane where they overlap
+  if (item.flat) y += ((builder.flatN = (builder.flatN || 0) + 1) % 12) * 0.0013;
   const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, y, z);
   for (const [g, mat] of item.parts) builder.add(g, mat, m);
   const q = new THREE.Vector3();
