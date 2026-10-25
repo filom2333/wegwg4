@@ -947,7 +947,9 @@ export class Game {
     this.shadowTick = (this.shadowTick || 0) + 1;
     const pl = this.player;
     const fast = !pl || this.attract || this.debugView || pl.thirdPerson || (pl.seat && this.car && Math.abs(this.car.speedKmh) > 3);
-    sm.needsUpdate = fast || this.shadowTick % 2 === 0;
+    // (a lamp that has just taken a shadow slot has no map yet: it must be drawn at once)
+    const fresh = this.lights.shadowSpots.some((l) => l.intensity > 0 && !l.shadow.map) || (this.env.sun.castShadow && !this.env.sun.shadow.map);
+    sm.needsUpdate = fast || fresh || this.shadowTick % 2 === 0;
     this.renderer.render(dt);
   }
 
