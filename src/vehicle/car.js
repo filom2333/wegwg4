@@ -474,7 +474,17 @@ export class Car {
   }
 
   // ---------------------------------------------------------------- doors etc.
-  // E on the fuel filler: open the flap, unscrew the cap, then cap on and flap shut.
+  // The filler cap, with the flap open: off, or back on.
+  useCap() {
+    if (!this.fillerOpen) return;
+    const a = this.game.audio;
+    const at = this.model.filler ? this.model.filler.group.getWorldPosition(new THREE.Vector3()) : null;
+    this.fillerCapOff = !this.fillerCapOff;
+    a && a.play('click', { volume: 0.35, rate: this.fillerCapOff ? 1.3 : 1.1, at });
+  }
+
+  // E on the fuel filler with something in the other hand: open the flap, unscrew the cap, then
+  // cap on and flap shut.
   useFiller() {
     const a = this.game.audio;
     const at = this.model.filler ? this.model.filler.group.getWorldPosition(new THREE.Vector3()) : null;
@@ -1319,7 +1329,9 @@ export class Car {
     // the fuel filler flap swings open and shut; the cap is in the neck or off
     const F = this.model.filler;
     if (F) {
-      this.fillerT = Math.max(0, Math.min(1, this.fillerT + (this.fillerOpen ? dt : -dt) * 3.5));
+      // (a hand on the flap holds it where it is)
+      if (this.fillerHeld != null) this.fillerT = this.fillerHeld;
+      else this.fillerT = Math.max(0, Math.min(1, this.fillerT + (this.fillerOpen ? dt : -dt) * 3.5));
       const e = this.fillerT * this.fillerT * (3 - 2 * this.fillerT);
       F.hinge.rotation.y = F.side * 1.95 * e;
       const seen = this.fillerT > 0.02;
