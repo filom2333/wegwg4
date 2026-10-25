@@ -712,6 +712,17 @@ export class Interaction {
       gd.car.fillerHeld = gd.car.fillerT;
     } else if (gd.kind === 'crank') g.player.lookFrozen = true;
     G.point = at;
+    if (at && G.local) {
+      const h = this.lookHit;
+      let n = h && h.normal && Math.hypot(h.point.x - at.x, h.point.y - at.y, h.point.z - at.z) < 0.06 ? V(h.normal.x, h.normal.y, h.normal.z) : this.cam.position.clone().sub(at);
+      if (n.dot(this.cam.position.clone().sub(at)) < 0) n.negate();
+      n.normalize();
+      // (a second point a little off it, carried round with the first)
+      const probe = at.clone().addScaledVector(n, 0.05);
+      const m = G.kind === 'car' ? G.car.model.parts[G.id].inner.matrixWorld : G.kind === 'flap' ? G.car.model.filler.hinge.matrixWorld : G.door.pivot.matrixWorld;
+      // (a car part's own frame is the car's, closed: its inner group)
+      G.localN = probe.applyMatrix4(new THREE.Matrix4().copy(m).invert());
+    }
     // the hand holds it this far out along the view
     G.dist = clamp(at ? at.distanceTo(this.cam.position) : 0.8, 0.3, REACH + 0.2);
     this.grab = G;
@@ -721,22 +732,30 @@ export class Interaction {
     return a.kind === b.kind && (a.kind === 'poiDoor' ? a.door === b.door : a.car === b.car && a.id === b.id);
   }
 
-  // Where the point taken hold of is with the thing open by `u` (0 shut, 1 all the way).
-  grabWorld(G, u) {
+  // Where the point taken hold of (or another point of the thing, `local`) is with the thing
+  // open by `u` (0 shut, 1 all the way).
+  grabWorld(G, u, local = G.local) {
     if (G.kind === 'car') {
       const h = G.car.model.parts[G.id].hinge;
       _gq.setFromAxisAngle(h.axis, h.max * u);
-      return G.local.clone().sub(h.origin).applyQuaternion(_gq).add(h.origin).applyMatrix4(G.car.root.matrixWorld);
+      return local.clone().sub(h.origin).applyQuaternion(_gq).add(h.origin).applyMatrix4(G.car.root.matrixWorld);
     }
     if (G.kind === 'flap') {
       const F = G.car.model.filler;
       const e = u * u * (3 - 2 * u);
       _gm.compose(F.hinge.position, _gq.setFromAxisAngle(_gy, F.side * 1.95 * e), _g1);
-      return G.local.clone().applyMatrix4(_gm).applyMatrix4(F.hinge.parent.matrixWorld);
+      return local.clone().applyMatrix4(_gm).applyMatrix4(F.hinge.parent.matrixWorld);
     }
     const d = G.door;
     _gm.compose(d.pivot.position, _gq.setFromAxisAngle(_gy, d.baseRot + u * 1.55), _g1);
-    return G.local.clone().applyMatrix4(_gm).applyMatrix4(d.pivot.parent.matrixWorld);
+    return local.clone().applyMatrix4(_gm).applyMatrix4(d.pivot.parent.matrixWorld);
+  }
+
+  // The surface's outward direction at the point held, as the thing is now.
+  grabNormal(G) {
+    if (!G.localN) return null;
+    const u = this.grabOpen(G);
+    return this.grabWorld(G, u, G.localN).sub(this.grabWorld(G, u)).normalize();
   }
 
   grabOpen(G) {
@@ -880,6 +899,9 @@ export class Interaction {
     it.mesh.updateMatrixWorld(true);
     this.dragLocal = it.mesh.worldToLocal(p.clone());
     this.dragDist = clamp(p.distanceTo(this.cam.position), 0.9, REACH);
+    const h = this.lookHit;
+    const n = h && h.normal ? V(h.normal.x, h.normal.y, h.normal.z) : this.cam.position.clone().sub(p).normalize();
+    this.dragN = n.applyQuaternion(it.mesh.quaternion.clone().invert());
   }
 
   // Aimed at the cap of a jerry can (within a hand's breadth of it on the can's surface).
@@ -1511,6 +1533,7 @@ export class Interaction {
     this.dragging = heavyItem(it);
     if (this.dragging) {
       // (taken by the middle unless pickDrag says where)
+      this.dragN = null;
       this.dragLocal = V(0, 0, 0);
       this.dragDist = 1.4;
     }
@@ -3116,19 +3139,27 @@ export class Interaction {
 
   // The right hand closed on a point in the world, thumb up, the forearm back toward the shoulder;
   // out of the arm's reach it stretches toward it, open.
-  handOnPoint(world, inv) {
+  handOnPoint(world, inv, normal = null) {
     const h = this.hands;
     const cam = this.cam;
     const arms = defaultArms();
+    // camera space; the surface's outward direction (toward the eye when not known)
     const p = world.clone().sub(cam.position).applyQuaternion(inv);
-    const wrist = arms.right.shoulder.clone().sub(p).normalize();
-    const anchor = { p, q: anchorQ(V(-0.35, 1, 0.1), wrist) };
-    const placed = handFromAnchor('right', 'grip', anchor);
+    const n = normal ? normal.clone().applyQuaternion(inv) : p.clone().negate().normalize();
+    if (n.dot(p) > 0) n.negate();
+    // the palm laid flat on it, a skin's breadth off, the back of the hand out, thumb up along it
+    const up = V(0, 1, 0).addScaledVector(n, -n.y);
+    if (up.lengthSq() < 1e-4) up.set(-1, 0, 0);
+    const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(up.normalize(), n) };
+    const placed = handFromAnchor('right', 'palm', anchor);
     const far = reachClamp(placed, arms.right.shoulder);
     h.right.visible = true;
-    h.setPose('right', far ? 'palm' : 'grip');
+    h.setPose('right', 'palm');
     h.place('right', placed.p, placed.q);
     h.solveArm('right', arms.right.shoulder, arms.right.pole);
+    // out of the arm's reach the hand would hang in the air in front of it: only the arm shows,
+    // reaching
+    h.rig.right.holder.visible = !far;
   }
 
   // ------------------------------------------------------------------ view model
@@ -3152,6 +3183,7 @@ export class Interaction {
     const driving = seated && this.game.player.seat === 'driver';
     h.right.visible = true;
     h.left.visible = false;
+    h.rig.right.holder.visible = true;
     const inv = cam.quaternion.clone().invert();
     if (it && !big && this.floating && !this.dragging) {
       // the hand follows the floating thing: pinching it within arm's length, reaching out to it
@@ -3185,7 +3217,7 @@ export class Interaction {
       } else if (driving) this.updateDriverHands(dt, 'left');
     } else if (it && this.dragging) {
       // the hand on the point it is dragged by
-      this.handOnPoint(this.dragAt || it.mesh.position, inv);
+      this.handOnPoint(this.dragAt || it.mesh.position, inv, this.dragN ? this.dragN.clone().applyQuaternion(it.mesh.quaternion) : null);
     } else if (it && big) {
       // carried in both hands: each hand takes the lower part of a side of the item as the camera
       // sees it, no further out than the arms reach; palms in, fingers forward
@@ -3225,7 +3257,7 @@ export class Interaction {
     } else if (this.grab && this.grab.point) {
       // the hand on the point taken hold of, going where the door, lid or winder goes
       const G = this.grab;
-      this.handOnPoint(G.kind === 'crank' ? this.game.car.worldPointOf(G.t.hotspot.pos) : G.point, inv);
+      this.handOnPoint(G.kind === 'crank' ? this.game.car.worldPointOf(G.t.hotspot.pos) : G.point, inv, G.kind === 'crank' ? null : this.grabNormal(G));
       if (driving) this.updateDriverHands(dt, 'left');
     } else if (this.fists && !seated) {
       // fists up in a loose guard; the punching hand goes out toward the middle and comes back

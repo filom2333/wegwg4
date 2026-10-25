@@ -1261,6 +1261,41 @@ export class Car {
     if (torn.length) this.game.hud && this.game.hud.toast(`Torn off: ${torn.join(', ')}`, 'warn');
   }
 
+  // Small things on the car (handles, badges, knobs, gauges' bezels, the bits of the engine bay
+  // and the cabin) are left out of the picture and the shadows once they are only a few pixels
+  // across: a mesh of radius r goes at about r x 240 m (r = 5 cm at 18 m, 0.5 m at 126 m). A car
+  // is ~300 meshes, most of them tiny, and every one is a draw call. Lamps stay (they glow at
+  // night from far off). Out of view = on layer 1, which the camera and the shadow pass skip,
+  // so nothing that shows or hides parts is touched.
+  updateDetail(eye) {
+    if (!this.detail) {
+      this.detail = [];
+      const s = new THREE.Vector3();
+      this.root.updateMatrixWorld(true);
+      this.root.traverse((o) => {
+        if (!o.isMesh || o === this.shade) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if (m && ((m.emissive && (m.emissive.r || m.emissive.g || m.emissive.b)) || m.emissiveMap)) return;
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        o.getWorldScale(s);
+        const r = o.geometry.boundingSphere.radius * Math.max(s.x, s.y, s.z);
+        if (r < 0.6) this.detail.push({ o, far: r * 240 + 6 });
+      });
+      this.detail.sort((a, b) => a.far - b.far);
+      this.detailCut = 0;
+      this.detailD = -1;
+    }
+    const d = this.root.position.distanceTo(eye);
+    if (Math.abs(d - this.detailD) < Math.max(0.5, d * 0.03)) return;
+    this.detailD = d;
+    // the first `cut` (the smallest) are out of the picture at this distance
+    const D = this.detail;
+    let cut = 0;
+    while (cut < D.length && D[cut].far < d) cut++;
+    for (let i = Math.min(cut, this.detailCut); i < Math.max(cut, this.detailCut); i++) D[i].o.layers.mask = i < cut ? 2 : 1;
+    this.detailCut = cut;
+  }
+
   // Copy physics state to the visual model.
   // Puts the model where the body is; `smooth`: between the last two physics steps (per frame).
   syncVisual(smooth = false) {

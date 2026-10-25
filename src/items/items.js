@@ -586,6 +586,7 @@ export class ItemSystem {
     if (dt > 0) this.updateSpills(dt);
     this.updateMounted(dt);
     if (dt > 0) this.updateInstruments(dt);
+    this.updateDetail();
     for (const it of this.items) {
       if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -687,6 +688,27 @@ export class ItemSystem {
           b.position.z += (tz + o[2] - b.position.z) * k;
         }
       }
+    }
+  }
+
+  // Small things out of the picture (and the shadows) once they are a few pixels across: a thing
+  // of radius r goes at about r x 300 m (a can at 20 m, a jerry can at 55 m). Checked a slice of
+  // the list each frame; layer 1 is skipped by the camera and the shadow pass.
+  updateDetail() {
+    const g = this.game;
+    if (!g.renderer || !this.items.size) return;
+    const eye = g.renderer.camera.position;
+    const list = (this._detailList = this.items.size !== (this._detailN || 0) || !this._detailList ? [...this.items] : this._detailList);
+    this._detailN = this.items.size;
+    const n = Math.max(1, Math.ceil(list.length / 8));
+    for (let k = 0; k < n; k++) {
+      this._detailI = ((this._detailI || 0) + 1) % list.length;
+      const it = list[this._detailI];
+      if (!it || !it.mesh || !this.items.has(it)) continue;
+      const near = it.held || it.worn || it.state.on ? true : it.mesh.getWorldPosition(_wp).distanceTo(eye) < Math.max(it.size.x, it.size.y, it.size.z) * 150 + 8;
+      if (near === it.detailShown) continue;
+      it.detailShown = near;
+      it.mesh.traverse((o) => (o.layers.mask = near ? 1 : 2));
     }
   }
 

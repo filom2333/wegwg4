@@ -166,6 +166,7 @@ export class Fleet {
         car.dyn.body.setEnabled(active);
       }
       car.root.visible = d < SHOW_RADIUS || car === g.car;
+      if (car.root.visible && g.renderer) car.updateDetail(g.renderer.camera.position);
     }
   }
 
