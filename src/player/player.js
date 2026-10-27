@@ -19,7 +19,9 @@ export class Player {
     this.collider = ph.world.createCollider(RAPIER.ColliderDesc.capsule(HALF, RADIUS).setCollisionGroups(GROUPS.player).setFriction(0), this.body);
     ph.setOwner(this.collider, { kind: 'player', player: this });
     this.cc = ph.world.createCharacterController(0.02);
-    this.cc.enableAutostep(0.38, 0.15, false);
+    // steps up to knee height, onto anything at least a board's width across, loose things too (a
+    // plank or a box lying about used to stand in the way like a wall)
+    this.cc.enableAutostep(0.38, 0.06, true);
     this.cc.enableSnapToGround(0.4);
     this.cc.setMaxSlopeClimbAngle((48 * Math.PI) / 180);
     this.cc.setMinSlopeSlideAngle((55 * Math.PI) / 180);
@@ -72,6 +74,7 @@ export class Player {
     this.body.setNextKinematicTranslation({ x: p.x, y: p.y + HALF + RADIUS, z: p.z });
     this.vy = 0;
     this.fallStartY = null;
+    this.stepLag = 0;
   }
 
   // ------------------------------------------------------------------ seats
@@ -241,15 +244,20 @@ export class Player {
     const accel = this.grounded ? 14 : 2.5;
     this.velocity.x = lerp(this.velocity.x, moving ? target.x : 0, Math.min(1, dt * accel));
     this.velocity.z = lerp(this.velocity.z, moving ? target.z : 0, Math.min(1, dt * accel));
-    // gravity / jump
-    if (this.grounded) {
-      this.vy = -1.0;
-      if (canMove && input.wasPressed('jump') && this.stamina > 8 && m < 40) {
-        this.vy = 4.6;
-        this.stamina -= 8;
-        this.grounded = false;
-      }
-    } else this.vy -= 9.81 * dt;
+    // gravity / jump. A jump pressed a moment after the feet left the ground still counts (the
+    // edge of a step or a bump lifts them clear for a frame or two, and the press was lost), and
+    // one pressed a moment before landing is kept until they touch.
+    this.jumpBuffer = canMove && input.wasPressed('jump') ? 0.15 : Math.max(0, (this.jumpBuffer || 0) - dt);
+    this.airT = this.grounded ? 0 : (this.airT || 0) + dt;
+    const canJump = (this.grounded || (this.airT < 0.15 && this.vy <= 0)) && this.stamina > 8 && m < 40;
+    if (this.jumpBuffer > 0 && canJump) {
+      this.vy = 4.6;
+      this.stamina -= 8;
+      this.grounded = false;
+      this.jumpBuffer = 0;
+      this.airT = 1;
+    } else if (this.grounded) this.vy = -1.0;
+    else this.vy -= 9.81 * dt;
     const desired = { x: this.velocity.x * dt, y: this.vy * dt, z: this.velocity.z * dt };
     this.cc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, GROUPS.playerQuery);
     this.nudgeItems(dt);
@@ -260,6 +268,11 @@ export class Player {
     this.body.setTranslation(next, true);
     const wasGrounded = this.grounded;
     this.grounded = this.cc.computedGrounded();
+    // the head against a ceiling: the jump ends there instead of sticking to it
+    if (!this.grounded && this.vy > 0 && mv.y < desired.y * 0.5) this.vy = 0;
+    // a step up or down (onto a kerb, a board, a stair) is taken by the body at once; the view
+    // follows over a few frames, so it is a step and not a jolt
+    if (wasGrounded && this.grounded && Math.abs(mv.y) > Math.hypot(mv.x, mv.z) * 1.2 + 0.03) this.stepLag = clamp((this.stepLag || 0) - mv.y, -0.4, 0.4);
     // fall damage
     if (!this.grounded) {
       if (this.fallStartY === null) this.fallStartY = next.y;
@@ -271,9 +284,16 @@ export class Player {
       this.fallStartY = null;
     }
     if (this.grounded && mv.y > -0.0001 && this.vy > 0) this.vy = 0;
-    // safety: never fall through the world
-    const gy = g.groundHeightAt(next.x, next.z, next.y + 1);
-    if (next.y - HALF - RADIUS < gy - 1.5) this.setPosition(V(next.x, gy + 0.2, next.z));
+    // safety: fallen through the world (nothing at all under the feet, and below the land), back
+    // on top. (It used to look for the ground from a little over the head, and lifted anyone under
+    // a low ceiling, a bridge or a stair onto it.)
+    if (!this.grounded) {
+      const feet = next.y - HALF - RADIUS;
+      if (!g.physics.raycast({ x: next.x, y: feet + 0.3, z: next.z }, { x: 0, y: -1, z: 0 }, 400, GROUPS.ground)) {
+        const gy = g.groundHeightAt(next.x, next.z);
+        if (feet < gy - 0.5) this.setPosition(V(next.x, gy + 0.2, next.z));
+      }
+    }
     this.carContact(dt);
     // footsteps & head bob
     const hs = Math.hypot(mv.x, mv.z) / Math.max(dt, 1e-4);
@@ -478,7 +498,8 @@ export class Player {
       // shivering when cold
       const shiver = this.warmth < 30 ? (30 - this.warmth) / 30 : 0;
       const sh = shiver ? Math.sin(performance.now() * 0.06) * 0.004 * shiver : 0;
-      cam.position.set(p.x + sh, p.y + eyeH + bob, p.z);
+      this.stepLag = (this.stepLag || 0) * Math.exp(-dt * 14);
+      cam.position.set(p.x + sh, p.y + eyeH + bob + this.stepLag, p.z);
       cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + sh * 0.8, this.yaw + Math.PI, sway * 0.4, 'YXZ'));
       const right = V(1, 0, 0).applyQuaternion(cam.quaternion);
       cam.position.addScaledVector(right, sway);
