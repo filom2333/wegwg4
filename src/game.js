@@ -27,6 +27,7 @@ import { Tents } from './world/tents.js';
 import { PropLibrary, PROPS } from './world/props.js';
 import { addGlassRain } from './gfx/glassRain.js';
 import { HAND_POSES } from './player/hands.js';
+import { prewarmIcons } from './ui/itemIcons.js';
 import { registerRealModel } from './items/itemModels.js';
 import { Atlas } from './story/atlas.js';
 import { PhotoMode, loadPhotos } from './ui/photoMode.js';
@@ -273,6 +274,15 @@ export class Game {
     this.hud.show(!attract);
     onProgress('Preparing shaders', 0.97);
     await Promise.race([allProps, new Promise((r) => setTimeout(r, 12000))]);
+    // the icons of everything that can go in the hotbar or the bag
+    // (?noicons: headless test runs skip this)
+    if (!attract && !(typeof location !== 'undefined' && /[?&]noicons/.test(location.search))) {
+      const icons = [];
+      for (const [id, def] of Object.entries(ITEMS))
+        for (let v = 0; v < (def.variants || 1); v++)
+          icons.push({ key: id + (def.variants ? ':' + v : ''), pose: def.weapon ? 'weapon' : '', build: () => this.items.buildMesh(id, { ...initialState(id, Math.random), ...(def.variants ? { variant: v } : {}) }) });
+      await prewarmIcons(icons, (f) => onProgress('Drawing the icons', 0.97 + f * 0.02));
+    }
     this.warmShaders();
     // one frame behind the loading screen compiles the passes, shadows and sky as well
     this.render(0.016);

@@ -192,6 +192,7 @@ export const RU = {
   'Streaming terrain': 'Подгружаем местность',
   Settling: 'Всё успокаивается',
   'Preparing shaders': 'Готовим шейдеры',
+  'Drawing the icons': 'Рисуем значки',
   Ready: 'Готово',
   // pause
   'Rest Area': 'Стоянка',

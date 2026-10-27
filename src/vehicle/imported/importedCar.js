@@ -2,6 +2,7 @@
 // the same interface as the Beetle's model, so the car, the player's hands and the inspector
 // treat every car type alike. A type supplies the measured META and its own procedural extras.
 
+import { runExtras } from '../extrasCache.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -230,7 +231,7 @@ export class ImportedCarModel {
     this.addWipers();
     this.addStereo();
     this.addDomeLamp();
-    if (type.extras) type.extras(this, mats);
+    runExtras(type, this, mats);
   }
 
   meshesFor(id, { shadow = true } = {}) {
@@ -663,7 +664,17 @@ export class ImportedCarModel {
     const frame = { p: V(...F.pos), x: V(1, 0, 0).applyQuaternion(q), y: V(0, 1, 0).applyQuaternion(q), n };
     const [w, h] = F.size;
     const r = F.corner ?? 0.02;
-    for (const m of this.parts.body.inner.children) if (m.isMesh && m.material === M.paint) m.geometry = cutOpening(m.geometry, frame, w, h, r);
+    // (the cut is the same on every car of a type: made once per source mesh and shared, it was
+    // the dearest step of building a car, a frame's worth of time for each abandoned car met)
+    for (const m of this.parts.body.inner.children)
+      if (m.isMesh && m.material === M.paint) {
+        let cut = CUT_BODIES.get(m.geometry);
+        if (!cut) {
+          cut = cutOpening(m.geometry, frame, w, h, r);
+          CUT_BODIES.set(m.geometry, cut);
+        }
+        m.geometry = cut;
+      }
     // (the body's paint without its texture: the flap's own UVs would pick a stray patch of the
     // atlas; the colour object is the shared one, so a respray covers the flap too)
     const paint = M.paint.clone();
@@ -767,6 +778,9 @@ export function buildImportedModel(type, asset, mats) {
 }
 
 // Roadside wreck: shell, panels and seats merged per material, no glass, flat tyres.
+// source body geometry -> the same with the fuel filler's opening cut into it
+const CUT_BODIES = new WeakMap();
+
 export function buildImportedWreck(type, asset) {
   const mats = createImportedMaterials(type, asset, { weather: { dirt: 0.8, dust: 0.6, rust: 0.7, fade: 0.8 } });
   const keep = type.WRECK_PARTS;

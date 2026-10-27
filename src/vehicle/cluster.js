@@ -250,8 +250,10 @@ export function buildCluster(model, G, M, type) {
   // satin chrome: bright, but no sun glints flaring through the glow
   const bezelMat = new THREE.MeshStandardMaterial({ color: 0xa9adb2, metalness: 1, roughness: 0.32 });
   // grained dark plastic for the fascia
-  const grain = makeCanvas(256, 256);
-  {
+  // (one grain texture for every car)
+  let grainTex = FACES.get('grain');
+  if (!grainTex) {
+    const grain = makeCanvas(256, 256);
     const x = grain.getContext('2d');
     const img = x.createImageData(256, 256);
     for (let i = 0; i < img.data.length; i += 4) {
@@ -260,9 +262,10 @@ export function buildCluster(model, G, M, type) {
       img.data[i + 3] = 255;
     }
     x.putImageData(img, 0, 0);
+    grainTex = canvasTexture(grain, { wrap: true });
+    grainTex.repeat.set(6, 3);
+    FACES.set('grain', grainTex);
   }
-  const grainTex = canvasTexture(grain, { wrap: true });
-  grainTex.repeat.set(6, 3);
   const fasciaMat = new THREE.MeshStandardMaterial({ color: 0x17181a, roughness: 0.8, metalness: 0.05, bumpMap: grainTex, bumpScale: 0.6 });
 
   // the fascia: rounded, its ends curving toward the driver
