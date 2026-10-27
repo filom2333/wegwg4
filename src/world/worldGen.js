@@ -18,20 +18,22 @@ export const BIOME_INFO = {
 const DESERT = ['scrub', 'dunes', 'badlands', 'saltflat', 'highland'];
 const SNOWY = ['taiga', 'tundra'];
 // Biomes appear by distance north along Route 9: desert first, then grass and pine country,
-// then snow toward Haven. Weights per biome at a distance in km.
+// then snow toward Haven. Weights per biome at a distance in km. (The desert used to keep an
+// eighth of its odds all the way north, so dunes and salt flats turned up again among the
+// snow; now it is gone by 60 km, and the summer meadows thin out as the snow comes on.)
 function biomeOdds(km) {
   const ramp = (a, b, v0, v1) => v0 + (v1 - v0) * clamp((km - a) / (b - a), 0, 1);
-  const desert = km < 7 ? 1 : ramp(7, 70, 1, 0.12);
+  const desert = km < 7 ? 1 : ramp(7, 60, 1, 0);
   return {
     scrub: desert * 1.1,
     dunes: desert,
     badlands: desert,
     saltflat: desert * 0.6,
-    highland: desert * 0.9 + ramp(30, 80, 0, 0.25),
-    prairie: km < 6 ? 0 : ramp(6, 20, 0.3, 1.1) - ramp(70, 120, 0, 0.5),
-    forest: km < 9 ? 0 : ramp(9, 30, 0.3, 1.2),
-    taiga: km < 26 ? 0 : ramp(26, 75, 0.25, 1.1),
-    tundra: km < 40 ? 0 : ramp(40, 95, 0.2, 0.7),
+    highland: desert * 0.9 + ramp(30, 60, 0, 0.25) - ramp(75, 105, 0, 0.25),
+    prairie: km < 6 ? 0 : ramp(6, 20, 0.3, 1.1) - ramp(55, 100, 0, 0.9),
+    forest: km < 9 ? 0 : ramp(9, 30, 0.3, 1.2) - ramp(85, 125, 0, 0.6),
+    taiga: km < 26 ? 0 : ramp(26, 75, 0.25, 1.4),
+    tundra: km < 40 ? 0 : ramp(40, 95, 0.2, 0.9),
   };
 }
 export const RIVER_SPACING = 4300;
