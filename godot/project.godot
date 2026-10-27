@@ -1,0 +1,27 @@
+; Engine configuration file.
+; Dust Road, the Godot version (the browser version in ../src is the reference it is ported from).
+
+config_version=5
+
+[application]
+
+config/name="Dust Road"
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[dotnet]
+
+project/assembly_name="DustRoad"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
