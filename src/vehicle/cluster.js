@@ -17,6 +17,14 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // dial faces and lamp symbols never change: drawn once per type and shared by all its cars (a
 // scrapyard holds a dozen clusters)
 const FACES = new Map();
+// and the shapes: a fascia with its holes and a dozen tubes, bezels and lenses took a car's model
+// several milliseconds to make, every time a car came into the world
+const GEOS = new Map();
+function geo(key, make) {
+  let x = GEOS.get(key);
+  if (!x) GEOS.set(key, (x = make()));
+  return x;
+}
 const FONT = '"Overpass", "Arial Narrow", Arial, sans-serif';
 const INK = '#f3efe4';
 const RED = '#e0442c';
@@ -271,30 +279,33 @@ export function buildCluster(model, G, M, type) {
   // the fascia: rounded, its ends curving toward the driver
   if (G.panel) {
     const [pw, ph, px = 0, py = 0] = G.panel;
-    const r = ph * 0.3;
-    const sh = new THREE.Shape();
-    sh.moveTo(-pw / 2 + r, -ph / 2);
-    sh.lineTo(pw / 2 - r, -ph / 2);
-    sh.quadraticCurveTo(pw / 2, -ph / 2, pw / 2, -ph / 2 + r);
-    sh.lineTo(pw / 2, ph / 2 - r);
-    sh.quadraticCurveTo(pw / 2, ph / 2, pw / 2 - r, ph / 2);
-    sh.lineTo(-pw / 2 + r, ph / 2);
-    sh.quadraticCurveTo(-pw / 2, ph / 2, -pw / 2, ph / 2 - r);
-    sh.lineTo(-pw / 2, -ph / 2 + r);
-    sh.quadraticCurveTo(-pw / 2, -ph / 2, -pw / 2 + r, -ph / 2);
-    // a hole for each dial: the tubes go through the fascia
-    const holes = [[0, 0, R], ...(G.tacho ? [[G.tacho.offset[0], G.tacho.offset[1], G.tacho.radius]] : []), ...(G.small || []).map((d) => [d.offset[0], d.offset[1], d.radius])];
-    for (const [hx, hy, hr] of holes) {
-      const h = new THREE.Path();
-      h.absarc(hx - px, hy - py, hr * 0.99, 0, Math.PI * 2, true);
-      sh.holes.push(h);
-    }
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 10 });
-    const p = geo.attributes.position;
-    // (its face just behind the dials' faces, so the tubes stand out of it)
-    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) - 0.017 + curve * (p.getX(i) + px) ** 2);
-    geo.computeVertexNormals();
-    const fascia = new THREE.Mesh(geo, fasciaMat);
+    const fgeo = geo(type.id + ':fascia', () => {
+      const r = ph * 0.3;
+      const sh = new THREE.Shape();
+      sh.moveTo(-pw / 2 + r, -ph / 2);
+      sh.lineTo(pw / 2 - r, -ph / 2);
+      sh.quadraticCurveTo(pw / 2, -ph / 2, pw / 2, -ph / 2 + r);
+      sh.lineTo(pw / 2, ph / 2 - r);
+      sh.quadraticCurveTo(pw / 2, ph / 2, pw / 2 - r, ph / 2);
+      sh.lineTo(-pw / 2 + r, ph / 2);
+      sh.quadraticCurveTo(-pw / 2, ph / 2, -pw / 2, ph / 2 - r);
+      sh.lineTo(-pw / 2, -ph / 2 + r);
+      sh.quadraticCurveTo(-pw / 2, -ph / 2, -pw / 2 + r, -ph / 2);
+      // a hole for each dial: the tubes go through the fascia
+      const holes = [[0, 0, R], ...(G.tacho ? [[G.tacho.offset[0], G.tacho.offset[1], G.tacho.radius]] : []), ...(G.small || []).map((d) => [d.offset[0], d.offset[1], d.radius])];
+      for (const [hx, hy, hr] of holes) {
+        const h = new THREE.Path();
+        h.absarc(hx - px, hy - py, hr * 0.99, 0, Math.PI * 2, true);
+        sh.holes.push(h);
+      }
+      const eg = new THREE.ExtrudeGeometry(sh, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 10 });
+      const p = eg.attributes.position;
+      // (its face just behind the dials' faces, so the tubes stand out of it)
+      for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) - 0.017 + curve * (p.getX(i) + px) ** 2);
+      eg.computeVertexNormals();
+      return eg;
+    });
+    const fascia = new THREE.Mesh(fgeo, fasciaMat);
     fascia.position.set(px, py, 0);
     g.add(fascia);
   }
@@ -327,15 +338,16 @@ export function buildCluster(model, G, M, type) {
     fm.emissiveMap = tex;
     fm.transparent = false;
     faces.push(fm);
-    const face = new THREE.Mesh(new THREE.CircleGeometry(r, 64), fm);
+    const gk = key + ':';
+    const face = new THREE.Mesh(geo(gk + 'face', () => new THREE.CircleGeometry(r, 64)), fm);
     face.position.z = 0.001;
     d.add(face);
-    const tube = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.02, r * 1.0, depth, 64, 1, true).rotateX(Math.PI / 2).translate(0, 0, depth / 2), tubeMat);
+    const tube = new THREE.Mesh(geo(gk + 'tube', () => new THREE.CylinderGeometry(r * 1.02, r * 1.0, depth, 64, 1, true).rotateX(Math.PI / 2).translate(0, 0, depth / 2)), tubeMat);
     d.add(tube);
-    const bezel = new THREE.Mesh(new THREE.TorusGeometry(r * 1.04, Math.max(0.0022, r * 0.045), 10, 72), bezelMat);
+    const bezel = new THREE.Mesh(geo(gk + 'bezel', () => new THREE.TorusGeometry(r * 1.04, Math.max(0.0022, r * 0.045), 10, 72)), bezelMat);
     bezel.position.z = depth;
     d.add(bezel);
-    const lens = new THREE.Mesh(new THREE.SphereGeometry(r * 3.2, 48, 8, 0, Math.PI * 2, 0, Math.asin(1.02 / 3.2)).rotateX(Math.PI / 2).translate(0, 0, depth - r * 3.2 * Math.cos(Math.asin(1.02 / 3.2)) - 0.001), glass);
+    const lens = new THREE.Mesh(geo(gk + 'lens', () => new THREE.SphereGeometry(r * 3.2, 48, 8, 0, Math.PI * 2, 0, Math.asin(1.02 / 3.2)).rotateX(Math.PI / 2).translate(0, 0, depth - r * 3.2 * Math.cos(Math.asin(1.02 / 3.2)) - 0.001)), glass);
     lens.renderOrder = 3;
     d.add(lens);
     // the needle: a tapered blade with a short tail, on a hub
@@ -344,14 +356,17 @@ export function buildCluster(model, G, M, type) {
     pivot.position.set(at2[0], at2[1], 0.006);
     const w = Math.max(0.0035, r * 0.055);
     const L = needleLen;
-    const ns = new THREE.Shape();
-    ns.moveTo(-w / 2, -L * 0.18);
-    ns.lineTo(w / 2, -L * 0.18);
-    ns.lineTo(w * 0.14, L);
-    ns.lineTo(-w * 0.14, L);
-    ns.closePath();
-    pivot.add(new THREE.Mesh(new THREE.ExtrudeGeometry(ns, { depth: 0.0012, bevelEnabled: false }), M.needle));
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(w * 1.5, w * 1.7, 0.006, 24).rotateX(Math.PI / 2).translate(0, 0, 0.003), hubMat);
+    const blade = geo(gk + 'needle', () => {
+      const ns = new THREE.Shape();
+      ns.moveTo(-w / 2, -L * 0.18);
+      ns.lineTo(w / 2, -L * 0.18);
+      ns.lineTo(w * 0.14, L);
+      ns.lineTo(-w * 0.14, L);
+      ns.closePath();
+      return new THREE.ExtrudeGeometry(ns, { depth: 0.0012, bevelEnabled: false });
+    });
+    pivot.add(new THREE.Mesh(blade, M.needle));
+    const hub = new THREE.Mesh(geo(gk + 'hub', () => new THREE.CylinderGeometry(w * 1.5, w * 1.7, 0.006, 24).rotateX(Math.PI / 2).translate(0, 0, 0.003)), hubMat);
     pivot.add(hub);
     d.add(pivot);
     needles[name] = pivot;
@@ -374,7 +389,7 @@ export function buildCluster(model, G, M, type) {
     const tex = canvasTexture(c, { wrap: false });
     tex.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.MeshStandardMaterial({ color: 0x050805, map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0, roughness: 0.3 });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(R * 0.62, R * 0.233), mat);
+    const m = new THREE.Mesh(geo(type.id + ':lcd', () => new THREE.PlaneGeometry(R * 0.62, R * 0.233)), mat);
     m.position.set(0, -R * 0.42, 0.0035);
     speedo.add(m);
     lcd = { canvas: c, tex, mat, shown: null };
@@ -399,11 +414,11 @@ export function buildCluster(model, G, M, type) {
     mat.alphaTest = 0.02;
     // dark symbol showing faintly when off
     const ghost = new THREE.MeshBasicMaterial({ color: 0x2a2a2a, alphaMap: tex, transparent: true, opacity: 0.55, depthWrite: false });
-    const geo = new THREE.PlaneGeometry(size, size);
-    const off = new THREE.Mesh(geo, ghost);
+    const pg = geo(type.id + ':lamp:' + size, () => new THREE.PlaneGeometry(size, size));
+    const off = new THREE.Mesh(pg, ghost);
     off.position.set(at[0], at[1], 0.0025);
     speedo.add(off);
-    const on = new THREE.Mesh(geo, mat);
+    const on = new THREE.Mesh(pg, mat);
     on.position.set(at[0], at[1], 0.0027);
     speedo.add(on);
     lamps[name] = mat;

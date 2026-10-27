@@ -7,7 +7,7 @@
 // The cut works on a copy of the body's geometry (the source's is shared by every car of the type).
 
 import * as THREE from 'three';
-import { tubeAlong } from '../gfx/geom.js';
+import { tubeAlong, shapeRun } from '../gfx/geom.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -117,46 +117,54 @@ export function cutOpening(geometry, frame, w, h, r) {
 export function buildFiller(w, h, r, side, paint) {
   const g = new THREE.Group();
   const depth = 0.045;
+  // (the same shapes for every car of a type)
+  const S = shapeRun('filler:' + [w, h, r, side].join(':'));
   const black = new THREE.MeshStandardMaterial({ color: 0x0e0e0f, roughness: 0.6, side: THREE.DoubleSide });
   const rubber = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const steel = new THREE.MeshStandardMaterial({ color: 0x9a9da0, metalness: 0.85, roughness: 0.35 });
   const capMat = new THREE.MeshStandardMaterial({ color: 0x151516, roughness: 0.45 });
   // walls: the outline at the paint and again at the floor, a little smaller (a drawn pocket)
-  const top = outline(w - 0.004, h - 0.004, Math.max(0.003, r - 0.002));
-  const bot = outline(w - 0.016, h - 0.016, Math.max(0.003, r - 0.008));
-  const pos = [];
-  for (let i = 0; i < top.length; i++) {
-    const j = (i + 1) % top.length;
-    const a = [top[i].x, top[i].y, 0.0],
-      b = [top[j].x, top[j].y, 0.0],
-      c = [bot[j].x, bot[j].y, -depth],
-      d = [bot[i].x, bot[i].y, -depth];
-    pos.push(...a, ...b, ...c, ...a, ...c, ...d);
-  }
-  const walls = new THREE.BufferGeometry();
-  walls.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  walls.computeVertexNormals();
+  const walls = S(() => {
+    const top = outline(w - 0.004, h - 0.004, Math.max(0.003, r - 0.002));
+    const bot = outline(w - 0.016, h - 0.016, Math.max(0.003, r - 0.008));
+    const pos = [];
+    for (let i = 0; i < top.length; i++) {
+      const j = (i + 1) % top.length;
+      const a = [top[i].x, top[i].y, 0.0],
+        b = [top[j].x, top[j].y, 0.0],
+        c = [bot[j].x, bot[j].y, -depth],
+        d = [bot[i].x, bot[i].y, -depth];
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    wg.computeVertexNormals();
+    return wg;
+  });
   g.add(new THREE.Mesh(walls, black));
-  const floor = new THREE.Mesh(new THREE.ShapeGeometry(shapeOf(w - 0.016, h - 0.016, Math.max(0.003, r - 0.008)), 6), black);
+  const floor = new THREE.Mesh(S(() => new THREE.ShapeGeometry(shapeOf(w - 0.016, h - 0.016, Math.max(0.003, r - 0.008)), 6)), black);
   floor.position.z = -depth;
   g.add(floor);
   // the rubber lip round the opening (it also hides the cut's edge)
-  const lipPts = outline(w - 0.002, h - 0.002, Math.max(0.003, r - 0.001), 8).map((p) => V(p.x, p.y, -0.001));
-  lipPts.push(lipPts[0].clone());
-  g.add(new THREE.Mesh(tubeAlong(lipPts, 0.0022, 6), rubber));
+  const lip = S(() => {
+    const lipPts = outline(w - 0.002, h - 0.002, Math.max(0.003, r - 0.001), 8).map((p) => V(p.x, p.y, -0.001));
+    lipPts.push(lipPts[0].clone());
+    return tubeAlong(lipPts, 0.0022, 6);
+  });
+  g.add(new THREE.Mesh(lip, rubber));
   // the neck: a steel ring on the floor, the dark mouth, and the cap screwed in
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.029, 0.004, 8, 32), steel);
+  const ring = new THREE.Mesh(S(() => new THREE.TorusGeometry(0.029, 0.004, 8, 32)), steel);
   ring.position.z = -depth + 0.006;
   g.add(ring);
-  const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.026, 24), new THREE.MeshStandardMaterial({ color: 0x030303, roughness: 0.9 }));
+  const mouth = new THREE.Mesh(S(() => new THREE.CircleGeometry(0.026, 24)), new THREE.MeshStandardMaterial({ color: 0x030303, roughness: 0.9 }));
   mouth.position.z = -depth + 0.004;
   g.add(mouth);
   const cap = new THREE.Group();
-  cap.add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.031, 0.014, 32).rotateX(Math.PI / 2), capMat));
-  cap.add(new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.01, 0.012).translate(0, 0, 0.011), capMat));
+  cap.add(new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.03, 0.031, 0.014, 32).rotateX(Math.PI / 2)), capMat));
+  cap.add(new THREE.Mesh(S(() => new THREE.BoxGeometry(0.046, 0.01, 0.012).translate(0, 0, 0.011)), capMat));
   for (let k = 0; k < 16; k++) {
     const a = (k / 16) * Math.PI * 2;
-    cap.add(new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.004, 0.012).translate(Math.cos(a) * 0.031, Math.sin(a) * 0.031, 0), capMat));
+    cap.add(new THREE.Mesh(S(() => new THREE.BoxGeometry(0.003, 0.004, 0.012).translate(Math.cos(a) * 0.031, Math.sin(a) * 0.031, 0)), capMat));
   }
   cap.position.z = -depth + 0.012;
   g.add(cap);
@@ -166,13 +174,12 @@ export function buildFiller(w, h, r, side, paint) {
   hinge.position.set((side * (w - 0.012)) / 2, 0, -0.012);
   const fw = w - 0.005,
     fh = h - 0.005;
-  const flapGeo = new THREE.ExtrudeGeometry(shapeOf(fw, fh, Math.max(0.002, r - 0.0025)), { depth: 0.0018, bevelEnabled: true, bevelThickness: 0.0006, bevelSize: 0.0008, bevelSegments: 2, curveSegments: 8 });
   // (the flap's outer face at the paint, measured from the hinge)
-  flapGeo.translate((-side * (w - 0.012)) / 2, 0, 0.012 - 0.0024);
+  const flapGeo = S(() => new THREE.ExtrudeGeometry(shapeOf(fw, fh, Math.max(0.002, r - 0.0025)), { depth: 0.0018, bevelEnabled: true, bevelThickness: 0.0006, bevelSize: 0.0008, bevelSegments: 2, curveSegments: 8 }).translate((-side * (w - 0.012)) / 2, 0, 0.012 - 0.0024));
   const flap = new THREE.Mesh(flapGeo, paint);
   flap.castShadow = true;
   hinge.add(flap);
-  const arm = tubeAlong([V(0, 0, 0), V(-side * 0.008, 0, 0.004), V(-side * 0.016, 0, 0.009), V(-side * 0.026, 0, 0.0095)], 0.0022, 6);
+  const arm = S(() => tubeAlong([V(0, 0, 0), V(-side * 0.008, 0, 0.004), V(-side * 0.016, 0, 0.009), V(-side * 0.026, 0, 0.0095)], 0.0022, 6));
   hinge.add(new THREE.Mesh(arm, steel));
   g.add(hinge);
   return { group: g, hinge, cap, mouth, inside: [] };

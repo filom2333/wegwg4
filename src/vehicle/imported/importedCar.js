@@ -6,7 +6,7 @@ import { runExtras } from '../extrasCache.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { roundedBox, roundRectShape } from '../../gfx/geom.js';
+import { roundedBox, roundRectShape, shapeRun } from '../../gfx/geom.js';
 import { makeCanvas, canvasTexture } from '../../gfx/textures.js';
 import { applyWeathering, weatheringUniforms } from '../weathering.js';
 import { buildCluster } from '../cluster.js';
@@ -208,6 +208,56 @@ export function faceQuat(n) {
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
 }
 
+// The windscreen of a source glass mesh, for the wipers: its normal, the foot of it (the middle
+// of its lowest edge), the way up it, how far it rises along that, how much it bulges out and
+// half its width at the foot.
+const SCREENS = new WeakMap();
+function screenOf(geometry) {
+  const pos = geometry.attributes.position,
+    idx = geometry.index;
+  const a = V(0, 0, 0),
+    b = V(0, 0, 0),
+    c = V(0, 0, 0),
+    fn = V(0, 0, 0);
+  const N = V(0, 0, 0),
+    pts = [];
+  const tris = idx ? idx.count / 3 : pos.count / 3;
+  const at = (i) => (idx ? idx.getX(i) : i);
+  for (let i = 0; i < tris; i++) {
+    a.fromBufferAttribute(pos, at(i * 3));
+    b.fromBufferAttribute(pos, at(i * 3 + 1));
+    c.fromBufferAttribute(pos, at(i * 3 + 2));
+    if (a.z + b.z + c.z < 0.3) continue;
+    fn.subVectors(b, a).cross(c.clone().sub(a));
+    if (fn.y < 0) fn.negate();
+    const area = fn.length();
+    if (area < 1e-9 || fn.z < 0.25 * area) continue;
+    N.add(fn);
+    pts.push(a.clone(), b.clone(), c.clone());
+  }
+  if (pts.length < 9) return null;
+  N.normalize();
+  let minY = Infinity,
+    maxY = -Infinity;
+  for (const p of pts) (minY = Math.min(minY, p.y)), (maxY = Math.max(maxY, p.y));
+  let zf = 0,
+    nf = 0,
+    halfW = 0;
+  for (const p of pts)
+    if (p.y < minY + 0.03) {
+      zf += p.z;
+      nf++;
+      halfW = Math.max(halfW, Math.abs(p.x));
+    }
+  const foot = V(0, minY, zf / nf);
+  const U = V(0, 1, 0).addScaledVector(N, -N.y).normalize();
+  const slope = (maxY - minY) / U.y;
+  let bulge = 0;
+  for (const p of pts) bulge = Math.max(bulge, p.clone().sub(foot).dot(N));
+  bulge = Math.min(bulge, 0.04);
+  return { N, foot, U, slope, bulge, halfW };
+}
+
 export class ImportedCarModel {
   constructor(type, asset, mats) {
     this.type = type;
@@ -346,30 +396,31 @@ export class ImportedCarModel {
       if ((!src && !d.make) || !parent) continue;
       const { g, holder } = pivotGroup(d.pivot, 'ctl_' + id);
       if (src) for (const m of this.meshesFor('x_' + id, { shadow: false })) holder.add(m);
-      else this.makeControl(d, holder, parent);
+      else this.makeControl(d, holder, parent, shapeRun(this.type.id + ':control:' + id));
       parent.add(g);
       this.moving[id] = { g, d, axis: (d.axis || V(0, 0, 1)).clone().normalize(), v: 0 };
     }
   }
 
   // Stand-ins in car space: a key in a chrome lock ring, a column stalk, a parking brake pedal.
-  makeControl(d, holder, parent) {
+  // S hands back the shapes the type's first car made.
+  makeControl(d, holder, parent, S) {
     const M = this.mats;
     const n = (d.axis || V(0, 0, 1)).clone().normalize();
     if (d.make === 'key') {
       // (the ring stays put, the key turns)
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.015, 0.0032, 8, 24), M.chrome);
+      const ring = new THREE.Mesh(S(() => new THREE.TorusGeometry(0.015, 0.0032, 8, 24)), M.chrome);
       ring.position.copy(d.pivot);
       ring.quaternion.copy(faceQuat(n.clone().negate()));
       parent.add(ring);
       const k = new THREE.Group();
       k.position.copy(d.pivot);
       k.quaternion.copy(faceQuat(n.clone().negate()));
-      const head = new THREE.Mesh(roundedBox(0.009, 0.032, 0.026, 0.004, 2), M.plastic);
+      const head = new THREE.Mesh(S(() => roundedBox(0.009, 0.032, 0.026, 0.004, 2)), M.plastic);
       head.position.set(0, 0.004, 0.024);
-      const shank = new THREE.Mesh(new THREE.BoxGeometry(0.0035, 0.009, 0.014), M.steel);
+      const shank = new THREE.Mesh(S(() => new THREE.BoxGeometry(0.0035, 0.009, 0.014)), M.steel);
       shank.position.set(0, 0, 0.007);
-      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.007, 0.0012, 6, 16), M.steel);
+      const loop = new THREE.Mesh(S(() => new THREE.TorusGeometry(0.007, 0.0012, 6, 16)), M.steel);
       loop.position.set(0, -0.004, 0.042);
       loop.rotation.y = Math.PI / 2;
       k.add(head, shank, loop);
@@ -379,21 +430,21 @@ export class ImportedCarModel {
       const dir = d.dir.clone().normalize();
       const L = d.length || 0.12;
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), dir);
-      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0055, L, 10), M.plastic);
+      const rod = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.0045, 0.0055, L, 10)), M.plastic);
       rod.position.copy(d.pivot).addScaledVector(dir, L / 2);
       rod.quaternion.copy(q);
-      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.008, 0.034, 12), M.plastic);
+      const tip = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.0085, 0.008, 0.034, 12)), M.plastic);
       tip.position.copy(d.pivot).addScaledVector(dir, L - 0.012);
       tip.quaternion.copy(q);
       holder.add(rod, tip);
     } else if (d.make === 'knob') {
       // a ribbed knob standing out of the dash, a white mark on its face
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), n.clone().negate());
-      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.0135, 0.014, 18), M.plastic);
+      const knob = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.012, 0.0135, 0.014, 18)), M.plastic);
       knob.position.copy(d.pivot).addScaledVector(n, -0.007);
       knob.quaternion.copy(q);
       M.markWhite = M.markWhite || new THREE.MeshStandardMaterial({ color: 0xd8d4c8, roughness: 0.6 });
-      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.0025, 0.0012, 0.009), M.markWhite);
+      const mark = new THREE.Mesh(S(() => new THREE.BoxGeometry(0.0025, 0.0012, 0.009)), M.markWhite);
       mark.position.copy(d.pivot).addScaledVector(n, -0.0142);
       mark.quaternion.copy(faceQuat(n.clone().negate()));
       mark.translateY(0.006);
@@ -402,7 +453,7 @@ export class ImportedCarModel {
     } else if (d.make === 'button') {
       // the hazard button: red, a little proud of the panel
       M.hazardRed = M.hazardRed || new THREE.MeshStandardMaterial({ color: 0x9a1c12, roughness: 0.45 });
-      const b = new THREE.Mesh(roundedBox(0.03, 0.018, 0.01, 0.003, 2), M.hazardRed);
+      const b = new THREE.Mesh(S(() => roundedBox(0.03, 0.018, 0.01, 0.003, 2)), M.hazardRed);
       b.position.copy(d.pivot).addScaledVector(n, -0.004);
       b.quaternion.copy(faceQuat(n.clone().negate()));
       holder.add(b);
@@ -411,11 +462,11 @@ export class ImportedCarModel {
       const along = d.at.clone().sub(d.pivot);
       const len = along.length() * 2;
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), along.clone().normalize());
-      const bar = new THREE.Mesh(roundedBox(0.011, 0.016, len, 0.004, 2), M.chrome);
+      const bar = new THREE.Mesh(S(() => roundedBox(0.011, 0.016, len, 0.004, 2)), M.chrome);
       bar.position.copy(d.at);
       bar.quaternion.copy(q);
       holder.add(bar);
-      const cup = new THREE.Mesh(roundedBox(0.006, 0.032, len + 0.02, 0.003, 1), M.black);
+      const cup = new THREE.Mesh(S(() => roundedBox(0.006, 0.032, len + 0.02, 0.003, 1)), M.black);
       cup.position.copy(d.at).add(V(Math.sign(d.at.x) * 0.007, 0, 0));
       cup.quaternion.copy(q);
       parent.add(cup);
@@ -427,31 +478,31 @@ export class ImportedCarModel {
       const dir = along.clone().normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), dir);
       const h = d.pivot.y - d.floor - 0.015;
-      const box = new THREE.Mesh(roundedBox(0.1, h, L + 0.16, 0.012, 2), M.black);
+      const box = new THREE.Mesh(S(() => roundedBox(0.1, h, L + 0.16, 0.012, 2)), M.black);
       box.position.set(d.pivot.x, d.floor + h / 2, d.pivot.z + dir.z * (L / 2) - 0.02);
       parent.add(box);
-      const slot = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.006, L * 0.7), M.rubber);
+      const slot = new THREE.Mesh(S(() => new THREE.BoxGeometry(0.032, 0.006, L * 0.7)), M.rubber);
       slot.position.set(d.pivot.x, d.floor + h + 0.002, d.pivot.z + dir.z * (L * 0.45));
       parent.add(slot);
       const lever = new THREE.Group();
       lever.position.copy(d.pivot);
       lever.quaternion.copy(q);
-      const bar = new THREE.Mesh(roundedBox(0.022, 0.026, L, 0.006, 2), M.black);
+      const bar = new THREE.Mesh(S(() => roundedBox(0.022, 0.026, L, 0.006, 2)), M.black);
       bar.position.set(0, 0.006, L / 2);
-      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.016, 0.11, 14).rotateX(Math.PI / 2), M.rubber);
+      const grip = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.017, 0.016, 0.11, 14).rotateX(Math.PI / 2)), M.rubber);
       grip.position.set(0, 0.008, L - 0.05);
-      const button = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.012, 10).rotateX(Math.PI / 2), M.chrome);
+      const button = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.008, 0.008, 0.012, 10).rotateX(Math.PI / 2)), M.chrome);
       button.position.set(0, 0.008, L + 0.008);
-      const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.03, 12).rotateZ(Math.PI / 2), M.steel);
+      const knuckle = new THREE.Mesh(S(() => new THREE.CylinderGeometry(0.014, 0.014, 0.03, 12).rotateZ(Math.PI / 2)), M.steel);
       lever.add(bar, grip, button, knuckle);
       holder.add(lever);
     } else if (d.make === 'pedal') {
       // hung from the pivot, the pad facing the driver's foot
-      const pad = new THREE.Mesh(roundedBox(0.052, 0.062, 0.012, 0.004, 1), M.rubber);
+      const pad = new THREE.Mesh(S(() => roundedBox(0.052, 0.062, 0.012, 0.004, 1)), M.rubber);
       pad.position.copy(d.at);
       pad.rotation.x = -0.45;
       const arm = d.pivot.clone().sub(d.at);
-      const rod = new THREE.Mesh(new THREE.BoxGeometry(0.012, arm.length(), 0.012), M.black);
+      const rod = new THREE.Mesh(S(() => new THREE.BoxGeometry(0.012, arm.length(), 0.012)), M.black);
       rod.position.copy(d.at).addScaledVector(arm, 0.5);
       rod.quaternion.setFromUnitVectors(V(0, 1, 0), arm.normalize());
       holder.add(pad, rod);
@@ -551,53 +602,20 @@ export class ImportedCarModel {
   addWipers() {
     const glass = this.parts.body.inner.children.find((m) => m.name === 'body:glass');
     if (!glass) return;
-    const pos = glass.geometry.attributes.position,
-      idx = glass.geometry.index;
-    const a = V(0, 0, 0),
-      b = V(0, 0, 0),
-      c = V(0, 0, 0),
-      fn = V(0, 0, 0);
-    const N = V(0, 0, 0),
-      pts = [];
-    const tris = idx ? idx.count / 3 : pos.count / 3;
-    const at = (i) => (idx ? idx.getX(i) : i);
-    for (let i = 0; i < tris; i++) {
-      a.fromBufferAttribute(pos, at(i * 3));
-      b.fromBufferAttribute(pos, at(i * 3 + 1));
-      c.fromBufferAttribute(pos, at(i * 3 + 2));
-      if (a.z + b.z + c.z < 0.3) continue;
-      fn.subVectors(b, a).cross(c.clone().sub(a));
-      if (fn.y < 0) fn.negate();
-      const area = fn.length();
-      if (area < 1e-9 || fn.z < 0.25 * area) continue;
-      N.add(fn);
-      pts.push(a.clone(), b.clone(), c.clone());
+    // (where the screen is and how it curves: worked out once per source glass)
+    let screen = SCREENS.get(glass.geometry);
+    if (!screen) {
+      screen = screenOf(glass.geometry);
+      SCREENS.set(glass.geometry, screen);
     }
-    if (pts.length < 9) return;
-    N.normalize();
-    let minY = Infinity,
-      maxY = -Infinity;
-    for (const p of pts) (minY = Math.min(minY, p.y)), (maxY = Math.max(maxY, p.y));
-    let zf = 0,
-      nf = 0,
-      halfW = 0;
-    for (const p of pts)
-      if (p.y < minY + 0.03) {
-        zf += p.z;
-        nf++;
-        halfW = Math.max(halfW, Math.abs(p.x));
-      }
-    const foot = V(0, minY, zf / nf);
-    const U = V(0, 1, 0).addScaledVector(N, -N.y).normalize();
-    const slope = (maxY - minY) / U.y;
-    let bulge = 0;
-    for (const p of pts) bulge = Math.max(bulge, p.clone().sub(foot).dot(N));
-    bulge = Math.min(bulge, 0.04);
+    if (!screen) return;
+    const { N, foot, U, slope, bulge, halfW } = screen;
     const M = this.mats;
     M.wiperArm = M.wiperArm || new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.55, metalness: 0.45 });
     M.wiperRubber = M.wiperRubber || new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.9 });
     const s = this.type.DRIVER_SIDE ?? 1;
     const across = V(-s, 0, 0).addScaledVector(N, s * N.x).normalize();
+    const S = shapeRun(this.type.id + ':wipers');
     const group = new THREE.Group();
     group.name = 'wipers';
     const wipers = [],
@@ -626,19 +644,22 @@ export class ImportedCarModel {
         return m;
       };
       // the spindle coming up out of the scuttle and its nut cover
-      put(new THREE.CylinderGeometry(0.016, 0.019, 0.05, 16).rotateX(Math.PI / 2), M.wiperArm, 0, 0, 0.025 - lift - 0.018);
-      put(new THREE.SphereGeometry(0.017, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2), M.wiperArm, 0, 0, -lift - 0.018);
+      put(S(() => new THREE.CylinderGeometry(0.016, 0.019, 0.05, 16).rotateX(Math.PI / 2)), M.wiperArm, 0, 0, 0.025 - lift - 0.018);
+      put(S(() => new THREE.SphereGeometry(0.017, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2)), M.wiperArm, 0, 0, -lift - 0.018);
       // the arm: a channel tapering toward the tip, a cranked hook down onto the blade
-      const arm = roundedBox(L, 0.022, 0.007, 0.0025, 1).translate(L / 2, 0, 0);
-      const ap = arm.attributes.position;
-      for (let i = 0; i < ap.count; i++) ap.setY(i, ap.getY(i) * (1 - 0.45 * (ap.getX(i) / L)));
-      arm.computeVertexNormals();
+      const arm = S(() => {
+        const ag = roundedBox(L, 0.022, 0.007, 0.0025, 1).translate(L / 2, 0, 0);
+        const ap = ag.attributes.position;
+        for (let i = 0; i < ap.count; i++) ap.setY(i, ap.getY(i) * (1 - 0.45 * (ap.getX(i) / L)));
+        ag.computeVertexNormals();
+        return ag;
+      });
       put(arm, M.wiperArm, 0, 0, -lift - 0.022);
-      put(roundedBox(0.03, 0.012, 0.014, 0.003, 1), M.wiperArm, L, 0, -lift - 0.017);
+      put(S(() => roundedBox(0.03, 0.012, 0.014, 0.003, 1)), M.wiperArm, L, 0, -lift - 0.017);
       // the blade: a sprung carrier with its rubber edge on the glass
-      put(roundedBox(hb * 2, 0.012, 0.009, 0.003, 1), M.wiperArm, L, 0, -lift - 0.009);
-      put(new THREE.BoxGeometry(hb * 2 - 0.01, 0.004, 0.006), M.wiperRubber, L, 0, -lift - 0.002);
-      for (const k of [-0.62, 0.62]) put(roundedBox(0.05, 0.013, 0.006, 0.002, 1), M.wiperArm, L + hb * k, 0, -lift - 0.015);
+      put(S(() => roundedBox(hb * 2, 0.012, 0.009, 0.003, 1)), M.wiperArm, L, 0, -lift - 0.009);
+      put(S(() => new THREE.BoxGeometry(hb * 2 - 0.01, 0.004, 0.006)), M.wiperRubber, L, 0, -lift - 0.002);
+      for (const k of [-0.62, 0.62]) put(S(() => roundedBox(0.05, 0.013, 0.006, 0.002, 1)), M.wiperArm, L + hb * k, 0, -lift - 0.015);
       const wg = new THREE.Group();
       wg.add(f);
       wg.userData.pivot = pivot;

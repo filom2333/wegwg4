@@ -5,6 +5,20 @@ import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferG
 
 export { mergeGeometries, mergeVertices };
 
+// Shapes a builder makes the same way every time (every car of a type, the same fitting): the
+// first build makes them, later builds get the same geometries back, in the order they ask.
+// `make` must hold everything done to the geometry, since later builds skip it.
+const SHAPE_RUNS = new Map();
+export function shapeRun(key) {
+  let list = SHAPE_RUNS.get(key);
+  if (!list) SHAPE_RUNS.set(key, (list = []));
+  let i = 0;
+  return (make) => {
+    if (i === list.length) list.push(make());
+    return list[i++];
+  };
+}
+
 // Catmull-Rom resample of a 2D polyline (open) to a dense smooth list.
 export function smoothPath2(points, perSeg = 6, closed = false) {
   const v = points.map((p) => new THREE.Vector2(p[0], p[1]));
