@@ -118,7 +118,6 @@ export class MenuBackdrop {
     this.ready = this.load(this.cur).then(() => {
       this.start = performance.now();
       this.slideAt = 0;
-      this.load((this.cur + 1) % shots.length);
       cv.classList.add('on');
     });
     this.tick = this.tick.bind(this);
@@ -126,14 +125,24 @@ export class MenuBackdrop {
   }
 
   // A picture and its depth as textures; the focus is the depth of what is in the middle third.
-  async load(i) {
-    if (this.slides[i]) return this.slides[i];
+  // (Decoded off the main thread, and taken in while a picture is standing, not at a change: the
+  // decode and upload done at once held the menu still for a moment just as the pictures changed,
+  // and it looked as if the next one tried to come and the old one stayed.)
+  load(i) {
+    if (!this.loading) this.loading = new Map();
+    if (this.slides[i]) return Promise.resolve(this.slides[i]);
+    if (this.loading.has(i)) return this.loading.get(i);
     const s = this.shots[i];
-    const [img, dep] = await Promise.all([image(s.src), image(s.depth)]);
-    const gl = this.gl;
-    const slide = { img: texture(gl, img), dep: texture(gl, dep), aspect: img.width / img.height, focus: focusOf(dep), path: drift() };
-    this.slides[i] = slide;
-    return slide;
+    const pr = Promise.all([bitmap(s.src), bitmap(s.depth)]).then(([img, dep]) => {
+      const gl = this.gl;
+      const slide = { img: texture(gl, img), dep: texture(gl, dep), aspect: img.width / img.height, focus: s.focus ?? focusOf(dep), path: drift() };
+      img.close && img.close();
+      dep.close && dep.close();
+      this.slides[i] = slide;
+      return slide;
+    });
+    this.loading.set(i, pr);
+    return pr;
   }
 
   tick(now) {
@@ -158,9 +167,10 @@ export class MenuBackdrop {
     if (mix >= 1) {
       this.cur = nextI;
       this.slideAt = t - FADE;
-      this.load((nextI + 1) % this.shots.length);
       mix = 0;
     }
+    // the one after next comes in a few seconds into this one, well clear of the fade
+    if (age > 3 && age < SLIDE - 2) this.load((this.cur + 1) % this.shots.length);
     const M = this.mouse;
     M.sx += (M.x - M.sx) * 0.04;
     M.sy += (M.y - M.sy) * 0.04;
@@ -215,19 +225,30 @@ function drift() {
   return { x0: 0.02 * side + r() * 0.004, x1: -0.02 * side + r() * 0.004, y0: r() * 0.006, y1: r() * 0.006, z0: 1.07, z1: 1.07 + 0.035 + Math.random() * 0.03 };
 }
 
-function image(src) {
-  return new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = src;
-  });
+// A picture decoded off the main thread, upside down as GL wants it (an <img> where
+// createImageBitmap is missing: flipped on upload instead).
+async function bitmap(src) {
+  const res = await fetch(src);
+  const blob = await res.blob();
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(blob, { imageOrientation: 'flipY' });
+    } catch (e) {
+      // (older browsers without the options)
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  img.flipOnUpload = true;
+  return img;
 }
 
 function texture(gl, img) {
   const t = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, t);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, !!img.flipOnUpload);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
   gl.generateMipmap(gl.TEXTURE_2D);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -237,12 +258,15 @@ function texture(gl, img) {
   return t;
 }
 
-// The disparity the eye turns around: what fills the middle of the picture.
+// The disparity the eye turns around: what fills the middle of the picture (for a picture without
+// one worked out beforehand; a canvas kept off the graphics card, so reading it back waits on
+// nothing).
 function focusOf(img) {
   const c = document.createElement('canvas');
   c.width = 64;
   c.height = 36;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d', { willReadFrequently: true });
+  // (a bitmap comes upside down: the middle third is the middle third either way)
   x.drawImage(img, 0, 0, 64, 36);
   const d = x.getImageData(16, 10, 32, 20).data;
   const v = [];
