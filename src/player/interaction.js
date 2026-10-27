@@ -14,7 +14,7 @@ import { fitMatrix } from '../vehicle/swap.js';
 import { PLATES, plateSpot, plateWorldMatrix, plateModel, attachPlate, detachPlate, plateUnderRay, paintPlate, worldSpot, tiltSpot } from '../vehicle/plates.js';
 import { ACCESSORIES, MOUNT_LABEL, buildAccessory, fitAccessory, removeAccessory, canRemoveAccessory, cargoZone } from '../vehicle/accessories.js';
 import { Hands, PALM_CONTACT } from './hands.js';
-import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms, naturalQ, elbowDir } from './grips.js';
+import { holdPose, handsOnItem, handFromAnchor, frameQ, anchorQ, anchorQFor, defaultArms, setArmPitch, naturalQ, elbowDir } from './grips.js';
 import { HOTBAR, fitsInBag } from '../items/inventory.js';
 import { STATIONS } from '../audio/stations.js';
 import { ALBUMS, trackOn } from '../audio/music/albums.js';
@@ -25,8 +25,14 @@ import { setTune } from '../vehicle/tuning.js';
 
 
 // Part table entry of a part item (it remembers which kind of car it came off).
-// how far from the eye a sponge or brush can be put to a car (an arm's length, leaning in)
-const SCRUB_REACH = 1.3;
+// how far from the eye the hand goes to hold something (a door, a lid, a heavy thing dragged, a
+// sponge on a car): an arm's length, leaning in. Further off, the arm would have to be drawn out
+// to reach it.
+const HAND_REACH = 0.95;
+// LMB on a thing let go within this many seconds is a click (it stays in the hand); held longer, it
+// is carried until let go
+const CLICK_T = 0.22;
+const SCRUB_REACH = HAND_REACH + 0.1;
 
 function partDefOf(it) {
   return carType(it.state && it.state.carType).PARTS[it.part] || { label: it.part, mass: 10 };
@@ -90,6 +96,8 @@ export class Interaction {
     this.dragging = false;
     this.holdRot = new THREE.Quaternion();
     this.holdDist = 1.0;
+    this.mouseCarry = null;
+    this.carryVel = new THREE.Vector3();
     // key 1: fists up (empty hands ready to fight); a punch runs t 0..1, alternating hands
     this.fists = false;
     this.punch = { t: 1, side: 'left', done: true };
@@ -584,7 +592,10 @@ export class Interaction {
         }
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
-      prompts.push(['G', 'Drop', 'hold to throw']);
+      // carried on LMB: letting go is all there is to it
+      if (this.mouseCarry && this.mouseCarry.carrying) prompts.length = 0;
+      if (this.mouseCarry && this.mouseCarry.carrying) prompts.push(['LMB', 'Let go to drop it', 'swing the mouse to throw']);
+      else prompts.push(['G', 'Drop', 'hold to throw']);
       if (!def || !def.weapon) prompts.push(['RMB', 'Rotate'], ['Wheel', this.floating ? 'Closer / further, back into the hand' : 'Hold out / closer']);
       if (def && !it.part) prompts.push([kn('stow'), fitsInBag(it.id, it.state) ? 'Put in backpack' : 'Too bulky for the backpack']);
       if (!blocked) {
@@ -612,7 +623,10 @@ export class Interaction {
           if (t.hotspot.inside) info = null;
           else this.dotLabel = null;
         }
-        prompts.push(...r.prompts);
+        // (a door, a lid or a heavy thing is taken hold of by hand: only within an arm's length)
+        const gd = this.grabbable(t);
+        const far = gd && gd.kind !== 'crank' && (t.dist || 0) > HAND_REACH;
+        prompts.push(...(far ? r.prompts.map((pr) => (/hold and drag|Drag it/.test(pr[1]) ? ['', 'Come closer to take hold of it'] : pr)) : r.prompts));
         if (!blocked) this.handleTargetInput(t, dt);
       } else this.removing = null;
       // R held with nothing in the hands and nothing aimed at: take off what you wear
@@ -727,7 +741,7 @@ export class Interaction {
       G.localN = probe.applyMatrix4(new THREE.Matrix4().copy(m).invert());
     }
     // the hand holds it this far out along the view
-    G.dist = clamp(at ? at.distanceTo(this.cam.position) : 0.8, 0.3, REACH + 0.2);
+    G.dist = clamp(at ? at.distanceTo(this.cam.position) : 0.8, 0.3, HAND_REACH);
     this.grab = G;
   }
 
@@ -858,7 +872,7 @@ export class Interaction {
     // walked off or pulled past where it can go: the hand slips off
     const at = this.grabWorld(G, this.grabOpen(G));
     G.point = at;
-    if (at.distanceTo(target) > 0.85 || at.distanceTo(cam.position) > REACH + 0.7) {
+    if (at.distanceTo(target) > 0.6 || at.distanceTo(cam.position) > HAND_REACH + 0.4) {
       this.letGo(G);
       return false;
     }
@@ -901,7 +915,7 @@ export class Interaction {
     const p = at || it.mesh.getWorldPosition(V(0, 0, 0));
     it.mesh.updateMatrixWorld(true);
     this.dragLocal = it.mesh.worldToLocal(p.clone());
-    this.dragDist = clamp(p.distanceTo(this.cam.position), 0.9, REACH);
+    this.dragDist = clamp(p.distanceTo(this.cam.position), 0.6, HAND_REACH);
     const h = this.lookHit;
     const n = h && h.normal ? V(h.normal.x, h.normal.y, h.normal.z) : this.cam.position.clone().sub(p).normalize();
     this.dragN = n.applyQuaternion(it.mesh.quaternion.clone().invert());
@@ -1116,7 +1130,7 @@ export class Interaction {
           info = { title: it.name, sub: `${carType(it.state.carType).short} part · ${partDefOf(it).mass} kg` };
         } else info = this.heldInfo(it);
         if (heavyItem(it)) prompts.push(['LMB', 'Drag it (hold)']);
-        else prompts.push(['E', 'Pick up']);
+        else prompts.push(['LMB', 'Take it', 'hold to carry, let go to drop']);
         if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
         if (it.def && it.def.consume) prompts.push(['F', 'Use now']);
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
@@ -1485,15 +1499,21 @@ export class Interaction {
     // moved by hand (updateGrab); E does not swing them. On the filler E works the cap.
     const gd = this.grabbable(t);
     if (gd) {
-      if (viaMouse) return this.startGrab(gd, t);
+      if (viaMouse) return gd.kind === 'crank' || (t.dist || 0) <= HAND_REACH ? this.startGrab(gd, t) : undefined;
       if (gd.kind === 'flap' && car.fillerOpen) car.useCap();
       else if (gd.kind === 'heavy') g.hud && g.hud.toast('Too heavy to lift: hold LMB on it and drag it');
       return;
     }
     switch (t.kind) {
       case 'item':
-        if (!viaMouse && this.onCap(t)) this.toggleCap(t.item);
-        else if (!t.item.mounted) this.pick(t.item);
+        // E works a can's cap and nothing else; LMB takes things: a click keeps it in the hand,
+        // held on it carries it until LMB lets go (see updateHeld)
+        if (!viaMouse) {
+          if (this.onCap(t)) this.toggleCap(t.item);
+        } else if (!t.item.mounted) {
+          this.pick(t.item);
+          this.mouseCarry = { it: t.item, t: 0, carrying: false };
+        }
         break;
       case 'part':
         break;
@@ -1559,9 +1579,12 @@ export class Interaction {
     this.removing = null;
   }
 
-  drop(throwSpeed = 0) {
+  // `swing`: the velocity it had in the hand (carried on LMB and let go), else thrown along the
+  // view at throwSpeed (G held).
+  drop(throwSpeed = 0, swing = null) {
     const it = this.held;
     if (!it) return;
+    this.mouseCarry = null;
     const g = this.game;
     const pos = it.mesh.position.clone();
     const q = it.mesh.quaternion.clone();
@@ -1572,9 +1595,15 @@ export class Interaction {
     dir.normalize();
     const hit = g.physics.raycast(eye, dir, len + 0.05, GROUPS.ground, g.player.body);
     if (hit) pos.copy(eye).addScaledVector(dir, Math.max(0.2, hit.distance - Math.max(it.size.x, it.size.z) * 0.5));
-    const vel = V(0, 0, -1).applyQuaternion(this.cam.quaternion).multiplyScalar(throwSpeed / Math.max(1, Math.sqrt(it.mass)));
-    if (g.player.seat) vel.add(g.car.dyn.lastLinvel);
-    else vel.add(g.player.velocity);
+    let vel;
+    if (swing) {
+      // (what the hand gave it, less for heavy things; the player's own way is in it already)
+      vel = swing.multiplyScalar(1.6).clampLength(0, 11).multiplyScalar(1 / Math.max(1, Math.sqrt(it.mass / 3)));
+    } else {
+      vel = V(0, 0, -1).applyQuaternion(this.cam.quaternion).multiplyScalar(throwSpeed / Math.max(1, Math.sqrt(it.mass)));
+      if (g.player.seat) vel.add(g.car.dyn.lastLinvel);
+      else vel.add(g.player.velocity);
+    }
     g.items.release(it, pos, q, vel);
     this.held = null;
     this.dragging = false;
@@ -1745,6 +1774,29 @@ export class Interaction {
       if (!isBig && this.holdDist < 0.42) this.floating = false;
     }
     this.aim = lerp(this.aim, weapon && input.mouseDown(2) ? 1 : 0, Math.min(1, dt * 10));
+    // taken with LMB: let go at once, it stays in the hand; held on, it goes along in front until
+    // LMB lets go, and then falls (or flies, if it was swung) the way it was moving
+    const mc = this.mouseCarry;
+    if (mc && (mc.it !== it || this.dragging)) this.mouseCarry = null;
+    else if (mc) {
+      if (input.mouseDown(0)) {
+        mc.t += dt;
+        if (!mc.carrying && mc.t > CLICK_T) {
+          mc.carrying = true;
+          this.carryPrev = null;
+          this.carryVel.set(0, 0, 0);
+          // a small thing comes out of the hand to go along in front, as a big one does
+          if (!carriedBig(it)) {
+            this.floating = true;
+            this.holdDist = 0.55;
+            this.holdRot.copy(cam.quaternion.clone().invert().multiply(it.mesh.quaternion));
+          }
+        }
+      } else {
+        this.mouseCarry = null;
+        if (mc.carrying) return this.drop(0, this.carryVel.clone());
+      }
+    }
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
@@ -1831,11 +1883,19 @@ export class Interaction {
       it.mesh.position.copy(wp);
       it.mesh.quaternion.copy(wq);
     }
+    // (how it moves while carried on LMB: what it keeps when let go)
+    if (this.mouseCarry && this.mouseCarry.carrying) {
+      const pn = it.mesh.position;
+      if (this.carryPrev) this.carryVel.lerp(pn.clone().sub(this.carryPrev).divideScalar(Math.max(dt, 1e-3)), 0.45);
+      this.carryPrev = (this.carryPrev || V(0, 0, 0)).copy(pn);
+    }
     // ---- using the held item
     if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 6);
     if (this.useAnim > 0) this.useAnim -= dt * 1.6;
     const blocked = this.game.ui && this.game.ui.blocksMove;
     if (blocked) return;
+    // (LMB is busy holding it)
+    if (this.mouseCarry) return;
     if (!def || !def.binoculars) this.binoZoom = 0;
     if (def) {
       if (def.weapon) this.updateWeapon(it, dt);
@@ -1908,33 +1968,43 @@ export class Interaction {
     const origin = this.cam.position;
     const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
     const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
-    // (and within an arm's reach of the chest, leaning in: low down that means crouching)
-    const chest = V(0, -0.3, 0).add(origin);
+    // (and within the arm's reach of the shoulder, leaned in as far as it goes: low down that
+    // means crouching; any further and the arm would be drawn out to get there)
+    const shoulder = defaultArms().right.shoulder.add(V(0, -0.125, -0.25)).applyQuaternion(this.cam.quaternion).add(origin);
     let best = null;
     for (const c of new Set([g.car, ...((g.fleet && g.fleet.cars) || [])])) {
       if (!c || c.root.position.distanceTo(origin) > 7) continue;
       const s = plateSpot(c, origin, dir, SCRUB_REACH, 0, right);
-      if (s && s.point.distanceTo(chest) < ARM_REACH + 0.25 && (!best || s.dist < best.dist)) best = s;
+      if (s && s.point.distanceTo(shoulder) < 0.72 && (!best || s.dist < best.dist)) best = s;
     }
     return best;
   }
 
   // Where the held sponge or brush is while it scrubs (camera space, for the held pose): flat on
-  // the surface, the brush's handle toward the player; the sponge going round in small circles,
-  // the brush back and forth along its length. `contact` is the world point it rubs.
+  // the surface under the hand, the back of the hand out and the knuckles on along the surface the
+  // way the arm comes at it from the shoulder (a hand turned across that bent the wrist and drew
+  // the elbow out into the picture). The sponge goes round in small circles, the brush back and
+  // forth along its length. `contact` is the world point it rubs.
   scrubPose(it, s, t) {
     const cam = this.cam;
     const n = s.normal;
-    const x = s.point.clone().sub(cam.position);
-    x.addScaledVector(n, -x.dot(n));
-    if (x.lengthSq() < 1e-6) x.set(1, 0, 0).addScaledVector(n, -n.x);
-    x.normalize();
-    const z = x.clone().cross(n).normalize();
-    const off = it.def.derust ? x.clone().multiplyScalar(Math.sin(t * 15) * 0.045) : x.clone().multiplyScalar(Math.cos(t * 9) * 0.035).addScaledVector(z, Math.sin(t * 9) * 0.035);
+    const shoulder = defaultArms().right.shoulder.applyQuaternion(cam.quaternion).add(cam.position);
+    const f = s.point.clone().sub(shoulder);
+    f.addScaledVector(n, -f.dot(n));
+    if (f.lengthSq() < 1e-6) f.set(0, -1, 0).addScaledVector(n, n.y);
+    f.normalize();
+    const side = n.clone().cross(f);
+    const brush = !!it.def.derust;
+    // item frames: the brush bristles down, gripped across its handle (knuckles along +Z); the
+    // sponge lies in the open palm (fingers along -Z, back of the hand -Y), so it goes face down
+    const x = side,
+      y = brush ? n.clone() : n.clone().negate(),
+      z = brush ? f.clone() : f.clone().negate();
+    const off = brush ? side.clone().multiplyScalar(Math.sin(t * 15) * 0.045) : side.clone().multiplyScalar(Math.cos(t * 9) * 0.035).addScaledVector(f, Math.sin(t * 9) * 0.035);
     const contact = s.point.clone().add(off);
     const inv = cam.quaternion.clone().invert();
     const p = contact.clone().addScaledVector(n, it.size.y / 2 + 0.002).sub(cam.position).applyQuaternion(inv);
-    const q = inv.multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, n, z)));
+    const q = inv.multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z)));
     return { p, q, contact };
   }
 
@@ -2069,7 +2139,7 @@ export class Interaction {
     c.y += (gy + it.size.y * 0.5 + 0.03 - c.y) * Math.min(1, dt * 8);
     this.dragAt = m.localToWorld(this.dragLocal.clone());
     // torn out of the hand when it cannot follow (walked off, caught on something)
-    if (this.dragAt.distanceTo(cam.position) > REACH + 1.0) {
+    if (this.dragAt.distanceTo(cam.position) > HAND_REACH + 0.6) {
       this.drop(0);
       return;
     }
@@ -3197,10 +3267,18 @@ export class Interaction {
     const p = world.clone().sub(cam.position).applyQuaternion(inv);
     const n = normal ? normal.clone().applyQuaternion(inv) : p.clone().negate().normalize();
     if (n.dot(p) > 0) n.negate();
-    // the palm laid flat on it, a skin's breadth off, the back of the hand out, thumb up along it
-    const up = V(0, 1, 0).addScaledVector(n, -n.y);
-    if (up.lengthSq() < 1e-4) up.set(-1, 0, 0);
-    const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(up.normalize(), n) };
+    // the palm laid flat on it, a skin's breadth off, the back of the hand out, the fingers on along
+    // it the way the arm comes at it from the shoulder (so the wrist is not bent sideways); thumb up
+    // when the arm comes straight at it
+    const fingers = p.clone().sub(arms.right.shoulder);
+    fingers.addScaledVector(n, -fingers.dot(n));
+    let thumb;
+    if (fingers.lengthSq() > 1e-4) thumb = n.clone().cross(fingers.normalize());
+    else {
+      thumb = V(0, 1, 0).addScaledVector(n, -n.y);
+      if (thumb.lengthSq() < 1e-4) thumb.set(-1, 0, 0);
+    }
+    const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(thumb.normalize(), n) };
     const placed = handFromAnchor('right', 'palm', anchor);
     // out of the arm's reach: the open hand as far toward it as the arm goes (hiding the hand
     // left the cut end of the sleeve in the picture)
@@ -3214,6 +3292,8 @@ export class Interaction {
   // ------------------------------------------------------------------ view model
   updateView(dt) {
     const cam = this.cam;
+    // (the shoulders follow the body, the view the head)
+    setArmPitch(Math.asin(clamp(V(0, 0, -1).applyQuaternion(cam.quaternion).y, -1, 1)));
     this.viewRoot.position.copy(cam.position);
     this.viewRoot.quaternion.copy(cam.quaternion);
     const it = this.held;

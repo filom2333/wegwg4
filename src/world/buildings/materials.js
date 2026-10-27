@@ -364,16 +364,38 @@ const P = {
     hctx.fillStyle = '#808080';
     hctx.fillRect(0, 0, S, S);
   },
+  // (a neutral weave: the colour is the material's. It was green, and every cloth in the
+  // houses, mattresses and pillows too, came out greenish)
   fabric: (ctx, hctx, S) => {
-    ctx.fillStyle = '#5d6b55';
+    ctx.fillStyle = '#b4b4b4';
     ctx.fillRect(0, 0, S, S);
     for (let y = 0; y < S; y += 2)
       for (let x = 0; x < S; x += 2) {
         const v = ((x + y) / 2) % 2 ? 1.06 : 0.94;
-        ctx.fillStyle = `rgba(${Math.round(93 * v)},${Math.round(107 * v)},${Math.round(85 * v)},1)`;
+        const c = Math.round(180 * v);
+        ctx.fillStyle = `rgb(${c},${c},${c})`;
         ctx.fillRect(x, y, 2, 2);
       }
     noiseFill(ctx, S, S, 131, [255, 255, 255], 0.15, 0.05);
+    hctx.fillStyle = '#808080';
+    hctx.fillRect(0, 0, S, S);
+  },
+  // mattress ticking: cream twill with pairs of thin grey-blue stripes
+  ticking: (ctx, hctx, S) => {
+    ctx.fillStyle = '#e4ddcb';
+    ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 2)
+      for (let x = 0; x < S; x += 2) {
+        const v = ((x + y) / 2) % 2 ? 1.04 : 0.96;
+        ctx.fillStyle = `rgba(${Math.round(228 * v)},${Math.round(221 * v)},${Math.round(203 * v)},1)`;
+        ctx.fillRect(x, y, 2, 2);
+      }
+    ctx.fillStyle = 'rgba(92, 108, 132, 0.85)';
+    for (let x = 0; x < S; x += S / 8) {
+      ctx.fillRect(x + 3, 0, 3, S);
+      ctx.fillRect(x + 10, 0, 2, S);
+    }
+    noiseFill(ctx, S, S, 137, [255, 255, 255], 0.12, 0.04);
     hctx.fillStyle = '#808080';
     hctx.fillRect(0, 0, S, S);
   },
@@ -397,6 +419,7 @@ const TEX_METRES = {
   adobe: 2,
   rug: 1,
   fabric: 0.5,
+  ticking: 0.6,
 };
 
 let MATS = null;
@@ -522,7 +545,7 @@ export function archMaterials() {
     rooftiles: std('rooftiles', { roughness: 0.8, ns: 1.0 }, true),
     adobe: std('adobe', { roughness: 0.98 }, true),
     rug: std('rug', { roughness: 1, ns: 0.3 }),
-    fabric: std('fabric', { roughness: 1, ns: 0.4 }, true),
+    fabric: std('fabric', { roughness: 1, ns: 0.4, color: 0x8a9c80 }, true),
     fabricRed: std('fabric', { roughness: 1, ns: 0.4, color: 0xd08070 }, true),
     fabricBlue: std('fabric', { roughness: 1, ns: 0.4, color: 0x8090c0 }, true),
     fabricBrown: std('fabric', { roughness: 1, ns: 0.4, color: 0xb09070 }, true),
@@ -599,7 +622,16 @@ export function archMaterials() {
     ),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x9fb0b0, roughness: 0.08, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }),
     glassDirty: new THREE.MeshPhysicalMaterial({ color: 0xb6ad95, roughness: 0.4, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
-    mattress: std('fabric', { roughness: 1, color: 0xd8d2c0, ns: 0.3 }, true),
+    mattress: std('ticking', { roughness: 1, ns: 0.3 }, true),
+    // bed linen, and blankets thin enough to be seen from below where they hang
+    linen: std('fabric', { roughness: 1, color: 0xf2eee4, ns: 0.25 }, true),
+    ...Object.fromEntries(
+      [['blanketRed', 0xa8473c], ['blanketBlue', 0x52648e], ['blanketBrown', 0x8a6a4c], ['blanketGreen', 0x5f7048], ['blanketGrey', 0x8a8780], ['blanketCheck', 0xb07a48]].map(([k, c]) => {
+        const m = std('fabric', { roughness: 1, color: c, ns: 0.5 }, true);
+        m.side = THREE.DoubleSide;
+        return [k, m];
+      })
+    ),
     blackMatte: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.8 }),
     screen: new THREE.MeshStandardMaterial({ color: 0x101214, roughness: 0.15, metalness: 0.2 }),
     emissiveWarm: new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a0, emissiveIntensity: 0.0, roughness: 0.5 }),

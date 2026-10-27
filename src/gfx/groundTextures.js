@@ -266,8 +266,9 @@ const GEN = {
       const g = fbmT(G, x, y, 2, 128);
       const drift = fbmT(L, x * 0.5, y * 0.5, 3, 4);
       const h = clamp01(0.6 * n + 0.25 * drift + 0.06 * rip * rip + 0.12 * g);
-      const t = 0.9 + 0.1 * h;
-      const blue = (1 - h) * 0.06;
+      // (shaded more deeply than it was: a plain bright white read as nothing at all from the car)
+      const t = 0.8 + 0.2 * h;
+      const blue = (1 - h) * 0.11;
       return [0.93 * t - blue, 0.95 * t - blue * 0.6, 0.99 * t, h];
     };
   },

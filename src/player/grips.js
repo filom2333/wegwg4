@@ -256,11 +256,25 @@ export function holdPose(mesh, st) {
   return { item, grip, cls, arms };
 }
 
-// Where the shoulders are and which way the elbows bend (camera space, body upright).
+// Where the shoulders are and which way the elbows bend (camera space). The shoulders belong to
+// the body, not the head: looking down, they come forward and up in the view (they were fixed to
+// the camera, and an arm reaching down to something low had to be drawn out from behind the
+// head), though never into the picture: the bottom of the view is the limit.
+let ARM_PITCH = 0;
+export function setArmPitch(pitch) {
+  ARM_PITCH = pitch;
+}
+const _AX = new THREE.Vector3(1, 0, 0);
+function bodyShoulder(x) {
+  const s = V(x, -0.25, 0.06).applyAxisAngle(_AX, -Math.min(0, ARM_PITCH) * 0.85);
+  // (below the bottom edge of a 75-degree view, with a sleeve's width to spare)
+  s.y = Math.min(s.y, -(0.075 + Math.max(0, -s.z) * 0.77));
+  return s;
+}
 export function defaultArms() {
   return {
-    right: { shoulder: V(0.19, -0.25, 0.06), pole: V(0.3, -1, 0.15) },
-    left: { shoulder: V(-0.19, -0.25, 0.06), pole: V(-0.3, -1, 0.15) },
+    right: { shoulder: bodyShoulder(0.19), pole: V(0.3, -1, 0.15) },
+    left: { shoulder: bodyShoulder(-0.19), pole: V(-0.3, -1, 0.15) },
   };
 }
 

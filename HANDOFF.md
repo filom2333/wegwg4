@@ -865,3 +865,55 @@ activity"; the key lives only in the scratchpad, never commit it). Everything el
   head item). Sunglasses tint the first-person view (`hud.setTint`, a multiply layer under the
   HUD, `SHADE_TINTS`). R held with empty hands and nothing aimed at takes off the glasses, then
   the hat. Saved with the player (`inventory.worn` in save.js), never with the loose items.
+
+### 26–27.10: interaction as in The Long Drive, freezes, the user's fix lists (PRs #15, #16)
+The user still says: don't touch sounds; keep car flipping.
+- Hand-held doors and lids (interaction.js `grabbable/startGrab/updateGrab/letGo`): LMB held on a
+  door, bonnet, boot, fuel flap or building door; the hand holds the grabbed point
+  (`G.local`, `handOnPoint` puts the palm flat on it) and the thing follows the view and your
+  steps on a spring; walking off lets go, a let-go door keeps its swing (`updateSwinging`). Only
+  within `HAND_REACH` (0.95 m), else the prompt says to come closer. E no longer swings them
+  (only the cap: `car.useCap`). Heavy things (>60 kg, `heavyItem`) are dragged by the grabbed
+  point while LMB is held (`pickDrag/updateDrag`).
+- Taking things: LMB on an item. A click (< `CLICK_T`) keeps it in the hand; held, it is
+  carried (small things float in front) until LMB lets go, then it falls with the velocity it
+  had (`mouseCarry`, `carryVel`, `drop(0, swing)`). E does not pick up any more.
+- Arms (hands.js `solveArm`, grips.js `defaultArms`): shoulders follow the body pitch
+  (`setArmPitch`, clamped below the view's bottom edge); out of reach the shoulder leans forward
+  and down 25 cm, then the upper arm runs on further so the sleeve always leaves the picture: no
+  cut sleeve end is ever visible. The sleeve is ONE tube (`laySleeve`, rebuilt every frame in the
+  hand frame: straight forearm, rounded elbow, straight upper arm, capped past the shoulder); only
+  the forearm skin and cuff are rigid (`arm`, turned at the wrist). The wrist has limits per
+  direction (`WRIST_BACK/FWD/SIDE`: back 63°, forward 43°, sideways 20°) — the user called a hand
+  bent sideways on its forearm "a crooked arm". Hands put on a surface (`handOnPoint`,
+  `scrubPose`) point their fingers the way the arm comes from the shoulder, never across it.
+- Freezes: shaders warmed up front on a zoo of everything (`game.warmShaders`), places and NPCs
+  compiled out of view (`game.prepare`, compileAsync into the composer's buffer); POI assembly
+  one building a frame (poi.js `pending`), colliders in hundreds; terrain heightfields in the
+  worker ('hf'); item icons cached in IndexedDB (`itemIcons.js`, ICONS_VERSION); car extras
+  replayed from a cache (extrasCache.js); a car's procedural shapes made once per type
+  (`shapeRun` in geom.js: cluster, filler, controls, wipers) — a wreck now costs 8–10 ms.
+- Detail culling: small car meshes (`car.updateDetail`) and items (`items.updateDetail`, with
+  hysteresis) leave the picture far off.
+- Trailer (trailer.js): one body on two ray-sprung wheels (`physStep` in physics.beforeStep);
+  a hard tyre collider on the chassis only as a backstop. 3° of lean at 72 km/h.
+- Chairs (`chair`, `campChair` items; furniture `Item.itemAt` → loot spot kind 'item' carrying
+  item/variant/rot → items.onPoiLoaded). Only `def.bolt` things and dash toys bolt to a car.
+- Walking (player.js): autostep onto loose things, 6 cm min width; jump buffer and coyote time;
+  ceiling stops a jump; step smoothing of the view (`stepLag`); fall-through safety only when
+  nothing is under the feet at all.
+- Washing (car.js `cleanMap/scrub/soil`, weathering.js `uClean`): a per-car RG Data3DTexture over
+  the car box (R washed, G brushed), sampled by every weathered material; the sponge/brush is
+  posed flat on the surface (`scrubPose`) and paints it; saved as base64 (`cleanState`).
+- Flicker: `decal()` in gfx/caps.js (polygon offset that knows the depth direction) on item
+  labels; `?norevz` runs the standard depth buffer for testing.
+- Winter: desert odds reach 0 by 60 km (worldGen `biomeOdds`); much more ground cover in
+  taiga/tundra; snow shaded deeper.
+- Beds: ticking mattress, sheet, draped blanket (`blanket*` DoubleSide materials), linen pillows;
+  the shared cloth texture is neutral now (all fabrics were greenish).
+- Menu: pictures decoded off-thread, preloaded mid-slide, focus precomputed (`MENU_FOCUS`); the
+  custom settings pictures preload and swap only when loaded.
+- Probes used (scratchpad, not in the repo): p_cpu3/p_entry3 (frame breakdowns), p_hulk/p_build
+  (car build cost), p_trailer(_slalom), p_walk/p_roof, p_zdiff (render-diff flicker finder),
+  p_zfight (coplanar faces), p_scrub, p_hands2(b), p_arms, p_arms3 (fists, carries, driving), p_carry,
+  p_drivesnow, p_bed, menuhitch.mjs.

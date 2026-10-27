@@ -11,9 +11,12 @@ export { POSES, WRIST, gripCenter, PALM_CONTACT };
 // Arm segment lengths (wrist to elbow, elbow to shoulder) and the wrist's range of motion.
 export const FOREARM = 0.255;
 export const UPPER = 0.29;
-// (past about 45 degrees the forearm follows the hand instead: an elbow out of place is off
-// screen, a wrist bent too far is in the middle of it)
-const MAX_BEND = 0.8;
+// The wrist bends back a long way (a palm laid flat on something), forward less and hardly at all
+// to the sides; past that the forearm follows the hand instead (an elbow out of place is off
+// screen, a wrist bent too far is in the middle of it). Radians, in the hand's frame.
+const WRIST_BACK = 1.1,
+  WRIST_FWD = 0.75,
+  WRIST_SIDE = 0.35;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -110,45 +113,141 @@ function forearm() {
   return g;
 }
 
-// Jacket sleeve over the forearm (arm frame) with a turned-back cuff, and the upper-arm sleeve
-// (upper frame: origin at the elbow, +Z toward the shoulder).
-function sleeve() {
+// Turned-back jacket cuff at the wrist (arm frame); the sleeve itself is laid along the solved arm
+// each frame (below).
+function cuff() {
   const secs = [];
-  const N = 14;
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    const z = 0.042 + t * (FOREARM - 0.014);
-    const r = 0.039 + 0.012 * t;
-    const c = V(0, 0.002, z);
-    const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.88, 2.0, 28);
-    // soft fabric folds, bunching toward the elbow
-    g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), (0.0018 + 0.003 * t) * Math.sin(k * 1.3 + i * 2.1) * Math.sin(t * Math.PI + 0.3)));
-    secs.push(g);
-  }
-  const cuff = [];
   for (let i = 0; i <= 4; i++) {
     const t = i / 4;
     const z = 0.034 + t * 0.026;
     const r = 0.0395 + 0.0035 * Math.sin(t * Math.PI);
-    cuff.push(superSection(V(0, 0.002, z), V(1, 0, 0), V(0, 1, 0), r, r * 0.88, 2.0, 28));
-  }
-  const elbow = new THREE.SphereGeometry(0.05, 20, 12);
-  elbow.scale(1, 0.9, 1);
-  elbow.translate(0, 0.002, FOREARM);
-  return [loftSections(secs, { capStart: true, capEnd: true }), loftSections(cuff, { capStart: true, capEnd: true }), elbow];
-}
-
-function upperSleeve() {
-  const secs = [];
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const r = 0.05 + 0.01 * t;
-    const c = V(0, 0, -0.02 + t * (UPPER + 0.1));
-    const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.92, 2.0, 24);
-    g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), 0.0022 * Math.sin(k * 1.7 + i * 1.9)));
-    secs.push(g);
+    secs.push(superSection(V(0, 0.002, z), V(1, 0, 0), V(0, 1, 0), r, r * 0.88, 2.0, 28));
   }
   return loftSections(secs, { capStart: true, capEnd: true });
+}
+
+// Jacket sleeve: one tube from inside the cuff, round the elbow and on past the shoulder, rebuilt
+// along the arm every frame. (Jointed pieces, a forearm sleeve, an elbow ball and an upper sleeve,
+// showed the joints as kinks and the arm read as bent wherever it was.)
+// Sections along the forearm, round the elbow and along the upper arm; around the tube.
+const SLEEVE_SEGS = [7, 8, 9];
+const SLEEVE_N = SLEEVE_SEGS[0] + SLEEVE_SEGS[1] + SLEEVE_SEGS[2];
+const SLEEVE_R = 20;
+// the bend starts this far before the elbow and ends as far after it
+const ELBOW_R = 0.055;
+
+function sleeveGeometry() {
+  const ring = SLEEVE_R + 1;
+  const n = (SLEEVE_N + 1) * ring + 1;
+  const g = new THREE.BufferGeometry();
+  for (const k of ['position', 'normal']) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const idx = [];
+  for (let i = 0; i < SLEEVE_N; i++)
+    for (let k = 0; k < SLEEVE_R; k++) {
+      const a = i * ring + k,
+        b = a + ring;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  // closed at the shoulder end
+  const L = SLEEVE_N * ring;
+  for (let k = 0; k < SLEEVE_R; k++) idx.push(L + k, L + k + 1, n - 1);
+  g.setIndex(idx);
+  return g;
+}
+
+// Lays the sleeve (hand-frame space) from the wrist `W` down the forearm `f` to the elbow `E`, round
+// it and up the upper arm `du` to the shoulder `S` and a little past; `side` is the forearm's
+// sideways axis (the cuff's wide side).
+function laySleeve(geo, W, f, E, du, S, side) {
+  const P = geo.attributes.position.array,
+    Nm = geo.attributes.normal.array;
+  const [nA, nB, nC] = SLEEVE_SEGS;
+  const e0 = _s0.copy(E).addScaledVector(f, -ELBOW_R);
+  const e1 = _s1.copy(E).addScaledVector(du, ELBOW_R);
+  const end = _s2.copy(S).addScaledVector(du, 0.12);
+  const c = _s3,
+    T = _s4,
+    N = _s5.copy(side),
+    B = _s6;
+  const ring = SLEEVE_R + 1;
+  let o = 0;
+  for (let i = 0; i <= SLEEVE_N; i++) {
+    let r, bunch;
+    if (i <= nA) {
+      // forearm: from inside the cuff, widening toward the elbow
+      const t = i / nA;
+      c.copy(W).addScaledVector(f, 0.05).lerp(e0, t);
+      T.copy(f);
+      r = 0.0385 + 0.0095 * t;
+      bunch = t * t;
+    } else if (i <= nA + nB) {
+      // round the elbow (a quadratic curve: it leaves the forearm and meets the upper arm tangent)
+      const t = (i - nA) / nB;
+      const a = (1 - t) * (1 - t),
+        b = 2 * (1 - t) * t,
+        d = t * t;
+      c.set(e0.x * a + E.x * b + e1.x * d, e0.y * a + E.y * b + e1.y * d, e0.z * a + E.z * b + e1.z * d);
+      const tx = (1 - t) * (E.x - e0.x) + t * (e1.x - E.x),
+        ty = (1 - t) * (E.y - e0.y) + t * (e1.y - E.y),
+        tz = (1 - t) * (E.z - e0.z) + t * (e1.z - E.z);
+      // (folded right back the curve stops: keep the last direction)
+      if (tx * tx + ty * ty + tz * tz > 1e-8) T.set(tx, ty, tz).normalize();
+      r = 0.048 + 0.0035 * Math.sin(t * Math.PI) + 0.0015 * t;
+      bunch = 1;
+    } else {
+      // upper arm, filling out toward the shoulder
+      const t = (i - nA - nB) / nC;
+      c.copy(e1).lerp(end, t);
+      T.copy(du);
+      r = 0.05 + 0.01 * Math.min(1, t * 2.2);
+      bunch = Math.max(0, 1 - t * 3);
+    }
+    // carry the cross-section's orientation along the tube without twisting it
+    N.addScaledVector(T, -N.dot(T));
+    if (N.lengthSq() < 1e-8) {
+      N.set(Math.abs(T.y) > 0.9 ? 1 : 0, Math.abs(T.y) > 0.9 ? 0 : 1, 0);
+      N.addScaledVector(T, -N.dot(T));
+    }
+    N.normalize();
+    B.crossVectors(T, N);
+    // cloth folds round the tube, bunched up toward the elbow; the cuff end stays plain
+    const amp = (0.012 + 0.05 * bunch) * Math.min(1, i / 2);
+    const ph1 = i * 2.1,
+      ph2 = i * 1.3 + 0.7;
+    r *= 1 + 0.03 * bunch * Math.sin(i * 2.4) ** 2;
+    for (let k = 0; k <= SLEEVE_R; k++) {
+      const th = (k / SLEEVE_R) * Math.PI * 2;
+      const cs = Math.cos(th),
+        sn = Math.sin(th);
+      const fold = amp * (0.6 * Math.sin(3 * th + ph1) + 0.4 * Math.sin(5 * th + ph2));
+      const dfold = amp * (1.8 * Math.cos(3 * th + ph1) + 2.0 * Math.cos(5 * th + ph2));
+      const rx = r * (1 + fold),
+        ry = rx * 0.9;
+      P[o] = c.x + N.x * cs * rx + B.x * sn * ry;
+      P[o + 1] = c.y + N.y * cs * rx + B.y * sn * ry;
+      P[o + 2] = c.z + N.z * cs * rx + B.z * sn * ry;
+      // outward normal of the folded, flattened section (the section's tangent turned a quarter)
+      const nx = 0.9 * ((1 + fold) * cs + dfold * sn),
+        ny = (1 + fold) * sn - dfold * cs;
+      const ex = N.x * nx + B.x * ny,
+        ey = N.y * nx + B.y * ny,
+        ez = N.z * nx + B.z * ny;
+      const il = 1 / Math.hypot(ex, ey, ez);
+      Nm[o] = ex * il;
+      Nm[o + 1] = ey * il;
+      Nm[o + 2] = ez * il;
+      o += 3;
+    }
+  }
+  // the shoulder end's cap
+  P[o] = end.x + du.x * 0.03;
+  P[o + 1] = end.y + du.y * 0.03;
+  P[o + 2] = end.z + du.z * 0.03;
+  Nm[o] = du.x;
+  Nm[o + 1] = du.y;
+  Nm[o + 2] = du.z;
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.normal.needsUpdate = true;
 }
 
 let SKIN = null;
@@ -238,25 +337,19 @@ export function buildHand(poseName, mirror = false, { sync = true } = {}) {
   return hand;
 }
 
-// Forearm + sleeve (arm frame) and upper-arm sleeve (upper frame) meshes.
+// Forearm and cuff (arm frame, hinged at the wrist) and the sleeve (hand frame, laid by solveArm).
 export function buildArm() {
   const M = materials();
   const arm = new THREE.Group();
-  const fa = new THREE.Mesh(forearm(), handMaterial());
-  arm.add(fa);
-  const [sl, cuff, elbow] = sleeve();
-  arm.add(new THREE.Mesh(sl, M.sleeve), new THREE.Mesh(cuff, M.cuff), new THREE.Mesh(elbow, M.sleeve));
-  const upper = new THREE.Group();
-  upper.add(new THREE.Mesh(upperSleeve(), M.sleeve));
-  upper.position.set(0, 0, FOREARM);
-  arm.add(upper);
-  arm.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = false;
-      o.receiveShadow = false;
-    }
-  });
-  return { arm, upper };
+  arm.add(new THREE.Mesh(forearm(), handMaterial()), new THREE.Mesh(cuff(), M.cuff));
+  const sleeve = new THREE.Mesh(sleeveGeometry(), M.sleeve);
+  // (rebuilt every frame: its bounds are never current)
+  sleeve.frustumCulled = false;
+  for (const o of [...arm.children, sleeve]) {
+    o.castShadow = false;
+    o.receiveShadow = false;
+  }
+  return { arm, sleeve };
 }
 
 export function buildHandLegacy(poseName, mirror = false) {
@@ -351,10 +444,11 @@ export class Hands {
     this.rig = {};
     for (const side of ['right', 'left']) {
       const holder = new THREE.Group();
-      const { arm, upper } = buildArm();
+      const { arm, sleeve } = buildArm();
       arm.position.copy(WRIST);
-      this[side].add(holder, arm);
-      this.rig[side] = { holder, arm, upper };
+      this[side].add(holder, arm, sleeve);
+      this.rig[side] = { holder, arm, sleeve };
+      this.resetArm(side);
     }
     this.cur = { right: null, left: null };
     this.setPose('right', 'relax');
@@ -399,18 +493,23 @@ export class Hands {
   }
 
   // Two-bone IK in camera space: the elbow sits where an upper arm from `shoulder` meets a
-  // forearm from the wrist, bent toward `pole`; the wrist only bends within its range.
+  // forearm from the wrist, bent toward `pole`; the wrist only bends within its range, and the
+  // sleeve is laid from the cuff round that elbow to the shoulder.
   solveArm(side, shoulder, pole) {
     const grp = this[side];
-    const { arm, upper } = this.rig[side];
+    const { arm, sleeve } = this.rig[side];
     const q = grp.quaternion;
     const W = _v1.copy(WRIST).applyQuaternion(q).add(grp.position);
     const a = UPPER,
       b = FOREARM;
-    // leaning in: a hand further off than the arm reaches brings the shoulder forward first (up to
-    // 20 cm: it stays below the bottom of the picture), then draws the upper arm out (below)
+    // leaning in: a hand further off than the arm reaches brings the shoulder forward and down
+    // first (up to 25 cm: it stays below the bottom of the picture), then the upper arm runs on
+    // further to it
     const over = W.distanceTo(shoulder) - (a + b - 0.002);
-    if (over > 0) shoulder = _v5.copy(shoulder).setZ(shoulder.z - Math.min(0.2, over));
+    if (over > 0) {
+      const lean = Math.min(0.25, over * 1.2);
+      shoulder = _v5.set(shoulder.x, shoulder.y - lean * 0.5, shoulder.z - lean);
+    }
     const u = _v2.copy(W).sub(shoulder);
     let d = u.length();
     u.multiplyScalar(1 / Math.max(d, 1e-6));
@@ -421,42 +520,51 @@ export class Hands {
     if (v.lengthSq() < 1e-8) v.set(0, -1, 0);
     v.normalize();
     const E = _v4.copy(shoulder).addScaledVector(u, x).addScaledVector(v, h);
-    // forearm toward the elbow, limited to the wrist's range
+    // forearm toward the elbow, limited to the wrist's range (hand frame: +Z runs back up the
+    // forearm, +Y is the back of the hand, X the sideways bend)
     const qi = _q1.copy(q).invert();
     const dl = E.sub(W).applyQuaternion(qi).normalize();
+    const pitch = Math.min(WRIST_BACK, Math.max(-WRIST_FWD, Math.atan2(dl.y, dl.z)));
+    const yaw = Math.min(WRIST_SIDE, Math.max(-WRIST_SIDE, Math.asin(Math.min(1, Math.max(-1, dl.x)))));
+    dl.set(Math.sin(yaw), Math.cos(yaw) * Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     const qa = _q2.setFromUnitVectors(_Z, dl);
-    const ang = 2 * Math.acos(Math.min(1, Math.abs(qa.w)));
-    if (ang > MAX_BEND) {
-      _q3.copy(qa);
-      qa.copy(_qI).slerp(_q3, MAX_BEND / ang);
-    }
     arm.quaternion.copy(qa);
-    // upper arm from where the forearm ends toward the shoulder; a hand put further off than the
-    // arm is long (on a door, low on a car's side) draws it out all the way to the shoulder, behind
-    // the eye, so the sleeve always runs on out of the picture instead of ending in mid-air
-    const armQ = _q3.copy(q).multiply(qa);
-    const Ea = _v4.set(0, 0, b).applyQuaternion(armQ).add(W);
-    const toS = _v2.copy(shoulder).sub(Ea);
-    upper.scale.z = Math.max(1, toS.length() / a);
-    const du = toS.applyQuaternion(armQ.invert()).normalize();
-    upper.quaternion.setFromUnitVectors(_Z, du);
+    // the rest in the hand's frame: the forearm as far as it goes, then the upper arm from where
+    // it ends to the shoulder (further than an upper arm is long when the hand is out of reach:
+    // the sleeve always runs on out of the picture instead of ending in mid-air)
+    const f = _v2.copy(_Z).applyQuaternion(qa);
+    const Wl = _v3.copy(WRIST);
+    const El = _v4.copy(Wl).addScaledVector(f, b);
+    const Sl = _v5.copy(shoulder).sub(grp.position).applyQuaternion(qi);
+    const du = _v6.copy(Sl).sub(El);
+    if (du.lengthSq() < 1e-8) du.copy(f);
+    du.normalize();
+    laySleeve(sleeve.geometry, Wl, f, El, du, Sl, _v7.set(1, 0, 0).applyQuaternion(qa));
   }
 
   // Straight wrist and elbow (for hands placed without a body, e.g. on the inspection stand).
   resetArm(side) {
     this.rig[side].arm.quaternion.identity();
-    this.rig[side].upper.quaternion.identity();
-    this.rig[side].upper.scale.z = 1;
+    const E = _v4.copy(WRIST).addScaledVector(_Z, FOREARM);
+    laySleeve(this.rig[side].sleeve.geometry, WRIST, _Z, E, _Z, _v5.copy(E).addScaledVector(_Z, UPPER), _v7.set(1, 0, 0));
   }
 }
 
 const _Z = new THREE.Vector3(0, 0, 1);
-const _qI = new THREE.Quaternion();
 const _v1 = new THREE.Vector3(),
   _v2 = new THREE.Vector3(),
-  _v5 = new THREE.Vector3(),
   _v3 = new THREE.Vector3(),
-  _v4 = new THREE.Vector3();
+  _v4 = new THREE.Vector3(),
+  _v5 = new THREE.Vector3(),
+  _v6 = new THREE.Vector3(),
+  _v7 = new THREE.Vector3();
+// sleeve temporaries
+const _s0 = new THREE.Vector3(),
+  _s1 = new THREE.Vector3(),
+  _s2 = new THREE.Vector3(),
+  _s3 = new THREE.Vector3(),
+  _s4 = new THREE.Vector3(),
+  _s5 = new THREE.Vector3(),
+  _s6 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(),
-  _q2 = new THREE.Quaternion(),
-  _q3 = new THREE.Quaternion();
+  _q2 = new THREE.Quaternion();

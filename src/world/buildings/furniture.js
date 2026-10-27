@@ -166,51 +166,75 @@ export function bed(rnd, { double = true } = {}) {
     moveParts(it, front(w, 0.3, wood, { t: 0.022 }), new THREE.Matrix4().makeTranslation(0, 0.44, L / 2 - 0.011));
     it.rbox(w + 0.1, 0.05, 0.075, 0, 0.62, L / 2, wood, 0.015);
   }
-  // box spring and mattress
-  it.rbox(w - 0.02, 0.17, L - 0.04, 0, 0.3, 0, M.fabricBrown, 0.02);
+  // box spring (its top showing over the side rails) and a striped ticking mattress on it
+  it.rbox(w - 0.02, 0.16, L - 0.04, 0, 0.33, 0, M.fabricBrown, 0.02);
   const askew = rnd() < 0.18;
-  const mat = cushion(w - 0.04, 0.2, L - 0.08, { r: 0.05, puff: 0.012, sag: 0.025, seg: 3 });
+  const made = !askew && rnd() < 0.6;
+  const top = 0.63;
+  const mat = cushion(w - 0.04, 0.22, L - 0.08, { r: 0.05, puff: 0.012, sag: 0.02, seg: 3 });
   if (askew) mat.rotateY((rnd() - 0.5) * 0.25).translate((rnd() - 0.5) * 0.2, 0, 0.1 + rnd() * 0.12);
-  it.add(mat.translate(0, 0.485, 0), M.mattress);
-  const made = rnd() < 0.55;
-  if (made && !askew) {
-    // a blanket over the lower part, hanging down the sides in folds
-    const blanketMat = [M.fabricRed, M.fabricBlue, M.fabric, M.fabricBrown, M.fabricGreen, M.fabricOrange][Math.floor(rnd() * 6)];
-    const bl = new THREE.PlaneGeometry(w + 0.14, L * 0.7, 28, 28);
-    bl.rotateX(-Math.PI / 2);
-    const p = bl.attributes.position;
-    const pulled = rnd() < 0.4 ? (rnd() < 0.5 ? -1 : 1) : 0;
+  // (made up: under a fitted sheet)
+  it.add(mat.translate(0, top - 0.11, 0), made ? M.linen : M.mattress);
+  if (made) {
+    // a blanket over the lower two thirds: across the top, rounding over the edges and hanging
+    // down the sides in soft folds; the sheet turned back over its head end
+    const blanketMat = [M.blanketRed, M.blanketBlue, M.blanketBrown, M.blanketGreen, M.blanketGrey, M.blanketCheck][Math.floor(rnd() * 6)];
+    const bw = w - 0.04,
+      bl = L * 0.68;
+    const half = bw / 2 + 0.01;
+    const R = 0.05;
+    const drop = top - 0.2;
+    const wrap = half + (Math.PI / 2) * R + drop;
+    const geo = new THREE.PlaneGeometry(2 * wrap, bl, 40, 18).rotateX(-Math.PI / 2);
+    const p = geo.attributes.position;
+    const pulled = rnd() < 0.35 ? (rnd() < 0.5 ? -1 : 1) * 0.12 : 0;
     for (let i = 0; i < p.count; i++) {
-      let x = p.getX(i);
+      const u = p.getX(i) + pulled;
       const z = p.getZ(i);
-      if (pulled) x += pulled * 0.35;
-      let y = 0.6;
-      const over = Math.abs(x) - (w - 0.04) / 2;
-      if (over > 0) {
-        y -= over * 3.0;
-        x = Math.sign(x) * ((w - 0.04) / 2 + 0.02 + over * 0.15);
-        y = Math.max(y, 0.02);
+      const a = Math.abs(u) - half;
+      let x, y;
+      if (a <= 0) {
+        x = u;
+        y = top + 0.012;
+      } else if (a < (Math.PI / 2) * R) {
+        // round the mattress edge
+        const t = a / R;
+        x = Math.sign(u) * (half + R * Math.sin(t));
+        y = top + 0.012 - R * (1 - Math.cos(t));
+      } else {
+        // hanging down the side, a little out at the hem
+        const d = a - (Math.PI / 2) * R;
+        x = Math.sign(u) * (half + R + 0.004 + d * 0.06);
+        y = top + 0.012 - R - Math.min(d, drop);
       }
-      y += Math.sin(z * 11 + x * 3) * 0.01 + Math.sin(x * 17 + z * 5) * 0.006 + Math.sin(z * 23) * 0.003;
-      p.setXYZ(i, x, y, z + L * 0.15);
+      // folds: bigger where it hangs
+      const hang = Math.max(0, a) * 2;
+      y += Math.sin(z * 9 + x * 2) * 0.006;
+      x += Math.sign(u) * Math.sin(z * 13 + 1.3) * 0.012 * Math.min(1, hang);
+      p.setXYZ(i, x, y, z + L / 2 - bl / 2 - 0.02);
     }
-    bl.computeVertexNormals();
-    it.add(bl, blanketMat);
-    it.add(cushion(w + 0.02, 0.05, 0.2, { r: 0.022, puff: 0.012 }).translate(pulled * 0.35, 0.6, -L * 0.2), blanketMat);
+    geo.computeVertexNormals();
+    it.add(metreUV(geo), blanketMat);
+    // the turned-down sheet at the blanket's head end
+    it.add(cushion(bw + 0.03, 0.035, 0.2, { r: 0.016, puff: 0.012 }).translate(pulled, top + 0.03, L / 2 - bl - 0.02 + 0.09), M.linen);
+  } else if (rnd() < 0.5) {
+    // a blanket bundled up at the foot
+    const blanketMat = [M.blanketRed, M.blanketBlue, M.blanketBrown, M.blanketGrey][Math.floor(rnd() * 4)];
+    it.add(cushion(w * 0.7, 0.14, 0.45, { r: 0.06, puff: 0.05, sag: 0.02 }).rotateY((rnd() - 0.5) * 0.6).translate((rnd() - 0.5) * 0.3, top + 0.06, L / 2 - 0.35), blanketMat);
   }
-  // pillows: one may have ended up on the floor
+  // pillows in white cases: one may have ended up on the floor
   const np = double ? 2 : 1;
   for (let i = 0; i < np; i++) {
     const px = np === 1 ? 0 : (i - 0.5) * w * 0.48;
-    const pg = cushion((w / np) * 0.82, 0.11, 0.38, { r: 0.05, puff: 0.035 });
+    const pg = cushion((w / np) * 0.84, 0.14, 0.42, { r: 0.06, puff: 0.05 });
     if (rnd() < 0.18) {
       pg.rotateZ(Math.PI / 2 - 0.3).rotateY(rnd() * 3);
-      it.add(pg.translate((i ? 1 : -1) * (w / 2 + 0.05), 0.2, -L / 2 + 0.6 + rnd() * 0.5), M.mattress);
-    } else it.add(pg.rotateX(-0.12).translate(px, 0.64, -L / 2 + 0.3), M.mattress);
+      it.add(pg.translate((i ? 1 : -1) * (w / 2 + 0.05), 0.22, -L / 2 + 0.6 + rnd() * 0.5), M.linen);
+    } else it.add(pg.rotateX(-0.18).translate(px, top + 0.07, -L / 2 + 0.3), M.linen);
   }
   it.col(w + 0.08, 0.6, L + 0.08, 0, 0.3, 0);
   it.col(w + 0.16, 0.5, 0.1, 0, 0.82, -L / 2);
-  it.lootAt(0, 0.64, 0.3, 'bed');
+  it.lootAt(0, top + 0.01, 0.3, 'bed');
   return it;
 }
 

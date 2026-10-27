@@ -30,9 +30,13 @@ const VERSION = '0.11';
 
 // Pictures behind the title (public/menu/): moments from the road, each with its depth map so
 // the title shows them in depth (menuBackdrop.js); the flat slideshow is the fallback.
+// focus: the disparity the eye turns about (what fills the middle of the picture), worked out
+// from the depth map beforehand (reading it back in the menu held it still at every change)
+const MENU_FOCUS = { roadside: 0.214, nightpass: 0.043, campfire: 0.176, overlook: 0.233, vista: 0.026, fogroad: 0.166, breakdown: 0.203, snow: 0.186, winterdusk: 0.094, pushing: 0.218, fishing: 0.211, flipped: 0.203 };
 const MENU_SHOTS = ['roadside', 'nightpass', 'campfire', 'overlook', 'vista', 'fogroad', 'breakdown', 'snow', 'winterdusk', 'pushing', 'fishing', 'flipped'].map((n, i) => ({
   src: `menu/${n}.webp`,
   depth: `menu/${n}_depth.webp`,
+  focus: MENU_FOCUS[n],
   move: ['in', 'left', 'out', 'right'][i % 4],
   origin: '50% 55%',
 }));
@@ -59,7 +63,7 @@ const LABELS = {
   sprint: 'Run',
   crouch: 'Crouch',
   jump: 'Jump',
-  interact: 'Use, pick up, get in and out',
+  interact: 'Use, get in and out, fit parts',
   drop: 'Drop (hold to throw)',
   reload: 'Reload · unbolt a part (hold)',
   flashlight: 'Flashlight · use now',
@@ -683,18 +687,41 @@ export class UI {
       // (shadows, glow, sun rays and heat haze have no example picture yet)
       const pic = el('div', 'gfx-pic', GFX_PICTURES.has(k) ? card : null);
       const tag = el('span', 'gfx-tag', pic);
+      // every choice's picture loaded up front, and swapped only once it is in: pointing along the
+      // buttons used to blank the picture while each one loaded, and crossing the gap between two
+      // buttons flicked it back to the chosen one for a moment
+      const pics = new Map(
+        (GFX_PICTURES.has(k) ? opts : []).map(([v]) => {
+          const im = new Image();
+          im.src = `settings/${k}_${v}.webp`;
+          return [String(v), im];
+        })
+      );
+      let want = null,
+        back = 0;
       const show = (v) => {
-        pic.style.backgroundImage = `url(settings/${k}_${v}.webp)`;
-        const o = opts.find((x) => String(x[0]) === String(v));
+        want = String(v);
+        const o = opts.find((x) => String(x[0]) === want);
         tag.textContent = o ? o[1] : '';
+        const im = pics.get(want);
+        if (!im) return;
+        const put = () => want === String(v) && (pic.style.backgroundImage = `url(${im.src})`);
+        if (im.complete) put();
+        else im.decode().then(put, put);
       };
       show(gfx()[k]);
       el('div', 'gfx-k', card, `${esc(label)}${live ? '' : '<small>next start</small>'}`);
       const w = el('div', 'opts', card);
       const bs = opts.map(([v, lab]) => {
         const b = el('button', 'opt' + (String(v) === String(gfx()[k]) ? ' sel' : ''), w, esc(lab));
-        b.addEventListener('pointerenter', () => show(v));
-        b.addEventListener('pointerleave', () => show(gfx()[k]));
+        b.addEventListener('pointerenter', () => {
+          clearTimeout(back);
+          show(v);
+        });
+        b.addEventListener('pointerleave', () => {
+          clearTimeout(back);
+          back = setTimeout(() => show(gfx()[k]), 160);
+        });
         this.click(b, () => {
           bs.forEach((x) => x.classList.remove('sel'));
           b.classList.add('sel');
