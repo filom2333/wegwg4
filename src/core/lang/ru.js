@@ -412,6 +412,7 @@ export const RU = {
   'Look at the car to wash it': 'Смотрите на машину, чтобы помыть',
   'Wash it here (hold, move over the dirt)': 'Мыть здесь (удерживать, водите по грязи)',
   'Come closer to wash it': 'Подойдите ближе, чтобы помыть',
+  'Come closer to take hold of it': 'Подойдите ближе, чтобы взяться',
   'Come closer to scrub it': 'Подойдите ближе, чтобы почистить',
   'Aim at a body panel to paint it': 'Наведите на панель кузова, чтобы покрасить',
   'Switch off': 'Выключить',

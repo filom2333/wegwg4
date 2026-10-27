@@ -407,10 +407,14 @@ export class Hands {
     const W = _v1.copy(WRIST).applyQuaternion(q).add(grp.position);
     const a = UPPER,
       b = FOREARM;
-    // leaning in: a hand further off than the arm reaches brings the shoulder forward first (up to
-    // 20 cm: it stays below the bottom of the picture), then draws the upper arm out (below)
+    // leaning in: a hand further off than the arm reaches brings the shoulder forward and down
+    // first (up to 25 cm: it stays below the bottom of the picture), then draws the upper arm out
+    // (below)
     const over = W.distanceTo(shoulder) - (a + b - 0.002);
-    if (over > 0) shoulder = _v5.copy(shoulder).setZ(shoulder.z - Math.min(0.2, over));
+    if (over > 0) {
+      const lean = Math.min(0.25, over * 1.2);
+      shoulder = _v5.set(shoulder.x, shoulder.y - lean * 0.5, shoulder.z - lean);
+    }
     const u = _v2.copy(W).sub(shoulder);
     let d = u.length();
     u.multiplyScalar(1 / Math.max(d, 1e-6));
