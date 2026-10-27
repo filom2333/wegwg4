@@ -1114,7 +1114,12 @@ export class Car {
     const env2 = this.game.env;
     const spd = Math.abs(d.forwardSpeed);
     const surf = (d.wheels[0] && d.wheels[0].surface) || 'asphalt';
-    if (spd > 2) this.dirt = Math.min(1, this.dirt + dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
+    if (spd > 2) {
+      const gain = Math.min(1 - this.dirt, dt * spd * (surf === 'asphalt' ? 0.000004 : 0.00004));
+      this.dirt += gain;
+      // the dust settles on washed patches as well, a little at a time
+      if (this._clean) this.soil(gain);
+    }
     if (env2 && env2.w.rain > 0.3) this.dirt = Math.max(0.05, this.dirt - dt * 0.004 * env2.w.rain);
     // rust creeps on: faster in the wet, faster where it has already got a hold
     const creep = dt * (0.0000004 + (env2 ? env2.w.rain : 0) * 0.000004);
@@ -1445,8 +1450,96 @@ export class Car {
     sh.visible = sh.material.opacity > 0.02;
   }
 
+  // ------------------------------------------------------------------ washed and brushed patches
+  // The grid of where the car has been washed (R) and brushed (G), over its box in car space
+  // (weathering.js samples it at every point of the paint), made the first time it is scrubbed.
+  cleanMap() {
+    if (this._clean) return this._clean;
+    const box = new THREE.Box3();
+    for (const mp of Object.values(this.model.parts)) if (mp.bbox && !mp.bbox.isEmpty()) box.union(mp.bbox);
+    box.expandByScalar(0.08);
+    const size = box.getSize(V(0, 0, 0));
+    // cells about 4.5 cm across, an even number each way (rows of two-byte texels stay aligned)
+    const n = [size.x, size.y, size.z].map((d) => Math.min(128, Math.ceil(d / 0.045 / 2) * 2));
+    const data = new Uint8Array(n[0] * n[1] * n[2] * 2);
+    const tex = new THREE.Data3DTexture(data, n[0], n[1], n[2]);
+    tex.format = THREE.RGFormat;
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.unpackAlignment = 1;
+    tex.needsUpdate = true;
+    this._clean = { tex, data, n, min: box.min.clone(), size, dirty: false, sent: 0 };
+    const wu = this.model.mats && this.model.mats.weather;
+    if (wu && wu.uClean) {
+      wu.uClean.value = tex;
+      wu.uCleanMin.value.copy(box.min);
+      wu.uCleanInv.value.set(1 / size.x, 1 / size.y, 1 / size.z);
+    }
+    return this._clean;
+  }
+
+  // Washes (R) and brushes (G) a round patch at a world point on a part: `radius` in metres, the
+  // amounts how much comes off in the middle (0..1); less toward the rim.
+  scrub(world, part, radius, wash, brush) {
+    const c = this.cleanMap();
+    const p = world.clone().applyMatrix4(this.partWorldMatrix(part).invert());
+    const r = radius / (this.k || 1);
+    const [nx, ny, nz] = c.n;
+    const cx = c.size.x / nx,
+      cy = c.size.y / ny,
+      cz = c.size.z / nz;
+    const lo = (v, m, s) => Math.max(0, Math.floor((v - r - m) / s));
+    const hi = (v, m, s, n) => Math.min(n - 1, Math.ceil((v + r - m) / s));
+    for (let z = lo(p.z, c.min.z, cz); z <= hi(p.z, c.min.z, cz, nz); z++)
+      for (let y = lo(p.y, c.min.y, cy); y <= hi(p.y, c.min.y, cy, ny); y++)
+        for (let x = lo(p.x, c.min.x, cx); x <= hi(p.x, c.min.x, cx, nx); x++) {
+          const d = Math.hypot(c.min.x + (x + 0.5) * cx - p.x, c.min.y + (y + 0.5) * cy - p.y, c.min.z + (z + 0.5) * cz - p.z);
+          if (d >= r) continue;
+          const f = 1 - (d / r) * (d / r);
+          const i = ((z * ny + y) * nx + x) * 2;
+          c.data[i] = Math.min(255, c.data[i] + Math.ceil(wash * f * 255));
+          c.data[i + 1] = Math.min(255, c.data[i + 1] + Math.ceil(brush * f * 255));
+        }
+    c.dirty = true;
+  }
+
+  // Dust settling again over washed patches (`gain`: how much dirtier the car got).
+  soil(gain) {
+    const c = this._clean;
+    c.soiled = (c.soiled || 0) + gain;
+    if (c.soiled < 0.01) return;
+    const keep = Math.max(0, 1 - c.soiled * 3);
+    for (let i = 0; i < c.data.length; i += 2) c.data[i] = Math.floor(c.data[i] * keep);
+    c.soiled = 0;
+    c.dirty = true;
+  }
+
+  // The grid as saved: its cells in base64 (only once the car has been scrubbed).
+  cleanState() {
+    const c = this._clean;
+    if (!c || !c.data.some((v) => v)) return null;
+    let bin = '';
+    for (let i = 0; i < c.data.length; i += 0x8000) bin += String.fromCharCode.apply(null, c.data.subarray(i, i + 0x8000));
+    return { n: c.n, data: btoa(bin) };
+  }
+
+  restoreClean(st) {
+    if (!st || !st.data) return;
+    const c = this.cleanMap();
+    if (st.n.join() !== c.n.join()) return;
+    const bin = atob(st.data);
+    for (let i = 0; i < Math.min(bin.length, c.data.length); i++) c.data[i] = bin.charCodeAt(i);
+    c.dirty = true;
+  }
+
   // Dirt and rust onto the paint's weathering.
   applyWeather() {
+    // what was scrubbed goes to the graphics card at most ten times a second
+    const c = this._clean;
+    if (c && c.dirty && performance.now() - c.sent > 100) {
+      c.tex.needsUpdate = true;
+      c.dirty = false;
+      c.sent = performance.now();
+    }
     const wu = this.model.mats && this.model.mats.weather;
     if (!wu) return;
     if (wu.uDirt) wu.uDirt.value = this.dirt;

@@ -25,6 +25,9 @@ import { setTune } from '../vehicle/tuning.js';
 
 
 // Part table entry of a part item (it remembers which kind of car it came off).
+// how far from the eye a sponge or brush can be put to a car (an arm's length, leaning in)
+const SCRUB_REACH = 1.3;
+
 function partDefOf(it) {
   return carType(it.state && it.state.carType).PARTS[it.part] || { label: it.part, mass: 10 };
 }
@@ -990,12 +993,13 @@ export class Interaction {
     if (def.ammo) out.push(['LMB', 'Put in pouch']);
     if (def.readable) out.push(['LMB', 'Read']);
     if (def.disc) out.push(['LMB', t && t.kind === 'hotspot' && t.hotspot.id === 'radio' ? (car.stereo.disc >= 0 ? 'Swap discs' : 'Put in the stereo') : 'Look at the stereo to play']);
-    if (def.clean) out.push(['LMB', t && (t.kind === 'part' || t.kind === 'hotspot') ? 'Wash the car (hold)' : 'Look at the car to wash it']);
+    if (def.clean) out.push(this.scrubAim ? ['LMB', 'Wash it here (hold, move over the dirt)'] : t && (t.kind === 'part' || t.kind === 'hotspot') ? ['', 'Come closer to wash it'] : ['', 'Look at the car to wash it']);
     if (def.derust) {
       const r = this.rustTarget();
       if (!r) out.push(['', 'Aim at a panel or the body']);
       else if (r.rust <= 0.005) out.push(['', `No rust left on the ${r.label}`]);
-      else out.push(['LMB', `Scrub the rust off the ${r.label} (hold)`]);
+      else if (r.item || this.scrubAim) out.push(['LMB', `Scrub the rust off the ${r.label} (hold, move over it)`]);
+      else out.push(['', 'Come closer to scrub it']);
     }
     if (def.paint) {
       const car = this.game.car;
@@ -1767,6 +1771,13 @@ export class Interaction {
         local = pose.item.p;
         localQ = pose.item.q;
       }
+      // scrubbing: on the surface instead (the hands follow the item)
+      this.scrubBlend = lerp(this.scrubBlend || 0, this.scrub ? 1 : 0, Math.min(1, dt * 10));
+      if (this.scrub) this.lastScrub = this.scrub;
+      if (this.scrubBlend > 0.01 && this.lastScrub && def && (def.clean || def.derust)) {
+        local = local.clone().lerp(this.lastScrub.p, this.scrubBlend);
+        localQ = localQ.clone().slerp(this.lastScrub.q, this.scrubBlend);
+      }
       this.heldPose = pose;
     } else {
       // big items are carried in front at holdDist, a little below eye level
@@ -1851,39 +1862,80 @@ export class Interaction {
         else this.pouring = 0;
         // the liquid runs in a stream to where it goes
         if (this.pouring && this.pourKind === 'pour' && tgt && this.game.effects) this.pourStream(it, tgt);
-      } else if (def.clean) {
-        const car = this.game.car;
-        const t = this.target;
-        const onCar = t && (t.kind === 'part' || t.kind === 'hotspot' || t.kind === 'seat');
-        if (input.mouseDown(0) && onCar && car) {
-          car.dirt = Math.max(0, car.dirt - dt * 0.06);
-          this.useAnim = Math.max(this.useAnim, 0.6 + 0.3 * Math.sin(this.game.time * 14));
-          this.cleanSnd = (this.cleanSnd || 0) - dt;
-          if (this.cleanSnd <= 0) {
-            this.cleanSnd = 0.35;
-            this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
-          }
+      } else if (def.clean || def.derust) {
+        // the sponge or the brush goes onto the surface under the aim (within arm's reach) and
+        // scrubs there: the dirt, or the rust, comes off only where it goes
+        const brush = !!def.derust;
+        const r = brush ? this.rustTarget() : null;
+        const down = input.mouseDown(0);
+        this.scrubAimT = (this.scrubAimT || 0) - dt;
+        if (down || this.scrubAimT <= 0) {
+          this.scrubAim = this.scrubSpot();
+          this.scrubAimT = 0.12;
         }
-      } else if (def.derust) {
-        // a wire brush: slow, loud, and the rust comes off a little at a time, off the part it is on
-        const r = this.rustTarget();
-        if (input.mouseDown(0) && r && r.rust > 0) {
-          if (r.item) {
-            r.item.state.rust = Math.max(0, r.rust - dt * 0.012);
-            r.item.rustU.value = r.item.state.rust;
-          } else this.game.car.derust(r.part, dt * 0.012);
+        const S = down ? this.scrubAim : null;
+        this.scrubT = (this.scrubT || 0) + (S ? dt : 0);
+        this.scrub = S ? this.scrubPose(it, S, this.scrubT) : null;
+        if (S && (this.scrubBlend || 0) > 0.6) {
+          // a sponge takes the dirt off in a few rubs; a brush is slow, and takes some dirt too
+          S.car.scrub(this.scrub.contact, S.part, brush ? 0.08 : 0.1, dt * (brush ? 1 : 5), brush ? dt * 3 : 0);
+          // the panel's rust as a whole goes down too, slowly (what the brush has been over shows bare)
+          if (brush && r && !r.item && r.rust > 0) S.car.derust(r.part, dt * 0.004);
+        } else if (brush && down && r && r.item && r.rust > 0) {
+          // a panel lying loose: brushed all over in the hands' reach
+          r.item.state.rust = Math.max(0, r.rust - dt * 0.012);
+          r.item.rustU.value = r.item.state.rust;
           this.useAnim = Math.max(this.useAnim, 0.6 + 0.35 * Math.sin(this.game.time * 22));
+        }
+        if (S || (brush && down && r && r.item)) {
           this.cleanSnd = (this.cleanSnd || 0) - dt;
           if (this.cleanSnd <= 0) {
-            this.cleanSnd = 0.22;
-            // (a dry scratch each stroke)
-            this.game.audio && this.game.audio.play('step', { surface: 'gravel', volume: 0.22 });
+            this.cleanSnd = brush ? 0.22 : 0.35;
+            if (brush) this.game.audio && this.game.audio.play('step', { surface: 'gravel', volume: 0.22 });
+            else this.game.audio && this.game.audio.play('pour', { volume: 0.3 });
           }
         }
       } else if (def.paint) this.updateSpray(it, dt);
       else if (def.fishing) this.updateFishing(it, dt);
       else if (input.mousePressed(0)) this.useHeld();
     }
+  }
+
+  // The point on a car the sponge or brush can be put to: the surface under the aim, no further
+  // than the arm reaches. plateSpot's { car, part, point, normal, dist } or null.
+  scrubSpot() {
+    const g = this.game;
+    const origin = this.cam.position;
+    const dir = V(0, 0, -1).applyQuaternion(this.cam.quaternion);
+    const right = V(1, 0, 0).applyQuaternion(this.cam.quaternion);
+    // (and within an arm's reach of the chest, leaning in: low down that means crouching)
+    const chest = V(0, -0.3, 0).add(origin);
+    let best = null;
+    for (const c of new Set([g.car, ...((g.fleet && g.fleet.cars) || [])])) {
+      if (!c || c.root.position.distanceTo(origin) > 7) continue;
+      const s = plateSpot(c, origin, dir, SCRUB_REACH, 0, right);
+      if (s && s.point.distanceTo(chest) < ARM_REACH + 0.25 && (!best || s.dist < best.dist)) best = s;
+    }
+    return best;
+  }
+
+  // Where the held sponge or brush is while it scrubs (camera space, for the held pose): flat on
+  // the surface, the brush's handle toward the player; the sponge going round in small circles,
+  // the brush back and forth along its length. `contact` is the world point it rubs.
+  scrubPose(it, s, t) {
+    const cam = this.cam;
+    const n = s.normal;
+    const x = s.point.clone().sub(cam.position);
+    x.addScaledVector(n, -x.dot(n));
+    if (x.lengthSq() < 1e-6) x.set(1, 0, 0).addScaledVector(n, -n.x);
+    x.normalize();
+    const z = x.clone().cross(n).normalize();
+    const off = it.def.derust ? x.clone().multiplyScalar(Math.sin(t * 15) * 0.045) : x.clone().multiplyScalar(Math.cos(t * 9) * 0.035).addScaledVector(z, Math.sin(t * 9) * 0.035);
+    const contact = s.point.clone().add(off);
+    const inv = cam.quaternion.clone().invert();
+    const p = contact.clone().addScaledVector(n, it.size.y / 2 + 0.002).sub(cam.position).applyQuaternion(inv);
+    const q = inv.multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, n, z)));
+    return { p, q, contact };
   }
 
   // What a wire brush is on: a panel of the car (its own rust), the body (without its panels) or a
