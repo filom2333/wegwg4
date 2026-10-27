@@ -880,8 +880,13 @@ The user still says: don't touch sounds; keep car flipping.
   had (`mouseCarry`, `carryVel`, `drop(0, swing)`). E does not pick up any more.
 - Arms (hands.js `solveArm`, grips.js `defaultArms`): shoulders follow the body pitch
   (`setArmPitch`, clamped below the view's bottom edge); out of reach the shoulder leans forward
-  and down 25 cm, then the upper sleeve stretches (`upper.scale.z`) so it always runs out of the
-  picture: no cut sleeve end is ever visible.
+  and down 25 cm, then the upper arm runs on further so the sleeve always leaves the picture: no
+  cut sleeve end is ever visible. The sleeve is ONE tube (`laySleeve`, rebuilt every frame in the
+  hand frame: straight forearm, rounded elbow, straight upper arm, capped past the shoulder); only
+  the forearm skin and cuff are rigid (`arm`, turned at the wrist). The wrist has limits per
+  direction (`WRIST_BACK/FWD/SIDE`: back 63°, forward 43°, sideways 20°) — the user called a hand
+  bent sideways on its forearm "a crooked arm". Hands put on a surface (`handOnPoint`,
+  `scrubPose`) point their fingers the way the arm comes from the shoulder, never across it.
 - Freezes: shaders warmed up front on a zoo of everything (`game.warmShaders`), places and NPCs
   compiled out of view (`game.prepare`, compileAsync into the composer's buffer); POI assembly
   one building a frame (poi.js `pending`), colliders in hundreds; terrain heightfields in the
@@ -910,4 +915,5 @@ The user still says: don't touch sounds; keep car flipping.
   custom settings pictures preload and swap only when loaded.
 - Probes used (scratchpad, not in the repo): p_cpu3/p_entry3 (frame breakdowns), p_hulk/p_build
   (car build cost), p_trailer(_slalom), p_walk/p_roof, p_zdiff (render-diff flicker finder),
-  p_zfight (coplanar faces), p_scrub, p_hands2, p_carry, p_drivesnow, p_bed, menuhitch.mjs.
+  p_zfight (coplanar faces), p_scrub, p_hands2(b), p_arms, p_arms3 (fists, carries, driving), p_carry,
+  p_drivesnow, p_bed, menuhitch.mjs.
