@@ -1981,21 +1981,30 @@ export class Interaction {
   }
 
   // Where the held sponge or brush is while it scrubs (camera space, for the held pose): flat on
-  // the surface, the brush's handle toward the player; the sponge going round in small circles,
-  // the brush back and forth along its length. `contact` is the world point it rubs.
+  // the surface under the hand, the back of the hand out and the knuckles on along the surface the
+  // way the arm comes at it from the shoulder (a hand turned across that bent the wrist and drew
+  // the elbow out into the picture). The sponge goes round in small circles, the brush back and
+  // forth along its length. `contact` is the world point it rubs.
   scrubPose(it, s, t) {
     const cam = this.cam;
     const n = s.normal;
-    const x = s.point.clone().sub(cam.position);
-    x.addScaledVector(n, -x.dot(n));
-    if (x.lengthSq() < 1e-6) x.set(1, 0, 0).addScaledVector(n, -n.x);
-    x.normalize();
-    const z = x.clone().cross(n).normalize();
-    const off = it.def.derust ? x.clone().multiplyScalar(Math.sin(t * 15) * 0.045) : x.clone().multiplyScalar(Math.cos(t * 9) * 0.035).addScaledVector(z, Math.sin(t * 9) * 0.035);
+    const shoulder = defaultArms().right.shoulder.applyQuaternion(cam.quaternion).add(cam.position);
+    const f = s.point.clone().sub(shoulder);
+    f.addScaledVector(n, -f.dot(n));
+    if (f.lengthSq() < 1e-6) f.set(0, -1, 0).addScaledVector(n, n.y);
+    f.normalize();
+    const side = n.clone().cross(f);
+    const brush = !!it.def.derust;
+    // item frames: the brush bristles down, gripped across its handle (knuckles along +Z); the
+    // sponge lies in the open palm (fingers along -Z, back of the hand -Y), so it goes face down
+    const x = side,
+      y = brush ? n.clone() : n.clone().negate(),
+      z = brush ? f.clone() : f.clone().negate();
+    const off = brush ? side.clone().multiplyScalar(Math.sin(t * 15) * 0.045) : side.clone().multiplyScalar(Math.cos(t * 9) * 0.035).addScaledVector(f, Math.sin(t * 9) * 0.035);
     const contact = s.point.clone().add(off);
     const inv = cam.quaternion.clone().invert();
     const p = contact.clone().addScaledVector(n, it.size.y / 2 + 0.002).sub(cam.position).applyQuaternion(inv);
-    const q = inv.multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, n, z)));
+    const q = inv.multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z)));
     return { p, q, contact };
   }
 
@@ -3258,10 +3267,18 @@ export class Interaction {
     const p = world.clone().sub(cam.position).applyQuaternion(inv);
     const n = normal ? normal.clone().applyQuaternion(inv) : p.clone().negate().normalize();
     if (n.dot(p) > 0) n.negate();
-    // the palm laid flat on it, a skin's breadth off, the back of the hand out, thumb up along it
-    const up = V(0, 1, 0).addScaledVector(n, -n.y);
-    if (up.lengthSq() < 1e-4) up.set(-1, 0, 0);
-    const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(up.normalize(), n) };
+    // the palm laid flat on it, a skin's breadth off, the back of the hand out, the fingers on along
+    // it the way the arm comes at it from the shoulder (so the wrist is not bent sideways); thumb up
+    // when the arm comes straight at it
+    const fingers = p.clone().sub(arms.right.shoulder);
+    fingers.addScaledVector(n, -fingers.dot(n));
+    let thumb;
+    if (fingers.lengthSq() > 1e-4) thumb = n.clone().cross(fingers.normalize());
+    else {
+      thumb = V(0, 1, 0).addScaledVector(n, -n.y);
+      if (thumb.lengthSq() < 1e-4) thumb.set(-1, 0, 0);
+    }
+    const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(thumb.normalize(), n) };
     const placed = handFromAnchor('right', 'palm', anchor);
     // out of the arm's reach: the open hand as far toward it as the arm goes (hiding the hand
     // left the cut end of the sleeve in the picture)
