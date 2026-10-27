@@ -322,8 +322,12 @@ export class Environment {
     const moonUp = smoothstep(-0.05, 0.15, this.moonDir.y);
     // moonlight bright enough to drive by on a clear night (shadows and all)
     this.moon.intensity = 0.8 * moonUp * night * (1 - this.w.overcast * 0.75);
-    // the stronger of sun/moon casts shadows
-    this.sun.castShadow = this.shadowsOn && this.sun.intensity > 0.05;
+    // the sun keeps its shadow on through the night: switching it off changes every lit shader
+    // (a recompile of everything at dusk and again at dawn, a long freeze each time). Below the
+    // horizon its map is simply not redrawn (drawn once if it has never been).
+    this.sun.castShadow = this.shadowsOn;
+    this.sun.shadow.autoUpdate = this.sun.intensity > 0.05;
+    if (!this.sun.shadow.map) this.sun.shadow.needsUpdate = true;
 
     // ambient
     const skyCol = new THREE.Color().setRGB(0.46, 0.55, 0.68).lerp(new THREE.Color(0.55, 0.57, 0.6), this.w.overcast);

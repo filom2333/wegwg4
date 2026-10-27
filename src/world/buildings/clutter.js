@@ -942,11 +942,22 @@ function loftSectionsTray() {
   return g;
 }
 
-// A folding camp chair: aluminium X legs, a sagging canvas seat; open, or folded and dropped.
+// A folding camp chair: aluminium X legs, a sagging canvas seat; standing open (one to pick up and
+// take along), or folded and dropped.
+export const CAMP_CLOTH = [0x2a4a7a, 0x8a2a22, 0x3d6b3a, 0xc8823c];
 export function campChair(rnd) {
-  const M = archMaterials();
   const it = new Item([0.6, 0.9, 0.6]);
-  const cloth = stdMat({ color: [0x2a4a7a, 0x8a2a22, 0x3d6b3a, 0xc8823c][Math.floor(rnd() * 4)], roughness: 1, side: THREE.DoubleSide });
+  const color = Math.floor(rnd() * 4);
+  if (rnd() < 0.4) lieDown(it, campChairParts(color), rnd() < 0.5 ? -Math.PI / 2 : 0, rnd() < 0.5 ? Math.PI / 2 : 0, 0, 0, rnd() * 6.28);
+  else it.itemAt(0, 0, 0, 0, 'campChair', color);
+  return it;
+}
+
+// The open chair's parts, facing +z (cloth: an index into CAMP_CLOTH).
+const campCloth = [];
+export function campChairParts(color) {
+  const M = archMaterials();
+  const cloth = campCloth[color % 4] || (campCloth[color % 4] = stdMat({ color: CAMP_CLOTH[color % 4], roughness: 1, side: THREE.DoubleSide }));
   const parts = [];
   for (const s2 of [-1, 1]) {
     parts.push([tubeAlong([V(s2 * 0.25, 0, 0.25), V(s2 * 0.25, 0.45, -0.2)], 0.01, 5), M.chromeOld]);
@@ -959,9 +970,7 @@ export function campChair(rnd) {
   seat.computeVertexNormals();
   parts.push([seat.translate(0, 0.45, 0), cloth]);
   parts.push([new THREE.PlaneGeometry(0.5, 0.38).rotateX(0.18).translate(0, 0.66, -0.26), cloth]);
-  if (rnd() < 0.4) lieDown(it, parts, rnd() < 0.5 ? -Math.PI / 2 : 0, rnd() < 0.5 ? Math.PI / 2 : 0, 0, 0, rnd() * 6.28);
-  else for (const [g, m] of parts) it.add(g, m);
-  return it;
+  return parts;
 }
 
 // A kettle barbecue on three legs, its lid off beside it, the ash gone hard.
@@ -997,7 +1006,9 @@ export function propaneTank(rnd) {
   return it;
 }
 
-// Broken crockery: halves and shards of plates and a cup.
+// Broken crockery: halves and shards of plates and a cup. (Each piece lies a little higher than
+// the last: at one height, the overlapping pieces cut through each other at a shallow slant and
+// the cut flickered as you walked by.)
 export function brokenPlates(rnd) {
   const M = archMaterials();
   const it = new Item([0.8, 0.05, 0.8]);
@@ -1005,11 +1016,11 @@ export function brokenPlates(rnd) {
     const a0 = rnd() * 6.28,
       len = 0.8 + rnd() * 2.2;
     const g = latheY([[0.06, 0], [0.11, 0.014], [0.115, 0.018], [0.1, 0.012], [0.05, 0.004]], 12, a0, len);
-    it.add(g.rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.6, 0.002, (rnd() - 0.5) * 0.6), M.porcelainOld);
+    it.add(g.rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.6, 0.002 + k * 0.004, (rnd() - 0.5) * 0.6), M.porcelainOld);
   }
   for (let k = 0; k < 6 + Math.floor(rnd() * 8); k++) {
     const s = 0.015 + rnd() * 0.03;
-    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008, (rnd() - 0.5) * 0.7), M.porcelainOld);
+    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008 + (k % 5) * 0.0007, (rnd() - 0.5) * 0.7), M.porcelainOld);
   }
   it.flat = true;
   return it;

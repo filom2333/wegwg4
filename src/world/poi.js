@@ -162,7 +162,19 @@ export class POIManager {
     this.state.set(k, st);
     const inst = { k, poi, root, body, doors: [], pumps: [], lights: [], lamps: [], animated: [], loot: [], beacons: [], propList: [], state: st, powered: rnd() < 0.5 };
     const tmpQ = new THREE.Quaternion();
-    for (const e of layout) {
+    // a place is hundreds of boxes for physics; added all in one frame, the next physics step spent
+    // a long time sorting them in. Streamed in, they go in by the hundred, before anything is set
+    // down in the place.
+    const colJobs = [];
+    const flushColliders = (max = Infinity) => {
+      for (let n = 0; colJobs.length && n < max; n++) colJobs.shift()();
+    };
+    const colliderStep = () => {
+      flushColliders(100);
+      if (colJobs.length) inst.pending.unshift(colliderStep);
+    };
+    // one building of the layout: its meshes, colliders, doors, pumps, loot spots, props, lights
+    const buildEntry = (e) => {
       const b = e.builder;
       const em0 = new THREE.Matrix4().compose(V(e.x, 0, e.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), e.rot || 0), V(1, 1, 1));
       if (b.snaps && b.snaps.length) this.snapToGround(root, b, em0);
@@ -171,25 +183,26 @@ export class POIManager {
       g.rotation.y = e.rot || 0;
       root.add(g);
       const em = new THREE.Matrix4().compose(V(e.x, 0, e.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), e.rot || 0), V(1, 1, 1));
-      // static colliders
-      for (const c of b.colliders) {
-        const p = V(...c.c).applyMatrix4(em);
-        tmpQ.setFromEuler(new THREE.Euler(c.rotX || 0, (e.rot || 0) + (c.rotY || 0), 0, 'YXZ'));
-        const desc = RAPIER.ColliderDesc.cuboid(Math.max(0.01, c.h[0]), Math.max(0.01, c.h[1]), Math.max(0.01, c.h[2]))
-          .setTranslation(p.x, p.y, p.z)
-          .setRotation({ x: tmpQ.x, y: tmpQ.y, z: tmpQ.z, w: tmpQ.w })
-          .setCollisionGroups(GROUPS.world)
-          .setFriction(0.8);
-        const col = ph.world.createCollider(desc, body);
-        ph.setOwner(col, { kind: 'structure', surface: c.surface === 'roof' ? 'wood' : c.surface, poi: inst });
-      }
+      // static colliders (queued: see flushColliders)
+      for (const c of b.colliders)
+        colJobs.push(() => {
+          const p = V(...c.c).applyMatrix4(em);
+          tmpQ.setFromEuler(new THREE.Euler(c.rotX || 0, (e.rot || 0) + (c.rotY || 0), 0, 'YXZ'));
+          const desc = RAPIER.ColliderDesc.cuboid(Math.max(0.01, c.h[0]), Math.max(0.01, c.h[1]), Math.max(0.01, c.h[2]))
+            .setTranslation(p.x, p.y, p.z)
+            .setRotation({ x: tmpQ.x, y: tmpQ.y, z: tmpQ.z, w: tmpQ.w })
+            .setCollisionGroups(GROUPS.world)
+            .setFriction(0.8);
+          const col = ph.world.createCollider(desc, body);
+          ph.setOwner(col, { kind: 'structure', surface: c.surface === 'roof' ? 'wood' : c.surface, poi: inst });
+        });
       // doors
       b.doors.forEach((d, i) => this.makeDoor(inst, { ...d, mat: resolve(d.mat) }, em, e, i));
       // pumps
       for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst, kind: p.kind || 'fuel' });
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
-      for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });
+      for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind, rot: (l.rot || 0) + (e.rot || 0), item: l.item, variant: l.variant });
       // real models, placed once the place is registered (and their files have loaded)
       for (const p of b.props || []) {
         const v = V(...p.pos).applyMatrix4(em);
@@ -204,13 +217,13 @@ export class POIManager {
       for (const a of b.animated || []) inst.animated.push(a);
       if (e.tag === 'garage' && b.carSpot) inst.carSpot = V(b.carSpot.x, 0, b.carSpot.z).applyMatrix4(em);
       this.addFootings(inst, b, em);
-    }
-    // wrecks
-    const [nW, pW] = WRECKS[poi.type] ?? [0, 0];
-    for (let i = 0; i < nW; i++) if (rnd() < pW) this.addWreck(inst, rnd, i, poi.type);
-    this.group.add(root);
-    this.loaded.set(k, inst);
-    for (const p of inst.propList) placeProp(this.game, inst, p);
+    };
+    // then the wrecks, and the real models once the place is registered
+    const finish = () => {
+      const [nW, pW] = WRECKS[poi.type] ?? [0, 0];
+      for (let i = 0; i < nW; i++) if (rnd() < pW) this.addWreck(inst, rnd, i, poi.type);
+      for (const p of inst.propList) placeProp(this.game, inst, p);
+    };
     // what lives in the place (loot, animals, a parked car, a trailer) follows in the next frames,
     // one kind a frame, so a place streaming in never costs one long frame; the start is built
     // at once
@@ -224,8 +237,22 @@ export class POIManager {
       () => g.fleet && g.fleet.onPoiLoaded(inst),
       () => g.trailers && g.trailers.onPoiLoaded(inst),
     ];
-    if (tokens) inst.pending = hooks;
-    else for (const h of hooks) h();
+    if (!tokens) {
+      // the start: built at once
+      for (const e of layout) buildEntry(e);
+      flushColliders();
+      this.group.add(root);
+      this.loaded.set(k, inst);
+      finish();
+      for (const h of hooks) h();
+      return;
+    }
+    // streamed in: hidden, one building a frame (a farm or a motel is several), then shown once
+    // its shaders are ready, then what lives in it, one kind a frame
+    root.visible = false;
+    this.group.add(root);
+    this.loaded.set(k, inst);
+    inst.pending = [...layout.map((e) => () => buildEntry(e)), colliderStep, () => (finish(), this.game.prepare(root)), ...hooks];
   }
 
   // Junk out in the open set down onto the land where it lies (the place is built level; the

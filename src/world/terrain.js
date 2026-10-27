@@ -30,6 +30,8 @@ export class Terrain {
     this.roadSegs = new Map();
     this.trackMeshes = new Map(); // side track index -> mesh
     this.colliders = new Map();
+    this.colliderWant = new Set();
+    this.hfPending = new Set();
     this.nextId = 1;
     this.viewRadius = viewRadius ?? VIEW_RADIUS;
     // the far edge fades into the haze instead of ending against the sky
@@ -45,6 +47,12 @@ export class Terrain {
   }
 
   onWorker(msg) {
+    // a physics tile's heights, worked out in the worker: the collider goes in now if still wanted
+    if (msg.type === 'hf') {
+      this.hfPending.delete(msg.key);
+      if (this.colliderWant.has(msg.key) && !this.colliders.has(msg.key)) this.colliders.set(msg.key, this.buildCollider(msg.x0, msg.z0, msg.H));
+      return;
+    }
     if (msg.type === 'ready') {
       this._resolveReady();
       return;
@@ -398,8 +406,9 @@ export class Terrain {
           dz = Math.max(Math.abs(pz - (z0 + T / 2)) - T / 2, 0);
         if (Math.hypot(dx, dz) <= COLLIDER_RADIUS) want.add(x0 + ',' + z0);
       }
-    let built = 0;
-    // nearest first
+    this.colliderWant = want;
+    // nearest first; the heights are worked out in the worker (2400 samples a tile was a long
+    // frame each). Only one right under the player that is somehow not there yet is made at once.
     const list = [...want].map((k) => {
       const [x0, z0] = k.split(',').map(Number);
       return { k, x0, z0, d: Math.hypot(px - (x0 + T / 2), pz - (z0 + T / 2)) };
@@ -407,8 +416,13 @@ export class Terrain {
     list.sort((a, b) => a.d - b.d);
     for (const t of list) {
       if (this.colliders.has(t.k)) continue;
-      if (built++ >= (t.d < 40 ? 4 : 1)) break;
-      this.colliders.set(t.k, this.buildCollider(t.x0, t.z0));
+      if (t.d < T * 0.75 && !this.workerBusyOn(t.k)) {
+        this.colliders.set(t.k, this.buildCollider(t.x0, t.z0));
+        continue;
+      }
+      if (this.hfPending.has(t.k) || this.hfPending.size >= 6) continue;
+      this.hfPending.add(t.k);
+      this.worker.postMessage({ type: 'hf', key: t.k, x0: t.x0, z0: t.z0, n: T, size: T });
     }
     for (const [k, c] of this.colliders) {
       if (!want.has(k)) {
@@ -434,12 +448,19 @@ export class Terrain {
       }
   }
 
-  buildCollider(x0, z0) {
+  // (a tile whose heights were asked of the worker only just now: wait for them a moment)
+  workerBusyOn(k) {
+    return this.hfPending.has(k) && this.colliders.size > 0;
+  }
+
+  buildCollider(x0, z0, heights = null) {
     const T = COLLIDER_TILE;
     const n = T; // 1 m resolution
-    const H = new Float32Array((n + 1) * (n + 1));
-    for (let ix = 0; ix <= n; ix++)
-      for (let iz = 0; iz <= n; iz++) H[ix * (n + 1) + iz] = this.gen.height(x0 + (ix * T) / n, z0 + (iz * T) / n);
+    let H = heights;
+    if (!H) {
+      H = new Float32Array((n + 1) * (n + 1));
+      for (let ix = 0; ix <= n; ix++) for (let iz = 0; iz <= n; iz++) H[ix * (n + 1) + iz] = this.gen.height(x0 + (ix * T) / n, z0 + (iz * T) / n);
+    }
     const body = this.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(x0 + T / 2 - this.origin.x, 0, z0 + T / 2 - this.origin.z)
     );

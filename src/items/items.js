@@ -469,7 +469,7 @@ export class ItemSystem {
     if (!list) return;
     this.pending.delete(inst.k);
     inst.root.updateMatrixWorld(true);
-    const spots = inst.loot.filter((l) => l.kind !== 'wreck');
+    const spots = inst.loot.filter((l) => l.kind !== 'wreck' && l.kind !== 'item');
     list.forEach((e, i) => {
       const sp = spots.length ? spots[(i * 7 + 3) % spots.length].pos : V(0, 0.2, 4);
       const wp = sp.clone().applyMatrix4(inst.root.matrixWorld).add(V(0, 0.12, 0));
@@ -515,6 +515,26 @@ export class ItemSystem {
     }
     inst.loot.forEach((spot, i) => {
       if (inst.state.taken.has(i)) return;
+      // a thing that stands in its place (a chair at a table), most of them still there
+      if (spot.kind === 'item') {
+        if (lrnd() > 0.85 || !ITEMS[spot.item]) return;
+        const wp = spot.pos.clone().applyMatrix4(inst.root.matrixWorld);
+        const st = initialState(spot.item, lrnd);
+        if (spot.variant !== undefined) st.variant = spot.variant;
+        const mesh = this.buildMesh(spot.item, st);
+        const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), inst.poi.rot + (spot.rot || 0));
+        const it = new Item(this, { id: spot.item, state: st, mesh });
+        this.group.add(mesh);
+        this.items.add(it);
+        const pos = wp.add(V(0, mesh.userData.size.y / 2 + 0.01, 0));
+        mesh.position.copy(pos);
+        mesh.quaternion.copy(q);
+        this.makeBody(it, pos, q, true);
+        this.refreshVisual(it);
+        it.poiKey = key;
+        it.spot = i;
+        return;
+      }
       // most places were picked over long ago
       const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul * 0.7;
       if (lrnd() > chance) return;
@@ -586,6 +606,7 @@ export class ItemSystem {
     if (dt > 0) this.updateSpills(dt);
     this.updateMounted(dt);
     if (dt > 0) this.updateInstruments(dt);
+    this.updateDetail();
     for (const it of this.items) {
       if (it.held || it.stowed || it.mounted || !it.body) continue;
       // a resting body is copied once more as it goes to sleep: things that fell onto a shelf
@@ -687,6 +708,30 @@ export class ItemSystem {
           b.position.z += (tz + o[2] - b.position.z) * k;
         }
       }
+    }
+  }
+
+  // Small things out of the picture (and the shadows) once they are a few pixels across: a thing
+  // of radius r goes at about r x 300 m (a can at 20 m, a jerry can at 55 m). Checked a slice of
+  // the list each frame; layer 1 is skipped by the camera and the shadow pass.
+  updateDetail() {
+    const g = this.game;
+    if (!g.renderer || !this.items.size) return;
+    const eye = g.renderer.camera.position;
+    const list = (this._detailList = this.items.size !== (this._detailN || 0) || !this._detailList ? [...this.items] : this._detailList);
+    this._detailN = this.items.size;
+    const n = Math.max(1, Math.ceil(list.length / 8));
+    for (let k = 0; k < n; k++) {
+      this._detailI = ((this._detailI || 0) + 1) % list.length;
+      const it = list[this._detailI];
+      if (!it || !it.mesh || !this.items.has(it)) continue;
+      // (shown again a little nearer than it goes: at the edge itself the camera's bob as you
+      // walk put it in and out of the picture every few frames)
+      const reach = Math.max(it.size.x, it.size.y, it.size.z) * 150 + 8;
+      const near = it.held || it.worn || it.state.on ? true : it.mesh.getWorldPosition(_wp).distanceTo(eye) < reach * (it.detailShown === false ? 0.92 : 1);
+      if (near === it.detailShown) continue;
+      it.detailShown = near;
+      it.mesh.traverse((o) => (o.layers.mask = near ? 1 : 2));
     }
   }
 

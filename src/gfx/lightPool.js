@@ -48,9 +48,12 @@ export class LightPool {
     this.setActive(false);
   }
 
+  // The pool's lights stay in the scene (dark when not in use) whatever is lit: a light that comes
+  // or goes changes the count every lit shader is built for, and all of them would compile anew
+  // (a freeze each time a lamp, a lantern or the headlights came on). Only the work is skipped.
   setActive(on) {
     this.active = on;
-    for (const l of this.all) l.visible = on;
+    for (const l of this.all) l.visible = true;
   }
 
   // Compiles the scene's shaders for the pool both off and on (while loading), so the first lamp

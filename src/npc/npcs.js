@@ -1253,6 +1253,7 @@ export class NPCManager {
     const proto = list[Math.floor(this.rnd() * list.length)];
     const npc = new NPC(this, proto, type, pos, opts);
     this.group.add(npc.root);
+    this.g.prepare && this.g.prepare(npc.root);
     this.list.push(npc);
     return npc;
   }
@@ -1525,7 +1526,7 @@ export class NPCManager {
         this.toRemove.add(n);
         continue;
       }
-      n.root.visible = d < 320;
+      n.root.visible = d < 320 && !n.root.userData.compiling;
       n.update(dt, d < 70);
     }
     for (const n of this.toRemove) this.remove(n);

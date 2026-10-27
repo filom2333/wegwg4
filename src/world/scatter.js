@@ -476,7 +476,7 @@ export class Scatter {
       const ddx = cx - px,
         ddz = cz - pz;
       const d = Math.sqrt(ddx * ddx + ddz * ddz);
-      if (d < 120 && !c.colliders && c.data && built < 2) {
+      if (d < 120 && !c.colliders && c.data && built < 1) {
         built++;
         const body = this.game.physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
         const data = c.data;

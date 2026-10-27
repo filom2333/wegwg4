@@ -91,7 +91,7 @@ export class Goals {
     // the essentials are on: fuel, oil, water, then the key
     if (car.fuel < 2) {
       const can = this.nearestItem((d, it) => d.liquid && d.liquid.type === 'fuel' && (it.state.liquid || 0) > 0.5 && it.state.liquidType === car.fuelType);
-      return this.toward({ key: 'fuel', title: 'Put fuel in it', lines: [can ? (car.fillerCapOff ? 'Unscrew the can (R), hold it to the filler, LMB to pour' : 'Open the filler (E on the flap, again for the cap), unscrew the can (R), then pour, LMB') : 'Find a jerry can, or a pump at a gas station'] }, can);
+      return this.toward({ key: 'fuel', title: 'Put fuel in it', lines: [can ? (car.fillerCapOff ? 'Unscrew the can (R), hold it to the filler, LMB to pour' : 'Pull the filler flap open (LMB held), E for the cap, unscrew the can (R), then pour, LMB') : 'Find a jerry can, or a pump at a gas station'] }, can);
     }
     if (car.oil < 1) {
       const oil = this.nearestItem((d) => d.liquid && d.liquid.type === 'oil');
@@ -102,7 +102,7 @@ export class Goals {
     const seated = p.seat === 'driver' && p.car === car;
     if (!running) {
       const panels = missing.length ? `${missing.length} panel${missing.length > 1 ? 's' : ''} still off: they can wait` : null;
-      if (!seated) return { key: 'getin', title: `Start the ${name}`, lines: ['Open the driver’s door and get in (E)', panels].filter(Boolean) };
+      if (!seated) return { key: 'getin', title: `Start the ${name}`, lines: ['Hold LMB on the driver’s door and pull it open, then get in (E)', panels].filter(Boolean) };
       return { key: 'key', title: `Start the ${name}`, lines: ['Look at the key and hold E', car.parkBrake ? 'Then release the parking brake' : null].filter(Boolean) };
     }
     // on the road

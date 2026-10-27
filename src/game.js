@@ -24,7 +24,10 @@ import { Campfires } from './world/campfires.js';
 import { Trailers } from './vehicle/trailer.js';
 import { Jacks } from './vehicle/jack.js';
 import { Tents } from './world/tents.js';
-import { PropLibrary } from './world/props.js';
+import { PropLibrary, PROPS } from './world/props.js';
+import { addGlassRain } from './gfx/glassRain.js';
+import { HAND_POSES } from './player/hands.js';
+import { prewarmIcons } from './ui/itemIcons.js';
 import { registerRealModel } from './items/itemModels.js';
 import { Atlas } from './story/atlas.js';
 import { PhotoMode, loadPhotos } from './ui/photoMode.js';
@@ -158,7 +161,9 @@ export class Game {
     await Promise.all(['rockMoss1', 'rockMoss2', 'rockMoss3', 'carp', 'bass', 'survivor', 'survivorAnim'].map((id) => this.props.load(id)));
     registerRealModel('carp', this.props.instance('carp'));
     registerRealModel('bass', this.props.instance('bass'));
-    for (const id of ['oilDrum', 'trafficCone', 'lampPost', 'leatherSofa', 'pottedPlant', 'tyre']) this.props.load(id);
+    // the rest load now too (parsing a model and decoding its textures mid-game is a freeze); a
+    // slow one is waited for only so long, and is shown when it arrives
+    const allProps = Promise.all(Object.keys(PROPS).map((id) => this.props.load(id).catch(() => null)));
     this.scatter = new Scatter(this, this.groundTex, await treeTex);
     this.farForest = new FarForest(this, this.scatter);
     this.pois = new POIManager(this);
@@ -267,6 +272,17 @@ export class Game {
     this.trailers.update();
     this.items.update();
     this.hud.show(!attract);
+    onProgress('Preparing shaders', 0.97);
+    await Promise.race([allProps, new Promise((r) => setTimeout(r, 12000))]);
+    // the icons of everything that can go in the hotbar or the bag
+    // (?noicons: headless test runs skip this)
+    if (!attract && !(typeof location !== 'undefined' && /[?&]noicons/.test(location.search))) {
+      const icons = [];
+      for (const [id, def] of Object.entries(ITEMS))
+        for (let v = 0; v < (def.variants || 1); v++)
+          icons.push({ key: id + (def.variants ? ':' + v : ''), pose: def.weapon ? 'weapon' : '', build: () => this.items.buildMesh(id, { ...initialState(id, Math.random), ...(def.variants ? { variant: v } : {}) }) });
+      await prewarmIcons(icons, (f) => onProgress('Drawing the icons', 0.97 + f * 0.02));
+    }
     this.warmShaders();
     // one frame behind the loading screen compiles the passes, shadows and sky as well
     this.render(0.016);
@@ -283,11 +299,14 @@ export class Game {
     this.running = true;
   }
 
-  // Compiles, behind the loading screen, the shaders of things the road shows later (every item,
-  // every building material, the roadside wrecks) for both light states, so the first time each
-  // comes into view does not stall the game.
+  // Compiles, behind the loading screen, every shader the road asks for later (the items, the
+  // building materials, every kind of car whole and wrecked, the real models, the third-person
+  // body, the selection outline, and all of them as shadow casters): they are drawn once in front
+  // of the camera. A shader compiled the first time its thing comes into view is a freeze of a
+  // fraction of a second up to seconds (entering a house, the first look from behind, a lamp).
   warmShaders() {
     const zoo = new THREE.Group();
+    zoo.name = 'warmup';
     for (const id of Object.keys(ITEMS))
       try {
         zoo.add(this.items.buildMesh(id, initialState(id, Math.random)));
@@ -297,11 +316,79 @@ export class Game {
     const box = new THREE.BoxGeometry(1, 1, 1);
     for (const m of Object.values(archMaterials())) if (m && m.isMaterial) zoo.add(new THREE.Mesh(box, m));
     for (const w of this.pois.wreckProtos) zoo.add(w.group.clone());
+    // every kind of car, whole
+    for (const t of CAR_TYPE_LIST)
+      try {
+        const tpl = this.fleet.template(t.id);
+        // (glass as a car on the road has it: with the rain running down it)
+        if (tpl.model.mats) addGlassRain(tpl.model.mats.glass);
+        zoo.add(tpl.root.clone());
+      } catch (e) {
+        /* compiles when first seen */
+      }
+    // the first-person hands in every pose
+    const hands = this.interaction && this.interaction.hands;
+    if (hands) for (const pose of HAND_POSES) for (const mirror of [false, true]) zoo.add(hands.meshFor(pose, mirror).clone());
+    // the real models (lamps, sofas, plants, drums...)
+    for (const id of Object.keys(PROPS)) {
+      if (PROPS[id].anim || !this.props.ready(id)) continue;
+      const o = this.props.instance(id);
+      if (o) zoo.add(o);
+    }
+    // the third-person body (in the zoo for the frame, then back where it lives)
+    const av = this.npcs && this.npcs.ensureAvatar();
+    const avShown = av ? av.root.visible : false;
+    const avParent = av ? av.root.parent : null;
+    if (av) {
+      av.root.visible = true;
+      zoo.add(av.root);
+    }
     zoo.traverse((o) => {
-      if (o.isMesh) o.castShadow = o.receiveShadow = true;
+      if (o.isMesh) {
+        o.castShadow = o.receiveShadow = true;
+        o.frustumCulled = false;
+      }
     });
-    this.lights.warm(this.renderer.renderer, this.renderer.camera, this.renderer.composer.readBuffer, zoo);
+    const cam = this.renderer.camera;
+    zoo.position.copy(cam.position).add(new THREE.Vector3(0, 0, -4).applyQuaternion(cam.quaternion));
+    this.scene.add(zoo);
+    // the selection outline's shaders with them
+    const out = this.renderer.outline;
+    out.selectedObjects = [zoo.children[0]];
+    out.enabled = true;
+    this.warming = true;
+    this.render(0.016);
+    this.warming = false;
+    out.selectedObjects = [];
+    out.enabled = false;
+    this.scene.remove(zoo);
+    if (av) {
+      av.root.visible = avShown;
+      if (avParent) avParent.add(av.root);
+      av.root.traverse((o) => o.isMesh && (o.frustumCulled = true));
+    }
     box.dispose();
+  }
+
+  // A thing about to come into view whose shaders may not exist yet: they are compiled where the
+  // driver can do it in the background, and it is hidden until they are ready (a few frames).
+  prepare(obj) {
+    const done = () => {
+      obj.userData.compiling = false;
+      obj.visible = true;
+    };
+    obj.userData.compiling = true;
+    obj.visible = false;
+    // (for the buffer the scene is drawn into, not the screen: its shaders differ)
+    const r = this.renderer.renderer;
+    const prev = r.getRenderTarget();
+    try {
+      if (this.renderer.composer) r.setRenderTarget(this.renderer.composer.readBuffer);
+      r.compileAsync(obj, this.renderer.camera, this.scene).then(done, done);
+    } catch (e) {
+      done();
+    }
+    r.setRenderTarget(prev);
   }
 
   spawnPoint() {
@@ -947,7 +1034,9 @@ export class Game {
     this.shadowTick = (this.shadowTick || 0) + 1;
     const pl = this.player;
     const fast = !pl || this.attract || this.debugView || pl.thirdPerson || (pl.seat && this.car && Math.abs(this.car.speedKmh) > 3);
-    sm.needsUpdate = fast || this.shadowTick % 2 === 0;
+    // (a lamp that has just taken a shadow slot has no map yet: it must be drawn at once)
+    const fresh = this.lights.shadowSpots.some((l) => !l.shadow.map) || (this.env.sun.castShadow && !this.env.sun.shadow.map);
+    sm.needsUpdate = fast || fresh || this.warming || this.shadowTick % 2 === 0;
     this.renderer.render(dt);
   }
 

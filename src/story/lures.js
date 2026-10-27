@@ -320,7 +320,7 @@ export class Lures {
     const rnd = mulberry32(inst.poi.seed + 1777);
     const indoor = ['kitchen', 'table', 'storage', 'tools', 'counter', 'shelf', 'office', 'desk', 'crate', 'cupboard', 'small', 'shop', 'bed', 'gear'];
     let spots = inst.loot.filter((s) => indoor.includes(s.kind));
-    if (!spots.length) spots = inst.loot.filter((s) => s.kind !== 'wreck');
+    if (!spots.length) spots = inst.loot.filter((s) => s.kind !== 'wreck' && s.kind !== 'item');
     if (!spots.length) return;
     inst.root.updateMatrixWorld(true);
     let n = 0;
@@ -354,7 +354,7 @@ export class Lures {
     const l = this.byPoi(inst.k);
     if (!l || !l.trap) return [];
     const r = mulberry32(inst.poi.seed + 1999);
-    const spots = inst.loot.filter((s) => s.kind !== 'wreck');
+    const spots = inst.loot.filter((s) => s.kind !== 'wreck' && s.kind !== 'item');
     const n = 1 + (r() < 0.45 ? 1 : 0);
     const out = [];
     for (let i = 0; i < n; i++) {

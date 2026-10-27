@@ -143,7 +143,7 @@ function upperSleeve() {
   for (let i = 0; i <= 8; i++) {
     const t = i / 8;
     const r = 0.05 + 0.01 * t;
-    const c = V(0, 0, -0.02 + t * (UPPER + 0.04));
+    const c = V(0, 0, -0.02 + t * (UPPER + 0.1));
     const g = superSection(c, V(1, 0, 0), V(0, 1, 0), r, r * 0.92, 2.0, 24);
     g.forEach((p, k) => p.addScaledVector(p.clone().sub(c).normalize(), 0.0022 * Math.sin(k * 1.7 + i * 1.9)));
     secs.push(g);
@@ -407,6 +407,10 @@ export class Hands {
     const W = _v1.copy(WRIST).applyQuaternion(q).add(grp.position);
     const a = UPPER,
       b = FOREARM;
+    // leaning in: a hand further off than the arm reaches brings the shoulder forward first (up to
+    // 20 cm: it stays below the bottom of the picture), then draws the upper arm out (below)
+    const over = W.distanceTo(shoulder) - (a + b - 0.002);
+    if (over > 0) shoulder = _v5.copy(shoulder).setZ(shoulder.z - Math.min(0.2, over));
     const u = _v2.copy(W).sub(shoulder);
     let d = u.length();
     u.multiplyScalar(1 / Math.max(d, 1e-6));
@@ -427,10 +431,14 @@ export class Hands {
       qa.copy(_qI).slerp(_q3, MAX_BEND / ang);
     }
     arm.quaternion.copy(qa);
-    // upper arm from where the forearm ends toward the shoulder
+    // upper arm from where the forearm ends toward the shoulder; a hand put further off than the
+    // arm is long (on a door, low on a car's side) draws it out all the way to the shoulder, behind
+    // the eye, so the sleeve always runs on out of the picture instead of ending in mid-air
     const armQ = _q3.copy(q).multiply(qa);
     const Ea = _v4.set(0, 0, b).applyQuaternion(armQ).add(W);
-    const du = _v2.copy(shoulder).sub(Ea).applyQuaternion(armQ.invert()).normalize();
+    const toS = _v2.copy(shoulder).sub(Ea);
+    upper.scale.z = Math.max(1, toS.length() / a);
+    const du = toS.applyQuaternion(armQ.invert()).normalize();
     upper.quaternion.setFromUnitVectors(_Z, du);
   }
 
@@ -438,6 +446,7 @@ export class Hands {
   resetArm(side) {
     this.rig[side].arm.quaternion.identity();
     this.rig[side].upper.quaternion.identity();
+    this.rig[side].upper.scale.z = 1;
   }
 }
 
@@ -445,6 +454,7 @@ const _Z = new THREE.Vector3(0, 0, 1);
 const _qI = new THREE.Quaternion();
 const _v1 = new THREE.Vector3(),
   _v2 = new THREE.Vector3(),
+  _v5 = new THREE.Vector3(),
   _v3 = new THREE.Vector3(),
   _v4 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(),

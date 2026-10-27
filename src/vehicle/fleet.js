@@ -166,6 +166,7 @@ export class Fleet {
         car.dyn.body.setEnabled(active);
       }
       car.root.visible = d < SHOW_RADIUS || car === g.car;
+      if (car.root.visible && g.renderer) car.updateDetail(g.renderer.camera.position);
     }
   }
 
@@ -483,12 +484,14 @@ export function serializeCar(car, o) {
     storage: car.storage ? Object.fromEntries(Object.entries(car.storage).map(([k, c]) => [k, c.serialize()])) : null,
     parts,
     open: Object.fromEntries(Object.values(car.model.parts).filter((m) => m.hinge).map((m) => [m.id, m.openT > 0.5 ? 1 : 0])),
+    clean: car.cleanState(),
   };
 }
 
 export function applyCarState(car, c, g) {
   for (const k of ['fuel', 'oil', 'coolant', 'battery', 'engineCondition', 'fanbeltCondition', 'odometer', 'trip', 'dirt', 'rust', 'lightsOn', 'parkBrake']) if (c[k] !== undefined && c[k] !== null) car[k] = c[k];
   const same = (c.model || 'beetle') === car.type.id;
+  if (same && c.clean) car.restoreClean(c.clean);
   if (c.paintColor && car.type.repaintable) {
     car.paintColor = c.paintColor;
     car.mats.color.setHex(c.paintColor);

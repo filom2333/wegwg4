@@ -189,8 +189,10 @@ export class Renderer {
     this.canvas = canvas;
     // reversed depth (float, far = 0): an even precision from the near plane to the horizon, so
     // overlapping surfaces far off no longer flicker (24-bit standard depth gave ~10 cm steps at 300 m)
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, reversedDepthBuffer: true });
+    // (?norevz: the standard buffer, as browsers without EXT_clip_control get it)
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, reversedDepthBuffer: !/[?&]norevz/.test(location.search) });
     this.revZ = !!(this.renderer.state.buffers.depth.getReversed && this.renderer.state.buffers.depth.getReversed());
+    RENDER_CAPS.revZ = this.revZ;
     // checking every program after linking waits for each compile; release builds let the driver
     // compile in parallel
     this.renderer.debug.checkShaderErrors = !!import.meta.env.DEV;
@@ -243,13 +245,19 @@ export class Renderer {
     this._ftAvg = this._ftAvg === undefined ? ms : this._ftAvg + (ms - this._ftAvg) * 0.05;
     this._slow = ms > 21 ? (this._slow || 0) + dt : Math.max(0, (this._slow || 0) - dt * 0.5);
     this._fast = this._ftAvg < 13.5 ? (this._fast || 0) + dt : 0;
+    // each change re-allocates every buffer the picture goes through (a stall of its own): only
+    // after two seconds of slow frames, and never twice within eight seconds
+    this._cool = Math.max(0, (this._cool || 0) - dt);
+    if (this._cool > 0) return;
     // (down to 60 %: on a weak graphics chip a softer picture is better than a juddering one)
-    if (this._slow > 1.0 && this.dynScale > 0.6) {
+    if (this._slow > 2.0 && this.dynScale > 0.6) {
+      this._cool = 8;
       this.dynScale = Math.max(0.6, this.dynScale * 0.9);
       this._slow = 0;
       this._fast = 0;
       this.applyPixelRatio();
-    } else if (this._fast > 4 && this.dynScale < 1) {
+    } else if (this._fast > 6 && this.dynScale < 1) {
+      this._cool = 8;
       this.dynScale = Math.min(1, this.dynScale / 0.9);
       this._fast = 0;
       this.applyPixelRatio();
