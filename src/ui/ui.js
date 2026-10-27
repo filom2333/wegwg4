@@ -59,7 +59,7 @@ const LABELS = {
   sprint: 'Run',
   crouch: 'Crouch',
   jump: 'Jump',
-  interact: 'Use, pick up, get in and out',
+  interact: 'Use, get in and out, fit parts',
   drop: 'Drop (hold to throw)',
   reload: 'Reload · unbolt a part (hold)',
   flashlight: 'Flashlight · use now',

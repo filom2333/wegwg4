@@ -29,6 +29,9 @@ import { setTune } from '../vehicle/tuning.js';
 // sponge on a car): an arm's length, leaning in. Further off, the arm would have to be drawn out
 // to reach it.
 const HAND_REACH = 0.95;
+// LMB on a thing let go within this many seconds is a click (it stays in the hand); held longer, it
+// is carried until let go
+const CLICK_T = 0.22;
 const SCRUB_REACH = HAND_REACH + 0.1;
 
 function partDefOf(it) {
@@ -93,6 +96,8 @@ export class Interaction {
     this.dragging = false;
     this.holdRot = new THREE.Quaternion();
     this.holdDist = 1.0;
+    this.mouseCarry = null;
+    this.carryVel = new THREE.Vector3();
     // key 1: fists up (empty hands ready to fight); a punch runs t 0..1, alternating hands
     this.fists = false;
     this.punch = { t: 1, side: 'left', done: true };
@@ -587,7 +592,10 @@ export class Interaction {
         }
         for (const pr of this.useOptions(it, t)) prompts.push(pr);
       }
-      prompts.push(['G', 'Drop', 'hold to throw']);
+      // carried on LMB: letting go is all there is to it
+      if (this.mouseCarry && this.mouseCarry.carrying) prompts.length = 0;
+      if (this.mouseCarry && this.mouseCarry.carrying) prompts.push(['LMB', 'Let go to drop it', 'swing the mouse to throw']);
+      else prompts.push(['G', 'Drop', 'hold to throw']);
       if (!def || !def.weapon) prompts.push(['RMB', 'Rotate'], ['Wheel', this.floating ? 'Closer / further, back into the hand' : 'Hold out / closer']);
       if (def && !it.part) prompts.push([kn('stow'), fitsInBag(it.id, it.state) ? 'Put in backpack' : 'Too bulky for the backpack']);
       if (!blocked) {
@@ -1122,7 +1130,7 @@ export class Interaction {
           info = { title: it.name, sub: `${carType(it.state.carType).short} part · ${partDefOf(it).mass} kg` };
         } else info = this.heldInfo(it);
         if (heavyItem(it)) prompts.push(['LMB', 'Drag it (hold)']);
-        else prompts.push(['E', 'Pick up']);
+        else prompts.push(['LMB', 'Take it', 'hold to carry, let go to drop']);
         if (it.def && fitsInBag(it.id, it.state)) prompts.push([(settings.data.bindings.stow || 'KeyQ').replace(/^Key/, ''), 'To backpack']);
         if (it.def && it.def.consume) prompts.push(['F', 'Use now']);
         if (it.def && it.def.readable) prompts.push(['F', 'Read']);
@@ -1498,8 +1506,14 @@ export class Interaction {
     }
     switch (t.kind) {
       case 'item':
-        if (!viaMouse && this.onCap(t)) this.toggleCap(t.item);
-        else if (!t.item.mounted) this.pick(t.item);
+        // E works a can's cap and nothing else; LMB takes things: a click keeps it in the hand,
+        // held on it carries it until LMB lets go (see updateHeld)
+        if (!viaMouse) {
+          if (this.onCap(t)) this.toggleCap(t.item);
+        } else if (!t.item.mounted) {
+          this.pick(t.item);
+          this.mouseCarry = { it: t.item, t: 0, carrying: false };
+        }
         break;
       case 'part':
         break;
@@ -1565,9 +1579,12 @@ export class Interaction {
     this.removing = null;
   }
 
-  drop(throwSpeed = 0) {
+  // `swing`: the velocity it had in the hand (carried on LMB and let go), else thrown along the
+  // view at throwSpeed (G held).
+  drop(throwSpeed = 0, swing = null) {
     const it = this.held;
     if (!it) return;
+    this.mouseCarry = null;
     const g = this.game;
     const pos = it.mesh.position.clone();
     const q = it.mesh.quaternion.clone();
@@ -1578,9 +1595,15 @@ export class Interaction {
     dir.normalize();
     const hit = g.physics.raycast(eye, dir, len + 0.05, GROUPS.ground, g.player.body);
     if (hit) pos.copy(eye).addScaledVector(dir, Math.max(0.2, hit.distance - Math.max(it.size.x, it.size.z) * 0.5));
-    const vel = V(0, 0, -1).applyQuaternion(this.cam.quaternion).multiplyScalar(throwSpeed / Math.max(1, Math.sqrt(it.mass)));
-    if (g.player.seat) vel.add(g.car.dyn.lastLinvel);
-    else vel.add(g.player.velocity);
+    let vel;
+    if (swing) {
+      // (what the hand gave it, less for heavy things; the player's own way is in it already)
+      vel = swing.multiplyScalar(1.6).clampLength(0, 11).multiplyScalar(1 / Math.max(1, Math.sqrt(it.mass / 3)));
+    } else {
+      vel = V(0, 0, -1).applyQuaternion(this.cam.quaternion).multiplyScalar(throwSpeed / Math.max(1, Math.sqrt(it.mass)));
+      if (g.player.seat) vel.add(g.car.dyn.lastLinvel);
+      else vel.add(g.player.velocity);
+    }
     g.items.release(it, pos, q, vel);
     this.held = null;
     this.dragging = false;
@@ -1751,6 +1774,29 @@ export class Interaction {
       if (!isBig && this.holdDist < 0.42) this.floating = false;
     }
     this.aim = lerp(this.aim, weapon && input.mouseDown(2) ? 1 : 0, Math.min(1, dt * 10));
+    // taken with LMB: let go at once, it stays in the hand; held on, it goes along in front until
+    // LMB lets go, and then falls (or flies, if it was swung) the way it was moving
+    const mc = this.mouseCarry;
+    if (mc && (mc.it !== it || this.dragging)) this.mouseCarry = null;
+    else if (mc) {
+      if (input.mouseDown(0)) {
+        mc.t += dt;
+        if (!mc.carrying && mc.t > CLICK_T) {
+          mc.carrying = true;
+          this.carryPrev = null;
+          this.carryVel.set(0, 0, 0);
+          // a small thing comes out of the hand to go along in front, as a big one does
+          if (!carriedBig(it)) {
+            this.floating = true;
+            this.holdDist = 0.55;
+            this.holdRot.copy(cam.quaternion.clone().invert().multiply(it.mesh.quaternion));
+          }
+        }
+      } else {
+        this.mouseCarry = null;
+        if (mc.carrying) return this.drop(0, this.carryVel.clone());
+      }
+    }
     if (this.dragging) return this.updateDrag(it, dt);
     // camera-space target
     let local, localQ;
@@ -1837,11 +1883,19 @@ export class Interaction {
       it.mesh.position.copy(wp);
       it.mesh.quaternion.copy(wq);
     }
+    // (how it moves while carried on LMB: what it keeps when let go)
+    if (this.mouseCarry && this.mouseCarry.carrying) {
+      const pn = it.mesh.position;
+      if (this.carryPrev) this.carryVel.lerp(pn.clone().sub(this.carryPrev).divideScalar(Math.max(dt, 1e-3)), 0.45);
+      this.carryPrev = (this.carryPrev || V(0, 0, 0)).copy(pn);
+    }
     // ---- using the held item
     if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - dt * 6);
     if (this.useAnim > 0) this.useAnim -= dt * 1.6;
     const blocked = this.game.ui && this.game.ui.blocksMove;
     if (blocked) return;
+    // (LMB is busy holding it)
+    if (this.mouseCarry) return;
     if (!def || !def.binoculars) this.binoZoom = 0;
     if (def) {
       if (def.weapon) this.updateWeapon(it, dt);
