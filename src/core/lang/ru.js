@@ -191,6 +191,7 @@ export const RU = {
   'Building the cars': 'Собираем машины',
   'Streaming terrain': 'Подгружаем местность',
   Settling: 'Всё успокаивается',
+  'Preparing shaders': 'Готовим шейдеры',
   Ready: 'Готово',
   // pause
   'Rest Area': 'Стоянка',

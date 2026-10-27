@@ -209,6 +209,8 @@ export class POIManager {
     const [nW, pW] = WRECKS[poi.type] ?? [0, 0];
     for (let i = 0; i < nW; i++) if (rnd() < pW) this.addWreck(inst, rnd, i, poi.type);
     this.group.add(root);
+    // (shown once its shaders are ready: a place streaming in never stalls a frame on them)
+    if (tokens) this.game.prepare(root);
     this.loaded.set(k, inst);
     for (const p of inst.propList) placeProp(this.game, inst, p);
     // what lives in the place (loot, animals, a parked car, a trailer) follows in the next frames,
