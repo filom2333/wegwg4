@@ -9,6 +9,7 @@ import { archMaterials } from '../world/buildings/materials.js';
 import { mulberry32 } from '../core/noise.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
+import { decal } from '../gfx/caps.js';
 import { ALBUMS } from '../audio/music/albums.js';
 import { addSurfaceDetail } from '../gfx/triplanar.js';
 import { paintOf } from '../vehicle/paints.js';
@@ -57,8 +58,9 @@ function labelTex(key, w, h, draw) {
   });
 }
 
+// (labels and prints lie a hair over what they are on: drawn as decals, or far off they flickered)
 function labelMat(key, w, h, draw, opts = {}) {
-  return cached('labelmat:' + key, () => new THREE.MeshStandardMaterial({ map: labelTex(key, w, h, draw), roughness: opts.roughness ?? 0.55, metalness: opts.metalness ?? 0 }));
+  return cached('labelmat:' + key, () => decal(new THREE.MeshStandardMaterial({ map: labelTex(key, w, h, draw), roughness: opts.roughness ?? 0.55, metalness: opts.metalness ?? 0 })));
 }
 
 function mesh(g, m, cast = true) {
@@ -1358,7 +1360,7 @@ function decoLog(variant = 0) {
   cord(g, -0.03);
   const bark = decoMat([0x5a3a22, 0x9a7a52, 0x2e2018][variant % 3], { roughness: 1 });
   g.add(mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.09, 10).rotateZ(Math.PI / 2).translate(0, -0.046, 0), bark));
-  for (const sx of [-1, 1]) g.add(mesh(new THREE.CircleGeometry(0.0145, 12).rotateY((sx * Math.PI) / 2).translate(sx * 0.0451, -0.046, 0), decoMat(0xc8a068, { roughness: 0.9 })));
+  for (const sx of [-1, 1]) g.add(mesh(new THREE.CircleGeometry(0.0145, 12).rotateY((sx * Math.PI) / 2).translate(sx * 0.0451, -0.046, 0), decal(decoMat(0xc8a068, { roughness: 0.9 }))));
   return hanging(g);
 }
 
@@ -1383,7 +1385,7 @@ function reflector() {
   const g = new THREE.Group();
   for (let k = 0; k < 6; k++) g.add(mesh(new THREE.TorusGeometry(0.003, 0.0008, 4, 8).rotateY((k % 2) * Math.PI * 0.5).translate(0, -0.004 - k * 0.0055, 0), decoMat(0xb8bcc0, { metalness: 1, roughness: 0.3 }), false));
   g.add(mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.008, 24).rotateX(Math.PI / 2).translate(0, -0.068, 0), decoMat(0x2a2a2a)));
-  const lens = new THREE.MeshPhysicalMaterial({ color: 0xd02810, roughness: 0.15, emissive: 0x501004, clearcoat: 1 });
+  const lens = decal(new THREE.MeshPhysicalMaterial({ color: 0xd02810, roughness: 0.15, emissive: 0x501004, clearcoat: 1 }));
   for (const z of [0.0042, -0.0042]) g.add(mesh(new THREE.CircleGeometry(0.029, 6).rotateY(z < 0 ? Math.PI : 0).translate(0, -0.068, z), lens));
   return hanging(g);
 }
@@ -1729,7 +1731,7 @@ function binoculars() {
   const M = itemMats();
   const g = new THREE.Group();
   const body = decoMat(0x22252a, { roughness: 0.7 });
-  const lens = cached('binoLens', () => new THREE.MeshPhysicalMaterial({ color: 0x5a7a9a, roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: 0x0a1420 }));
+  const lens = cached('binoLens', () => decal(new THREE.MeshPhysicalMaterial({ color: 0x5a7a9a, roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: 0x0a1420 })));
   for (const s of [-1, 1]) {
     const x = s * 0.034;
     g.add(mesh(latheY([[0, -0.07], [0.024, -0.07], [0.025, -0.064], [0.022, -0.03], [0.02, 0.02], [0.016, 0.04], [0, 0.04]], 24).rotateX(Math.PI / 2).translate(x, 0, 0), body));
@@ -1761,7 +1763,7 @@ function flashlight(variant = 0) {
   // the head: a short barrel along z, the reflector bezel and the lens at the front
   g.add(mesh(new THREE.CylinderGeometry(0.023, 0.021, 0.05, 24).rotateX(Math.PI / 2).translate(0, 0.08, -0.008), shell));
   g.add(mesh(new THREE.TorusGeometry(0.0225, 0.0025, 6, 24).translate(0, 0.08, -0.033), M.steel));
-  const glow = mesh(new THREE.CircleGeometry(0.02, 24).rotateY(Math.PI).translate(0, 0.08, -0.0335), new THREE.MeshStandardMaterial({ color: 0xf4f0e0, emissive: 0xfff1c8, emissiveIntensity: 0, roughness: 0.1 }), false);
+  const glow = mesh(new THREE.CircleGeometry(0.02, 24).rotateY(Math.PI).translate(0, 0.08, -0.0335), decal(new THREE.MeshStandardMaterial({ color: 0xf4f0e0, emissive: 0xfff1c8, emissiveIntensity: 0, roughness: 0.1 })), false);
   glow.name = 'glow';
   g.add(glow);
   g.add(mesh(new THREE.CircleGeometry(0.021, 24).translate(0, 0.08, 0.017), shell, false));

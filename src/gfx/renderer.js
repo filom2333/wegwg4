@@ -189,8 +189,10 @@ export class Renderer {
     this.canvas = canvas;
     // reversed depth (float, far = 0): an even precision from the near plane to the horizon, so
     // overlapping surfaces far off no longer flicker (24-bit standard depth gave ~10 cm steps at 300 m)
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, reversedDepthBuffer: true });
+    // (?norevz: the standard buffer, as browsers without EXT_clip_control get it)
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false, reversedDepthBuffer: !/[?&]norevz/.test(location.search) });
     this.revZ = !!(this.renderer.state.buffers.depth.getReversed && this.renderer.state.buffers.depth.getReversed());
+    RENDER_CAPS.revZ = this.revZ;
     // checking every program after linking waits for each compile; release builds let the driver
     // compile in parallel
     this.renderer.debug.checkShaderErrors = !!import.meta.env.DEV;

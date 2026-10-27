@@ -1006,7 +1006,9 @@ export function propaneTank(rnd) {
   return it;
 }
 
-// Broken crockery: halves and shards of plates and a cup.
+// Broken crockery: halves and shards of plates and a cup. (Each piece lies a little higher than
+// the last: at one height, the overlapping pieces cut through each other at a shallow slant and
+// the cut flickered as you walked by.)
 export function brokenPlates(rnd) {
   const M = archMaterials();
   const it = new Item([0.8, 0.05, 0.8]);
@@ -1014,11 +1016,11 @@ export function brokenPlates(rnd) {
     const a0 = rnd() * 6.28,
       len = 0.8 + rnd() * 2.2;
     const g = latheY([[0.06, 0], [0.11, 0.014], [0.115, 0.018], [0.1, 0.012], [0.05, 0.004]], 12, a0, len);
-    it.add(g.rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.6, 0.002, (rnd() - 0.5) * 0.6), M.porcelainOld);
+    it.add(g.rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.6, 0.002 + k * 0.004, (rnd() - 0.5) * 0.6), M.porcelainOld);
   }
   for (let k = 0; k < 6 + Math.floor(rnd() * 8); k++) {
     const s = 0.015 + rnd() * 0.03;
-    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008, (rnd() - 0.5) * 0.7), M.porcelainOld);
+    it.add(new THREE.CircleGeometry(s, 3).rotateX(-Math.PI / 2).rotateY(rnd() * 6).translate((rnd() - 0.5) * 0.7, 0.008 + (k % 5) * 0.0007, (rnd() - 0.5) * 0.7), M.porcelainOld);
   }
   it.flat = true;
   return it;

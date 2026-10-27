@@ -725,7 +725,10 @@ export class ItemSystem {
       this._detailI = ((this._detailI || 0) + 1) % list.length;
       const it = list[this._detailI];
       if (!it || !it.mesh || !this.items.has(it)) continue;
-      const near = it.held || it.worn || it.state.on ? true : it.mesh.getWorldPosition(_wp).distanceTo(eye) < Math.max(it.size.x, it.size.y, it.size.z) * 150 + 8;
+      // (shown again a little nearer than it goes: at the edge itself the camera's bob as you
+      // walk put it in and out of the picture every few frames)
+      const reach = Math.max(it.size.x, it.size.y, it.size.z) * 150 + 8;
+      const near = it.held || it.worn || it.state.on ? true : it.mesh.getWorldPosition(_wp).distanceTo(eye) < reach * (it.detailShown === false ? 0.92 : 1);
       if (near === it.detailShown) continue;
       it.detailShown = near;
       it.mesh.traverse((o) => (o.layers.mask = near ? 1 : 2));
