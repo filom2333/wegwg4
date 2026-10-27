@@ -3,7 +3,9 @@
 
 import * as THREE from 'three';
 import { latheY, roundedBox, tubeAlong, loftSections, superSection, shapeFromPoints } from '../gfx/geom.js';
-import { crtTV } from '../world/buildings/furniture.js';
+import { crtTV, chair as diningChair } from '../world/buildings/furniture.js';
+import { campChairParts } from '../world/buildings/clutter.js';
+import { archMaterials } from '../world/buildings/materials.js';
 import { mulberry32 } from '../core/noise.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeCanvas, canvasTexture, cached } from '../gfx/textures.js';
@@ -1183,6 +1185,46 @@ export function tv() {
   return centered(g);
 }
 
+// Furniture parts ([geometry, material] lists) as one mesh per material: a chair is a score of
+// legs, rails and spindles, and every one of them was a draw of its own.
+function mergedParts(g, parts) {
+  const byMat = new Map();
+  for (const [geo, m] of parts) {
+    if (!byMat.has(m)) byMat.set(m, []);
+    byMat.get(m).push(geo);
+  }
+  for (const [m, list] of byMat) {
+    const flat = list.map((x) => {
+      const n = x.index ? x.toNonIndexed() : x.clone();
+      for (const k of Object.keys(n.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') n.deleteAttribute(k);
+      n.clearGroups();
+      return n;
+    });
+    const merged = flat.every((x) => x.attributes.normal && x.attributes.uv) ? mergeGeometries(flat) : null;
+    if (merged) g.add(mesh(merged, m));
+    else for (const x of list) g.add(mesh(x, m));
+  }
+}
+
+// A dining chair out of a house: light or dark wood (variants 0, 1) or a chrome dinette chair in
+// red, teal or yellow vinyl (2-4). Carried in both arms by the seat.
+export function chair(variant = 0) {
+  const M = archMaterials();
+  const g = new THREE.Group();
+  const dinette = variant >= 2;
+  mergedParts(g, diningChair(mulberry32(7), variant === 1 ? M.veneerDark : M.veneer, dinette, dinette ? variant - 2 : 0).parts);
+  grip(g, 'side', 'wrap12', V(0, 0.47, 0), RIGHT, V(0, 0, 1));
+  return centered(g);
+}
+
+// A folding camp chair, open (variant: the canvas colour).
+export function campChair(variant = 0) {
+  const g = new THREE.Group();
+  mergedParts(g, campChairParts(variant));
+  grip(g, 'side', 'wrap12', V(0, 0.45, 0), RIGHT, V(0, 0, 1));
+  return centered(g);
+}
+
 // A 60-litre steel drum: rolled hoops, a rim each end, two bungs in the lid.
 export function drum(color = 0) {
   const M = itemMats();
@@ -1936,6 +1978,8 @@ export const MODEL_BUILDERS = {
   rubberDuck,
   mug,
   tv,
+  chair,
+  campChair,
   drum,
   sandbag,
   jack: () => jackModel(),

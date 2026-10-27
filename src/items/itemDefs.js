@@ -55,7 +55,10 @@ export const ITEMS = {
   plywood: { name: 'Plywood sheet', model: ['plate', 'plywood'], mass: 3.4, plate: 'plywood', bulky: true, hold: 'side', desc: 'Light and wide: board up a broken window, build a roof deck.' },
   plasticPanel: { name: 'Plastic panel', model: ['plate', 'plasticPanel'], mass: 1.7, plate: 'plasticPanel', bulky: true, variants: 5, hold: 'side', desc: 'Light, keeps the rain and dust out. Bolts on anywhere.' },
   plasticSheet: { name: 'Plastic sheet', model: ['plate', 'plasticSheet'], mass: 3.2, plate: 'plasticSheet', bulky: true, variants: 5, hold: 'side', desc: 'A big light panel. Bolts on anywhere.' },
-  tv: { name: 'Television', model: ['tv'], mass: 14, bulky: true, hold: 'side', desc: 'A heavy old set with rabbit ears. No signal out here, but it is yours now.' },
+  // furniture to take along (carried in both arms; bolts to a car with B)
+  chair: { name: 'Chair', model: ['chair'], mass: 4.5, bulky: true, bolt: true, variants: 5, hold: 'side', desc: "A chair from somebody's kitchen. Bolt it to the roof (B) and ride up there in style." },
+  campChair: { name: 'Camp chair', model: ['campChair'], mass: 2.4, bulky: true, bolt: true, variants: 4, hold: 'side', desc: 'Aluminium and canvas, light to carry. Bolts to a car (B).' },
+  tv: { name: 'Television', model: ['tv'], mass: 14, bulky: true, bolt: true, hold: 'side', desc: 'A heavy old set with rabbit ears. No signal out here, but it is yours now.' },
   drum: { name: 'Fuel drum', model: ['drum'], mass: 9, liquid: { type: 'fuel', cap: 60, density: 0.74 }, bulky: true, variants: 3, hold: 'side', desc: 'A 60 l steel drum. Fill it at a pump, pour it into the car like a can. Heavy when full.' },
   sandbag: { name: 'Sandbag', model: ['sandbag'], mass: 20, bulky: true, hold: 'side', desc: '20 kg of sand. Put it in the car low and over the driven wheels for grip and a steadier car.' },
   meat: { name: 'Raw meat', model: ['meatChunk', false], mass: 0.5, consume: { food: 26, water: -4 }, raw: true, cooksTo: 'cookedMeat', hold: 'hand', desc: 'Cook it over a fire. Eaten raw it may make you sick.' },
@@ -78,7 +81,7 @@ export const ITEMS = {
   bobbleDog: { name: 'Nodding dog', model: ['bobbleDog'], mass: 0.2, dash: true, bobble: 'nod', variants: 3, hold: 'hand', desc: 'Stick it on the dashboard (B): it nods at every bump.' },
   hulaGirl: { name: 'Hula dancer', model: ['hulaGirl'], mass: 0.15, dash: true, bobble: 'sway', hold: 'hand', desc: 'Stick her on the dashboard (B): she sways through the bends.' },
   rubberDuck: { name: 'Rubber duck', model: ['rubberDuck'], mass: 0.05, dash: true, hold: 'hand', desc: 'Squeaks no more. Looks good on a dashboard (B).' },
-  gardenGnome: { name: 'Garden gnome', model: ['gardenGnome'], mass: 2.5, hold: 'side', desc: "Somebody's pride and joy, once. He would ride well on a roof (B)." },
+  gardenGnome: { name: 'Garden gnome', model: ['gardenGnome'], mass: 2.5, bolt: true, hold: 'side', desc: "Somebody's pride and joy, once. He would ride well on a roof (B)." },
   teddyBear: { name: 'Teddy bear', model: ['teddyBear'], mass: 0.4, dash: true, hold: 'hand', desc: 'Worn thin with hugging. He can keep you company on the dash or the seat.' },
   mug: { name: 'Mug', model: ['mug'], mass: 0.3, dash: true, variants: 3, hold: 'hand', desc: 'A chipped enamel mug.' },
   // instruments and gear (as in The Long Drive: a compass for the dash, a clock, a spirit level)
@@ -93,7 +96,7 @@ export const ITEMS = {
   sunglasses: { name: 'Sunglasses', model: ['sunglasses'], mass: 0.04, wear: 'eyes', variants: 3, hold: 'hand', desc: 'Less glare driving into a low sun. LMB to put them on, R held with empty hands to take them off.' },
   hat: { name: 'Hat', model: ['hat'], mass: 0.15, wear: 'head', variants: 3, hold: 'hand', desc: 'Keeps the sun off your neck. LMB to put it on.' },
   redCap: { name: 'Red cap', model: ['redCap'], mass: 0.08, wear: 'head', hold: 'hand', desc: 'A faded red baseball cap. LMB to put it on.' },
-  trafficCone: { name: 'Traffic cone', model: ['trafficCone'], mass: 1.2, wear: 'head', hold: 'side', desc: 'Warns drivers of road hazards. It also fits on a head (LMB).' },
+  trafficCone: { name: 'Traffic cone', model: ['trafficCone'], mass: 1.2, wear: 'head', bolt: true, hold: 'side', desc: 'Warns drivers of road hazards. It also fits on a head (LMB).' },
   campfireKit: { name: 'Fire kit', model: ['campfireKit'], mass: 1.2, campfire: true, hold: 'side', desc: 'Kindling and matches. Lights a campfire on open ground: warmth, light, cooking.' },
 };
 

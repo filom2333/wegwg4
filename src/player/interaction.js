@@ -2747,14 +2747,12 @@ export class Interaction {
   }
 
   // ------------------------------------------------------------------ bolting things on
-  // What can be bolted to a car: things, not supplies. Food, drink and whatever holds a liquid ride
-  // inside instead (they stay where they are put); weapons, ammunition, papers and the things with
-  // fittings of their own (plates, racks, the jack, the carb kit) are left out, and so are parts
-  // too heavy to hold up.
+  // What can be bolted to a car: the toys for the dash, and the bits of furniture and junk that
+  // would ride on a roof (a chair, a gnome, a television: `bolt` in their definitions). Tools,
+  // supplies and car parts are not; they go in the boot.
   boltable(it) {
-    if (it.part) return partDefOf(it).mass <= 40;
     const d = it.def;
-    return !!d && !d.hang && !d.consume && !d.liquid && !d.weapon && !d.ammo && !d.plate && !d.accessory && !d.jack && !d.tune && !d.readable && !d.disc;
+    return !it.part && !!d && !!(d.bolt || d.dash);
   }
 
   // Where the held thing would go: against the surface of a car under the crosshair, standing

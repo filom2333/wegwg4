@@ -202,7 +202,7 @@ export class POIManager {
       for (const p of b.pumps || []) inst.pumps.push({ local: V(...p.pos).applyMatrix4(em), inst, kind: p.kind || 'fuel' });
       if (b.fuelReserve !== undefined && st.fuel === null) st.fuel = b.fuelReserve;
       // loot spots
-      for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind });
+      for (const l of b.loot) inst.loot.push({ pos: V(...l.pos).applyMatrix4(em), kind: l.kind, rot: (l.rot || 0) + (e.rot || 0), item: l.item, variant: l.variant });
       // real models, placed once the place is registered (and their files have loaded)
       for (const p of b.props || []) {
         const v = V(...p.pos).applyMatrix4(em);
@@ -217,7 +217,7 @@ export class POIManager {
       for (const a of b.animated || []) inst.animated.push(a);
       if (e.tag === 'garage' && b.carSpot) inst.carSpot = V(b.carSpot.x, 0, b.carSpot.z).applyMatrix4(em);
       this.addFootings(inst, b, em);
-        };
+    };
     // then the wrecks, and the real models once the place is registered
     const finish = () => {
       const [nW, pW] = WRECKS[poi.type] ?? [0, 0];

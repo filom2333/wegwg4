@@ -469,7 +469,7 @@ export class ItemSystem {
     if (!list) return;
     this.pending.delete(inst.k);
     inst.root.updateMatrixWorld(true);
-    const spots = inst.loot.filter((l) => l.kind !== 'wreck');
+    const spots = inst.loot.filter((l) => l.kind !== 'wreck' && l.kind !== 'item');
     list.forEach((e, i) => {
       const sp = spots.length ? spots[(i * 7 + 3) % spots.length].pos : V(0, 0.2, 4);
       const wp = sp.clone().applyMatrix4(inst.root.matrixWorld).add(V(0, 0.12, 0));
@@ -515,6 +515,26 @@ export class ItemSystem {
     }
     inst.loot.forEach((spot, i) => {
       if (inst.state.taken.has(i)) return;
+      // a thing that stands in its place (a chair at a table), most of them still there
+      if (spot.kind === 'item') {
+        if (lrnd() > 0.85 || !ITEMS[spot.item]) return;
+        const wp = spot.pos.clone().applyMatrix4(inst.root.matrixWorld);
+        const st = initialState(spot.item, lrnd);
+        if (spot.variant !== undefined) st.variant = spot.variant;
+        const mesh = this.buildMesh(spot.item, st);
+        const q = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), inst.poi.rot + (spot.rot || 0));
+        const it = new Item(this, { id: spot.item, state: st, mesh });
+        this.group.add(mesh);
+        this.items.add(it);
+        const pos = wp.add(V(0, mesh.userData.size.y / 2 + 0.01, 0));
+        mesh.position.copy(pos);
+        mesh.quaternion.copy(q);
+        this.makeBody(it, pos, q, true);
+        this.refreshVisual(it);
+        it.poiKey = key;
+        it.spot = i;
+        return;
+      }
       // most places were picked over long ago
       const chance = (SPOT_CHANCE[spot.kind] ?? 0.3) * lootMul * 0.7;
       if (lrnd() > chance) return;

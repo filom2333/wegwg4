@@ -70,6 +70,10 @@ class Item {
   lootAt(x, y, z, kind = 'any') {
     this.loot.push({ pos: [x, y, z], kind });
   }
+  // a thing to pick up that stands here (a chair at the table): an item, not part of the house
+  itemAt(x, y, z, rot, id, variant = 0) {
+    this.loot.push({ pos: [x, y, z], kind: 'item', item: id, variant, rot });
+  }
 }
 
 const legs4 = (it, w, d, h, r, mat, inset = 0.04, round = true) => {
@@ -611,6 +615,8 @@ export function diningTable(rnd, { chairs = 4 } = {}) {
   const it = new Item([w + 0.9, 0.95, d + 0.9]);
   const dinette = rnd() < 0.4;
   const wood = rnd() < 0.5 ? M.veneer : M.veneerDark;
+  // (the chairs of a set match: one vinyl for all of them)
+  const vinyl = Math.floor(rnd() * 3);
   if (dinette) {
     it.rbox(w, 0.03, d, 0, 0.745, 0, rnd() < 0.5 ? M.linoleum : M.trimWhite, 0.006);
     it.rbox(w + 0.006, 0.032, d + 0.006, 0, 0.744, 0, M.chromeOld, 0.004);
@@ -637,17 +643,18 @@ export function diningTable(rnd, { chairs = 4 } = {}) {
     const [x, z, r] = places[i];
     const st = rnd();
     if (st < 0.08) continue;
-    const c = partsOf(chair(rnd, wood, dinette));
-    if (st < 0.28) {
-      // knocked over, on its back or a side, shoved off from its place
-      const back = rnd() < 0.6;
-      const out = 0.3 + rnd() * 0.3;
-      toppled(c, back ? -Math.PI / 2 : 0, back ? 0 : (rnd() < 0.5 ? -1 : 1) * (Math.PI / 2), 0, 0, r + (rnd() - 0.5) * 1.2).forEach(([g, m]) => it.add(g.translate(x - Math.sin(r) * out, 0, z - Math.cos(r) * out), m));
+    if (st >= 0.28) {
+      // standing at the table: a chair to pick up and carry off (or bolt to a roof)
+      const rr = r + (rnd() - 0.5) * 0.35;
+      const slide = rnd() < 0.4 ? 0.15 + rnd() * 0.2 : 0;
+      it.itemAt(x - Math.sin(r) * slide, 0, z - Math.cos(r) * slide, rr, 'chair', dinette ? 2 + vinyl : wood === M.veneer ? 0 : 1);
       continue;
     }
-    const rr = r + (rnd() - 0.5) * 0.35;
-    const slide = rnd() < 0.4 ? 0.15 + rnd() * 0.2 : 0;
-    for (const [g, m] of c) it.add(g.rotateY(rr).translate(x - Math.sin(r) * slide, 0, z - Math.cos(r) * slide), m);
+    // knocked over, on its back or a side, shoved off from its place
+    const c = partsOf(chair(rnd, wood, dinette, vinyl));
+    const back = rnd() < 0.6;
+    const out = 0.3 + rnd() * 0.3;
+    toppled(c, back ? -Math.PI / 2 : 0, back ? 0 : (rnd() < 0.5 ? -1 : 1) * (Math.PI / 2), 0, 0, r + (rnd() - 0.5) * 1.2).forEach(([g, m]) => it.add(g.translate(x - Math.sin(r) * out, 0, z - Math.cos(r) * out), m));
   }
   it.lootAt(0.2, 0.77, 0.1, 'table');
   return it;
@@ -655,12 +662,12 @@ export function diningTable(rnd, { chairs = 4 } = {}) {
 
 // A dining chair facing +z: wooden with turned front legs, the back legs running up into posts,
 // a bowed top rail over spindles; or a chrome-tube dinette chair with vinyl seat and back.
-export function chair(rnd, wood, dinette = false) {
+export function chair(rnd, wood, dinette = false, vinylIndex = null) {
   const M = archMaterials();
   wood = wood || M.veneer;
   const it = new Item([0.46, 0.95, 0.46]);
   if (dinette) {
-    const vinyl = [M.vinylRed, M.vinylTeal, M.vinylYellow][Math.floor(rnd() * 3)];
+    const vinyl = [M.vinylRed, M.vinylTeal, M.vinylYellow][vinylIndex ?? Math.floor(rnd() * 3)];
     for (const s of [-1, 1]) {
       const x = s * 0.19;
       it.add(tubeAlong([V(x, 0.0, 0.2), V(x, 0.0, -0.17), V(x, 0.02, -0.2), V(x, 0.44, -0.2), V(x, 0.9, -0.24)], 0.011, 8), M.chromeOld);
@@ -1903,7 +1910,7 @@ export function place(builder, item, x, y, z, rotY = 0) {
   }
   for (const l of item.loot) {
     q.set(...l.pos).applyMatrix4(m);
-    builder.loot.push({ pos: [q.x, q.y, q.z], kind: l.kind, rot: rotY });
+    builder.loot.push({ ...l, pos: [q.x, q.y, q.z], rot: (l.rot || 0) + rotY });
   }
   for (const l of item.lights) {
     q.set(...l.pos).applyMatrix4(m);

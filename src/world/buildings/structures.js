@@ -868,17 +868,12 @@ export function buildCamp(rnd) {
     b.add(g, M.blackMatte);
   }
   b.campfire = [0, 0.1, 1.5];
-  // folding chairs
+  // folding chairs round the fire (to sit by, or to take)
   for (const [x, z, r] of [
     [-1.4, 2.4, 2.4],
     [1.3, 2.6, -2.2],
-  ]) {
-    const it = new FUR.Item([0.5, 0.8, 0.5]);
-    for (const s of [-1, 1]) it.add(tubeAlong([V(s * 0.22, 0, -0.2), V(s * 0.22, 0.42, 0.18)], 0.012, 5), M.metal), it.add(tubeAlong([V(s * 0.22, 0, 0.2), V(s * 0.22, 0.85, -0.2)], 0.012, 5), M.metal);
-    it.rbox(0.44, 0.02, 0.38, 0, 0.4, 0, M.canvasGreen, 0.01);
-    it.rbox(0.44, 0.35, 0.02, 0, 0.65, -0.15, M.canvasGreen, 0.01);
-    place(b, it, x, 0, z, r);
-  }
+  ])
+    b.loot.push({ pos: [x, 0, z], kind: 'item', item: 'campChair', variant: 2, rot: r });
   // cooler
   b.box(2.4, 0.22, 1.0, 0.6, 0.44, 0.38, M.metalRed, {});
   b.box(2.4, 0.46, 1.0, 0.62, 0.06, 0.4, M.metalWhite, { collide: false });
