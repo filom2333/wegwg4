@@ -3150,14 +3150,13 @@ export class Interaction {
     if (up.lengthSq() < 1e-4) up.set(-1, 0, 0);
     const anchor = { p: p.clone().addScaledVector(n, 0.012), q: frameQ(up.normalize(), n) };
     const placed = handFromAnchor('right', 'palm', anchor);
-    const far = reachClamp(placed, arms.right.shoulder);
+    // out of the arm's reach: the open hand as far toward it as the arm goes (hiding the hand
+    // left the cut end of the sleeve in the picture)
+    reachClamp(placed, arms.right.shoulder);
     h.right.visible = true;
     h.setPose('right', 'palm');
     h.place('right', placed.p, placed.q);
     h.solveArm('right', arms.right.shoulder, arms.right.pole);
-    // out of the arm's reach the hand would hang in the air in front of it: only the arm shows,
-    // reaching
-    h.rig.right.holder.visible = !far;
   }
 
   // ------------------------------------------------------------------ view model
