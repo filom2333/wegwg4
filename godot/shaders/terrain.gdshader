@@ -52,6 +52,9 @@ void fragment() {
 	// rock on steep faces is projected onto the face (stretched streaks otherwise)
 	vec2 uvSide = (abs(N.x) > abs(N.z) ? vec2(v_uv.y, v_wy) : vec2(v_uv.x, v_wy));
 	float sideT = smoothstep(0.35, 0.6, slope);
+	// far off, a scan's pattern only repeats: settle to the layer's mean colour (the mottling below
+	// keeps the land from going flat)
+	float flatT = smoothstep(120.0, 700.0, v_dist) * 0.9;
 
 	// height blending: each layer's own relief decides where it shows through its neighbours (sand
 	// settles between the stones, snow fills the hollows first). Layers well below the strongest
@@ -80,7 +83,7 @@ void fragment() {
 	for (int i = 0; i < 8; i++) {
 		float k = b[i] - cut;
 		if (k <= 0.0) continue;
-		vec3 c = mix(LAYER_MEAN[i], smp[i].albedo, LAYER_CONTRAST[i]) * LAYER_GAIN[i];
+		vec3 c = mix(LAYER_MEAN_LIN[i], smp[i].albedo, LAYER_CONTRAST[i] * (1.0 - flatT)) * LAYER_GAIN[i];
 		c *= mix(LAYER_MEAN[i], v_tint * TINT_LEVEL[i], LAYER_RECOLOUR[i]) / LAYER_MEAN[i];
 		alb += c * k;
 		nt += vec3(smp[i].normal.xy * LAYER_CONTRAST[i], smp[i].normal.z) * k;
@@ -94,9 +97,11 @@ void fragment() {
 	ao /= tot;
 
 	float wSnow = w[5];
-	// broad mottling so a plain is never one flat colour
+	// broad mottling so a plain is never one flat colour: patches of tens of metres up close,
+	// of hundreds further off
 	float mott = g_fbm(v_uv, 1.0 / 64.0);
-	alb *= 0.9 + 0.2 * mott;
+	float mottFar = g_fbm(v_uv, 1.0 / 512.0);
+	alb *= 0.9 + 0.2 * mott + (mottFar - 0.5) * 0.22 * flatT;
 
 	// far shrubs: past the ring of real bushes, dark crowns speckle the open ground
 	float shrubFar = smoothstep(180.0, 320.0, v_dist) * v_veg;

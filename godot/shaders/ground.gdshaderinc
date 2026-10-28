@@ -17,6 +17,8 @@ const vec3 LAYER_GAIN[8] = vec3[](vec3(1.0), vec3(1.0), vec3(1.0), vec3(1.0), ve
 // colour (as the browser version's palette), so a dirt plain in the scrub and one in the badlands
 // differ the way the land does
 const vec3 LAYER_MEAN[8] = vec3[](vec3(0.577, 0.503, 0.39), vec3(0.583, 0.453, 0.307), vec3(0.513, 0.412, 0.316), vec3(0.8, 0.788, 0.76), vec3(0.592, 0.515, 0.35), vec3(0.648, 0.647, 0.656), vec3(0.417, 0.353, 0.266), vec3(0.571, 0.434, 0.299));
+// the same means in linear light (what the shader samples), for blending a scan toward its mean
+const vec3 LAYER_MEAN_LIN[8] = vec3[](vec3(0.2937, 0.2185, 0.1268), vec3(0.3132, 0.1832, 0.0845), vec3(0.2324, 0.1455, 0.0838), vec3(0.6082, 0.5883, 0.5421), vec3(0.3199, 0.2359, 0.1063), vec3(0.3791, 0.3786, 0.3887), vec3(0.1524, 0.1087, 0.0640), vec3(0.2913, 0.1615, 0.0759));
 const float LAYER_RECOLOUR[8] = float[](0.55, 0.85, 0.7, 0.0, 0.0, 0.0, 0.0, 0.7);
 // how much of each scan's light and dark (and relief) is kept: the salt crust's cracks are a
 // photograph of mud, far bolder than a salt pan's
