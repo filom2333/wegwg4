@@ -62,7 +62,7 @@ class Mesh:
 
     # -- pieces --------------------------------------------------------------------------------
 
-    def tube(self, pts, radii, sides, mat, tex_len=1.0, wraps=1, wind=None, phase=0.0, rib=None, c=(1, 1, 1), cap=False):
+    def tube(self, pts, radii, sides, mat, tex_len=1.0, wraps=1, wind=None, phase=0.0, rib=None, c=(1, 1, 1), cap=False, shape=None):
         """A tube along pts with a radius per point; UV u round it (wraps times), v along it in
         tex_len units. wind: sway weight per point. rib: (count, depth) pleats round it."""
         n = len(pts)
@@ -88,6 +88,8 @@ class Mesh:
                 a = k / sides * 2 * math.pi
                 d = u * math.cos(a) + v * math.sin(a)
                 r = radii[i]
+                if shape:
+                    r *= shape(a, i / max(1, n - 1))
                 nrm = d
                 if rib:
                     cnt, depth = rib
@@ -729,7 +731,43 @@ def birchbare(rnd, v, lod):
     return broadleaf(rnd, v, lod, "leaf_bare")
 
 
+def hoodoo(rnd, v, lod):
+    """A hoodoo: a column of soft banded stone pinched at its weak layers, standing on the talus
+    it sheds, under a cap of harder rock that keeps it from washing away."""
+    M = Mesh()
+    H = rnd.uniform(3.6, 5.6)
+    r0 = rnd.uniform(0.6, 0.78)
+    sides = 18 if not lod else 9
+    ph = [rnd.uniform(0, 6.28) for _ in range(6)]
+
+    def lumpy(k):
+        # irregular round the column, more so at its foot
+        return lambda a, t: 1 + k * (0.12 * math.sin(a * 3 + ph[0]) + 0.08 * math.sin(a * 5 + ph[1] + t * 4) + 0.05 * math.sin(a * 9 + ph[2]))
+
+    # the talus cone it stands on
+    cone = [V(0, 0, -0.25), V(0, 0, 0.15), V(0, 0, 0.45), V(0, 0, 0.75)]
+    M.tube(cone, [1.9, 1.45, 1.05, r0 * 1.1], sides, "rock_hoodoo", tex_len=1.8, wraps=2, shape=lumpy(1.8))
+    # the column, pinched where the soft layers wear back
+    n = 14 if not lod else 6
+    pts, rad = [], []
+    for i in range(n + 1):
+        t = i / n
+        z = 0.75 + (H - 0.75) * t
+        waist = math.sin(t * math.pi * rnd.choice((2, 3)) + ph[3]) ** 2
+        pts.append(V(0.04 * math.sin(t * 3 + ph[4]), 0.04 * math.cos(t * 2 + ph[5]), z))
+        rad.append(r0 * (1 - 0.22 * waist) * (1.08 - 0.15 * t))
+    M.tube(pts, rad, sides, "rock_hoodoo", tex_len=1.8, wraps=2, shape=lumpy(1.0))
+    # the cap: wider, flatter, a little tilted
+    tilt = V(rnd.uniform(-0.12, 0.12), rnd.uniform(-0.12, 0.12), 1).normalized()
+    top = pts[-1]
+    cap = [top - tilt * 0.05, top + tilt * 0.12, top + tilt * 0.3, top + tilt * 0.38]
+    capr = rnd.uniform(0.95, 1.2)
+    M.tube(cap, [rad[-1] * 0.95, capr, capr * 0.92, capr * 0.6], sides, "rock_hoodoo_cap", tex_len=1.8, wraps=2, cap=True, shape=lumpy(1.3))
+    return M
+
+
 SPECIES = {
+    "hoodoo": (hoodoo, 3, True),
     "grass": (grass, 4, False),
     "meadow": (meadow, 4, False),
     "snowgrass": (snowgrass, 3, False),

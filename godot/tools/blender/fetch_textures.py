@@ -1,6 +1,6 @@
 # Downloads Poly Haven textures (CC0): <out>/<asset>_{diff,nor,arm}.jpg at the given size, md5 checked.
 #   python3 -I tools/blender/fetch_textures.py <out dir> 1k <asset> [asset...]
-# The bark scans tools/blender/plants.py uses: pine_bark bark_brown_02 bark_willow_02
+# The scans tools/blender/plants.py uses: pine_bark bark_willow_02 (bark), cliff_side (hoodoos)
 import json, sys, os, hashlib, urllib.request
 UA = {"User-Agent": "DustRoad-asset-fetch/1.0"}
 def get(url):

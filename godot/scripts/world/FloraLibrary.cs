@@ -40,6 +40,7 @@ public sealed class FloraLibrary
 		["tundrashrub"] = (0.7f, 0.03f, 0.03f),
 		["yucca"] = (1.0f, 0.02f, 0.01f),
 		["barrel"] = (1.0f, 0f, 0f),
+		["hoodoo"] = (3.0f, 0f, 0f),
 		["saguaro"] = (8f, 0f, 0f),
 		["ocotillo"] = (4f, 0.12f, 0.05f),
 		["joshua"] = (5f, 0.02f, 0.01f),
@@ -210,6 +211,17 @@ public sealed class FloraLibrary
 			m.SetShaderParameter("normal_tex", Tex($"{PlantTex}twig_{twig}_normal.png"));
 			m.SetShaderParameter("translucency", twig is "spruce" or "pine" ? 0.25f : 0.5f);
 			m.SetShaderParameter("flutter", twig is "birch" or "birch_autumn" or "dwarfbirch" ? 0.03f : 0.01f);
+		}
+		else if (name.StartsWith("rock_"))
+		{
+			// hoodoos: a canyon wall's banded sandstone, the cap paler and harder (the instance colour
+			// brings the biome's rock tint, about 0.75, so this lifts it back)
+			m = new ShaderMaterial { Shader = _solid };
+			m.SetShaderParameter("albedo_tex", Tex($"{PlantTex}rock_hoodoo_diff.jpg"));
+			m.SetShaderParameter("normal_tex", Tex($"{PlantTex}rock_hoodoo_nor.jpg"));
+			m.SetShaderParameter("orm_tex", Tex($"{PlantTex}rock_hoodoo_arm.jpg"));
+			m.SetShaderParameter("tint", name == "rock_hoodoo_cap" ? new Color(1.3f, 1.27f, 1.24f) : new Color(1.12f, 1.1f, 1.1f));
+			m.SetShaderParameter("roughness", 0.9f);
 		}
 		else if (name.StartsWith("bark_") || name.StartsWith("cactus_"))
 		{
