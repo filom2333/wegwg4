@@ -22,7 +22,7 @@ const vec3 LAYER_MEAN_LIN[8] = vec3[](vec3(0.2937, 0.2185, 0.1268), vec3(0.3132,
 const float LAYER_RECOLOUR[8] = float[](0.55, 0.85, 0.7, 0.0, 0.0, 0.0, 0.0, 0.7);
 // how much of each scan's light and dark (and relief) is kept: the salt crust's cracks are a
 // photograph of mud, far bolder than a salt pan's
-const float LAYER_CONTRAST[8] = float[](1.0, 1.0, 1.0, 0.4, 1.0, 1.0, 1.0, 1.0);
+const float LAYER_CONTRAST[8] = float[](1.0, 1.0, 1.0, 0.4, 1.0, 0.45, 1.0, 1.0);
 
 struct GroundSample {
 	vec3 albedo;
