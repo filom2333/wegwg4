@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://shaders/painted.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/textures/materials/green_metal_rust_diff.jpg" id="2"]
+[ext_resource type="Texture2D" path="res://assets/textures/materials/green_metal_rust_nor.jpg" id="3"]
+[ext_resource type="Texture2D" path="res://assets/textures/materials/green_metal_rust_arm.jpg" id="4"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1")
+shader_parameter/paint_color = Color(0.27, 0.34, 0.25, 1)
+shader_parameter/metal = 0.3
+shader_parameter/rough = 0.55
+shader_parameter/wear = 0.9
+shader_parameter/rust = 0.55
+shader_parameter/period = 1.0
+shader_parameter/scan_albedo = ExtResource("2")
+shader_parameter/scan_normal = ExtResource("3")
+shader_parameter/scan_arm = ExtResource("4")

@@ -16,3 +16,10 @@ mud bleached).
 | 7 desert gravel | gravelly_sand |
 | 8 asphalt | asphalt_02 |
 | 9 road gravel | gravel_floor_02 |
+
+## Materials (assets/textures/materials)
+
+| Use | Poly Haven material |
+| --- | --- |
+| concrete (bridges, later buildings) | concrete_wall_008 |
+| painted steel (rails, trusses; repainted in the shader) | green_metal_rust |

@@ -52,9 +52,21 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   editor), road strips + side tracks (`RoadStreamer`), floating origin (`WorldOrigin`), ground and
   road shaders on CC0 Poly Haven scans packed into texture arrays (`tools/build/pack_ground.py`;
   scans recoloured to the biome ground colours), ProceduralSky + ACES; free camera `Spectator`.
-  Light matched to the browser at the start (ground 0.60 vs 0.63 mean). NOT yet: vegetation and
-  rocks (scatter), water and bridges (the road floats over rivers), places/buildings, clouds,
-  time of day, player, car, items, UI, sound.
+  Light matched to the browser at the start (ground 0.60 vs 0.63 mean).
+  Water and bridges (28.10): `WaterStreamer` (river ribbons, lake discs, ice in the north;
+  `shaders/water.gdshader` lights itself: the bed through the water from the screen texture with
+  absorption by depth, Fresnel sky + sun glint from the global uniforms that `gfx/SunSync.cs` on
+  the Sun sets each frame — sun_direction, sun_color, sky_top, sky_horizon, sky_curve, declared in
+  project.godot [shader_globals]). `BridgeStreamer` (bridges.js port on `gfx/MeshBuilder.cs`: deck,
+  kerbs, rails, piers, abutments; on wide forest/frozen rivers a Pratt through-truss of box
+  members with gussets and overhead bracing; StaticBody3D deck + parapet colliders). Materials:
+  Poly Haven concrete_wall_008 (ORMMaterial3D triplanar) and green_metal_rust repainted by
+  `shaders/painted.gdshader` (grey-blue truss south, original green north, galvanised rails).
+  Spectator walks on bridge decks (ray down in _PhysicsProcess). Shot arg `--at=road,z` puts the
+  camera on the road. Rivers seed 1234: z 4229 (x 33, simple), 16901 (x 129, truss, lake at
+  403,16899), 51299 (x -188, frozen, green truss), dry washes 8877, 12568.
+  NOT yet: vegetation and rocks (scatter), places/buildings, clouds, time of day, player, car,
+  items, UI, sound; no reflections of the banks in water (only sky).
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
   far too bright on a real card. The environment therefore uses a fixed ambient COLOUR (works the

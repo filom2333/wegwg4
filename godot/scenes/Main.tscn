@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
 [ext_resource type="Environment" path="res://environment/day.tres" id="2"]
@@ -12,6 +12,11 @@
 [ext_resource type="Material" path="res://materials/water.tres" id="10"]
 [ext_resource type="Material" path="res://materials/water_lake.tres" id="11"]
 [ext_resource type="Material" path="res://materials/ice.tres" id="12"]
+[ext_resource type="Script" path="res://scripts/world/BridgeStreamer.cs" id="13"]
+[ext_resource type="Material" path="res://materials/concrete.tres" id="14"]
+[ext_resource type="Material" path="res://materials/steel_rail.tres" id="15"]
+[ext_resource type="Material" path="res://materials/steel_truss.tres" id="16"]
+[ext_resource type="Material" path="res://materials/steel_truss_green.tres" id="17"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -50,6 +55,13 @@ script = ExtResource("9")
 WaterMaterial = ExtResource("10")
 LakeMaterial = ExtResource("11")
 IceMaterial = ExtResource("12")
+
+[node name="Bridges" type="Node3D" parent="World"]
+script = ExtResource("13")
+Concrete = ExtResource("14")
+Steel = ExtResource("15")
+Paint = ExtResource("16")
+PaintNorth = ExtResource("17")
 
 [node name="Player" type="Camera3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 2, 6)

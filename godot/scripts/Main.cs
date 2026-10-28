@@ -8,7 +8,7 @@ namespace DustRoad;
 
 // The game's root: the world seed, the floating origin that follows the camera, and (for checking
 // the picture) a picture taken from the command line:
-//   godot --path godot -- --shot=out.png [--at=x,z] [--yaw=deg] [--pitch=deg] [--fly=height]
+//   godot --path godot -- --shot=out.png [--at=x,z | --at=road,z] [--yaw=deg] [--pitch=deg] [--fly=height]
 public partial class Main : Node3D
 {
 	[Export] public int Seed = 1234;
@@ -32,6 +32,7 @@ public partial class Main : Node3D
 		_terrain.Seed = Seed;
 		GetNode<RoadStreamer>("World/Road").Seed = Seed;
 		GetNode<WaterStreamer>("World/Water").Seed = Seed;
+		GetNode<BridgeStreamer>("World/Bridges").Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
 		WorldOrigin.Shifted += OnOriginShifted;
 
@@ -45,9 +46,10 @@ public partial class Main : Node3D
 			if (arg.StartsWith("--shot=")) _shot = v;
 			else if (arg.StartsWith("--at="))
 			{
+				// (x "road": on the road at that z)
 				var p = v.Split(',');
-				x = double.Parse(p[0], ci);
 				z = double.Parse(p[1], ci);
+				x = p[0] == "road" ? _gen.RoadX(z) : double.Parse(p[0], ci);
 			}
 			else if (arg.StartsWith("--yaw=")) yaw = float.Parse(v, ci);
 			else if (arg.StartsWith("--pitch=")) pitch = float.Parse(v, ci);
