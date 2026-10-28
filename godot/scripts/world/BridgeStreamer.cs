@@ -236,7 +236,8 @@ public partial class BridgeStreamer : Node3D
 		Put(paint, r.Frozen ? PaintNorth : Paint, "Truss");
 
 		// colliders: the deck and both parapets, a box per segment
-		var body = new StaticBody3D { Name = "Collider" };
+		// (layer 2: structures, what the free camera walks on)
+		var body = new StaticBody3D { Name = "Collider", CollisionLayer = 1u << 1, CollisionMask = 0 };
 		for (int i = 0; i < n; i++)
 		{
 			var a = C[i].P;

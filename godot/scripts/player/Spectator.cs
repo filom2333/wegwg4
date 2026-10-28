@@ -83,7 +83,8 @@ public partial class Spectator : Camera3D
 		// a step up from the feet (onto a deck from the road), or from high above just after placing
 		float from = _snapFrames > 0 ? ground + 80 : Math.Max(ground, p.Y - EyeHeight) + 0.6f;
 		if (_snapFrames > 0) _snapFrames--;
-		var q = PhysicsRayQueryParameters3D.Create(new Vector3(p.X, from, p.Z), new Vector3(p.X, ground - 0.05f, p.Z));
+		// (structures only: bridge decks, later floors; not the trees and rocks)
+		var q = PhysicsRayQueryParameters3D.Create(new Vector3(p.X, from, p.Z), new Vector3(p.X, ground - 0.05f, p.Z), 1u << 1);
 		var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
 		_deck = hit.Count > 0 ? hit["position"].AsVector3().Y : float.NaN;
 	}

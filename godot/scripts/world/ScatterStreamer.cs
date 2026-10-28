@@ -58,6 +58,12 @@ public partial class ScatterStreamer : Node3D
 	Node3D _root;
 	double _rootOx, _rootOz;
 	readonly Dictionary<(int, int, int, int), MultiMeshInstance3D> _mmi = new();
+	// colliders of the solid things (trunks, rocks, stumps, logs) in the cells near the camera
+	readonly Dictionary<(int, int), StaticBody3D> _bodies = new();
+	Node3D _colliders;
+
+	// physics layer of loose scenery (bridges and buildings are on layer 2)
+	public const uint SceneryLayer = 1u << 2;
 
 	// how loose rock is tinted in each biome: the ground colour, its colour halved, darker
 	static readonly Vector3[] RockTint = MakeRockTint();
@@ -81,6 +87,7 @@ public partial class ScatterStreamer : Node3D
 	void OnOriginShifted(double dx, double dz)
 	{
 		if (_root != null) _root.Position = WorldOrigin.ToScene(_rootOx, 0, _rootOz);
+		foreach (var ((ci, cj), b) in _bodies) b.Position = WorldOrigin.ToScene(ci * Cell, 0, cj * Cell);
 	}
 
 	Camera3D FocusCamera()
@@ -116,6 +123,8 @@ public partial class ScatterStreamer : Node3D
 			_genSeed = Seed;
 			_cells.Clear();
 			_lastCell = null;
+			foreach (var b in _bodies.Values) b.QueueFree();
+			_bodies.Clear();
 			foreach (var m in _mmi.Values) m.Multimesh.VisibleInstanceCount = 0;
 		}
 		_lib ??= new FloraLibrary();
@@ -147,6 +156,7 @@ public partial class ScatterStreamer : Node3D
 			Apply(_rebuild.Result);
 			_rebuild = null;
 		}
+		if (!Engine.IsEditorHint()) UpdateColliders(px, pz);
 		if (_dirty && _rebuild == null && (moved || _sinceRebuild > 0.25))
 		{
 			_dirty = false;
@@ -159,6 +169,82 @@ public partial class ScatterStreamer : Node3D
 			var lib = _lib;
 			_rebuild = Task.Run(() => Sort(lib, snap, px, pz, ci, cj, ox, oz, far));
 		}
+	}
+
+	// Colliders for the cells within 120 m (one new cell a frame), dropped past 170 m.
+	void UpdateColliders(double px, double pz)
+	{
+		if (_colliders == null)
+		{
+			_colliders = new Node3D { Name = "Colliders" };
+			AddChild(_colliders);
+		}
+		bool built = false;
+		foreach (var (key, c) in _cells)
+		{
+			var (ci, cj) = key;
+			double dx = (ci + 0.5) * Cell - px, dz = (cj + 0.5) * Cell - pz;
+			double d = Math.Sqrt(dx * dx + dz * dz);
+			if (d < 120 && c != null && !built && !_bodies.ContainsKey(key))
+			{
+				_bodies[key] = BuildBody(ci, cj, c);
+				built = true;
+			}
+		}
+		List<(int, int)> drop = null;
+		foreach (var ((ci, cj), b) in _bodies)
+		{
+			double dx = (ci + 0.5) * Cell - px, dz = (cj + 0.5) * Cell - pz;
+			if (Math.Sqrt(dx * dx + dz * dz) > 170 || !_cells.ContainsKey((ci, cj))) (drop ??= new()).Add((ci, cj));
+		}
+		if (drop != null)
+			foreach (var k in drop)
+			{
+				_bodies[k].QueueFree();
+				_bodies.Remove(k);
+			}
+	}
+
+	StaticBody3D BuildBody(int ci, int cj, CellData c)
+	{
+		var body = new StaticBody3D { Name = $"Cell {ci},{cj}", CollisionLayer = SceneryLayer, CollisionMask = 0, Position = WorldOrigin.ToScene(ci * Cell, 0, cj * Cell) };
+		var data = c.Inst;
+		for (int k = 0; k < data.Length; k += ScatterGen.Stride)
+		{
+			var def = ScatterGen.Table[(int)data[k]];
+			if (def.Solid == ScatterGen.Solid.None) continue;
+			float s = data[k + 5], rot = data[k + 6];
+			var p = new Vector3(data[k + 2], data[k + 3] - (float)ScatterGen.SinkOf(def, s), data[k + 4]);
+			Shape3D shape;
+			var xf = Transform3D.Identity;
+			switch (def.Solid)
+			{
+				case ScatterGen.Solid.Ball:
+					shape = new SphereShape3D { Radius = 0.75f * s };
+					xf.Origin = p + new Vector3(0, 0.2f * s, 0);
+					break;
+				case ScatterGen.Solid.TrunkWide:
+					shape = new CylinderShape3D { Height = 3.2f * s, Radius = 1.0f * s };
+					xf.Origin = p + new Vector3(0, 1.6f * s, 0);
+					break;
+				case ScatterGen.Solid.Stump:
+					shape = new CylinderShape3D { Height = 0.6f * s, Radius = 0.3f * s };
+					xf.Origin = p + new Vector3(0, 0.3f * s, 0);
+					break;
+				case ScatterGen.Solid.Log:
+					// lying along its length (the model's x), turned by its yaw
+					shape = new CapsuleShape3D { Radius = 0.22f * s, Height = 2.8f * s + 0.44f * s };
+					xf = new Transform3D(new Basis(Vector3.Up, rot) * new Basis(Vector3.Back, Mathf.Pi / 2), p + new Vector3(0, 0.22f * s, 0));
+					break;
+				default:
+					shape = new CylinderShape3D { Height = 3f * s, Radius = 0.22f * s };
+					xf.Origin = p + new Vector3(0, 1.5f * s, 0);
+					break;
+			}
+			body.AddChild(new CollisionShape3D { Shape = shape, Transform = xf });
+		}
+		_colliders.AddChild(body);
+		return body;
 	}
 
 	// Cells in reach of the camera: new ones asked of the workers (nearest first), far ones dropped.

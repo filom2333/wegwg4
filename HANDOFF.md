@@ -65,8 +65,24 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   Spectator walks on bridge decks (ray down in _PhysicsProcess). Shot arg `--at=road,z` puts the
   camera on the road. Rivers seed 1234: z 4229 (x 33, simple), 16901 (x 129, truss, lake at
   403,16899), 51299 (x -188, frozen, green truss), dry washes 8877, 12568.
-  NOT yet: vegetation and rocks (scatter), places/buildings, clouds, time of day, player, car,
-  items, UI, sound; no reflections of the banks in water (only sky).
+  Vegetation and rocks (28.10): `ScatterGen.cs` = scatterGen.js (checked against the browser in
+  tests/WorldGenCheck, 250k instances identical but one borderline cell). `ScatterStreamer` builds
+  cells on workers and sorts instances into MultiMeshes per species/variant/LOD/sector on a worker
+  when the camera changes cell; colliders (layer 3) for solid species within 120 m; bridges are on
+  layer 2 (what the Spectator walks on). `FloraLibrary` loads assets/models/scatter/<species>.glb
+  and dresses surfaces by material name. Models: scans (tools/blender/scans.py: Poly Haven rocks,
+  stumps, logs, ferns decimated + baked; fetch with fetch_polyhaven.py) and grown plants
+  (tools/blender/plants.py: grass, shrubs, yucca, cacti, Joshua, dead trees, pines/spruces,
+  birches, hoodoos; twig cards from twigs.py; barks via fetch_textures.py). Far trees are
+  impostors (tools/blender/impostors.py: 8 views per variant, shaders/impostor.gdshader).
+  Shaders: rock, plant_solid, plant_leaf, grass, impostor (+plant_common.gdshaderinc wind/snow;
+  global uniform `wind`). Pipeline to regenerate: fetch scans/textures into the scratchpad, run
+  scans.py, twigs.py, plants.py, impostors.py (blender -b --factory-startup --python ... -- args;
+  see each file's header), copy outputs into assets/. Previews: tools/blender/preview.py
+  (scans), plant_preview.py (plants). Shot args --scatteronly=species, --scatterinfo; shots
+  print triangles/draw calls (dense forest ~3.3M tris, ~1900 draw calls).
+  NOT yet: places/buildings, clouds, time of day, player, car, items, UI, sound; no reflections
+  of the banks in water (only sky).
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
   far too bright on a real card. The environment therefore uses a fixed ambient COLOUR (works the
