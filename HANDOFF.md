@@ -7,6 +7,11 @@ usage limit ran out. When you finish your own session, **update this file** with
 what is left, then commit and push. The user may hand the file back to that other session, so it
 works like a shared log between two sessions.
 
+> **Layout (since 28.10):** the browser version lives in **`web/`** (src, public, tools, build,
+> package.json, vite.config.js; `start-game.bat` in the root calls `web/start-game.bat`). All
+> paths below that name `src/`, `public/`, `tools/` or `build/` are inside `web/`; run npm/vite
+> from `web/`. The Godot version (the real game now) is in **`godot/`**, see section 0b.
+
 ## 0. Rules from the user (always follow)
 
 - **Reply to the user in Russian.** They write casual Russian and sometimes use swear words; stay friendly.

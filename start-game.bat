@@ -1,7 +1,3 @@
 @echo off
-cd /d "%~dp0"
-where node >nul 2>nul || (echo Install Node.js from https://nodejs.org & pause & exit /b)
-if not exist node_modules call npm install
-start "" http://localhost:5173
-call npm run dev
-pause
+rem Dust Road, the browser version (in web\). The Godot version is in godot\: open godot\project.godot in Godot .NET 4.7.
+call "%~dp0web\start-game.bat"
