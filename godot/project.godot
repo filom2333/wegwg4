@@ -53,3 +53,7 @@ sky_curve={
 "type": "float",
 "value": 0.09
 }
+wind={
+"type": "float",
+"value": 0.3
+}

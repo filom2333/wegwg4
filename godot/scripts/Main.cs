@@ -19,6 +19,7 @@ public partial class Main : Node3D
 	WorldGen _gen;
 	Camera3D _cam;
 	TerrainStreamer _terrain;
+	ScatterStreamer _scatter;
 	string _shot;
 	int _shotFrames = -1;
 	int _shotAfter = 5;
@@ -33,6 +34,8 @@ public partial class Main : Node3D
 		GetNode<RoadStreamer>("World/Road").Seed = Seed;
 		GetNode<WaterStreamer>("World/Water").Seed = Seed;
 		GetNode<BridgeStreamer>("World/Bridges").Seed = Seed;
+		_scatter = GetNode<ScatterStreamer>("World/Scatter");
+		_scatter.Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
 		WorldOrigin.Shifted += OnOriginShifted;
 
@@ -70,6 +73,7 @@ public partial class Main : Node3D
 				var p = v.Split(',');
 				GetNode<DirectionalLight3D>("Sun").RotationDegrees = new Vector3(-float.Parse(p[0], ci), float.Parse(p[1], ci), 0);
 			}
+			else if (arg.StartsWith("--scatteronly=")) ScatterStreamer.Only = v;
 			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
 		WorldOrigin.MoveTo(x, z);
@@ -113,7 +117,7 @@ public partial class Main : Node3D
 		_shotWait += delta;
 		if (_shotFrames < 0)
 		{
-			if (!_terrain.AllBuilt && _shotWait < 120) return;
+			if (!(_terrain.AllBuilt && _scatter.AllBuilt) && _shotWait < 120) return;
 			_shotFrames = 0;
 		}
 		if (++_shotFrames < _shotAfter) return;
