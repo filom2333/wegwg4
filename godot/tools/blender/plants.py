@@ -620,7 +620,8 @@ def conifer(rnd, v, lod, spruce, twig):
                     size = rnd.uniform(0.8, 1.05) * (0.7 + 0.45 * (1 - t)) * (1.45 if lod else 1)
                     for sd in ((-1, 1) if not lod else (rnd.choice((-1, 1)),)):
                         dd = (bd + side * sd * rnd.uniform(0.35, 0.75) + V(0, 0, rnd.uniform(0.0, 0.2))).normalized()
-                        face = (UP * 1.0 + side * sd * rnd.uniform(0.1, 0.4) + bd * rnd.uniform(-0.2, 0.2)).normalized()
+                        # (turned out from the trunk as much as up, so the cone is full seen from the side too)
+                        face = (UP * 0.8 + out * rnd.uniform(0.55, 0.9) + side * sd * rnd.uniform(0.1, 0.4)).normalized()
                         spray(M, twig, q - dd * size * 0.1, dd, face, size, normal_of, ph, rnd, bend=0.12, rows=2 if not lod and size > 0.85 else 1)
                     f += gap / max(L, 0.5)
                 # and one along the tip

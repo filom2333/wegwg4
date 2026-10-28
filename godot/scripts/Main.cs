@@ -124,6 +124,7 @@ public partial class Main : Node3D
 		GetViewport().GetTexture().GetImage().SavePng(_shot);
 		var sun = GetNode<DirectionalLight3D>("Sun");
 		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s, sun shadows {sun.ShadowEnabled}, sun {sun.RotationDegrees})");
+		GD.Print($"frame: {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k triangles, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalObjectsInFrame)} objects");
 		GetTree().Quit();
 	}
 }

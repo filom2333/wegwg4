@@ -59,7 +59,7 @@ public sealed class FloraLibrary
 		["reeds"] = (new Color(0.24f, 0.31f, 0.12f), new Color(0.6f, 0.6f, 0.34f), new Color(0.7f, 0.62f, 0.4f), 0.3f),
 	};
 
-	static Shader _rock, _solid, _leaf, _grass;
+	static Shader _rock, _solid, _leaf, _grass, _impostor;
 	readonly Dictionary<string, Material> _plantMats = new();
 
 	public FloraLibrary()
@@ -68,6 +68,7 @@ public sealed class FloraLibrary
 		_solid ??= GD.Load<Shader>("res://shaders/plant_solid.gdshader");
 		_leaf ??= GD.Load<Shader>("res://shaders/plant_leaf.gdshader");
 		_grass ??= GD.Load<Shader>("res://shaders/grass.gdshader");
+		_impostor ??= GD.Load<Shader>("res://shaders/impostor.gdshader");
 		bool info = OS.GetCmdlineUserArgs().Contains("--scatterinfo");
 		for (int si = 0; si < ScatterGen.Table.Length; si++)
 		{
@@ -98,7 +99,7 @@ public sealed class FloraLibrary
 				list[v] = new Variant
 				{
 					Lod0 = Dress(meshes[n]),
-					Lod1 = Dress(meshes.GetValueOrDefault(n + "_lod1")),
+					Lod1 = def.Lod1 == ScatterGen.Lod1.Impostor ? Impostor(def, k) : Dress(meshes.GetValueOrDefault(n + "_lod1")),
 					Mid = Dress(meshes.GetValueOrDefault(n + "_mid")),
 				};
 			}
@@ -107,6 +108,39 @@ public sealed class FloraLibrary
 				foreach (var (n, m) in meshes)
 					GD.Print($"scatter {n}: surfaces {m.GetSurfaceCount()} aabb {m.GetAabb().Size} mats {string.Join(",", Enumerable.Range(0, m.GetSurfaceCount()).Select(s => m.SurfaceGetMaterial(s)?.ResourceName))}");
 		}
+	}
+
+	// A far tree: one card showing the baked views of model k (tools/blender/impostors.py).
+	readonly Dictionary<string, Mesh> _impostors = new();
+
+	Mesh Impostor(ScatterGen.Species def, int k)
+	{
+		string key = $"{def.Id}_{k}";
+		if (_impostors.TryGetValue(key, out var have)) return have;
+		string d = Dir + "impostors/" + def.Id + "_impostor";
+		if (!FileAccess.FileExists(d + ".json")) return null;
+		var meta = Json.ParseString(FileAccess.GetFileAsString(d + ".json")).AsGodotDictionary();
+		var size = meta["card"].AsGodotArray();
+		float w = (float)size[0], h = (float)size[1];
+		var m = new ShaderMaterial { Shader = _impostor };
+		m.SetShaderParameter("albedo_tex", Tex(d + "_albedo.png"));
+		m.SetShaderParameter("normal_tex", Tex(d + "_normal.png"));
+		m.SetShaderParameter("views", (float)meta["views"]);
+		m.SetShaderParameter("rows", (float)meta["rows"]);
+		m.SetShaderParameter("row", (float)k);
+		m.SetShaderParameter("card", new Vector2(w, h));
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = new[] { new Vector3(-0.5f, 0, 0), new Vector3(0.5f, 0, 0), new Vector3(0.5f, 1, 0), new Vector3(-0.5f, 1, 0) };
+		arrays[(int)Mesh.ArrayType.Normal] = new[] { Vector3.Back, Vector3.Back, Vector3.Back, Vector3.Back };
+		arrays[(int)Mesh.ArrayType.Index] = new[] { 0, 2, 1, 0, 3, 2 };
+		var mesh = new ArrayMesh();
+		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		mesh.SurfaceSetMaterial(0, m);
+		// (the card turns in the shader: its bounds are the whole round it can sweep)
+		mesh.CustomAabb = new Aabb(new Vector3(-w / 2, 0, -w / 2), new Vector3(w, h, w));
+		_impostors[key] = mesh;
+		return mesh;
 	}
 
 	static void Collect(Node n, Dictionary<string, Mesh> into)
