@@ -1,0 +1,122 @@
+using System;
+using System.Globalization;
+using Godot;
+using DustRoad.Player;
+using DustRoad.World;
+
+namespace DustRoad;
+
+// The game's root: the world seed, the floating origin that follows the camera, and (for checking
+// the picture) a picture taken from the command line:
+//   godot --path godot -- --shot=out.png [--at=x,z] [--yaw=deg] [--pitch=deg] [--fly=height]
+public partial class Main : Node3D
+{
+	[Export] public int Seed = 1234;
+	// start: the homestead by the road at the south end
+	[Export] public Vector2 StartXZ = new(4, 6);
+	[Export] public float StartYaw = 0;
+
+	WorldGen _gen;
+	Camera3D _cam;
+	TerrainStreamer _terrain;
+	string _shot;
+	int _shotFrames = -1;
+	int _shotAfter = 5;
+	double _shotWait;
+
+	public override void _Ready()
+	{
+		WorldOrigin.Reset();
+		_gen = new WorldGen(Seed);
+		_terrain = GetNode<TerrainStreamer>("World/Terrain");
+		_terrain.Seed = Seed;
+		GetNode<RoadStreamer>("World/Road").Seed = Seed;
+		_cam = GetNode<Camera3D>("Player");
+		WorldOrigin.Shifted += OnOriginShifted;
+
+		double x = StartXZ.X, z = StartXZ.Y;
+		float yaw = StartYaw, pitch = -4;
+		float fly = 0;
+		foreach (var arg in OS.GetCmdlineUserArgs())
+		{
+			string v = arg.Contains('=') ? arg[(arg.IndexOf('=') + 1)..] : "";
+			var ci = CultureInfo.InvariantCulture;
+			if (arg.StartsWith("--shot=")) _shot = v;
+			else if (arg.StartsWith("--at="))
+			{
+				var p = v.Split(',');
+				x = double.Parse(p[0], ci);
+				z = double.Parse(p[1], ci);
+			}
+			else if (arg.StartsWith("--yaw=")) yaw = float.Parse(v, ci);
+			else if (arg.StartsWith("--pitch=")) pitch = float.Parse(v, ci);
+			else if (arg.StartsWith("--fly=")) fly = float.Parse(v, ci);
+			else if (arg == "--noshadow") GetNode<DirectionalLight3D>("Sun").ShadowEnabled = false;
+			else if (arg == "--nossao") GetNode<WorldEnvironment>("WorldEnvironment").Environment.SsaoEnabled = false;
+			else if (arg == "--nosun") GetNode<DirectionalLight3D>("Sun").Visible = false;
+			else if (arg.StartsWith("--frames=")) _shotAfter = int.Parse(v, ci);
+			else if (arg == "--ambientbg") GetNode<WorldEnvironment>("WorldEnvironment").Environment.AmbientLightSource = Godot.Environment.AmbientSource.Bg;
+			else if (arg == "--ambientcolor")
+			{
+				var env = GetNode<WorldEnvironment>("WorldEnvironment").Environment;
+				env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+				env.AmbientLightColor = new Color(0.55f, 0.62f, 0.72f);
+			}
+			else if (arg.StartsWith("--sun="))
+			{
+				var p = v.Split(',');
+				GetNode<DirectionalLight3D>("Sun").RotationDegrees = new Vector3(-float.Parse(p[0], ci), float.Parse(p[1], ci), 0);
+			}
+			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
+		}
+		WorldOrigin.MoveTo(x, z);
+		if (_shot != null)
+		{
+			// rendering without a graphics card takes seconds a frame: make everything in one go
+			_terrain.BuildBudgetMs = 1e6f;
+			_terrain.MaxInFlight = 100000;
+			GetNode<RoadStreamer>("World/Road").MaxPerFrame = 1000;
+		}
+		if (_cam is Spectator s)
+		{
+			s.Setup(_gen, x, z, yaw, pitch);
+			if (fly > 0)
+			{
+				s.Walking = false;
+				s.Position += new Vector3(0, fly, 0);
+			}
+		}
+	}
+
+	public override void _ExitTree() => WorldOrigin.Shifted -= OnOriginShifted;
+
+	void OnOriginShifted(double dx, double dz) => _cam.Position -= new Vector3((float)dx, 0, (float)dz);
+
+	public override void _Process(double delta)
+	{
+		// keep the camera within a kilometre of the origin
+		var p = _cam.Position;
+		if (Math.Abs(p.X) > 1024 || Math.Abs(p.Z) > 1024)
+		{
+			var (wx, wz) = WorldOrigin.ToWorld(p);
+			WorldOrigin.MoveTo(wx, wz);
+		}
+		if (_shot != null) TakeShot(delta);
+	}
+
+	// Once the ground around is built (and a few frames more for the shadows), save the picture.
+	void TakeShot(double delta)
+	{
+		_shotWait += delta;
+		if (_shotFrames < 0)
+		{
+			if (!_terrain.AllBuilt && _shotWait < 120) return;
+			_shotFrames = 0;
+		}
+		if (++_shotFrames < _shotAfter) return;
+		GetViewport().GetTexture().GetImage().SavePng(_shot);
+		var sun = GetNode<DirectionalLight3D>("Sun");
+		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s, sun shadows {sun.ShadowEnabled}, sun {sun.RotationDegrees})");
+		GetTree().Quit();
+	}
+}
