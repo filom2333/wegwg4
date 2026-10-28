@@ -6,4 +6,8 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- checks run outside the engine (dotnet run), not part of the game -->
+    <Compile Remove="tests/**" />
+  </ItemGroup>
 </Project>
