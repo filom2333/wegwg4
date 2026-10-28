@@ -111,5 +111,45 @@ foreach (var seedProp in doc.RootElement.EnumerateObject())
 	Report("biome weight", wBw, 1e-9, at);
 	Report("ground mat", wMat, 0.02, at);
 	Report("surface", surfBad, 2, $"{surfBad} points");
+
+	// scatter: the same instances in each cell (heights to the road cache's few cm; a plant on a
+	// slope right at its species' limit may come out either way)
+	int cellsBad = 0, inst = 0;
+	double wInst = 0, wY = 0;
+	string sWhere = "";
+	foreach (var c in d.GetProperty("scatter").EnumerateArray())
+	{
+		int cx = c.GetProperty("ci").GetInt32(), cz = c.GetProperty("cj").GetInt32();
+		var refd = c.GetProperty("data").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+		var mine = ScatterGen.CellInstances(new WorldGen(seed), cx, cz);
+		inst += refd.Length / ScatterGen.Stride;
+		if (mine.Length != refd.Length)
+		{
+			cellsBad++;
+			sWhere = $"cell {cx},{cz}: {mine.Length / 8} vs {refd.Length / 8}";
+			continue;
+		}
+		// (a cell that parts ways on a borderline plant differs from there on: count it, don't
+		// compare its values)
+		bool diverged = false;
+		for (int k = 0; k < refd.Length; k++)
+			if (k % 8 != 3 && Math.Abs(mine[k] - refd[k]) > 0.01) diverged = true;
+		if (diverged)
+		{
+			cellsBad++;
+			sWhere = $"cell {cx},{cz} parts ways";
+			continue;
+		}
+		for (int k = 0; k < refd.Length; k++)
+		{
+			double e = Math.Abs(mine[k] - refd[k]);
+			if (k % 8 == 3) { if (e > wY) wY = e; }
+			else if (e > wInst) { wInst = e; sWhere = $"cell {cx},{cz} value {k}"; }
+		}
+	}
+	Console.WriteLine($"     scatter: {d.GetProperty("scatter").GetArrayLength()} cells, {inst} instances");
+	Report("scatter cells", cellsBad, 2, sWhere);
+	Report("scatter values", wInst, 1e-3, sWhere);
+	Report("scatter y", wY, 0.1, sWhere);
 }
 return ok ? 0 : 1;

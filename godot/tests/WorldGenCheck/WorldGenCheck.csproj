@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Include="../../scripts/core/Noise.cs" />
     <Compile Include="../../scripts/world/WorldGen.cs" />
+    <Compile Include="../../scripts/world/ScatterGen.cs" />
   </ItemGroup>
 </Project>
