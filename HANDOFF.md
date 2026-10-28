@@ -35,7 +35,8 @@ The user decided to rewrite the full game for **Godot 4.7.2 in C#** (the browser
 is the reference until every part is moved). Do not argue against the port again; the user was
 annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
 - Cloud sessions: `godot/tools/cloud-setup.sh` installs Godot .NET 4.7.2 (checksum checked),
-  the .NET 9 SDK and lavapipe (software Vulkan). Until the user puts it in the environment's setup
+  the .NET 9 SDK, Blender 5.2.3 and lavapipe (software Vulkan); it always exits 0 and takes
+  about a minute (Claude: a setup script must exit 0 and finish in ~5 min to be cached). Until the user puts it in the environment's setup
   script, every new session has to install them again. `godot/tools/shot.sh out.png` builds and
   renders a picture on software Vulkan, Forward+ (~20 s). Godot's own args: `-- --shot=path`.
 - Physics: Jolt (built in). Heavy procedural code (terrain, SDF characters, car shapes) in C#.

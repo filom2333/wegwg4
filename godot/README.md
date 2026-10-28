@@ -11,6 +11,6 @@ reference until every part is moved over.
 
 ## In a cloud session
 
-`tools/cloud-setup.sh` installs Godot, .NET and a software Vulkan driver (put it in the
+`tools/cloud-setup.sh` installs Godot, .NET, Blender and a software Vulkan driver (put it in the
 environment's setup script so every session has them). `tools/shot.sh out.png` builds the
 project and saves a rendered picture.
