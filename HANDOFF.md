@@ -45,6 +45,27 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   script, every new session has to install them again. `godot/tools/shot.sh out.png` builds and
   renders a picture on software Vulkan, Forward+ (~20 s). Godot's own args: `-- --shot=path`.
 - Physics: Jolt (built in). Heavy procedural code (terrain, SDF characters, car shapes) in C#.
+- Done so far (28.10): `scripts/world/WorldGen.cs` is worldGen.js line for line, verified by
+  `tests/WorldGenCheck` (node ref.mjs → dotnet run: biomes, places, rivers, lakes, tracks identical,
+  heights to 1e-13; roadY is interpolated on a 0.5 m grid instead of the browser's order-dependent
+  cache). Terrain quadtree streaming on worker threads (`TerrainStreamer`, [Tool]: shows in the
+  editor), road strips + side tracks (`RoadStreamer`), floating origin (`WorldOrigin`), ground and
+  road shaders on CC0 Poly Haven scans packed into texture arrays (`tools/build/pack_ground.py`;
+  scans recoloured to the biome ground colours), ProceduralSky + ACES; free camera `Spectator`.
+  Light matched to the browser at the start (ground 0.60 vs 0.63 mean). NOT yet: vegetation and
+  rocks (scatter), water and bridges (the road floats over rivers), places/buildings, clouds,
+  time of day, player, car, items, UI, sound.
+- LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
+  (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
+  far too bright on a real card. The environment therefore uses a fixed ambient COLOUR (works the
+  same everywhere): ambient (0.62,0.69,0.8) x 0.9, sun 1.85, ACES; sky only for reflections.
+  Calibrated against the browser at the start: ground 0.66 vs 0.63, asphalt 0.30 vs 0.27.
+  Terrain material weights are float custom data (the Compatibility renderer ignores RGBA8).
+  Terrain shader has `debug_view` (1 colour, 2 AO, 3 weights, 4-6 normals, 7 sun incidence);
+  Main.cs shot args: --noshadow --nossao --nosun --sun=elev,az --frames=N --debug=N.
+- Picture without a GPU: `godot/tools/shot.sh out.png --at=x,z --yaw=deg --pitch=deg --fly=m`
+  (~1.5 min; shot mode builds every tile at once). Browser view for comparison: scratchpad probe
+  `p_view.js` with env VX VZ VYAW VPITCH.
 - Tools researched (Oct 2026): Godot MCP for when Claude runs on the user's PC — godot-ai (free,
   MIT, Godot 4.7 editor plugin, screenshots + input), Coding-Solo godot-mcp (simplest, no
   pictures), GDAI ($19), Godot MCP Pro ($15). Blender: official Blender MCP (Blender 5.1+) on the

@@ -15,8 +15,10 @@ public sealed class TileData
 	public Color[] Tint;
 	public Vector2[] Uv;
 	public Vector2[] Uv2;
-	public byte[] MatA;
-	public byte[] MatB;
+	// material weights (sand, dirt, rock, salt / grass, snow, forest floor, gravel), 4 floats a vertex
+	// (float, not packed bytes: the Compatibility renderer reads only float custom data)
+	public float[] MatA;
+	public float[] MatB;
 	public int[] Index;
 	public float MinY, MaxY;
 	// heights on the tile's grid with a one-cell border (for colliders)
@@ -105,7 +107,7 @@ public static class TerrainMesher
 		{
 			X0 = x0, Z0 = z0, Size = size, Step = step, HW = HW,
 			Pos = new Vector3[vCount], Nrm = new Vector3[vCount], Tint = new Color[vCount],
-			Uv = new Vector2[vCount], Uv2 = new Vector2[vCount], MatA = new byte[vCount * 4], MatB = new byte[vCount * 4],
+			Uv = new Vector2[vCount], Uv2 = new Vector2[vCount], MatA = new float[vCount * 4], MatB = new float[vCount * 4],
 			Heights = new float[HW * HW],
 		};
 		for (int k = 0; k < H.Length; k++) d.Heights[k] = (float)H[k];
@@ -133,8 +135,8 @@ public static class TerrainMesher
 				gen.GroundMaterial(x, z, nrm.Y, bw, m);
 				for (int c = 0; c < 4; c++)
 				{
-					d.MatA[k * 4 + c] = Unorm(m[c]);
-					d.MatB[k * 4 + c] = Unorm(m[4 + c]);
+					d.MatA[k * 4 + c] = (float)m[c];
+					d.MatB[k * 4 + c] = (float)m[4 + c];
 				}
 				double r = 0, g = 0, b = 0, veg = 0;
 				for (int bb = 0; bb < WorldGen.BiomeCount; bb++)
@@ -201,8 +203,6 @@ public static class TerrainMesher
 		return d;
 	}
 
-	static byte Unorm(double v) => (byte)Math.Clamp((int)Math.Round(v * 255), 0, 255);
-
 	// The tile as a mesh (main thread).
 	public static ArrayMesh ToMesh(TileData d)
 	{
@@ -216,7 +216,7 @@ public static class TerrainMesher
 		arrays[(int)Mesh.ArrayType.Custom0] = d.MatA;
 		arrays[(int)Mesh.ArrayType.Custom1] = d.MatB;
 		arrays[(int)Mesh.ArrayType.Index] = d.Index;
-		var flags = (Mesh.ArrayFormat)(((long)Mesh.ArrayCustomFormat.Rgba8Unorm << (int)Mesh.ArrayFormat.FormatCustom0Shift) | ((long)Mesh.ArrayCustomFormat.Rgba8Unorm << (int)Mesh.ArrayFormat.FormatCustom1Shift));
+		var flags = (Mesh.ArrayFormat)(((long)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift) | ((long)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift));
 		var mesh = new ArrayMesh();
 		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, flags);
 		mesh.CustomAabb = new Aabb(new Vector3(0, d.MinY - 3, 0), new Vector3((float)d.Size, d.MaxY - d.MinY + 3, (float)d.Size));

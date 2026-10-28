@@ -14,10 +14,12 @@ uniform vec3 canopy_color : source_color = vec3(0.07, 0.1, 0.055);
 uniform vec3 canopy_snow : source_color = vec3(0.42, 0.46, 0.45);
 uniform float tree_far = 750.0;
 uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+// 0 off; 1 colour only, 2 ambient occlusion, 3 weights (sand red, dirt green, gravel blue)
+uniform int debug_view = 0;
 
 // the biome colour each recoloured layer takes, relative to the biome's ground colour (sand a
 // little lighter than the soil, rock and gravel a little darker)
-const float TINT_LEVEL[8] = float[](1.12, 1.0, 0.9, 1.0, 1.0, 1.0, 1.0, 0.94);
+const float TINT_LEVEL[8] = float[](1.36, 1.26, 1.08, 1.0, 1.0, 1.0, 1.0, 1.16);
 
 varying vec4 v_w0;
 varying vec4 v_w1;
@@ -78,10 +80,10 @@ void fragment() {
 	for (int i = 0; i < 8; i++) {
 		float k = b[i] - cut;
 		if (k <= 0.0) continue;
-		vec3 c = smp[i].albedo * LAYER_GAIN[i];
+		vec3 c = mix(LAYER_MEAN[i], smp[i].albedo, LAYER_CONTRAST[i]) * LAYER_GAIN[i];
 		c *= mix(LAYER_MEAN[i], v_tint * TINT_LEVEL[i], LAYER_RECOLOUR[i]) / LAYER_MEAN[i];
 		alb += c * k;
-		nt += smp[i].normal * k;
+		nt += vec3(smp[i].normal.xy * LAYER_CONTRAST[i], smp[i].normal.z) * k;
 		rough += smp[i].rough * k;
 		ao += smp[i].ao * k;
 		tot += k;
@@ -113,8 +115,12 @@ void fragment() {
 	rough = mix(rough, 0.35, wetness * (1.0 - wSnow) * (1.0 - woodIn));
 
 	ALBEDO = alb;
+	if (debug_view == 1) EMISSION = alb;
+	if (debug_view == 2) EMISSION = vec3(ao);
+	if (debug_view == 3) EMISSION = vec3(w[0], w[1], w[7]);
+	if (debug_view > 0) ALBEDO = vec3(0.0);
 	ROUGHNESS = rough;
-	AO = mix(1.0, ao, 0.8);
+	AO = mix(1.0, ao, 0.55);
 	AO_LIGHT_AFFECT = 0.25;
 	// tangent space to world: the top projection's axes (x east, z south) on the mesh normal
 	vec3 T = normalize(vec3(1.0, 0.0, 0.0) - N * N.x);
@@ -123,4 +129,9 @@ void fragment() {
 	float relief = 1.0 - smoothstep(60.0, 260.0, v_dist) * 0.75;
 	vec3 nw = normalize(T * nt.x * relief + B * -nt.y * relief + N * nt.z);
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
+	if (debug_view == 4) EMISSION = nw * 0.5 + 0.5;
+	if (debug_view == 5) EMISSION = N * 0.5 + 0.5;
+	if (debug_view == 6) EMISSION = nt * 0.5 + 0.5;
+	// how squarely the morning sun of Main.tscn falls on the ground (mesh normal, then with detail)
+	if (debug_view == 7) EMISSION = vec3(max(dot(N, vec3(-0.8138, 0.5, -0.2962)), 0.0), max(dot(nw, vec3(-0.8138, 0.5, -0.2962)), 0.0), 0.0) * 1.6;
 }

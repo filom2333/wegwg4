@@ -21,6 +21,7 @@ public partial class Main : Node3D
 	TerrainStreamer _terrain;
 	string _shot;
 	int _shotFrames = -1;
+	int _shotAfter = 5;
 	double _shotWait;
 
 	public override void _Ready()
@@ -50,6 +51,23 @@ public partial class Main : Node3D
 			else if (arg.StartsWith("--yaw=")) yaw = float.Parse(v, ci);
 			else if (arg.StartsWith("--pitch=")) pitch = float.Parse(v, ci);
 			else if (arg.StartsWith("--fly=")) fly = float.Parse(v, ci);
+			else if (arg == "--noshadow") GetNode<DirectionalLight3D>("Sun").ShadowEnabled = false;
+			else if (arg == "--nossao") GetNode<WorldEnvironment>("WorldEnvironment").Environment.SsaoEnabled = false;
+			else if (arg == "--nosun") GetNode<DirectionalLight3D>("Sun").Visible = false;
+			else if (arg.StartsWith("--frames=")) _shotAfter = int.Parse(v, ci);
+			else if (arg == "--ambientbg") GetNode<WorldEnvironment>("WorldEnvironment").Environment.AmbientLightSource = Godot.Environment.AmbientSource.Bg;
+			else if (arg == "--ambientcolor")
+			{
+				var env = GetNode<WorldEnvironment>("WorldEnvironment").Environment;
+				env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
+				env.AmbientLightColor = new Color(0.55f, 0.62f, 0.72f);
+			}
+			else if (arg.StartsWith("--sun="))
+			{
+				var p = v.Split(',');
+				GetNode<DirectionalLight3D>("Sun").RotationDegrees = new Vector3(-float.Parse(p[0], ci), float.Parse(p[1], ci), 0);
+			}
+			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
 		WorldOrigin.MoveTo(x, z);
 		if (_shot != null)
@@ -95,9 +113,10 @@ public partial class Main : Node3D
 			if (!_terrain.AllBuilt && _shotWait < 120) return;
 			_shotFrames = 0;
 		}
-		if (++_shotFrames < 5) return;
+		if (++_shotFrames < _shotAfter) return;
 		GetViewport().GetTexture().GetImage().SavePng(_shot);
-		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s)");
+		var sun = GetNode<DirectionalLight3D>("Sun");
+		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s, sun shadows {sun.ShadowEnabled}, sun {sun.RotationDegrees})");
 		GetTree().Quit();
 	}
 }

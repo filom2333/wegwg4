@@ -9,7 +9,7 @@ uniform sampler2DArray ground_data : filter_linear_mipmap_anisotropic, repeat_en
 
 // Metres per repeat of each ground layer up close. Every period divides 2048 m (the wrap of the
 // world texture coordinates), so the pattern runs on across the wrap without a seam.
-const float LAYER_PERIOD[8] = float[](3.2, 4.0, 6.4, 5.12, 3.2, 4.0, 4.0, 3.2);
+const float LAYER_PERIOD[8] = float[](3.2, 4.0, 6.4, 10.24, 3.2, 4.0, 4.0, 3.2);
 // colour corrections of the scans to the game's palette
 const vec3 LAYER_GAIN[8] = vec3[](vec3(1.0), vec3(1.0), vec3(1.0), vec3(1.0), vec3(0.92, 1.02, 0.86), vec3(1.32, 1.33, 1.36), vec3(1.0), vec3(1.0));
 // each scan's mean colour (pack_ground.py prints them), and how far the terrain recolours it to
@@ -18,6 +18,9 @@ const vec3 LAYER_GAIN[8] = vec3[](vec3(1.0), vec3(1.0), vec3(1.0), vec3(1.0), ve
 // differ the way the land does
 const vec3 LAYER_MEAN[8] = vec3[](vec3(0.577, 0.503, 0.39), vec3(0.583, 0.453, 0.307), vec3(0.513, 0.412, 0.316), vec3(0.8, 0.788, 0.76), vec3(0.592, 0.515, 0.35), vec3(0.648, 0.647, 0.656), vec3(0.417, 0.353, 0.266), vec3(0.571, 0.434, 0.299));
 const float LAYER_RECOLOUR[8] = float[](0.55, 0.85, 0.7, 0.0, 0.0, 0.0, 0.0, 0.7);
+// how much of each scan's light and dark (and relief) is kept: the salt crust's cracks are a
+// photograph of mud, far bolder than a salt pan's
+const float LAYER_CONTRAST[8] = float[](1.0, 1.0, 1.0, 0.4, 1.0, 1.0, 1.0, 1.0);
 
 struct GroundSample {
 	vec3 albedo;
