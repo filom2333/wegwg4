@@ -1,0 +1,16 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://shaders/terrain.gdshader" id="1"]
+[ext_resource type="CompressedTexture2DArray" path="res://assets/textures/ground/ground_albedo.jpg" id="2"]
+[ext_resource type="CompressedTexture2DArray" path="res://assets/textures/ground/ground_normal.jpg" id="3"]
+[ext_resource type="CompressedTexture2DArray" path="res://assets/textures/ground/ground_data.jpg" id="4"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/ground_albedo = ExtResource("2")
+shader_parameter/ground_normal = ExtResource("3")
+shader_parameter/ground_data = ExtResource("4")
+shader_parameter/canopy_color = Color(0.07, 0.1, 0.055, 1)
+shader_parameter/canopy_snow = Color(0.42, 0.46, 0.45, 1)
+shader_parameter/tree_far = 750.0
+shader_parameter/wetness = 0.0
