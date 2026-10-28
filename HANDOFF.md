@@ -102,6 +102,12 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   `wetness` global (after rain), morning mist as height fog below the camera's ground.
   lavapipe + MSAA garbles thin additive/transparent quads (teal/dark edges on rain streaks): check
   rain pictures with --nomsaa; a real GPU resolves MSAA by plain averaging.
+  Ground anti-repeat (shaders/ground.gdshaderinc `ground_patch`/`ground_layer_var`): a slow
+  noise picks one of 8 offsets per patch, edges height-blended, at both the near and the coarse
+  scale. Patches and gradients are worked out at the top of terrain.gdshader (outside branches);
+  every branch around a sample is decided per 2x2 block (fwidthCoarse) so implicit mips stay
+  valid, and only blocks across a patch edge use textureGrad. Keep it that way: lavapipe does no
+  anisotropic filtering with textureGrad (far ground goes blurry in shots), a real card does.
 - Picture without a GPU: `godot/tools/shot.sh out.png --at=x,z --yaw=deg --pitch=deg --fly=m`
   (~1.5 min; shot mode builds every tile at once). Browser view for comparison: scratchpad probe
   `p_view.js` with env VX VZ VYAW VPITCH.

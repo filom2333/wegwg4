@@ -45,12 +45,22 @@ GroundSample ground_layer(int i, vec2 uv) {
 	return s;
 }
 
-// The same layer at two scales, the coarse one turned and offset, mixed by `t`: the near pattern
-// up close, the coarse one further off, and neither repeats where they cross.
-GroundSample ground_layer2(int i, vec2 uv, float t) {
-	GroundSample a = ground_layer(i, uv);
-	vec2 uv2 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * uv * 0.2 + vec2(0.37, 0.71);
-	GroundSample b = ground_layer(i, uv2);
+// The same with the mip level taken from the given gradients (for samples whose coordinates
+// jump: the jump would otherwise pick the smallest mip along it, a line of blur).
+GroundSample ground_layer_grad(int i, vec2 uv, vec2 dx, vec2 dy) {
+	vec3 p = vec3(uv, float(i));
+	GroundSample s;
+	s.albedo = textureGrad(ground_albedo, p, dx, dy).rgb;
+	vec3 n = textureGrad(ground_normal, p, dx, dy).xyz * 2.0 - 1.0;
+	s.normal = vec3(n.xy, max(n.z, 0.05));
+	vec3 d = textureGrad(ground_data, p, dx, dy).rgb;
+	s.height = d.r;
+	s.rough = d.g;
+	s.ao = d.b;
+	return s;
+}
+
+GroundSample ground_mix(GroundSample a, GroundSample b, float t) {
 	GroundSample s;
 	s.albedo = mix(a.albedo, b.albedo, t);
 	s.normal = normalize(mix(a.normal, b.normal, t));
@@ -73,6 +83,66 @@ float g_noise(vec2 p, float period) {
 	vec2 i1 = mod(i + 1.0, period);
 	i = mod(i, period);
 	return mix(mix(g_hash(i), g_hash(vec2(i1.x, i.y)), f.x), mix(g_hash(vec2(i.x, i1.y)), g_hash(i1), f.x), f.y);
+}
+
+// Which of eight offsets of a scan a place takes (see ground_layer_var). It looks at the
+// neighbouring pixels, so it is worked out where every pixel runs, outside any branch. `m`: the
+// place in metres (wrapped at 2048), `freq` the noise's lattice cells per metre (2048 * freq a
+// whole number, so it runs on across the wrap).
+struct GroundPatch {
+	float index;
+	float f; // 0..1 across the band between this offset and the next
+	bool edge; // a 2x2 block of pixels across a patch edge
+	bool only_a; // the whole block shows this offset alone
+	bool only_b; // or the next alone
+};
+
+GroundPatch ground_patch(vec2 m, float freq) {
+	GroundPatch p;
+	float l = g_noise(m * freq, 2048.0 * freq) * 8.0;
+	p.index = floor(l);
+	p.f = l - p.index;
+	// across a patch edge the offset jumps between neighbouring pixels, and a mip level taken
+	// from that jump would blur a line along it: those blocks take it from the true gradients
+	p.edge = fwidthCoarse(p.index) > 0.0;
+	// the bounds ground_layer_var's blend leaves one sample alone, kept by the whole block (a
+	// sample only some of a block takes has no gradients for the rest)
+	float fw = 2.0 * fwidthCoarse(p.f);
+	p.only_a = p.f + fw < 0.14;
+	p.only_b = p.f - fw > 0.86;
+	return p;
+}
+
+GroundSample ground_layer_at(int i, vec2 uv, vec2 dx, vec2 dy, bool grad) {
+	return grad ? ground_layer_grad(i, uv, dx, dy) : ground_layer(i, uv);
+}
+
+// A layer without its repeat (after Inigo Quilez's texture variation): a slow noise picks one of
+// eight offsets of the scan per patch, and where two patches meet, both are sampled and the one
+// standing higher in its own relief shows, so the seam follows the stones and the cracks instead
+// of a line. `dx`, `dy`: the screen gradients of `uv`.
+GroundSample ground_layer_var(int i, vec2 uv, vec2 dx, vec2 dy, GroundPatch p) {
+	vec2 oa = sin(vec2(3.0, 7.0) * p.index);
+	vec2 ob = sin(vec2(3.0, 7.0) * (p.index + 1.0));
+	if (p.only_a) return ground_layer_at(i, uv + oa, dx, dy, p.edge);
+	if (p.only_b) return ground_layer_at(i, uv + ob, dx, dy, p.edge);
+	GroundSample a = ground_layer_at(i, uv + oa, dx, dy, p.edge);
+	GroundSample b = ground_layer_at(i, uv + ob, dx, dy, p.edge);
+	// (the relief has its say only inside the band: at either end it is one offset alone, so
+	// the next band starts where this one ends)
+	float e = p.f + (b.height - a.height) * 0.35 * sin(3.14159 * p.f);
+	return ground_mix(a, b, smoothstep(0.3, 0.7, e));
+}
+
+// The layer at two scales, the coarse one turned, mixed by `t` (0 and 1 whole 2x2 blocks only):
+// the near pattern up close, the coarse one further off, neither repeating. `near`, `coarse`:
+// ground_patch at 1/8 and 1/32 of a metre.
+GroundSample ground_layer2(int i, vec2 uv, vec2 dx, vec2 dy, float t, GroundPatch near, GroundPatch coarse) {
+	if (t <= 0.0) return ground_layer_var(i, uv, dx, dy, near);
+	mat2 r = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * 0.2;
+	GroundSample c = ground_layer_var(i, r * uv + vec2(0.37, 0.71), r * dx, r * dy, coarse);
+	if (t >= 1.0) return c;
+	return ground_mix(ground_layer_var(i, uv, dx, dy, near), c, t);
 }
 
 // Four octaves of it; `uv` in metres (wrapped at 2048), `freq` lattice cells per metre.
