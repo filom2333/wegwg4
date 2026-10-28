@@ -31,6 +31,7 @@ public partial class Main : Node3D
 		_terrain = GetNode<TerrainStreamer>("World/Terrain");
 		_terrain.Seed = Seed;
 		GetNode<RoadStreamer>("World/Road").Seed = Seed;
+		GetNode<WaterStreamer>("World/Water").Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
 		WorldOrigin.Shifted += OnOriginShifted;
 

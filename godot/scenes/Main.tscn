@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
 [ext_resource type="Environment" path="res://environment/day.tres" id="2"]
@@ -7,6 +7,11 @@
 [ext_resource type="Script" path="res://scripts/world/RoadStreamer.cs" id="5"]
 [ext_resource type="Material" path="res://materials/road.tres" id="6"]
 [ext_resource type="Script" path="res://scripts/player/Spectator.cs" id="7"]
+[ext_resource type="Script" path="res://scripts/gfx/SunSync.cs" id="8"]
+[ext_resource type="Script" path="res://scripts/world/WaterStreamer.cs" id="9"]
+[ext_resource type="Material" path="res://materials/water.tres" id="10"]
+[ext_resource type="Material" path="res://materials/water_lake.tres" id="11"]
+[ext_resource type="Material" path="res://materials/ice.tres" id="12"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -28,6 +33,7 @@ directional_shadow_split_2 = 0.18
 directional_shadow_split_3 = 0.45
 directional_shadow_blend_splits = true
 directional_shadow_max_distance = 320.0
+script = ExtResource("8")
 
 [node name="World" type="Node3D" parent="."]
 
@@ -38,6 +44,12 @@ TerrainMaterial = ExtResource("4")
 [node name="Road" type="Node3D" parent="World"]
 script = ExtResource("5")
 RoadMaterial = ExtResource("6")
+
+[node name="Water" type="Node3D" parent="World"]
+script = ExtResource("9")
+WaterMaterial = ExtResource("10")
+LakeMaterial = ExtResource("11")
+IceMaterial = ExtResource("12")
 
 [node name="Player" type="Camera3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 2, 6)
