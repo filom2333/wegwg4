@@ -1,9 +1,11 @@
 using System;
+using System.Linq;
 using System.Globalization;
 using Godot;
 using DustRoad.Gfx;
 using DustRoad.Player;
 using DustRoad.World;
+using DustRoad.World.Places;
 
 namespace DustRoad;
 
@@ -22,12 +24,14 @@ public partial class Main : Node3D
 	Camera3D _cam;
 	TerrainStreamer _terrain;
 	ScatterStreamer _scatter;
+	PlaceStreamer _places;
 	DayCycle _day;
 	double _biomeCheck;
 	string _shot;
 	int _shotFrames = -1;
 	int _shotAfter = 5;
 	double _shotWait;
+	ulong _shotStart;
 	// a lightning bolt for the picture: how far ahead
 	float _bolt = -1;
 
@@ -43,6 +47,8 @@ public partial class Main : Node3D
 		_day = GetNode<DayCycle>("DayCycle");
 		_scatter = GetNode<ScatterStreamer>("World/Scatter");
 		_scatter.Seed = Seed;
+		_places = GetNode<PlaceStreamer>("World/Places");
+		_places.Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
 		GetNode<Lightning>("Lightning").Gen = _gen;
 		GetNode<Precipitation>("Precipitation").Gen = _gen;
@@ -84,6 +90,7 @@ public partial class Main : Node3D
 			else if (arg == "--nomsaa") GetViewport().Msaa3D = Viewport.Msaa.Disabled;
 			else if (arg.StartsWith("--scatteronly=")) ScatterStreamer.Only = v;
 			else if (arg.StartsWith("--bolt=")) _bolt = float.Parse(v, ci);
+			else if (arg == "--noplaces") _places.ProcessMode = ProcessModeEnum.Disabled;
 			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
 		WorldOrigin.MoveTo(x, z);
@@ -91,6 +98,8 @@ public partial class Main : Node3D
 		{
 			// rendering without a graphics card takes seconds a frame: make everything in one go
 			_terrain.BuildBudgetMs = 1e6f;
+			_places.Instant = true;
+			_shotStart = Time.GetTicksMsec();
 			_terrain.MaxInFlight = 100000;
 			GetNode<RoadStreamer>("World/Road").MaxPerFrame = 1000;
 			_day.TimeScale = 0;
@@ -140,9 +149,12 @@ public partial class Main : Node3D
 	void TakeShot(double delta)
 	{
 		_shotWait += delta;
+		if (OS.GetCmdlineUserArgs().Contains("--shotlog"))
+			GD.Print($"[shot] {Time.GetTicksMsec() / 1000.0:F1} s: frame {Engine.GetProcessFrames()} dt {delta:F2}, terrain {_terrain.AllBuilt} ({_terrain.TileCount} tiles), scatter {_scatter.AllBuilt}, places {_places.AllBuilt}");
 		if (_shotFrames < 0)
 		{
-			if (!(_terrain.AllBuilt && _scatter.AllBuilt) && _shotWait < 120) return;
+			// (given up after two minutes of real time: a frame here can take half a minute)
+			if (!(_terrain.AllBuilt && _scatter.AllBuilt && _places.AllBuilt) && Time.GetTicksMsec() - _shotStart < 120000) return;
 			_shotFrames = 0;
 			if (_bolt > 0)
 			{

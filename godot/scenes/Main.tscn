@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
 [ext_resource type="Environment" path="res://environment/day.tres" id="2"]
@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://scripts/world/ScatterStreamer.cs" id="18"]
 [ext_resource type="Script" path="res://scripts/gfx/Precipitation.cs" id="19"]
 [ext_resource type="Script" path="res://scripts/gfx/Lightning.cs" id="20"]
+[ext_resource type="Script" path="res://scripts/world/places/PlaceStreamer.cs" id="21"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -83,6 +84,9 @@ PaintNorth = ExtResource("17")
 
 [node name="Scatter" type="Node3D" parent="World"]
 script = ExtResource("18")
+
+[node name="Places" type="Node3D" parent="World"]
+script = ExtResource("21")
 
 [node name="Player" type="Camera3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 2, 6)

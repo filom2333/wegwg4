@@ -94,8 +94,33 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   Rain splashes (`gfx/Splashes.cs`, splash_ring/splash_crown shaders): landings placed on the
   CPU (WorldGen height, water level, a ray for bridge decks), drawn from a ring buffer of
   MultiMesh instances. The thunder and the ground current come with the sound and the player.
-  NOT yet: places/buildings, player, car, items, UI, sound; no reflections of the banks in
-  water (only sky).
+  Places and buildings (29.10): the user wants every building MODELLED IN BLENDER with good
+  scans (not procedural boxes in C#: a first C# port of builder.js was thrown away for that).
+  `tools/blender/buildings.py` (+ `buildkit.py`: chamfered boxes, tubes, corrugated sheets, metre
+  UVs, materials named by token) builds houses on the browser's floor plans (7 styles: siding x3
+  colours, brick, stucco + tiles, flat stucco, adobe with vigas; each "kept" and "old" with
+  broken panes, boarded windows, missing shingles/downspouts/doors), garages (workshop,
+  garage_iron/siding/shut), mailbox, fence; real lapped siding, corner boards, double-hung
+  windows with casings/sills/drip caps, panelled doors (own objects on their hinges), floors,
+  baseboards, ceilings with lamps, crawlspace foundations with vents, steps, porches, rafters,
+  fascia, soffits, gutters and downspouts, shingle rows aligned to the scan's own courses,
+  chimney, vent pipe, aerial. Run: `/opt/blender/blender -b --factory-startup --python
+  tools/blender/buildings.py -- assets/models/buildings [names]` then `godot --headless --path .
+  --import`. Each model: <name>.glb (shell, glass, door_<i>) + <name>.json (colliders, doors,
+  lights, rooms, footprint). Check a model with `tools/blender/building_preview.py -- model.glb
+  out.png front|back|side|aerial|door|inside` (Cycles, ~25 s) or in Godot on the bare stage:
+  `scenes/test/FxTest.tscn -- --shot=x.png --fxbuilding=name --fxage=0..1`.
+  Materials: `assets/textures/building/palette.json` (one palette for the game and the Blender
+  previews; scans in assets/textures/building, packed by tools/build/pack_building.py, credits
+  there) on `shaders/building.gdshader` (paint with peeling to grey wood, dirt, streaks, rust,
+  wet, snow; normal frame from screen gradients). Godot: `world/places/BuildingLibrary.cs`
+  (loads models in the background, dresses them, door leaves), `Layouts.cs` (which models where;
+  house style by biome), `PlaceStreamer.cs` (streaming, colliders on layer 2, footings, fences).
+  Done kinds: homestead, house, houses. NOT yet: the other kinds (gas station, motel, diner,
+  ranch/farm, towers, junkyard, trailers, outpost, ruins, camp, wreck, cabin, church, sawmill,
+  lodge, lookout), storeyed houses (tall.js), furniture and junk (to model in Blender too),
+  interior light (a ReflectionProbe per building with its own ambient is the plan).
+  NOT yet either: player, car, items, UI, sound; no reflections of the banks in water.
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
   far too bright on a real card. The environment therefore uses an ambient COLOUR (works the
