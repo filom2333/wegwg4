@@ -7,7 +7,7 @@
 [ext_resource type="Script" path="res://scripts/world/RoadStreamer.cs" id="5"]
 [ext_resource type="Material" path="res://materials/road.tres" id="6"]
 [ext_resource type="Script" path="res://scripts/player/Spectator.cs" id="7"]
-[ext_resource type="Script" path="res://scripts/gfx/SunSync.cs" id="8"]
+[ext_resource type="Script" path="res://scripts/gfx/DayCycle.cs" id="8"]
 [ext_resource type="Script" path="res://scripts/world/WaterStreamer.cs" id="9"]
 [ext_resource type="Material" path="res://materials/water.tres" id="10"]
 [ext_resource type="Material" path="res://materials/water_lake.tres" id="11"]
@@ -39,6 +39,15 @@ directional_shadow_split_2 = 0.18
 directional_shadow_split_3 = 0.45
 directional_shadow_blend_splits = true
 directional_shadow_max_distance = 320.0
+
+[node name="Moon" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 30, 0)
+visible = false
+light_color = Color(0.623529, 0.705882, 0.901961, 1)
+light_energy = 0.0
+light_angular_distance = 0.5
+
+[node name="DayCycle" type="Node" parent="."]
 script = ExtResource("8")
 
 [node name="World" type="Node3D" parent="."]

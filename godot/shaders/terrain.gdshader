@@ -125,6 +125,8 @@ void fragment() {
 	if (debug_view == 3) EMISSION = vec3(w[0], w[1], w[7]);
 	if (debug_view > 0) ALBEDO = vec3(0.0);
 	ROUGHNESS = rough;
+	// (dry ground hardly mirrors anything: no glare off it toward a low sun)
+	SPECULAR = mix(0.18, 0.5, wetness);
 	AO = mix(1.0, ao, 0.55);
 	AO_LIGHT_AFFECT = 0.25;
 	// tangent space to world: the top projection's axes (x east, z south) on the mesh normal

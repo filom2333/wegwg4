@@ -43,10 +43,9 @@ vec2 wgrad(vec2 p) {
 }
 
 vec3 sky_at(vec3 dir) {
-	// the procedural sky's gradient (environment/day.tres), in linear light: by elevation angle
-	float c = clamp(1.0 - acos(clamp(dir.y, -1.0, 1.0)) / (PI * 0.5), 0.0, 1.0);
-	float k = clamp(1.0 - pow(1.0 - c, 1.0 / sky_curve), 0.0, 1.0);
-	return mix(sky_horizon, sky_top, k);
+	// the sky shader's gradient (shaders/sky.gdshader, colours from DayCycle), in linear light
+	float h = clamp(dir.y, 0.0, 1.0);
+	return mix(sky_top, sky_horizon, pow(1.0 - h, sky_curve));
 }
 
 void vertex() {

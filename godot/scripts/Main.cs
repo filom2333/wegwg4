@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using Godot;
+using DustRoad.Gfx;
 using DustRoad.Player;
 using DustRoad.World;
 
@@ -20,6 +21,8 @@ public partial class Main : Node3D
 	Camera3D _cam;
 	TerrainStreamer _terrain;
 	ScatterStreamer _scatter;
+	DayCycle _day;
+	double _biomeCheck;
 	string _shot;
 	int _shotFrames = -1;
 	int _shotAfter = 5;
@@ -34,6 +37,7 @@ public partial class Main : Node3D
 		GetNode<RoadStreamer>("World/Road").Seed = Seed;
 		GetNode<WaterStreamer>("World/Water").Seed = Seed;
 		GetNode<BridgeStreamer>("World/Bridges").Seed = Seed;
+		_day = GetNode<DayCycle>("DayCycle");
 		_scatter = GetNode<ScatterStreamer>("World/Scatter");
 		_scatter.Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
@@ -68,11 +72,9 @@ public partial class Main : Node3D
 				env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
 				env.AmbientLightColor = new Color(0.55f, 0.62f, 0.72f);
 			}
-			else if (arg.StartsWith("--sun="))
-			{
-				var p = v.Split(',');
-				GetNode<DirectionalLight3D>("Sun").RotationDegrees = new Vector3(-float.Parse(p[0], ci), float.Parse(p[1], ci), 0);
-			}
+			else if (arg.StartsWith("--time=")) _day.Time = float.Parse(v, ci);
+			else if (arg.StartsWith("--weather=")) _day.Weather = v;
+			else if (arg == "--noday") _day.ProcessMode = ProcessModeEnum.Disabled;
 			else if (arg.StartsWith("--scatteronly=")) ScatterStreamer.Only = v;
 			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
@@ -83,6 +85,8 @@ public partial class Main : Node3D
 			_terrain.BuildBudgetMs = 1e6f;
 			_terrain.MaxInFlight = 100000;
 			GetNode<RoadStreamer>("World/Road").MaxPerFrame = 1000;
+			_day.TimeScale = 0;
+			_day.LockWeather = true;
 		}
 		if (_cam is Spectator s)
 		{
@@ -108,6 +112,14 @@ public partial class Main : Node3D
 			var (wx, wz) = WorldOrigin.ToWorld(p);
 			WorldOrigin.MoveTo(wx, wz);
 		}
+		// the weather that can come depends on where you are
+		_biomeCheck -= delta;
+		if (_biomeCheck <= 0)
+		{
+			_biomeCheck = 2;
+			var (bx, bz) = WorldOrigin.ToWorld(_cam.GlobalPosition);
+			_day.Biome = _gen.DominantBiome(bx, bz);
+		}
 		if (_shot != null) TakeShot(delta);
 	}
 
@@ -123,7 +135,9 @@ public partial class Main : Node3D
 		if (++_shotFrames < _shotAfter) return;
 		GetViewport().GetTexture().GetImage().SavePng(_shot);
 		var sun = GetNode<DirectionalLight3D>("Sun");
-		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s, sun shadows {sun.ShadowEnabled}, sun {sun.RotationDegrees})");
+		GD.Print($"shot saved: {_shot} ({_terrain.TileCount} tiles, {_shotWait:F1} s, {_day.Time:F2} h, {_day.Weather}, sun shadows {sun.ShadowEnabled})");
+		var envr = GetNode<WorldEnvironment>("WorldEnvironment").Environment;
+		GD.Print($"light: sun {sun.LightEnergy:F2} {sun.LightColor} dir {-sun.GlobalBasis.Z} ambient {envr.AmbientLightColor} x {envr.AmbientLightEnergy:F2} exposure {envr.TonemapExposure:F2} fog {envr.FogDensity:F6}");
 		GD.Print($"frame: {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k triangles, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalObjectsInFrame)} objects");
 		GetTree().Quit();
 	}

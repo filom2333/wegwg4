@@ -81,16 +81,23 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   see each file's header), copy outputs into assets/. Previews: tools/blender/preview.py
   (scans), plant_preview.py (plants). Shot args --scatteronly=species, --scatterinfo; shots
   print triangles/draw calls (dense forest ~3.3M tris, ~1900 draw calls).
-  NOT yet: places/buildings, clouds, time of day, player, car, items, UI, sound; no reflections
-  of the banks in water (only sky).
+  NOT yet: places/buildings, rain/snow particles, morning mist, player, car, items, UI, sound;
+  no reflections of the banks in water (only sky).
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
-  far too bright on a real card. The environment therefore uses a fixed ambient COLOUR (works the
-  same everywhere): ambient (0.62,0.69,0.8) x 0.9, sun 1.85, ACES; sky only for reflections.
-  Calibrated against the browser at the start: ground 0.66 vs 0.63, asphalt 0.30 vs 0.27.
+  far too bright on a real card. The environment therefore uses an ambient COLOUR (works the
+  same everywhere), set every frame by `scripts/gfx/DayCycle.cs` (port of environment.js: hour,
+  sun/moon, weather table and drift, sky shader uniforms, sun/moon lights, ambient, fog,
+  exposure, global uniforms for water and wind). Its scales (SunScale 0.248, SkyLightScale 0.688,
+  FogScale 0.85: browser value x scale) are calibrated at 9:00 (the browser's dev start) on the
+  first stretch: ground 0.635 vs 0.63, asphalt 0.305 vs 0.27, sky 0.65/0.75/0.87. (Before
+  28.10 evening the scene's sun was mis-set to 10 deg elevation and the old numbers were tuned
+  to that.) Sky: `shaders/sky.gdshader` (port of sky.js; `gain` 0.6 in environment/day.tres).
   Terrain material weights are float custom data (the Compatibility renderer ignores RGBA8).
   Terrain shader has `debug_view` (1 colour, 2 AO, 3 weights, 4-6 normals, 7 sun incidence);
-  Main.cs shot args: --noshadow --nossao --nosun --sun=elev,az --frames=N --debug=N.
+  Main.cs shot args: --noshadow --nossao --nosun --time=h --weather=name --noday --frames=N
+  --debug=N; shots print the light values. DayCycle is [Tool]: set Time/Weather in the
+  inspector to see any hour in the editor.
 - Picture without a GPU: `godot/tools/shot.sh out.png --at=x,z --yaw=deg --pitch=deg --fly=m`
   (~1.5 min; shot mode builds every tile at once). Browser view for comparison: scratchpad probe
   `p_view.js` with env VX VZ VYAW VPITCH.
