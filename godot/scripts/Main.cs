@@ -10,6 +10,7 @@ namespace DustRoad;
 // The game's root: the world seed, the floating origin that follows the camera, and (for checking
 // the picture) a picture taken from the command line:
 //   godot --path godot -- --shot=out.png [--at=x,z | --at=road,z] [--yaw=deg] [--pitch=deg] [--fly=height]
+//   (--bolt=metres: a lightning bolt that far ahead)
 public partial class Main : Node3D
 {
 	[Export] public int Seed = 1234;
@@ -27,6 +28,8 @@ public partial class Main : Node3D
 	int _shotFrames = -1;
 	int _shotAfter = 5;
 	double _shotWait;
+	// a lightning bolt for the picture: how far ahead
+	float _bolt = -1;
 
 	public override void _Ready()
 	{
@@ -41,6 +44,8 @@ public partial class Main : Node3D
 		_scatter = GetNode<ScatterStreamer>("World/Scatter");
 		_scatter.Seed = Seed;
 		_cam = GetNode<Camera3D>("Player");
+		GetNode<Lightning>("Lightning").Gen = _gen;
+		GetNode<Precipitation>("Precipitation").Gen = _gen;
 		WorldOrigin.Shifted += OnOriginShifted;
 
 		double x = StartXZ.X, z = StartXZ.Y;
@@ -78,6 +83,7 @@ public partial class Main : Node3D
 			else if (arg == "--noprecip") GetNode<Node3D>("Precipitation").Visible = false;
 			else if (arg == "--nomsaa") GetViewport().Msaa3D = Viewport.Msaa.Disabled;
 			else if (arg.StartsWith("--scatteronly=")) ScatterStreamer.Only = v;
+			else if (arg.StartsWith("--bolt=")) _bolt = float.Parse(v, ci);
 			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
 		WorldOrigin.MoveTo(x, z);
@@ -138,6 +144,13 @@ public partial class Main : Node3D
 		{
 			if (!(_terrain.AllBuilt && _scatter.AllBuilt) && _shotWait < 120) return;
 			_shotFrames = 0;
+			if (_bolt > 0)
+			{
+				var l = GetNode<Lightning>("Lightning");
+				l.Hold = true;
+				var f = -_cam.GlobalBasis.Z;
+				l.Strike(0.37, _bolt, Mathf.Atan2(f.Z, f.X));
+			}
 		}
 		if (++_shotFrames < _shotAfter) return;
 		GetViewport().GetTexture().GetImage().SavePng(_shot);
@@ -147,5 +160,12 @@ public partial class Main : Node3D
 		GD.Print($"light: sun {sun.LightEnergy:F2} {sun.LightColor} dir {-sun.GlobalBasis.Z} ambient {envr.AmbientLightColor} x {envr.AmbientLightEnergy:F2} exposure {envr.TonemapExposure:F2} fog {envr.FogDensity:F6}");
 		GD.Print($"frame: {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalPrimitivesInFrame) / 1000} k triangles, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalDrawCallsInFrame)} draw calls, {RenderingServer.GetRenderingInfo(RenderingServer.RenderingInfo.TotalObjectsInFrame)} objects");
 		GetTree().Quit();
+		// (on the software driver Godot sometimes never finishes quitting, waiting on a pipeline
+		// still compiling in its worker pool: the picture is saved, so end it)
+		new System.Threading.Thread(() =>
+		{
+			System.Threading.Thread.Sleep(20000);
+			System.Diagnostics.Process.GetCurrentProcess().Kill();
+		}) { IsBackground = true }.Start();
 	}
 }

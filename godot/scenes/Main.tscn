@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
 [ext_resource type="Environment" path="res://environment/day.tres" id="2"]
@@ -19,6 +19,7 @@
 [ext_resource type="Material" path="res://materials/steel_truss_green.tres" id="17"]
 [ext_resource type="Script" path="res://scripts/world/ScatterStreamer.cs" id="18"]
 [ext_resource type="Script" path="res://scripts/gfx/Precipitation.cs" id="19"]
+[ext_resource type="Script" path="res://scripts/gfx/Lightning.cs" id="20"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -53,6 +54,9 @@ script = ExtResource("8")
 
 [node name="Precipitation" type="Node3D" parent="."]
 script = ExtResource("19")
+
+[node name="Lightning" type="Node3D" parent="."]
+script = ExtResource("20")
 
 [node name="World" type="Node3D" parent="."]
 

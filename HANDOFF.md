@@ -81,8 +81,21 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   see each file's header), copy outputs into assets/. Previews: tools/blender/preview.py
   (scans), plant_preview.py (plants). Shot args --scatteronly=species, --scatterinfo; shots
   print triangles/draw calls (dense forest ~3.3M tris, ~1900 draw calls).
-  NOT yet: places/buildings, rain splashes, lightning bolts, player, car, items, UI, sound;
-  no reflections of the banks in water (only sky).
+  Lightning (`gfx/Lightning.cs`, shaders/bolt.gdshader): DayCycle raises `Strike`; a forked
+  channel of tubes with a halo, return strokes, and for close strikes an omni light (specular
+  0.05: as a point its glint off wet ground was one blinding blob), sparks and smoke (GPU
+  particles; smoke uses `shaders/smoke.gdshader`, the shared soft lit smoke/dust puff for GPU
+  particles). Shot arg `--bolt=metres` puts one straight ahead, held at full brightness with
+  sparks and smoke frozen a moment after (Preprocess + SpeedScale 0: shot frames take seconds).
+  `scenes/test/FxTest.tscn` (scripts/test/FxTest.cs): a bare stage that renders effects in
+  seconds (`godot --path . scenes/test/FxTest.tscn -- --shot=out.png --fxtime=s [--fxhold=s]`).
+  Shot mode ends the process 20 s after saving: on lavapipe Godot sometimes hangs while quitting
+  (main thread waiting on its worker pool, seen after new effects had just compiled).
+  Rain splashes (`gfx/Splashes.cs`, splash_ring/splash_crown shaders): landings placed on the
+  CPU (WorldGen height, water level, a ray for bridge decks), drawn from a ring buffer of
+  MultiMesh instances. The thunder and the ground current come with the sound and the player.
+  NOT yet: places/buildings, player, car, items, UI, sound; no reflections of the banks in
+  water (only sky).
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
   far too bright on a real card. The environment therefore uses an ambient COLOUR (works the

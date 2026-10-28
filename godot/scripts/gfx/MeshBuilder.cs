@@ -12,6 +12,8 @@ public sealed class MeshBuilder
 	public readonly List<Vector3> Pos = new();
 	public readonly List<Vector3> Nrm = new();
 	public readonly List<Vector2> Uv = new();
+	// optional second UVs: filled by the caller, one per vertex, after adding a piece
+	public readonly List<Vector2> Uv2 = new();
 	public readonly List<int> Idx = new();
 
 	public int VertexCount => Pos.Count;
@@ -199,6 +201,7 @@ public sealed class MeshBuilder
 		arrays[(int)Mesh.ArrayType.Vertex] = Pos.ToArray();
 		arrays[(int)Mesh.ArrayType.Normal] = Nrm.ToArray();
 		arrays[(int)Mesh.ArrayType.TexUV] = Uv.ToArray();
+		if (Uv2.Count == Pos.Count) arrays[(int)Mesh.ArrayType.TexUV2] = Uv2.ToArray();
 		arrays[(int)Mesh.ArrayType.Index] = Idx.ToArray();
 		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 		return mesh;

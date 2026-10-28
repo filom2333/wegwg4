@@ -1,18 +1,27 @@
 using System;
 using Godot;
+using DustRoad.World;
 
 namespace DustRoad.Gfx;
 
 // Rain and snow round the camera, as heavy as DayCycle's weather says (snow in the north and on
 // snow days, rain elsewhere). The drops live entirely in their shaders (shaders/rain.gdshader,
-// snow.gdshader): this only builds the meshes once and hands over the amount, wind and light.
+// snow.gdshader): this only builds the meshes once and hands over the amount, wind and light,
+// and has the drops that land close by splash (Splashes.cs).
 public partial class Precipitation : Node3D
 {
 	[Export] public NodePath DayCyclePath = "../DayCycle";
 	[Export] public int RainDrops = 9000;
 	[Export] public int SnowFlakes = 7000;
 
+	public WorldGen Gen
+	{
+		get => _splashes.Gen;
+		set => _splashes.Gen = value;
+	}
+
 	MeshInstance3D _rain, _snow;
+	readonly Splashes _splashes = new() { Name = "Splashes" };
 	ShaderMaterial _rainMat, _snowMat;
 	float _rainNow, _snowNow;
 
@@ -24,6 +33,7 @@ public partial class Precipitation : Node3D
 		_snowMat.SetShaderParameter("box", new Vector3(26, 16, 26));
 		_rain = Make("Rain", RainDrops, _rainMat, 11);
 		_snow = Make("Snow", SnowFlakes, _snowMat, 23);
+		AddChild(_splashes);
 	}
 
 	MeshInstance3D Make(string name, int n, Material mat, int seed)
@@ -94,5 +104,6 @@ public partial class Precipitation : Node3D
 		_snowMat.SetShaderParameter("amount", Math.Min(1, _snowNow * 1.2f));
 		_snowMat.SetShaderParameter("drift", wind * 0.5f);
 		_snowMat.SetShaderParameter("light_level", light);
+		_splashes.Step((float)delta, _rain.Visible ? Math.Min(1, _rainNow * 1.2f) : 0, light, GetViewport().GetCamera3D());
 	}
 }

@@ -58,6 +58,8 @@ public partial class DayCycle : Node
 	public float Daylight => Smooth(-0.12f, 0.12f, SunDir.Y);
 	public bool IsNight => SunDir.Y < -0.05f;
 	public float Flash;
+	// a lightning strike (with a random number for where and how): gfx/Lightning.cs draws it
+	public event Action<double> Strike;
 	// rain or snow? (snow in the north and on snow days)
 	public bool Snowing => Weather == "snow" || Biome is Biome.Taiga or Biome.Tundra;
 	// how wet the ground is: up quickly in the rain, drying over minutes after
@@ -195,6 +197,7 @@ public partial class DayCycle : Node
 			{
 				_lightningTimer = 4 + (float)_rand.NextDouble() * 12;
 				Flash = _rand.NextDouble() < 0.25 ? 1.7f : 1f;
+				Strike?.Invoke(_rand.NextDouble());
 			}
 		}
 		_cloudTime += editor ? 0 : delta;
