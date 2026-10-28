@@ -58,6 +58,28 @@ public partial class DayCycle : Node
 	public float Daylight => Smooth(-0.12f, 0.12f, SunDir.Y);
 	public bool IsNight => SunDir.Y < -0.05f;
 	public float Flash;
+	// rain or snow? (snow in the north and on snow days)
+	public bool Snowing => Weather == "snow" || Biome is Biome.Taiga or Biome.Tundra;
+	// how wet the ground is: up quickly in the rain, drying over minutes after
+	public float Wetness;
+	// morning mist lying in the low places (0..1), and the ground under the camera it lies on
+	public float Mist;
+	public float GroundHeight;
+	// no easing in: everything at once (pictures, the editor)
+	public bool Instant;
+
+	// biomes where mornings are often misty: the chance of mist on a given morning
+	static readonly Dictionary<Biome, float> Misty = new()
+	{
+		[Biome.Forest] = 0.55f,
+		[Biome.Taiga] = 0.45f,
+		[Biome.Prairie] = 0.4f,
+		[Biome.Tundra] = 0.3f,
+		[Biome.Highland] = 0.25f,
+		[Biome.Scrub] = 0.06f,
+	};
+	float _mistToday;
+	int _mistDay = -1;
 
 	WeatherState _target = Weathers["clear"].Copy();
 	string _applied;
@@ -145,6 +167,21 @@ public partial class DayCycle : Node
 		W.Mist = Lerp(W.Mist, _target.Mist, k);
 		W.Lightning = _target.Lightning;
 
+		// the ground: wet in the rain (snow lies instead), drying slowly
+		bool instant = editor || Instant;
+		float wetTo = Snowing ? 0 : Math.Min(1, W.Rain * 1.6f);
+		Wetness = instant ? wetTo : Wetness + (wetTo - Wetness) * Math.Min(1, dt * (wetTo > Wetness ? 0.05f : 0.004f));
+		// morning mist in green country: decided each night, rising before dawn, burning off through
+		// the morning
+		if (Day != _mistDay && Time > 1 && Time < 3)
+		{
+			_mistDay = Day;
+			_mistToday = _rand.NextDouble() < Misty.GetValueOrDefault(Biome, 0.04f) ? 0.55f + (float)_rand.NextDouble() * 0.45f : 0;
+		}
+		float morning = Smooth(2.5f, 5.2f, Time) * (1 - Smooth(7.4f, 10.2f, Time));
+		float mistTo = Math.Max(W.Mist, morning * _mistToday * (1 - W.Wind) * (1 - W.Dust));
+		Mist = instant ? mistTo : Mist + (mistTo - Mist) * Math.Min(1, dt * 0.2f);
+
 		SunDir = SunDirection(Time);
 		MoonDir = new Vector3(-SunDir.X * 0.9f + 0.2f, -SunDir.Y, -SunDir.Z * 0.9f + 0.1f).Normalized();
 		float night = 1 - Smooth(-0.2f, 0.0f, SunDir.Y);
@@ -188,7 +225,7 @@ public partial class DayCycle : Node
 		_sky.SetShaderParameter("night", night);
 		_sky.SetShaderParameter("stars", 1 - W.Overcast);
 		_sky.SetShaderParameter("flash", Flash * 0.6f);
-		_sky.SetShaderParameter("mist", W.Mist);
+		_sky.SetShaderParameter("mist", Mist);
 		_sky.SetShaderParameter("cloud_time", (float)(_cloudTime % 100000));
 	}
 
@@ -248,18 +285,22 @@ public partial class DayCycle : Node
 		{
 			c = c.Lerp(grey * (0.85f + 0.15f * up), W.Overcast * 0.85f);
 			c = c.Lerp(dustCol, W.Dust * (0.72f + 0.28f * (1 - up)));
-			return c.Lerp(mistCol, W.Mist * 0.85f * (1 - Smooth(0.0f, 0.6f, up) * 0.65f));
+			return c.Lerp(mistCol, Mist * 0.85f * (1 - Smooth(0.0f, 0.6f, up) * 0.65f));
 		}
 		var fogHor = Weather(hor, 0.02f);
 		float gain = _sky != null ? _sky.GetShaderParameter("gain").AsSingle() : 1;
 		var fog = fogHor * gain;
 		env.FogLightColor = new Color(fog.X, fog.Y, fog.Z).LinearToSrgb();
 		env.FogDensity = W.FogDensity * (1 + night * 0.6f) * FogScale;
+		// the mist: height fog lying below the ground you stand on, so it fills the hollows
+		env.FogHeight = GroundHeight - 1;
+		env.FogHeightDensity = Mist * 0.25f;
 		env.TonemapExposure = Lerp(1.42f, 0.98f, day) * (1 + 0.12f * warm * day) * (1 + Flash * 0.3f) / 0.98f;
 		// the water's sky: the same zenith and horizon
 		RenderingServer.GlobalShaderParameterSet("sky_top", Weather(zen, 1.0f) * gain);
 		RenderingServer.GlobalShaderParameterSet("sky_horizon", fogHor * gain);
 		RenderingServer.GlobalShaderParameterSet("sky_curve", 3.2f + W.Turbidity * 0.2f);
 		RenderingServer.GlobalShaderParameterSet("wind", W.Wind);
+		RenderingServer.GlobalShaderParameterSet("wetness", Wetness);
 	}
 }

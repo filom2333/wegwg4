@@ -13,7 +13,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform vec3 canopy_color : source_color = vec3(0.07, 0.1, 0.055);
 uniform vec3 canopy_snow : source_color = vec3(0.42, 0.46, 0.45);
 uniform float tree_far = 750.0;
-uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+// how wet the ground is (DayCycle: after rain)
+global uniform float wetness;
 // 0 off; 1 colour only, 2 ambient occlusion, 3 weights (sand red, dirt green, gravel blue)
 uniform int debug_view = 0;
 

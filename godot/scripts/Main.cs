@@ -75,6 +75,8 @@ public partial class Main : Node3D
 			else if (arg.StartsWith("--time=")) _day.Time = float.Parse(v, ci);
 			else if (arg.StartsWith("--weather=")) _day.Weather = v;
 			else if (arg == "--noday") _day.ProcessMode = ProcessModeEnum.Disabled;
+			else if (arg == "--noprecip") GetNode<Node3D>("Precipitation").Visible = false;
+			else if (arg == "--nomsaa") GetViewport().Msaa3D = Viewport.Msaa.Disabled;
 			else if (arg.StartsWith("--scatteronly=")) ScatterStreamer.Only = v;
 			else if (arg.StartsWith("--debug=")) ((ShaderMaterial)_terrain.TerrainMaterial).SetShaderParameter("debug_view", int.Parse(v, ci));
 		}
@@ -87,6 +89,7 @@ public partial class Main : Node3D
 			GetNode<RoadStreamer>("World/Road").MaxPerFrame = 1000;
 			_day.TimeScale = 0;
 			_day.LockWeather = true;
+			_day.Instant = true;
 		}
 		if (_cam is Spectator s)
 		{
@@ -119,6 +122,10 @@ public partial class Main : Node3D
 			_biomeCheck = 2;
 			var (bx, bz) = WorldOrigin.ToWorld(_cam.GlobalPosition);
 			_day.Biome = _gen.DominantBiome(bx, bz);
+		}
+		{
+			var (gx, gz) = WorldOrigin.ToWorld(_cam.GlobalPosition);
+			_day.GroundHeight = (float)_gen.Height(gx, gz);
 		}
 		if (_shot != null) TakeShot(delta);
 	}

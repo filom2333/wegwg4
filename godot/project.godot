@@ -57,3 +57,7 @@ wind={
 "type": "float",
 "value": 0.3
 }
+wetness={
+"type": "float",
+"value": 0.0
+}

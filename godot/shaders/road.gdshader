@@ -10,7 +10,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 
 #include "res://shaders/ground.gdshaderinc"
 
-uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+// how wet the ground is (DayCycle: after rain)
+global uniform float wetness;
 
 varying vec4 v_road;
 varying vec2 v_env;

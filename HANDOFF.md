@@ -81,7 +81,7 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   see each file's header), copy outputs into assets/. Previews: tools/blender/preview.py
   (scans), plant_preview.py (plants). Shot args --scatteronly=species, --scatterinfo; shots
   print triangles/draw calls (dense forest ~3.3M tris, ~1900 draw calls).
-  NOT yet: places/buildings, rain/snow particles, morning mist, player, car, items, UI, sound;
+  NOT yet: places/buildings, rain splashes, lightning bolts, player, car, items, UI, sound;
   no reflections of the banks in water (only sky).
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
@@ -96,8 +96,12 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   Terrain material weights are float custom data (the Compatibility renderer ignores RGBA8).
   Terrain shader has `debug_view` (1 colour, 2 AO, 3 weights, 4-6 normals, 7 sun incidence);
   Main.cs shot args: --noshadow --nossao --nosun --time=h --weather=name --noday --frames=N
-  --debug=N; shots print the light values. DayCycle is [Tool]: set Time/Weather in the
-  inspector to see any hour in the editor.
+  --debug=N --noprecip --nomsaa; shots print the light values. DayCycle is [Tool]: set
+  Time/Weather in the inspector to see any hour in the editor. Rain/snow: `gfx/Precipitation.cs`
+  + shaders/rain|snow.gdshader (drops placed in the vertex shader round the camera); ground
+  `wetness` global (after rain), morning mist as height fog below the camera's ground.
+  lavapipe + MSAA garbles thin additive/transparent quads (teal/dark edges on rain streaks): check
+  rain pictures with --nomsaa; a real GPU resolves MSAA by plain averaging.
 - Picture without a GPU: `godot/tools/shot.sh out.png --at=x,z --yaw=deg --pitch=deg --fly=m`
   (~1.5 min; shot mode builds every tile at once). Browser view for comparison: scratchpad probe
   `p_view.js` with env VX VZ VYAW VPITCH.
