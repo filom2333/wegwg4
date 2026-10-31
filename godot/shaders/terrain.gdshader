@@ -13,7 +13,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform vec3 canopy_color : source_color = vec3(0.07, 0.1, 0.055);
 uniform vec3 canopy_snow : source_color = vec3(0.42, 0.46, 0.45);
 uniform float tree_far = 750.0;
-uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+// how wet the ground is (DayCycle: after rain)
+global uniform float wetness;
 // 0 off; 1 colour only, 2 ambient occlusion, 3 weights (sand red, dirt green, gravel blue)
 uniform int debug_view = 0;
 
@@ -47,11 +48,26 @@ void fragment() {
 	float w[8] = float[](v_w0.x, v_w0.y, v_w0.z, v_w0.w, v_w1.x, v_w1.y, v_w1.z, v_w1.w);
 	vec3 N = normalize(v_wn);
 	float slope = 1.0 - N.y;
-	// up close the near scale, further off the coarse one
+	// up close the near scale, further off the coarse one (each alone only for whole 2x2 blocks
+	// of pixels, see ground_patch)
 	float farT = smoothstep(14.0, 90.0, v_dist);
+	float farW = 2.0 * fwidthCoarse(farT);
+	farT = farT + farW <= 0.0 ? 0.0 : (farT - farW >= 1.0 ? 1.0 : clamp(farT, 0.001, 0.999));
 	// rock on steep faces is projected onto the face (stretched streaks otherwise)
 	vec2 uvSide = (abs(N.x) > abs(N.z) ? vec2(v_uv.y, v_wy) : vec2(v_uv.x, v_wy));
 	float sideT = smoothstep(0.35, 0.6, slope);
+	vec2 mRock = mix(v_uv, uvSide, sideT);
+	// the patches that break each scan's repeat, and the gradients its samples take across them,
+	// worked out here where every pixel runs (inside the loop below some pixels skip a layer)
+	vec2 mdx = dFdx(v_uv), mdy = dFdy(v_uv);
+	vec2 rdx = dFdx(mRock), rdy = dFdy(mRock);
+	GroundPatch pNear = ground_patch(v_uv, 1.0 / 8.0);
+	GroundPatch pCoarse = ground_patch(v_uv, 1.0 / 32.0);
+	GroundPatch rNear = ground_patch(mRock, 1.0 / 8.0);
+	GroundPatch rCoarse = ground_patch(mRock, 1.0 / 32.0);
+	// far off, a scan's pattern only repeats: settle to the layer's mean colour (the mottling below
+	// keeps the land from going flat)
+	float flatT = smoothstep(120.0, 700.0, v_dist) * 0.9;
 
 	// height blending: each layer's own relief decides where it shows through its neighbours (sand
 	// settles between the stones, snow fills the hollows first). Layers well below the strongest
@@ -67,9 +83,12 @@ void fragment() {
 	float top = -10.0;
 	for (int i = 0; i < 8; i++) {
 		b[i] = -10.0;
-		if (a[i] < best - 0.95) continue;
-		vec2 uv = (i == 2 ? mix(v_uv, uvSide, sideT) : v_uv) / LAYER_PERIOD[i];
-		smp[i] = ground_layer2(i, uv, farT);
+		// (skipped only by whole 2x2 blocks: a sample some of a block skips has no gradients)
+		float lag = a[i] - best;
+		if (lag + 2.0 * fwidthCoarse(lag) < -0.95) continue;
+		float sc = 1.0 / LAYER_PERIOD[i];
+		if (i == 2) smp[i] = ground_layer2(i, mRock * sc, rdx * sc, rdy * sc, farT, rNear, rCoarse);
+		else smp[i] = ground_layer2(i, v_uv * sc, mdx * sc, mdy * sc, farT, pNear, pCoarse);
 		b[i] = a[i] + smp[i].height * 0.9;
 		top = max(top, b[i]);
 	}
@@ -80,7 +99,7 @@ void fragment() {
 	for (int i = 0; i < 8; i++) {
 		float k = b[i] - cut;
 		if (k <= 0.0) continue;
-		vec3 c = mix(LAYER_MEAN[i], smp[i].albedo, LAYER_CONTRAST[i]) * LAYER_GAIN[i];
+		vec3 c = mix(LAYER_MEAN_LIN[i], smp[i].albedo, LAYER_CONTRAST[i] * (1.0 - flatT)) * LAYER_GAIN[i];
 		c *= mix(LAYER_MEAN[i], v_tint * TINT_LEVEL[i], LAYER_RECOLOUR[i]) / LAYER_MEAN[i];
 		alb += c * k;
 		nt += vec3(smp[i].normal.xy * LAYER_CONTRAST[i], smp[i].normal.z) * k;
@@ -94,9 +113,11 @@ void fragment() {
 	ao /= tot;
 
 	float wSnow = w[5];
-	// broad mottling so a plain is never one flat colour
+	// broad mottling so a plain is never one flat colour: patches of tens of metres up close,
+	// of hundreds further off
 	float mott = g_fbm(v_uv, 1.0 / 64.0);
-	alb *= 0.9 + 0.2 * mott;
+	float mottFar = g_fbm(v_uv, 1.0 / 512.0);
+	alb *= 0.9 + 0.2 * mott + (mottFar - 0.5) * 0.22 * flatT;
 
 	// far shrubs: past the ring of real bushes, dark crowns speckle the open ground
 	float shrubFar = smoothstep(180.0, 320.0, v_dist) * v_veg;
@@ -120,6 +141,8 @@ void fragment() {
 	if (debug_view == 3) EMISSION = vec3(w[0], w[1], w[7]);
 	if (debug_view > 0) ALBEDO = vec3(0.0);
 	ROUGHNESS = rough;
+	// (dry ground hardly mirrors anything: no glare off it toward a low sun)
+	SPECULAR = mix(0.18, 0.5, wetness);
 	AO = mix(1.0, ao, 0.55);
 	AO_LIGHT_AFFECT = 0.25;
 	// tangent space to world: the top projection's axes (x east, z south) on the mesh normal

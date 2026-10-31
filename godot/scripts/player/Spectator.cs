@@ -5,8 +5,8 @@ using DustRoad.World;
 namespace DustRoad.Player;
 
 // A free camera for looking round the world until the player and the car are in: click to take
-// the mouse, WASD to move, Q/E down and up, Shift for speed, G to walk on the ground at eye height,
-// Esc to let the mouse go.
+// the mouse, WASD to move, Q/E down and up, Shift for speed, G to walk on the ground (and on
+// bridge decks) at eye height, Esc to let the mouse go.
 public partial class Spectator : Camera3D
 {
 	[Export] public float Speed = 12;
@@ -16,6 +16,10 @@ public partial class Spectator : Camera3D
 
 	WorldGen _gen;
 	float _yaw, _pitch;
+	// the top of whatever solid stands under the camera (a bridge deck), NaN for none; just after
+	// placing, looked for from high above so a start on a bridge lands on its deck
+	float _deck = float.NaN;
+	int _snapFrames;
 
 	public void Setup(WorldGen gen, double x, double z, float yawDeg, float pitchDeg)
 	{
@@ -23,6 +27,7 @@ public partial class Spectator : Camera3D
 		_yaw = Mathf.DegToRad(yawDeg);
 		_pitch = Mathf.DegToRad(pitchDeg);
 		Position = WorldOrigin.ToScene(x, gen.Height(x, z) + EyeHeight, z);
+		_snapFrames = 30;
 		Apply();
 	}
 
@@ -62,9 +67,25 @@ public partial class Spectator : Camera3D
 		if (Walking)
 		{
 			var (x, z) = WorldOrigin.ToWorld(p);
-			p.Y = (float)_gen.Height(x, z) + EyeHeight;
+			float ground = (float)_gen.Height(x, z);
+			p.Y = (float.IsNaN(_deck) ? ground : Math.Max(ground, _deck)) + EyeHeight;
 		}
 		else p.Y += up * speed * (float)delta;
 		Position = p;
+	}
+
+	public override void _PhysicsProcess(double delta)
+	{
+		if (_gen == null || !Walking) return;
+		var p = Position;
+		var (x, z) = WorldOrigin.ToWorld(p);
+		float ground = (float)_gen.Height(x, z);
+		// a step up from the feet (onto a deck from the road), or from high above just after placing
+		float from = _snapFrames > 0 ? ground + 80 : Math.Max(ground, p.Y - EyeHeight) + 0.6f;
+		if (_snapFrames > 0) _snapFrames--;
+		// (structures only: bridge decks, later floors; not the trees and rocks)
+		var q = PhysicsRayQueryParameters3D.Create(new Vector3(p.X, from, p.Z), new Vector3(p.X, ground - 0.05f, p.Z), 1u << 1);
+		var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
+		_deck = hit.Count > 0 ? hit["position"].AsVector3().Y : float.NaN;
 	}
 }

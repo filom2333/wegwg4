@@ -10,7 +10,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 
 #include "res://shaders/ground.gdshaderinc"
 
-uniform float wetness : hint_range(0.0, 1.0) = 0.0;
+// how wet the ground is (DayCycle: after rain)
+global uniform float wetness;
 
 varying vec4 v_road;
 varying vec2 v_env;
@@ -60,7 +61,7 @@ void fragment() {
 	// dirt road: gravel with sandy wheel tracks
 	float tracks = smoothstep(0.5, 0.0, abs(abs(across) - 1.8));
 	vec3 dirtRoad = mix(grav.albedo * vec3(0.66, 0.58, 0.47), sand.albedo * 0.85, 0.35 + 0.4 * tracks);
-	vec3 col = mix(asph.albedo * 0.78, dirtRoad, isDirt);
+	vec3 col = mix(asph.albedo * 0.62, dirtRoad, isDirt);
 	// patches and wear
 	float pn = r_fbm(vec2(across * 0.25, along * 0.06));
 	float patchM = smoothstep(0.62, 0.64, pn) * wear * (1.0 - isDirt);

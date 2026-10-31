@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.cs" id="1"]
 [ext_resource type="Environment" path="res://environment/day.tres" id="2"]
@@ -7,6 +7,20 @@
 [ext_resource type="Script" path="res://scripts/world/RoadStreamer.cs" id="5"]
 [ext_resource type="Material" path="res://materials/road.tres" id="6"]
 [ext_resource type="Script" path="res://scripts/player/Spectator.cs" id="7"]
+[ext_resource type="Script" path="res://scripts/gfx/DayCycle.cs" id="8"]
+[ext_resource type="Script" path="res://scripts/world/WaterStreamer.cs" id="9"]
+[ext_resource type="Material" path="res://materials/water.tres" id="10"]
+[ext_resource type="Material" path="res://materials/water_lake.tres" id="11"]
+[ext_resource type="Material" path="res://materials/ice.tres" id="12"]
+[ext_resource type="Script" path="res://scripts/world/BridgeStreamer.cs" id="13"]
+[ext_resource type="Material" path="res://materials/concrete.tres" id="14"]
+[ext_resource type="Material" path="res://materials/steel_rail.tres" id="15"]
+[ext_resource type="Material" path="res://materials/steel_truss.tres" id="16"]
+[ext_resource type="Material" path="res://materials/steel_truss_green.tres" id="17"]
+[ext_resource type="Script" path="res://scripts/world/ScatterStreamer.cs" id="18"]
+[ext_resource type="Script" path="res://scripts/gfx/Precipitation.cs" id="19"]
+[ext_resource type="Script" path="res://scripts/gfx/Lightning.cs" id="20"]
+[ext_resource type="Script" path="res://scripts/world/places/PlaceStreamer.cs" id="21"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -29,6 +43,22 @@ directional_shadow_split_3 = 0.45
 directional_shadow_blend_splits = true
 directional_shadow_max_distance = 320.0
 
+[node name="Moon" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 30, 0)
+visible = false
+light_color = Color(0.623529, 0.705882, 0.901961, 1)
+light_energy = 0.0
+light_angular_distance = 0.5
+
+[node name="DayCycle" type="Node" parent="."]
+script = ExtResource("8")
+
+[node name="Precipitation" type="Node3D" parent="."]
+script = ExtResource("19")
+
+[node name="Lightning" type="Node3D" parent="."]
+script = ExtResource("20")
+
 [node name="World" type="Node3D" parent="."]
 
 [node name="Terrain" type="Node3D" parent="World"]
@@ -38,6 +68,25 @@ TerrainMaterial = ExtResource("4")
 [node name="Road" type="Node3D" parent="World"]
 script = ExtResource("5")
 RoadMaterial = ExtResource("6")
+
+[node name="Water" type="Node3D" parent="World"]
+script = ExtResource("9")
+WaterMaterial = ExtResource("10")
+LakeMaterial = ExtResource("11")
+IceMaterial = ExtResource("12")
+
+[node name="Bridges" type="Node3D" parent="World"]
+script = ExtResource("13")
+Concrete = ExtResource("14")
+Steel = ExtResource("15")
+Paint = ExtResource("16")
+PaintNorth = ExtResource("17")
+
+[node name="Scatter" type="Node3D" parent="World"]
+script = ExtResource("18")
+
+[node name="Places" type="Node3D" parent="World"]
+script = ExtResource("21")
 
 [node name="Player" type="Camera3D" parent="."]
 transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 4, 2, 6)

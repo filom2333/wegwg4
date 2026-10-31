@@ -1,0 +1,1 @@
+{"name":"mailbox","floor_y":0.0,"footprint":[0.4,0.6],"colliders":[{"c":[0,0.55,0],"h":[0.05,0.55,0.05],"ry":0.0,"rx":0.0,"s":"wood"},{"c":[0,1.15,0.02],"h":[0.13,0.13,0.25],"ry":0.0,"rx":0.0,"s":"wood"}],"doors":[],"lights":[],"rooms":[],"tris":356,"car_spot":null}

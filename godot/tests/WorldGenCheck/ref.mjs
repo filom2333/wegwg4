@@ -1,5 +1,6 @@
 // Reference values from the browser version's WorldGen, for the C# port to be checked against.
 import { WorldGen, BIOMES } from '../../../web/src/world/worldGen.js';
+import { cellInstances, CELL } from '../../../web/src/world/scatterGen.js';
 import { writeFileSync } from 'fs';
 const out = {};
 for (const seed of [1234, 482913]) {
@@ -25,7 +26,16 @@ for (const seed of [1234, 482913]) {
   for (let k = 0; k <= 70; k++) { const l = g.lake(k); lakes.push(l ? { x: l.x, z: l.z, level: l.level } : null); }
   for (let t = 0; t <= 35; t++) { const r = g.track(t); tracks.push(r ? { z0: r.z0, len: r.len, side: r.side, block: r.block ? r.block.kind : null } : null); }
   for (let k = 0; k <= 60; k++) cells.push(g._cellCached(k));
-  out[seed] = { pts, pois, rivers, lakes, tracks, cells };
+  // scatter: cells across the road every 1.7 km (a fresh generator each, see roadY above)
+  const scatter = [];
+  for (let z = 300; z < 120000; z += 1700) {
+    const cj = Math.floor(z / CELL), c0 = Math.floor(g.roadX(z) / CELL);
+    for (let i = -3; i <= 3; i += 1.5) {
+      const ci = c0 + Math.round(i * (1 + (z % 7)));
+      scatter.push({ ci, cj, data: Array.from(cellInstances(new WorldGen(seed), ci, cj)) });
+    }
+  }
+  out[seed] = { pts, pois, rivers, lakes, tracks, cells, scatter };
 }
 writeFileSync(process.argv[2], JSON.stringify(out));
 console.log('ok');

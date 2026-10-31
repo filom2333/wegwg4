@@ -52,17 +52,100 @@ annoyed by the pushback. The project lives in `godot/` (see `godot/README.md`).
   editor), road strips + side tracks (`RoadStreamer`), floating origin (`WorldOrigin`), ground and
   road shaders on CC0 Poly Haven scans packed into texture arrays (`tools/build/pack_ground.py`;
   scans recoloured to the biome ground colours), ProceduralSky + ACES; free camera `Spectator`.
-  Light matched to the browser at the start (ground 0.60 vs 0.63 mean). NOT yet: vegetation and
-  rocks (scatter), water and bridges (the road floats over rivers), places/buildings, clouds,
-  time of day, player, car, items, UI, sound.
+  Light matched to the browser at the start (ground 0.60 vs 0.63 mean).
+  Water and bridges (28.10): `WaterStreamer` (river ribbons, lake discs, ice in the north;
+  `shaders/water.gdshader` lights itself: the bed through the water from the screen texture with
+  absorption by depth, Fresnel sky + sun glint from the global uniforms that `gfx/SunSync.cs` on
+  the Sun sets each frame — sun_direction, sun_color, sky_top, sky_horizon, sky_curve, declared in
+  project.godot [shader_globals]). `BridgeStreamer` (bridges.js port on `gfx/MeshBuilder.cs`: deck,
+  kerbs, rails, piers, abutments; on wide forest/frozen rivers a Pratt through-truss of box
+  members with gussets and overhead bracing; StaticBody3D deck + parapet colliders). Materials:
+  Poly Haven concrete_wall_008 (ORMMaterial3D triplanar) and green_metal_rust repainted by
+  `shaders/painted.gdshader` (grey-blue truss south, original green north, galvanised rails).
+  Spectator walks on bridge decks (ray down in _PhysicsProcess). Shot arg `--at=road,z` puts the
+  camera on the road. Rivers seed 1234: z 4229 (x 33, simple), 16901 (x 129, truss, lake at
+  403,16899), 51299 (x -188, frozen, green truss), dry washes 8877, 12568.
+  Vegetation and rocks (28.10): `ScatterGen.cs` = scatterGen.js (checked against the browser in
+  tests/WorldGenCheck, 250k instances identical but one borderline cell). `ScatterStreamer` builds
+  cells on workers and sorts instances into MultiMeshes per species/variant/LOD/sector on a worker
+  when the camera changes cell; colliders (layer 3) for solid species within 120 m; bridges are on
+  layer 2 (what the Spectator walks on). `FloraLibrary` loads assets/models/scatter/<species>.glb
+  and dresses surfaces by material name. Models: scans (tools/blender/scans.py: Poly Haven rocks,
+  stumps, logs, ferns decimated + baked; fetch with fetch_polyhaven.py) and grown plants
+  (tools/blender/plants.py: grass, shrubs, yucca, cacti, Joshua, dead trees, pines/spruces,
+  birches, hoodoos; twig cards from twigs.py; barks via fetch_textures.py). Far trees are
+  impostors (tools/blender/impostors.py: 8 views per variant, shaders/impostor.gdshader).
+  Shaders: rock, plant_solid, plant_leaf, grass, impostor (+plant_common.gdshaderinc wind/snow;
+  global uniform `wind`). Pipeline to regenerate: fetch scans/textures into the scratchpad, run
+  scans.py, twigs.py, plants.py, impostors.py (blender -b --factory-startup --python ... -- args;
+  see each file's header), copy outputs into assets/. Previews: tools/blender/preview.py
+  (scans), plant_preview.py (plants). Shot args --scatteronly=species, --scatterinfo; shots
+  print triangles/draw calls (dense forest ~3.3M tris, ~1900 draw calls).
+  Lightning (`gfx/Lightning.cs`, shaders/bolt.gdshader): DayCycle raises `Strike`; a forked
+  channel of tubes with a halo, return strokes, and for close strikes an omni light (specular
+  0.05: as a point its glint off wet ground was one blinding blob), sparks and smoke (GPU
+  particles; smoke uses `shaders/smoke.gdshader`, the shared soft lit smoke/dust puff for GPU
+  particles). Shot arg `--bolt=metres` puts one straight ahead, held at full brightness with
+  sparks and smoke frozen a moment after (Preprocess + SpeedScale 0: shot frames take seconds).
+  `scenes/test/FxTest.tscn` (scripts/test/FxTest.cs): a bare stage that renders effects in
+  seconds (`godot --path . scenes/test/FxTest.tscn -- --shot=out.png --fxtime=s [--fxhold=s]`).
+  Shot mode ends the process 20 s after saving: on lavapipe Godot sometimes hangs while quitting
+  (main thread waiting on its worker pool, seen after new effects had just compiled).
+  Rain splashes (`gfx/Splashes.cs`, splash_ring/splash_crown shaders): landings placed on the
+  CPU (WorldGen height, water level, a ray for bridge decks), drawn from a ring buffer of
+  MultiMesh instances. The thunder and the ground current come with the sound and the player.
+  Places and buildings (29.10): the user wants every building MODELLED IN BLENDER with good
+  scans (not procedural boxes in C#: a first C# port of builder.js was thrown away for that).
+  `tools/blender/buildings.py` (+ `buildkit.py`: chamfered boxes, tubes, corrugated sheets, metre
+  UVs, materials named by token) builds houses on the browser's floor plans (7 styles: siding x3
+  colours, brick, stucco + tiles, flat stucco, adobe with vigas; each "kept" and "old" with
+  broken panes, boarded windows, missing shingles/downspouts/doors), garages (workshop,
+  garage_iron/siding/shut), mailbox, fence; real lapped siding, corner boards, double-hung
+  windows with casings/sills/drip caps, panelled doors (own objects on their hinges), floors,
+  baseboards, ceilings with lamps, crawlspace foundations with vents, steps, porches, rafters,
+  fascia, soffits, gutters and downspouts, shingle rows aligned to the scan's own courses,
+  chimney, vent pipe, aerial. Run: `/opt/blender/blender -b --factory-startup --python
+  tools/blender/buildings.py -- assets/models/buildings [names]` then `godot --headless --path .
+  --import`. Each model: <name>.glb (shell, glass, door_<i>) + <name>.json (colliders, doors,
+  lights, rooms, footprint). Check a model with `tools/blender/building_preview.py -- model.glb
+  out.png front|back|side|aerial|door|inside` (Cycles, ~25 s) or in Godot on the bare stage:
+  `scenes/test/FxTest.tscn -- --shot=x.png --fxbuilding=name --fxage=0..1`.
+  Materials: `assets/textures/building/palette.json` (one palette for the game and the Blender
+  previews; scans in assets/textures/building, packed by tools/build/pack_building.py, credits
+  there) on `shaders/building.gdshader` (paint with peeling to grey wood, dirt, streaks, rust,
+  wet, snow; normal frame from screen gradients). Godot: `world/places/BuildingLibrary.cs`
+  (loads models in the background, dresses them, door leaves), `Layouts.cs` (which models where;
+  house style by biome), `PlaceStreamer.cs` (streaming, colliders on layer 2, footings, fences).
+  Done kinds: homestead, house, houses. NOT yet: the other kinds (gas station, motel, diner,
+  ranch/farm, towers, junkyard, trailers, outpost, ruins, camp, wreck, cabin, church, sawmill,
+  lodge, lookout), storeyed houses (tall.js), furniture and junk (to model in Blender too),
+  interior light (a ReflectionProbe per building with its own ambient is the plan).
+  NOT yet either: player, car, items, UI, sound; no reflections of the banks in water.
 - LIGHTING GOTCHA: on the software Vulkan driver (lavapipe) Forward+ gets NO light from the sky
   (radiance maps come out black, any process mode), so a sky-lit scene calibrated here would be
-  far too bright on a real card. The environment therefore uses a fixed ambient COLOUR (works the
-  same everywhere): ambient (0.62,0.69,0.8) x 0.9, sun 1.85, ACES; sky only for reflections.
-  Calibrated against the browser at the start: ground 0.66 vs 0.63, asphalt 0.30 vs 0.27.
+  far too bright on a real card. The environment therefore uses an ambient COLOUR (works the
+  same everywhere), set every frame by `scripts/gfx/DayCycle.cs` (port of environment.js: hour,
+  sun/moon, weather table and drift, sky shader uniforms, sun/moon lights, ambient, fog,
+  exposure, global uniforms for water and wind). Its scales (SunScale 0.248, SkyLightScale 0.688,
+  FogScale 0.85: browser value x scale) are calibrated at 9:00 (the browser's dev start) on the
+  first stretch: ground 0.635 vs 0.63, asphalt 0.305 vs 0.27, sky 0.65/0.75/0.87. (Before
+  28.10 evening the scene's sun was mis-set to 10 deg elevation and the old numbers were tuned
+  to that.) Sky: `shaders/sky.gdshader` (port of sky.js; `gain` 0.6 in environment/day.tres).
   Terrain material weights are float custom data (the Compatibility renderer ignores RGBA8).
   Terrain shader has `debug_view` (1 colour, 2 AO, 3 weights, 4-6 normals, 7 sun incidence);
-  Main.cs shot args: --noshadow --nossao --nosun --sun=elev,az --frames=N --debug=N.
+  Main.cs shot args: --noshadow --nossao --nosun --time=h --weather=name --noday --frames=N
+  --debug=N --noprecip --nomsaa; shots print the light values. DayCycle is [Tool]: set
+  Time/Weather in the inspector to see any hour in the editor. Rain/snow: `gfx/Precipitation.cs`
+  + shaders/rain|snow.gdshader (drops placed in the vertex shader round the camera); ground
+  `wetness` global (after rain), morning mist as height fog below the camera's ground.
+  lavapipe + MSAA garbles thin additive/transparent quads (teal/dark edges on rain streaks): check
+  rain pictures with --nomsaa; a real GPU resolves MSAA by plain averaging.
+  Ground anti-repeat (shaders/ground.gdshaderinc `ground_patch`/`ground_layer_var`): a slow
+  noise picks one of 8 offsets per patch, edges height-blended, at both the near and the coarse
+  scale. Patches and gradients are worked out at the top of terrain.gdshader (outside branches);
+  every branch around a sample is decided per 2x2 block (fwidthCoarse) so implicit mips stay
+  valid, and only blocks across a patch edge use textureGrad. Keep it that way: lavapipe does no
+  anisotropic filtering with textureGrad (far ground goes blurry in shots), a real card does.
 - Picture without a GPU: `godot/tools/shot.sh out.png --at=x,z --yaw=deg --pitch=deg --fly=m`
   (~1.5 min; shot mode builds every tile at once). Browser view for comparison: scratchpad probe
   `p_view.js` with env VX VZ VYAW VPITCH.
